@@ -1,6 +1,6 @@
 # 异步运行时完善与 HTTP 服务器实现 — 综合待办
 
-**最后更新**：2026-03-31 — 记录 `http_bench_async_epoll` 与 `@async_fn` codegen 缺口：嵌套循环内 await 之间语句未发射 → 运行时 `write(...,0)`、curl Empty reply；详见 [todo_async_loop_await.md](todo_async_loop_await.md) 高优先级待办。此前 2026-03-25 — Phase 8 完成：基准测试框架 `run_bench.sh` + `baseline.json`；Uya ~10K QPS vs Go ~145K QPS（wrk -t4 -c64 -d10s，Intel i7-14700）；此前同日 — Phase 8：`benchmarks/run_bench.sh`（wrk 对比 Uya/Go）、`baseline.json`（含测试机 Intel i7-14700/31GB/Deepin 25）；`get_bearer_token` `InvalidToken` 错误路径（`test_get_bearer_token_empty_token`）；`todo_http.md` Phase 6 `!T` 错误路径已完整覆盖标记；此前同日 — `parse` query 边界（`TooManyParams`/`ValueTooLong` 等）与 `parse_multipart` `TooManyParts`。此前同日 — `test_http_multipart`、`error_http_request_get_header_type`；`todo_mini_to_full` std.http。此前同日 — Phase 6：`parse`/`router` 更多 `!T` 错误路径；`readme.md` HTTP 小节。此前同日 — `types.uya`：`request_get_header` / `get_bearer_token`；`parse_then_request_get_header`。此前同日 — HTTP Phase 5：`IncompleteRequest` + `find_crlf_or_incomplete` / 体未收齐时流式续读；`http_conn_read_parse`、`http_connbuf_shift`、`HTTP_CONN_READ_CAP` 与多 `recv` 的 `http_recv_parse_request`；测试 `http_keepalive_pipeline_two_requests`、`parse_post_body_incomplete`。此前同日 — ThreadPool `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 提升至 32；此前 2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
+**最后更新**：2026-04-16 — 记录 `http_bench_async_epoll` 与 `@async_fn` codegen 缺口的收口状态；Bug B 已复核通过，AsyncFramePool / caller-owned inline / scheduler 状态已与当前代码同步。此前 2026-03-31 — 记录 `http_bench_async_epoll` 与 `@async_fn` codegen 缺口：嵌套循环内 await 之间语句未发射 → 运行时 `write(...,0)`、curl Empty reply；详见 [todo_async_loop_await.md](todo_async_loop_await.md) 高优先级待办。此前 2026-03-25 — Phase 8 完成：基准测试框架 `run_bench.sh` + `baseline.json`；Uya ~10K QPS vs Go ~145K QPS（wrk -t4 -c64 -d10s，Intel i7-14700）；此前同日 — Phase 8：`benchmarks/run_bench.sh`（wrk 对比 Uya/Go）、`baseline.json`（含测试机 Intel i7-14700/31GB/Deepin 25）；`get_bearer_token` `InvalidToken` 错误路径（`test_get_bearer_token_empty_token`）；`todo_http.md` Phase 6 `!T` 错误路径已完整覆盖标记；此前同日 — `parse` query 边界（`TooManyParams`/`ValueTooLong` 等）与 `parse_multipart` `TooManyParts`。此前同日 — `test_http_multipart`、`error_http_request_get_header_type`；`todo_mini_to_full` std.http。此前同日 — Phase 6：`parse`/`router` 更多 `!T` 错误路径；`readme.md` HTTP 小节。此前同日 — `types.uya`：`request_get_header` / `get_bearer_token`；`parse_then_request_get_header`。此前同日 — HTTP Phase 5：`IncompleteRequest` + `find_crlf_or_incomplete` / 体未收齐时流式续读；`http_conn_read_parse`、`http_connbuf_shift`、`HTTP_CONN_READ_CAP` 与多 `recv` 的 `http_recv_parse_request`；测试 `http_keepalive_pipeline_two_requests`、`parse_post_body_incomplete`。此前同日 — ThreadPool `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 提升至 32；此前 2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
 
 **关联文档**：
 - [todo_async_loop_await.md](todo_async_loop_await.md) — 循环内 await 实现细节
@@ -23,17 +23,17 @@
 | 1 | **@await 上限 32** | `src/checker/check_stmt.uya:615` `max_async_awaits = 32` | 复杂异步函数被拒绝编译（HTTP handler 解析 + 路由 + 响应极易超限） | 提升至 256+；改编译期状态机大小检查替代硬编码上限 | ✅ 已完成 |
 | 2 | **epoll fd 槽位 64 硬编码** | `lib/std/async_event.uya` `LinuxEpoll` 结构体 `[i32: 64]` 数组 | 生产环境 64 并发连接即上限 | 改为动态分配（malloc）或宏参数化容量；至少支持 1024+ | ✅ 已完成（提升至 1024） |
 | 3 | **TaskQueue 固定 8 槽** | `lib/std/async_scheduler.uya:14` `TASK_QUEUE_I32_CAPACITY = 8` | 仅 8 个任务可入队，超出直接丢弃 | 改为动态数组或环形缓冲区，支持扩容 | ✅ 已完成（提升至 64） |
-| 4 | **状态机仅栈分配** | `src/codegen/c99/function.uya:1286` 注释"暂未启用" | 大状态机栈溢出（编译期警告阈值 1024 字节） | 实现堆分配路径：>256B 走 malloc，poll 时传指针 | ✅ 已完成（始终使用 malloc） |
+| 4 | **状态机帧分配仍偏向默认 heap** | `src/codegen/c99/function.uya:1286` 注释"暂未启用" | 大状态机栈溢出（编译期警告阈值 1024 字节） | 已切到统一 `AsyncFramePool` + caller-owned inline，热路径不再直连 `malloc/free` | ✅ 已完成（默认热路径不再直连 `malloc/free`） |
 
 ### P1：功能缺失
 
 | # | 问题 | 位置 | 影响 | 修复方案 | 状态 |
 |---|------|------|------|----------|------|
 | 5 | **Scheduler 空壳** | `lib/std/async_scheduler.uya` | 所有调度方法退化为 `block_on`，无法多任务协作 | 实现 `scheduler_run`：任务队列 + epoll 事件循环 + 贪心 poll | ✅ 已完成（`scheduler_run_task_queue_i32_with_event_loop`） |
-| 6 | **无跨线程唤醒** | `lib/std/async.uya` `Waker` | `async_compute` worker 完成后主线程无法被唤醒，只能 busy-wait | 添加 futex 或 eventfd 唤醒机制；`LinuxEpoll` 增加 wakeup fd | ✅ 已完成（eventfd） |
+| 6 | **无跨线程唤醒** | `lib/std/async.uya` `Waker` | `async_compute` worker 完成后主线程无法被唤醒，只能 busy-wait | `Waker` 已有 `_event_fd` / `event_fd()` 入口和 `wake_count` 原语，但真正的 wakeup fd / eventfd 仍待线程池改造 | ⚠️ 部分完成（当前依赖 wake_count + 轮询闭环） |
 | 7 | **block_on busy-wait** | `lib/std/async.uya` `block_on_*` 系列函数 | CPU 100% 占用，无法用于生产 | 集成 EventLoop：poll 返回 Pending 时注册 epoll，epoll_wait 等待唤醒 | ✅ 已完成（`block_on_with_event_loop`） |
-| 8 | **循环变量持久化硬编码** | `src/codegen/c99/function.uya` | 仅 `n`+`written` 组合被识别为循环变量；其他变量名在 await 后值丢失 | 移除名称检查，改为基于「循环内定义 + 跨 await 引用」的作用域分析 | ⚠️ 部分完成（仅 n/written/total） |
-| 8a | **async 状态机 lowering 缺陷（4 个子问题）** | `collect_awaits_recursive` + emit | Bug A: 连续 while+await 循环状态转移失败；Bug B: await 间同步代码被吃掉；Bug C: `return try @await` 生成非法 C；Bug D: 分裂点局部变量丢失 | 重构 collect+emit：扩展 await 模式识别、独立状态编号、变量提升；TDD 测试已就位 `.pending` | 🔴 未修复（根因已分析，TDD 已写） |
+| 8 | **循环变量持久化硬编码** | `src/codegen/c99/function.uya` | 仅 `n`+`written` 组合被识别为循环变量；其他变量名在 await 后值丢失 | 已改为基于「循环内定义 + 跨 await 引用」的作用域分析 | ✅ 已完成（不再依赖 n/written/total 特判） |
+| 8a | **async 状态机 lowering 缺陷（4 个子问题）** | `collect_awaits_recursive` + emit | Bug A: 连续 while+await 循环状态转移失败；Bug B: await 间同步代码被吃掉；Bug C: `return try @await` 生成非法 C；Bug D: 分裂点局部变量丢失 | 相关回归已通过；Bug A/B/C/D 均已转正 | ✅ 已完成 |
 | 9 | **Waker 单 fd** | `lib/std/async.uya:12` `_io_fd: i32` | 无法同时关注读+写或多个 fd | 改为数组或链表；单 fd 时退化为当前行为 | 待办 |
 | 10 | **错误类型不一致** | `async_event`/`async_scheduler` | 调用方难以统一错误处理 | 定义 `std.async.Error` 枚举，统一所有异步错误 | ✅ 已完成（`EventLoopSlotsFull` 等已统一） |
 
@@ -44,7 +44,7 @@
 | 11 | `async_compute<T>` 曾需 12 套重复 `Future` 实现 | 改用 `void*` + 类型擦除，或编译器泛型 + 单一 `AsyncComputeFuture<T>` | **已完成 API 收敛**：`AsyncComputeFuture<T>` 覆盖 **含 f32/f64** 的全部载荷；**仅**导出 **`async_compute<T>`**（已删 12 个 **`async_compute_*`**）；typedef 别名仍可用。 |
 | 12 | `ThreadPool` worker / pending 曾硬编码 8 | `thread_pool_new(n)` 已存在；**已**将 `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 与数组维度提升至 **32**，边界比较改用常量 | **部分完成**（仍固定上限数组，非动态扩容） |
 | 13 | 无超时/取消机制 | 在 `Poll<T>` 增加 `Cancelled` 状态；`Task<T>` 添加 `cancel` 方法 | 待办 |
-| 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 | 待办（`std.async.io` 已有最小路径，见 `todo_mini_to_full`） |
+| 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 | ⚠️ 部分完成（`std.async.io` 已有最小路径与 `AsyncFd`，完整多任务 I/O 原语仍待扩展） |
 
 ### P1.5：编译器 / C99（与 `Future<!T>`、`std.thread` typedef 相关）✅ 近期已闭环
 
@@ -127,8 +127,8 @@ Phase 1: Socket API
 
 5. **#4 状态机堆分配**（代码生成）✅
    - 位置：`src/codegen/c99/function.uya`
-   - 做法：始终使用 malloc 堆分配，防止大状态机栈溢出
-   - 测试：大状态机 async 函数（>256B）
+   - 做法：统一 `AsyncFramePool` + caller-owned inline，热路径不再直连 `malloc/free`
+   - 测试：大状态机 async 函数与 `tests/test_async_frame_stack_ok.uya`
 
 ### 第二步：P1 功能补齐（约 3-4 周）
 
@@ -137,11 +137,10 @@ Phase 1: Socket API
    - 做法：poll 返回 Pending 时，将 Waker 的 fd 注册到 `LinuxEpoll`，`epoll_wait` 阻塞等待
    - 测试：`test_std_async_scheduler.uya` 验证 EventLoop 集成
 
-7. **#6 跨线程唤醒（futex/eventfd）** ✅
+7. **#6 跨线程唤醒（futex/eventfd）** ⚠️
    - 位置：`lib/std/async.uya` `Waker`
-   - 做法：Waker 增加 `_event_fd` 字段和 `event_fd()` getter（eventfd fd 由 EventLoop 设置）
-   - 完整 eventfd 集成需线程池改造（TODO）
-   - 测试：现有测试通过
+   - 做法：Waker 已有 `_event_fd` 字段和 `event_fd()` getter，但真正的 wakeup fd / eventfd 仍待线程池改造
+   - 测试：当前靠 `wake_count` + 轮询闭环验证
 
 8. **#5 Scheduler 真正实现** ✅
    - 位置：`lib/std/async_scheduler.uya`

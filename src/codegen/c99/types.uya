@@ -4,9 +4,175 @@
 // 注意：需要先包含 internal.uya（包含类型定义和函数声明）
 // 由于 Uya Mini 不支持模块系统，这里假设相关类型已经定义
 
+use std.string.strlen;
+use std.string.strcpy;
+use std.string.strcat;
+
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
 extern fn c99_ident_ref_cache_reset() void;
+extern fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte;
+extern fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode;
+extern fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename: &byte) &byte;
+extern fn is_struct_in_table(codegen: &C99CodeGenerator, struct_name: &byte) i32;
+extern fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void;
+
+// 为 @frame 类型在 C 头中生成前向声明 struct uya_async_xxx;
+fn c99_emit_async_frame_forward_for_type(codegen: &C99CodeGenerator, type_node: &ASTNode) void {
+    if codegen == null || type_node == null {
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_FRAME {
+        const operand: &ASTNode = type_node.type_frame_operand;
+        if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
+            const fn_name: &byte = operand.identifier_name;
+            var func_c_name: &byte = null;
+            const fd: &ASTNode = find_function_decl_c99(codegen, fn_name);
+            if fd != null && fd.fn_decl_is_export != 0 && fd.filename != null {
+                func_c_name = get_export_function_c_name(codegen, fn_name, fd.filename);
+            } else {
+                func_c_name = get_safe_c_identifier(codegen, fn_name);
+            }
+            if func_c_name != null {
+                const prefix: &byte = "uya_async_";
+                const total_len: usize = strlen(prefix as *byte) + strlen(func_c_name as *byte) + 1;
+                const struct_name: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
+                if struct_name != null {
+                    strcpy(struct_name as *byte, prefix as *byte);
+                    strcat(struct_name as *byte, func_c_name as *byte);
+                    if is_struct_in_table(codegen, struct_name) == 0 {
+                        fprintf(codegen.emit_stream as *void, "struct %s;\n" as *byte, struct_name as *byte);
+                        add_struct_definition(codegen, struct_name);
+                    }
+                }
+            }
+        }
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_POINTER && type_node.type_pointer_pointed_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, type_node.type_pointer_pointed_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ARRAY && type_node.type_array_element_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, type_node.type_array_element_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_SLICE && type_node.type_slice_element_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, type_node.type_slice_element_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && type_node.type_error_union_payload_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, type_node.type_error_union_payload_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ATOMIC && type_node.type_atomic_inner_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, type_node.type_atomic_inner_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_NAMED && type_node.type_named_type_args != null {
+        var i: i32 = 0;
+        while i < type_node.type_named_type_arg_count {
+            c99_emit_async_frame_forward_for_type(codegen, type_node.type_named_type_args[i]);
+            i = i + 1;
+        }
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_VECTOR && type_node.type_vector_element_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, type_node.type_vector_element_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_TUPLE && type_node.type_tuple_element_types != null {
+        var i: i32 = 0;
+        while i < type_node.type_tuple_element_count {
+            c99_emit_async_frame_forward_for_type(codegen, type_node.type_tuple_element_types[i]);
+            i = i + 1;
+        }
+        return;
+    }
+}
+
+// 统一扫描 program 中所有函数签名的返回类型与参数类型，为其中出现的 @frame 类型生成 struct 前向声明。
+// 用于 split-C 的 uya_split_protos.h 等头文件统一发射阶段，避免某些原型生成路径遗漏前向声明。
+export fn c99_emit_all_async_frame_forwards(codegen: &C99CodeGenerator, program: &ASTNode) void {
+    if codegen == null || program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return;
+    }
+    var di: i32 = 0;
+    while di < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[di];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+            c99_emit_async_frame_forward_for_type(codegen, decl.fn_decl_return_type);
+            var pi: i32 = 0;
+            while pi < decl.fn_decl_param_count {
+                const param: &ASTNode = decl.fn_decl_params[pi];
+                if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                    c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                }
+                pi = pi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
+            var mi: i32 = 0;
+            while mi < decl.method_block_method_count {
+                const m: &ASTNode = decl.method_block_methods[mi];
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    c99_emit_async_frame_forward_for_type(codegen, m.fn_decl_return_type);
+                    var pi: i32 = 0;
+                    while pi < m.fn_decl_param_count {
+                        const param: &ASTNode = m.fn_decl_params[pi];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                        }
+                        pi = pi + 1;
+                    }
+                }
+                mi = mi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
+            var fi: i32 = 0;
+            while fi < decl.struct_decl_field_count {
+                const field: &ASTNode = decl.struct_decl_fields[fi];
+                if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+                    c99_emit_async_frame_forward_for_type(codegen, field.var_decl_type);
+                }
+                fi = fi + 1;
+            }
+            var mi: i32 = 0;
+            while mi < decl.struct_decl_method_count {
+                const m: &ASTNode = decl.struct_decl_methods[mi];
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    c99_emit_async_frame_forward_for_type(codegen, m.fn_decl_return_type);
+                    var pi: i32 = 0;
+                    while pi < m.fn_decl_param_count {
+                        const param: &ASTNode = m.fn_decl_params[pi];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                        }
+                        pi = pi + 1;
+                    }
+                }
+                mi = mi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_UNION_DECL {
+            var mi: i32 = 0;
+            while mi < decl.union_decl_method_count {
+                const m: &ASTNode = decl.union_decl_methods[mi];
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    c99_emit_async_frame_forward_for_type(codegen, m.fn_decl_return_type);
+                    var pi: i32 = 0;
+                    while pi < m.fn_decl_param_count {
+                        const param: &ASTNode = m.fn_decl_params[pi];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                        }
+                        pi = pi + 1;
+                    }
+                }
+                mi = mi + 1;
+            }
+        }
+        di = di + 1;
+    }
+}
 
 // 方法参数类型映射：将 Self 替换为 struct_name，用于生成结构体方法签名
 fn c99_type_to_c_with_self(codegen: &C99CodeGenerator, type_node: &ASTNode, self_struct_name: &byte) &byte {
@@ -731,6 +897,35 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 }
             }
             
+            // 异步帧类型前缀匹配（来自 @frame(foo) 经 type_to_ast 回退）
+            if strncmp(safe_name as *byte, "uya_async_" as *byte, 10) == 0 {
+                const fn_part: &byte = &safe_name[10];
+                const fd: &ASTNode = find_function_decl_c99(codegen, fn_part);
+                var correct_name: &byte = safe_name;
+                if fd != null && fd.fn_decl_is_async != 0 {
+                    if fd.fn_decl_is_export != 0 && fd.filename != null {
+                        const export_name: &byte = get_export_function_c_name(codegen, fn_part, fd.filename);
+                        if export_name != null {
+                            const prefix2: &byte = "uya_async_";
+                            const total2: usize = strlen(prefix2 as *byte) + strlen(export_name as *byte) + 1;
+                            const buf2: &byte = compiler_arena_alloc(codegen.arena, total2) as &byte;
+                            if buf2 != null {
+                                strcpy(buf2 as *byte, prefix2 as *byte);
+                                strcat(buf2 as *byte, export_name as *byte);
+                                correct_name = buf2;
+                            }
+                        }
+                    }
+                }
+                const async_len: i32 = strlen(correct_name as *byte) + 9;
+                const async_buf: &byte = compiler_arena_alloc(codegen.arena, async_len) as &byte;
+                if async_buf != null {
+                    snprintf(async_buf as *byte, async_len, "struct %s" as *byte, correct_name as *byte);
+                    return async_buf;
+                }
+                return ("void" as *byte) as &byte;
+            }
+
             // 未知类型，直接返回名称
             return safe_name;
         }
@@ -889,6 +1084,30 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             return ("void" as *byte) as &byte;
         }
         snprintf(result as *byte, len, "struct %s" as *byte, name_copy as *byte);
+        return result;
+    } else if type_node.type == ASTNodeType.AST_TYPE_FRAME {
+        const operand: &ASTNode = type_node.type_frame_operand;
+        if operand == null || operand.type != ASTNodeType.AST_IDENTIFIER || operand.identifier_name == null {
+            return ("void" as *byte) as &byte;
+        }
+        const fn_name: &byte = operand.identifier_name;
+        var func_c_name: &byte = null;
+        const fd: &ASTNode = find_function_decl_c99(codegen, fn_name);
+        if fd != null && fd.fn_decl_is_export != 0 && fd.filename != null {
+            func_c_name = get_export_function_c_name(codegen, fn_name, fd.filename);
+        } else {
+            func_c_name = get_safe_c_identifier(codegen, fn_name);
+        }
+        if func_c_name == null {
+            return ("void" as *byte) as &byte;
+        }
+        const prefix: &byte = "uya_async_";
+        const total_len: usize = strlen(prefix as *byte) + strlen(func_c_name as *byte) + 9; // "struct " + '\0'
+        const result: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
+        if result == null {
+            return ("void" as *byte) as &byte;
+        }
+        snprintf(result as *byte, total_len, "struct %s%s" as *byte, prefix as *byte, func_c_name as *byte);
         return result;
     } else if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION {
         // 错误联合类型 !T -> struct { uint32_t error_id; T value; }

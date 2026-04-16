@@ -114,12 +114,22 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             // 否则常量求值成功，值被忽略（仅用于错误检测）
         }
         
-        // 特殊处理空数组字面量：如果变量类型是数组类型，空数组字面量表示未初始化
+        // 特殊处理空数组字面量
         if node.var_decl_init.type == ASTNodeType.AST_ARRAY_LITERAL &&
-            node.var_decl_init.array_literal_element_count == 0 &&
-            var_type.kind == TypeKind.TYPE_ARRAY {
-            // 空数组字面量用于数组类型变量，允许（表示未初始化）
-            // 不需要进一步检查，直接跳过类型比较
+            node.var_decl_init.array_literal_element_count == 0 {
+            const is_array_or_slice: i32 = (var_type.kind == TypeKind.TYPE_ARRAY) ||
+                (var_type.kind == TypeKind.TYPE_SLICE) ||
+                (node.var_decl_type != null && (
+                    node.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY ||
+                    node.var_decl_type.type == ASTNodeType.AST_TYPE_SLICE));
+            if is_array_or_slice != 0 {
+                // 空数组字面量用于数组/切片类型变量，允许（表示零初始化）
+                // 不需要进一步检查，直接跳过类型比较
+            } else {
+                checker_report_error(checker, node.var_decl_init,
+                    "empty array literal '[]' can only initialize array or slice types" as *byte);
+                return 0;
+            }
         } else if node.var_decl_init.type == ASTNodeType.AST_BLOCK {
             // 代码块作为初始化表达式：完全跳过类型检查，允许通过（不报错）
             // 这在编译器自举时很常见，因为代码块可能用于初始化
@@ -129,8 +139,11 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             // 数组字面量：放宽检查，允许类型推断失败的情况
             // 先递归检查初始化表达式本身
             checker_check_node(checker, node.var_decl_init);
-            // 推断类型，但不强制要求类型匹配（完全允许通过）
-            // 不进行类型比较，直接允许通过
+            // Pinned 类型检查：禁止用数组字面量按值初始化包含 async frame 的类型
+            const init_type: Type = checker_infer_type(checker, node.var_decl_init);
+            if checker_type_contains_pinned_field(checker, &init_type) != 0 {
+                checker_report_frame_move_error(checker, node.var_decl_init, "init" as &byte);
+            }
         } else {
             // 先递归检查初始化表达式本身（包括函数调用、运算符等的类型检查）
             // 注意：如果表达式包含赋值（如 node.field = null），可能会报告错误，但我们应该继续
@@ -139,6 +152,12 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_check_expr_type(checker, node.var_decl_init, copy_type(&var_type));
             // 然后推断类型并比较
             const init_type: Type = checker_infer_type(checker, node.var_decl_init);
+
+            // Pinned 类型检查：禁止按值初始化包含 async frame 的类型
+            if checker_type_contains_pinned_field(checker, &init_type) != 0 {
+                checker_report_frame_move_error(checker, node.var_decl_init, "init" as &byte);
+                return 0;
+            }
             
             // 如果类型推断失败（TypeKind.TYPE_VOID），但变量类型是指针类型，可能是 null 赋值
             // 这种情况下允许通过，因为 null 可能被推断为 TypeKind.TYPE_VOID
@@ -940,6 +959,16 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 // 字段类型无效：放宽检查，允许通过（不报错）
                 // 这在编译器自举时很常见，因为类型推断可能失败或存在前向引用
                 // 不再报告错误，直接允许通过
+                i = i + 1;
+                continue;
+            }
+            // Pinned 类型检查：禁止结构体字段按值包含 async frame
+            if checker_type_owns_async_frame(checker, &field_type) != 0 {
+                checker_report_error_with_note(checker, field,
+                    "struct field cannot contain @frame by value" as &byte,
+                    field,
+                    "use a pointer or reference to the frame type instead" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
                 i = i + 1;
                 continue;
             }

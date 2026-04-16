@@ -1,6 +1,6 @@
 # Uya 异步量产 TODO
 
-**最后更新**：2026-04-12（epoll 常量修复 + block_on 空等 workaround，make check 779/779 全绿）  
+**最后更新**：2026-04-16（`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）  
 **目标范围**：Linux + C99 后端 + `@async_fn` / `@await` / `Future` / `Poll` / `Waker` + `AsyncFd` / `LinuxEpoll`，优先保障 DNS、HTTP/1.1、HTTPS 客户端主链路达到可量产状态。
 
 ## 量产定义
@@ -55,7 +55,7 @@
   - 位置：`lib/libc/syscall.uya`、`lib/syscall/linux.uya`。
   - 根因：`EPOLL_CTL_MOD` 被错误定义为 `2`（实际应为 `3`），`EPOLL_CTL_DEL` 被错误定义为 `3`（实际应为 `2`）。这导致 `LinuxEpoll.register` 在尝试 `MOD` 时实际执行了 `DEL`，`deregister` 在尝试 `DEL` 时实际执行了 `MOD`（events=0），造成 fd 在 epoll 中残留或事件丢失，引发 async 网络测试 timeout/失败。
   - 修复：交换两者定义，恢复为内核正确值（`ADD=1`、`DEL=2`、`MOD=3`）。
-  - 验收：`make check` 779/779 全绿，`test_http1_async_client`、`test_std_dns_async_transport`、`test_std_async_event_fd_reuse` 均通过。
+  - 验收：`make check` 全量通过，`test_http1_async_client`、`test_std_dns_async_transport`、`test_std_async_event_fd_reuse` 均通过。
 
 - [x] 修复 `LinuxEpoll.deregister` 使用 `null` 作为 epoll_event 指针。
   - 位置：`lib/std/async_event.uya`。
@@ -80,7 +80,7 @@
 - [x] 检查状态机堆分配与 fd 生命周期释放。
   - 覆盖：Ready、Error、Pending 后关闭、socket EOF、TLS handshake 失败。
   - 验收：`make check` 全量通过；30 分钟长时压测（`benchmarks/http_bench_async_epoll.uya` + `wrk -t4 -c100 -d1800s`）RSS 2460 KB / FD 105 完全平稳，无泄漏、无 use-after-free。
-  - 备注：2026-04-13 已将 `@async_fn` 的默认 `malloc(sizeof(struct uya_async_...))` 迁移为 per-function free list allocator，热路径不再直接 `malloc`；`release` 通过 vtable 递归保证 child future 先释放。详见 `docs/todo_async_frame_allocation.md`。
+  - 备注：当前默认路径已迁移为统一 `AsyncFramePool` + caller-owned inline，热路径不再直连 `malloc/free`；`release` 通过 vtable 递归保证 child future 先释放。详见 `docs/todo_async_frame_allocation.md`。
 
 ## P1：DNS / HTTP / HTTPS 主链路收敛
 
@@ -129,7 +129,7 @@
 
 - [x] `make b` 自举一致。
 - [x] `make check` 关键子集通过（`test_std_async_event`、`test_async_fd`、`test_std_async_scheduler`、`test_std_dns_async_transport`、`test_http1_async_client`）。
-- [x] `make check` **779/779 全部通过**（2026-04-12 修复 epoll 常量错位 + block_on 空等 workaround 后）。
+- [x] `make check` 全量通过（2026-04-14 `@frame(foo)` + pinned 语义实现后）。
 - [x] `make release-dirty` 核心 async 网络测试通过；无外网环境下网络测试明确 skip。
 - [x] `./tests/run_programs_parallel.sh --uya --c99 test_async_bug_b_sync_between.uya` 通过。
 - [x] `./tests/run_programs_parallel.sh --uya --c99 test_http1_async_client.uya` 通过。
@@ -146,7 +146,7 @@
 3. ~~收敛 DNS / HTTP / HTTPS 主链路，移除或正式化绕过方案。~~ ✅ 已完成（超时策略启用，变量提升 bug 修复）
 4. ~~压测、release 闸门、文档同步。~~ ✅ 已完成
 
-## 当前状态摘要（2026-04-12 最终版）
+## 当前状态摘要（截至 2026-04-16）
 
 **已完成**：
 - ✅ P0 编译器 async lowering 稳定化全部完成（含变量提升 bug 修复）
@@ -158,9 +158,9 @@
 - ✅ HTTP/1.1 主链路（content-length、read-until-eof、chunked 同步读取 + chunked header 异步流式读取）
 - ✅ HTTPS 生产环境基础能力（证书验证框架、系统根证书加载）
 - ✅ DNS 异步查询（上层 `@async_fn` 化，底层保留手工 I/O 状态机）
-- ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`）
+- ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`、`AsyncFramePool`）
 - ✅ HTTP/DNS/TLS timeout 策略实现并启用（`http_check_deadline` 已取消注释）
-- ✅ `make check` **779/779 全部通过**
+- ✅ `make check` 全量通过
 
 **已知限制（已文档化，纳入 P2）**：
 - 跨平台 async 后端（macOS kqueue / Windows IOCP）
@@ -256,7 +256,7 @@
 
 - `make b`（自举）：✅ 通过
 - `make tests`：✅ 核心 async 网络测试通过（`test_http1_async_client`、`test_std_dns_async_transport`、`test_https_loopback` 等）
-- `make check`：✅ **779/779 全部通过**（2026-04-12 修复 epoll 常量 + block_on workaround 后）
+- `make check`：✅ 全量通过（2026-04-14 `@frame(foo)` + pinned 语义实现后）
 
 ### git 状态
 

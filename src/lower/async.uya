@@ -1,0 +1,244 @@
+// src/lower/async.uya - 异步状态机 lowering 分析层
+// 职责：在 C99 codegen 之前对 @async_fn 做 AST 级别的分析与决策。
+// 当前包含：保守逃逸分析、async 调用识别。
+
+extern fn resolve_async_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &ASTNode;
+
+// 使用 checker/async_frame_meta.uya 中已定义的 AsyncFrameEscapeClass
+// ESCAPE_STACK_CANDIDATE / ESCAPE_POOL_REQUIRED / ESCAPE_HEAP_DEBUG_ONLY
+
+// 判断表达式是否为对 @async_fn 的调用
+export fn async_lower_expr_is_async_call(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const callee: &ASTNode = node.call_expr_callee;
+    if callee == null { return 0; }
+    const fn_decl: &ASTNode = resolve_async_callee_fn_decl(checker, callee);
+    if fn_decl != null { return 1; }
+    return 0;
+}
+
+// 保守逃逸分析：遍历函数体 AST，发现 async 调用出现在非 @await 上下文时标记为逃逸
+export fn async_lower_analyze_escape_node(checker: &TypeChecker, node: &ASTNode, in_await: i32, escaped: &i32) void {
+    if node == null || escaped == null || *escaped != 0 { return; }
+
+    if node.type == ASTNodeType.AST_AWAIT_EXPR {
+        if node.await_expr_operand != null {
+            async_lower_analyze_escape_node(checker, node.await_expr_operand, 1, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_TRY_EXPR {
+        if node.try_expr_operand != null {
+            async_lower_analyze_escape_node(checker, node.try_expr_operand, in_await, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        if in_await == 0 && async_lower_expr_is_async_call(checker, node) != 0 {
+            *escaped = 1;
+            return;
+        }
+        if node.call_expr_callee != null {
+            async_lower_analyze_escape_node(checker, node.call_expr_callee, 0, escaped);
+            if *escaped != 0 { return; }
+        }
+        if node.call_expr_args != null {
+            var i: i32 = 0;
+            while i < node.call_expr_arg_count {
+                async_lower_analyze_escape_node(checker, node.call_expr_args[i], 0, escaped);
+                if *escaped != 0 { return; }
+                i = i + 1;
+            }
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            async_lower_analyze_escape_node(checker, node.block_stmts[i], 0, escaped);
+            if *escaped != 0 { return; }
+            i = i + 1;
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_condition != null {
+            async_lower_analyze_escape_node(checker, node.if_stmt_condition, 0, escaped);
+        }
+        if *escaped == 0 && node.if_stmt_then_branch != null {
+            async_lower_analyze_escape_node(checker, node.if_stmt_then_branch, 0, escaped);
+        }
+        if *escaped == 0 && node.if_stmt_else_branch != null {
+            async_lower_analyze_escape_node(checker, node.if_stmt_else_branch, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        if node.while_stmt_condition != null {
+            async_lower_analyze_escape_node(checker, node.while_stmt_condition, 0, escaped);
+        }
+        if *escaped == 0 && node.while_stmt_body != null {
+            async_lower_analyze_escape_node(checker, node.while_stmt_body, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        if node.for_stmt_range_start != null {
+            async_lower_analyze_escape_node(checker, node.for_stmt_range_start, 0, escaped);
+        }
+        if *escaped == 0 && node.for_stmt_range_end != null {
+            async_lower_analyze_escape_node(checker, node.for_stmt_range_end, 0, escaped);
+        }
+        if *escaped == 0 && node.for_stmt_array != null {
+            async_lower_analyze_escape_node(checker, node.for_stmt_array, 0, escaped);
+        }
+        if *escaped == 0 && node.for_stmt_body != null {
+            async_lower_analyze_escape_node(checker, node.for_stmt_body, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        if node.return_stmt_expr != null {
+            async_lower_analyze_escape_node(checker, node.return_stmt_expr, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if node.assign_src != null {
+            async_lower_analyze_escape_node(checker, node.assign_src, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        if node.var_decl_init != null {
+            async_lower_analyze_escape_node(checker, node.var_decl_init, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if node.binary_expr_left != null {
+            async_lower_analyze_escape_node(checker, node.binary_expr_left, 0, escaped);
+        }
+        if *escaped == 0 && node.binary_expr_right != null {
+            async_lower_analyze_escape_node(checker, node.binary_expr_right, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        if node.unary_expr_operand != null {
+            async_lower_analyze_escape_node(checker, node.unary_expr_operand, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        if node.member_access_object != null {
+            async_lower_analyze_escape_node(checker, node.member_access_object, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        if node.array_access_array != null {
+            async_lower_analyze_escape_node(checker, node.array_access_array, 0, escaped);
+        }
+        if *escaped == 0 && node.array_access_index != null {
+            async_lower_analyze_escape_node(checker, node.array_access_index, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        if node.cast_expr_expr != null {
+            async_lower_analyze_escape_node(checker, node.cast_expr_expr, 0, escaped);
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_STRUCT_INIT {
+        if node.struct_init_field_values != null {
+            var i: i32 = 0;
+            while i < node.struct_init_field_count {
+                async_lower_analyze_escape_node(checker, node.struct_init_field_values[i], 0, escaped);
+                if *escaped != 0 { return; }
+                i = i + 1;
+            }
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_ARRAY_LITERAL {
+        if node.array_literal_elements != null {
+            var i: i32 = 0;
+            while i < node.array_literal_element_count {
+                async_lower_analyze_escape_node(checker, node.array_literal_elements[i], 0, escaped);
+                if *escaped != 0 { return; }
+                i = i + 1;
+            }
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_TUPLE_LITERAL {
+        if node.tuple_literal_elements != null {
+            var i: i32 = 0;
+            while i < node.tuple_literal_element_count {
+                async_lower_analyze_escape_node(checker, node.tuple_literal_elements[i], 0, escaped);
+                if *escaped != 0 { return; }
+                i = i + 1;
+            }
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_MATCH_EXPR {
+        if node.match_expr_expr != null {
+            async_lower_analyze_escape_node(checker, node.match_expr_expr, 0, escaped);
+        }
+        if *escaped == 0 && node.match_expr_arms != null {
+            var i: i32 = 0;
+            while i < node.match_expr_arm_count {
+                if node.match_expr_arms[i].result_expr != null {
+                    async_lower_analyze_escape_node(checker, node.match_expr_arms[i].result_expr, 0, escaped);
+                    if *escaped != 0 { return; }
+                }
+                i = i + 1;
+            }
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        if node.catch_expr_operand != null {
+            async_lower_analyze_escape_node(checker, node.catch_expr_operand, 0, escaped);
+        }
+        if *escaped == 0 && node.catch_expr_catch_block != null {
+            async_lower_analyze_escape_node(checker, node.catch_expr_catch_block, 0, escaped);
+        }
+        return;
+    }
+}
+
+// 对函数体做逃逸分析，返回建议的 escape class
+export fn async_lower_analyze_escape_class(checker: &TypeChecker, fn_body: &ASTNode) AsyncFrameEscapeClass {
+    if fn_body == null { return AsyncFrameEscapeClass.ESCAPE_POOL_REQUIRED; }
+    var escaped: i32 = 0;
+    async_lower_analyze_escape_node(checker, fn_body, 0, &escaped);
+    if escaped != 0 {
+        return AsyncFrameEscapeClass.ESCAPE_POOL_REQUIRED;
+    }
+    return AsyncFrameEscapeClass.ESCAPE_STACK_CANDIDATE;
+}

@@ -55,11 +55,13 @@ const PTHREAD_JOINSTATE_DETACHED: i32 = 3;
 const PTHREAD_DESTRUCTOR_ITERATIONS: i32 = 4;
 
 // 通过 @asm 间接调用函数指针 start_fn(start_arg)，x86-64 调用约定：rdi=arg，返回值在 rax
+// 注意：手写 call 前要把栈补到 SysV ABI 期望的 16-byte call-site 对齐；
+// 否则被调用函数在 -O2/-O3 下可能因为假定栈对齐成立而崩溃。
 // 输出用 usize 存指针，再转回 &void（@asm 输出仅允许整数）
 fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
     var r: usize = 0;
     @asm {
-        "movq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\tmovq %%rax, %0"
+        "subq $8, %%rsp\n\tmovq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\taddq $8, %%rsp\n\tmovq %%rax, %0"
         (start_fn, start_arg, -> r);
     } clobbers = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory"];
     return r as &void;
@@ -192,7 +194,7 @@ export struct pthread_cond_t {
 }
 
 // 保护条件变量内部状态的全局 mutex
-var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
+var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
 
 // 取消状态已迁移到 descriptor（cancel_state / cancel_type / cancel_pending）
 
@@ -1529,7 +1531,7 @@ export extern "libc" fn pthread_barrier_init(barrier: &pthread_barrier_t, attr: 
     barrier.arrived = 0;
     barrier.generation = 0;
     barrier.mutex = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
-    barrier.cond = pthread_cond_t{ waiters: 0, seq: 0 };
+    barrier.cond = pthread_cond_t{ waiters: 0, seq: 0, clock: 0 };
     
     return 0;
 }

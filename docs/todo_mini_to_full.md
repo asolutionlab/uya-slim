@@ -34,7 +34,7 @@
 | **v0.5.7** | 调试打印 | ✅ 完成 | @print/@println 内置函数 |
 | **v0.5.0** | 内存安全证明 | ✅ 完成 | 约束系统 + 符号执行 |
 | **v0.6.0** | 标准库重构 | 🚧 进行中 | std 使用现代特性，libc 薄封装 |
-| **v0.7.0** | 异步完善 | 🚧 进行中 | 基础状态机/运行时已打通，完整调度与编译期验证待补齐 |
+| **v0.7.0** | 异步完善 | 🚧 进行中 | 基础状态机/运行时已打通，剩余泛型队列、取消与跨平台扩展 |
 
 ---
 
@@ -844,11 +844,11 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - 已完成最小闭环：`@async_fn` / `try @await`、`Future<!T>` 的 `poll` 状态机、单/多 `@await`、基础错误传播、`block_on`
 - **循环**：`while` / `if` 内含 await 的通用 lowering；**范围 `for` 与定长数组 `for` 内含 await**（`tests/test_async_for_await.uya`）
 - 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
-- 与最终目标仍有差距：状态机当前仍通过 `malloc` 分配，`Scheduler` 仍是单任务轮询模型，`Waker` 仅提供 `wake/reset/is_woken` 最小语义，非阻塞 I/O/Send/Sync 证明尚未完成
+- 与最终目标仍有差距：泛型 `TaskQueue`、完整取消语义、跨线程唤醒与跨平台后端仍待完善
 
 **已知语义缺口（更新至 2026-04）**：
 - **已缓解**：连续 `while` 内多 await（Bug A）、`return try @await`（Bug C）、**范围/定长数组 `for` 内 await** 等已由通用段发射路径覆盖；见 `tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 与 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)。
-- **仍须关注**：多个 `try @await` **循环之间**的同步语句若未完整进入状态机，仍可能导致类似 HTTP **Empty reply**（Bug B，见 `tests/test_async_bug_b_sync_between.uya.pending`、[todo_async_loop_await.md](todo_async_loop_await.md)）。
+- **已转正**：多个 `try @await` **循环之间**的同步语句已由 `tests/test_async_bug_b_sync_between.uya` 复核通过，不再是当前阻塞项；相关历史背景见 [todo_async_loop_await.md](todo_async_loop_await.md)。
 - `benchmarks/http_bench_async_epoll.uya`：`make check` 中的 verify 脚本多仅保证 **C99 可编译**；**端到端 `curl` 成功**依赖 await 间及循环间语句完整发射。
 - 服务只监听 **IPv4 `127.0.0.1`** 时，`curl http://localhost:…` 先试 **IPv6 `::1`** 出现「拒绝连接」属预期，与 Empty reply 不是同一类问题。
 
@@ -2584,7 +2584,7 @@ interface IReadWriter {
 
 ### 部分完成的特性（1 项）
 
-- 🔄 **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 最小运行时已完成；编译期大小计算与完整调度待完善）
+- ✅ **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 核心闭环已完成；后续 P2 仅剩泛型 TaskQueue / 取消 / 跨平台扩展）
 
 ### 待实现的核心特性（3 项）
 
@@ -2843,7 +2843,7 @@ interface IReadWriter {
 
 ### v0.4.0（目标：2026 Q2）- 异步里程碑
 - ✅ 内存安全证明（v0.48 已完成：编译期证明+运行时检查可选）
-- 🎯 异步编程完整运行时（基础状态机与最小运行时已完成）
+- 🎯 异步编程完整运行时（基础状态机与最小运行时已完成，P2 扩展待做）
 - 🎯 并发安全保证
 - 🎯 标准库：collections + async
 

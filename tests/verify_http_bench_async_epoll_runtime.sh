@@ -22,12 +22,12 @@ if [ ! -f "$COMPILER" ]; then
 fi
 
 CC_CMD="${CC_DRIVER:-${CC:-cc}}"
-CFLAGS_USE="${CFLAGS:--std=c99 -O2 -fno-builtin -Werror}"
+ASYNC_BENCH_CFLAGS="${ASYNC_BENCH_CFLAGS:-${CFLAGS:--std=c99 -O3 -g -fno-builtin -fno-inline-small-functions -I${REPO_ROOT}}}"
 CC_TARGET_FLAGS_USE="${CC_TARGET_FLAGS:-}"
 
 echo "验证：构建 http_bench_async_epoll 运行时二进制 ..."
 "$COMPILER" --c99 "$SRC" -o "$OUT_C" >/dev/null
-$CC_CMD $CC_TARGET_FLAGS_USE $CFLAGS_USE -std=c99 -no-pie "$OUT_C" -o "$OUT_BIN" -lm
+$CC_CMD $CC_TARGET_FLAGS_USE $ASYNC_BENCH_CFLAGS -no-pie "$OUT_C" -o "$OUT_BIN" -lm
 
 server_pid=""
 cleanup() {

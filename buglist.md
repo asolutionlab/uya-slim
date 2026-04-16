@@ -110,7 +110,7 @@
   - 修复关联：
     1. `@async_fn` while true 终态死锁修复（`d4511335` 系列提交）消除了 fallthrough UB
     2. async frame per-function free list 分配器修复了潜在的 use-after-free 和 double-free
-  - 后续观察：`-O2` 已恢复正常，若后续在更复杂场景下复现，再单独 reopen 并做 ASan/UBSan 深度排查
+  - 后续观察：`-O2` 已恢复正常，若后续在更复杂场景下复现，再单独 reopen 并做 ASan/UBSan 深度排查。注意：`benchmarks/run_bench.sh` 使用 `-no-pie -O2 -fno-builtin` 编译标志可稳定通过压测；若使用不带 `-no-pie` 的自定义 CFLAGS，多线程 benchmark 可能因 PIC/PIE 与自定义 pthread 实现的交互出现 segfault。
   - 相关文件：`src/codegen/c99/function.uya`、`benchmarks/http_bench_async_epoll.uya`
 
 - [ ] **P2 / 中：`@async_fn` 的 `while true` 回跳逻辑导致生成代码体积膨胀**

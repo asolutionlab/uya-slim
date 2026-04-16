@@ -13,6 +13,7 @@
 use std.async;
 use std.async_event;
 use libc.mem;
+use libc.stdio;
 use libc.syscall;
 use libc.errno;
 use libc.signal;
@@ -565,9 +566,11 @@ struct BenchContext {
 
     fn setup_listen_and_epoll(self: &Self) !void {
         const sock: !i32 = sys_socket(2, 1, 6);
-        const lfd: i32 = sock catch {
+        if sock.error_id != 0 {
+            perror("setup socket failed" as &const byte);
             return sock as! void;
-        };
+        }
+        const lfd: i32 = sock.value;
         self.listen_fd = lfd;
         var one: i32 = 1;
         _ = try sys_setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4);
@@ -587,9 +590,10 @@ struct BenchContext {
         };
         _ = try sys_fcntl(lfd, F_SETFL, flags | O_NONBLOCK);
         const ep: !LinuxEpoll = linux_epoll_create(0);
-        self.epoll = ep catch {
+        if ep.error_id != 0 {
             return ep as! void;
-        };
+        }
+        self.epoll = ep.value;
         self.listen_waker = Waker{};
         const loop: EventLoop = self.epoll;
         const reg_result: !i32 = loop.register(lfd, EventKind.Readable({}), &self.listen_waker);
@@ -600,9 +604,10 @@ struct BenchContext {
 
     fn run_once_single(self: &Self) i32 {
         const sock: !i32 = sys_socket(2, 1, 6);
-        const lfd: i32 = sock catch {
+        if sock.error_id != 0 {
             return 1;
-        };
+        }
+        const lfd: i32 = sock.value;
         var one: i32 = 1;
         _ = sys_setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4);
         var addr: [byte: 16] = [];
@@ -625,11 +630,11 @@ struct BenchContext {
         };
         _ = sys_close(lfd) catch {};
         const ep_r: !LinuxEpoll = linux_epoll_create(0);
-        const ep0: LinuxEpoll = ep_r catch {
+        if ep_r.error_id != 0 {
             self.close_client_fd_quiet(cfd);
             return 1;
-        };
-        self.epoll = ep0;
+        }
+        self.epoll = ep_r.value;
         self.slots[0].cfd = cfd;
         self.slots[0].active = 1;
         self.slots[0].epoll_fd = 0;
@@ -658,19 +663,25 @@ struct BenchContext {
     },
 }
 
+var g_bench_slot_cap: i32 = BENCH_THREAD_COUNT;
+var g_worker_contexts: [BenchContext: BENCH_MAX_THREADS as usize] = [];
+
 use libc.pthread;
 
 fn bench_thread_slot_cap(arg: &void) i32 {
-    if arg == null {
-        return BENCH_THREAD_COUNT;
-    }
-    return *(arg as &i32);
+    _ = arg;
+    return g_bench_slot_cap;
 }
 
 fn bench_worker_thread(_arg: &void) &void {
-    var ctx_storage: [usize: BENCH_CONTEXT_STACK_BYTES / @size_of(usize)] = [];
-    _ = memset(&ctx_storage[0] as *byte, 0, BENCH_CONTEXT_STACK_BYTES);
-    const ptr: &BenchContext = @ptr_from_usize(@usize_from_ptr(&ctx_storage[0] as &void)) as &BenchContext;
+    if _arg == null {
+        return null as &void;
+    }
+    const worker_id: i32 = *(_arg as &i32);
+    if worker_id < 0 || worker_id >= BENCH_MAX_THREADS {
+        return null as &void;
+    }
+    const ptr: &BenchContext = &g_worker_contexts[worker_id as usize];
     const slot_cap: i32 = bench_thread_slot_cap(_arg);
     ptr.slot_cap = slot_cap;
     _ = ptr.run();
@@ -1010,14 +1021,16 @@ export fn main() i32 {
     _ = signal(SIGPIPE, SIG_IGN as &void);
 
     var n_threads: i32 = argv_thread_count();
+    g_bench_slot_cap = n_threads;
     var threads: [pthread_t: BENCH_MAX_THREADS as usize] = [];
-    var thread_arg: i32 = n_threads;
+    var thread_ids: [i32: BENCH_MAX_THREADS as usize] = [];
     var i: i32 = 1;
     while i < n_threads && i < BENCH_MAX_THREADS {
         var attr: pthread_attr_t = pthread_attr_t{};
         _ = pthread_attr_init(&attr);
         _ = pthread_attr_setstacksize(&attr, BENCH_WORKER_STACK_BYTES);
-        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, &thread_arg as &void);
+        thread_ids[i as usize] = i;
+        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, &thread_ids[i as usize] as &void);
         _ = pthread_attr_destroy(&attr);
         if ret != 0 {
             return 1;
@@ -1025,7 +1038,8 @@ export fn main() i32 {
         i = i + 1;
     }
 
-    _ = bench_worker_thread(&thread_arg as &void);
+    thread_ids[0] = 0;
+    _ = bench_worker_thread(&thread_ids[0] as &void);
 
     i = 1;
     while i < n_threads && i < BENCH_MAX_THREADS {

@@ -88,7 +88,7 @@ fn c99_string_const_cache_store(codegen: &C99CodeGenerator, value: &byte, const_
 // split_mirror: 1=镜像分 TU（--split-c-dir 时默认开启）：uya_common.c + 按源路径镜像 .c（无 uya_part2.c）；0=uya_part1+part2
 // is_nostdlib: 1=使用 syscall，0=使用标准库
 // freestanding: 1=不包含头文件，0=按需包含头文件
-fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32, split_root: &byte, split_mirror: i32) i32 {
+fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32, split_root: &byte, split_mirror: i32, async_frame_heap_fallback: i32) i32 {
     if codegen == null || arena == null || module_name == null {
         return -1;
     }
@@ -328,6 +328,8 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
     codegen.is_nostdlib = is_nostdlib;
     // 初始化 stack_size
     codegen.stack_size = stack_size;
+    // 初始化 async frame heap fallback
+    codegen.async_frame_heap_fallback = async_frame_heap_fallback;
     // freestanding 模式：仅在 nostdlib 模式下启用（不包含任何标准库头文件）
     codegen.freestanding = is_nostdlib;
     // async 状态机参数捕获

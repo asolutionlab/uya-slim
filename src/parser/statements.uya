@@ -551,21 +551,38 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         }
         stmt.var_decl_type = type;
 
-        // 期望 '='
-        if parser_expect_var_init(parser, type) == null {
-            return null;
+        // @frame(...) 类型允许无初始化（由声明点负责分配/零初始化）
+        if type.type == ASTNodeType.AST_TYPE_FRAME {
+            if parser.current_token.type == TokenType.TOKEN_ASSIGN {
+                parser_consume(parser);  // 消费 '='
+                const saved_context: ParserContext = parser.context;
+                parser.context = ParserContext.PARSER_CONTEXT_VAR_INIT;
+                const init: &ASTNode = parser_parse_expression(parser);
+                parser.context = saved_context;
+                if init == null {
+                    return null;
+                }
+                stmt.var_decl_init = init;
+            } else {
+                stmt.var_decl_init = null;
+            }
+        } else {
+            // 期望 '='
+            if parser_expect_var_init(parser, type) == null {
+                return null;
+            }
+            
+            // 解析初始值表达式
+            // 设置上下文为变量初始化上下文，以便在解析表达式时正确区分结构体字面量和代码块
+            const saved_context: ParserContext = parser.context;
+            parser.context = ParserContext.PARSER_CONTEXT_VAR_INIT;
+            const init: &ASTNode = parser_parse_expression(parser);
+            parser.context = saved_context;  // 恢复上下文
+            if init == null {
+                return null;
+            }
+            stmt.var_decl_init = init;
         }
-        
-        // 解析初始值表达式
-        // 设置上下文为变量初始化上下文，以便在解析表达式时正确区分结构体字面量和代码块
-        const saved_context: ParserContext = parser.context;
-        parser.context = ParserContext.PARSER_CONTEXT_VAR_INIT;
-        const init: &ASTNode = parser_parse_expression(parser);
-        parser.context = saved_context;  // 恢复上下文
-        if init == null {
-            return null;
-        }
-        stmt.var_decl_init = init;
         
         // 期望 ';'
         if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {

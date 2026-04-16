@@ -1,6 +1,6 @@
 # Uya 语法速查手册（Quick Reference）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.44 同步（2026-04-02）
+> **版本**：与 [uya.md](./uya.md) 0.49.45 同步（2026-04-14）
 
 本文档是 Uya 语言的快速参考手册，包含精简语法定义、常用代码模式和速查表。
 
@@ -60,6 +60,7 @@ var y: i32 = 10;
 | **原子类型** | `atomic T` | `value: atomic i32` | 原子类型 |
 | **函数指针** | `fn(...) type` | `type Func = fn(i32, i32) i32;` | 函数指针类型 |
 | **SIMD 向量/掩码** | `@vector(T, N)`<br>`@mask(N)` | `type Vec4i32 = @vector(i32, 4);`<br>`const lt: @mask(4) = u < v;`<br>`const neg: Vec4i32 = -u;`<br>`const w: Vec4f32 = @vector.splat(1.0f32);`<br>`const chunk: @vector(u8,16) = @vector.load(&buf[i]);`<br>`@vector.store(&buf[0], w);`<br>`const mix: Vec4i32 = @vector.select(lt, a, b);`<br>`const s: i32 = @vector.reduce_add(u);`<br>`const p: i32 = @vector.reduce_mul(v);`<br>`const mn: i32 = @vector.reduce_min(m);`<br>`const mx: i32 = @vector.reduce_max(n);` | 向量算术/比较/位运算；整数向量 `%`；有符号整数向量 `+|`/`-|`/`*|`；整数向量 `+%`/`-%`/`*%`；一元 `-`（整数/浮点元素）、`~`（仅整数元素）；`@vector.splat` / **`@vector.load` / `@vector.store` / `@vector.select` / `@vector.reduce_add` / `@vector.reduce_mul` / `@vector.reduce_min` / `@vector.reduce_max`**（**0.49.33** / **0.49.34** / **0.49.35** / **0.49.36** / **0.49.38** / **0.49.39**；`load`/`select` 目标 `@vector` 由上下文确定；`store` 为 **`void`**；`reduce_add`/`reduce_mul`/`reduce_min`/`reduce_max` 返回元素标量） |
+| **异步帧类型** | `@frame(fn)`<br>`@frame(fn<T>)` | `var f: @frame(my_async_fn);`<br>`var f: @frame(generic_async<i32>);` | 暴露 `@async_fn` 的状态机帧类型；禁止按值移动/赋值/传参/返回；允许无初始化声明（**v0.9.3**） |
 
 ---
 

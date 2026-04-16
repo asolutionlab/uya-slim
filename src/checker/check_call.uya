@@ -283,26 +283,137 @@ fn checker_record_reachable_call(checker: &TypeChecker, callee: &ASTNode) void {
     }
 }
 
+fn checker_async_frame_fn_name_from_struct_name(checker: &TypeChecker, struct_name: &byte) &byte {
+    if checker == null || struct_name == null {
+        return null;
+    }
+    const prefix: &byte = "uya_async_";
+    var i: i32 = 0;
+    while i < 10 {
+        if struct_name[i] == 0 as byte || struct_name[i] != prefix[i] {
+            return null;
+        }
+        i = i + 1;
+    }
+    return &struct_name[10] as &byte;
+}
+
+fn checker_async_frame_fn_decl_from_type(checker: &TypeChecker, frame_type: &Type) &ASTNode {
+    if checker == null || frame_type == null || checker.program_node == null {
+        return null;
+    }
+    if checker_is_async_frame_type(checker, frame_type) == 0 {
+        return null;
+    }
+    const fn_name: &byte = checker_async_frame_fn_name_from_struct_name(checker, frame_type.struct_name);
+    if fn_name == null {
+        return null;
+    }
+    return find_fn_decl_from_program(checker.program_node, fn_name);
+}
+
+fn checker_async_frame_poll_return_type(checker: &TypeChecker, fn_decl: &ASTNode) Type {
+    if checker == null || fn_decl == null || fn_decl.fn_decl_return_type == null {
+        return make_void_type();
+    }
+    const ret_type: &ASTNode = fn_decl.fn_decl_return_type;
+    var poll_payload: Type = make_void_type();
+    if ret_type.type == ASTNodeType.AST_TYPE_NAMED && ret_type.type_named_name != null &&
+        str_equals(ret_type.type_named_name, "Future" as *byte) != 0 &&
+        ret_type.type_named_type_arg_count == 1 && ret_type.type_named_type_args != null &&
+        ret_type.type_named_type_args[0] != null {
+        poll_payload = type_from_ast(checker, ret_type.type_named_type_args[0]);
+    } else if ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+        ret_type.type_error_union_payload_type != null {
+        const payload: &ASTNode = ret_type.type_error_union_payload_type;
+        if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_name != null &&
+            str_equals(payload.type_named_name, "Future" as *byte) != 0 &&
+            payload.type_named_type_arg_count == 1 && payload.type_named_type_args != null &&
+            payload.type_named_type_args[0] != null {
+            poll_payload = type_from_ast(checker, payload.type_named_type_args[0]);
+        }
+    }
+    if poll_payload.kind == TypeKind.TYPE_VOID {
+        return make_void_type();
+    }
+    var result: Type = make_named_type(TypeKind.TYPE_UNION, "Poll" as *byte);
+    const ta: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+    if ta == null {
+        return make_void_type();
+    }
+    ta[0] = copy_type(&poll_payload);
+    result.union_type_args = ta;
+    result.union_type_arg_count = 1;
+    return result;
+}
+
+fn checker_async_frame_check_call(checker: &TypeChecker, node: &ASTNode, frame_type: &Type, method_name: &byte) Type {
+    var result: Type = make_void_type();
+    if checker == null || node == null || frame_type == null || method_name == null {
+        return result;
+    }
+    const fn_decl: &ASTNode = checker_async_frame_fn_decl_from_type(checker, frame_type);
+    if fn_decl == null {
+        return result;
+    }
+    if str_equals(method_name, "start" as *byte) != 0 {
+        if node.call_expr_arg_count != fn_decl.fn_decl_param_count {
+            checker_report_error(checker, node, "@frame.start 实参个数不匹配" as *byte);
+            return result;
+        }
+        var j: i32 = 0;
+        while j < node.call_expr_arg_count {
+            const param_type: Type = type_from_ast(checker, fn_decl.fn_decl_params[j].var_decl_type);
+            if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "@frame.start" as *byte, j + 1, copy_type(&param_type));
+                return result;
+            }
+            j = j + 1;
+        }
+        var pi_pin: i32 = 0;
+        while pi_pin < node.call_expr_arg_count {
+            const arg: &ASTNode = node.call_expr_args[pi_pin];
+            if arg != null {
+                const arg_type: Type = checker_infer_type(checker, arg);
+                if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                    checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                    return result;
+                }
+            }
+            pi_pin = pi_pin + 1;
+        }
+        return make_void_type();
+    }
+    if str_equals(method_name, "poll" as *byte) != 0 {
+        if node.call_expr_arg_count != 1 {
+            checker_report_error(checker, node, "@frame.poll 需要恰好一个 waker 参数" as *byte);
+            return result;
+        }
+        const waker_inner: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if waker_inner == null {
+            return result;
+        }
+        waker_inner[0] = make_named_type(TypeKind.TYPE_STRUCT, "Waker" as *byte);
+        const waker_ref: Type = make_pointer_type(checker.arena, waker_inner, 0);
+        if checker_check_expr_type(checker, node.call_expr_args[0], copy_type(&waker_ref)) == 0 {
+            checker_report_param_mismatch_by_index(checker, node.call_expr_args[0], "@frame.poll" as *byte, 1, copy_type(&waker_ref));
+            return result;
+        }
+        return checker_async_frame_poll_return_type(checker, fn_decl);
+    }
+    if str_equals(method_name, "stop" as *byte) != 0 {
+        if node.call_expr_arg_count != 0 {
+            checker_report_error(checker, node, "@frame.stop 不接受参数" as *byte);
+            return result;
+        }
+        return make_void_type();
+    }
+    return result;
+}
+
 fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        union_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-        struct_type_args: null,
-        struct_type_arg_count: 0,
-        union_type_args: null,
-        union_type_arg_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR {
         return result;
@@ -632,8 +743,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                                 return result;
                             }
                         }
-                        result.kind = TypeKind.TYPE_UNION;
-                        result.union_name = union_decl.union_decl_name;
+                        result = make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
                         if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_type_arg_count > 0 && object.type_named_type_args != null {
                             const count: i32 = object.type_named_type_arg_count;
                             const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
@@ -658,6 +768,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         var object_type: Type = checker_infer_type(checker, callee.member_access_object);
         if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
             object_type = object_type.pointer_to[0];
+        }
+        if checker_is_async_frame_type(checker, &object_type) != 0 && method_name != null {
+            const frame_result: Type = checker_async_frame_check_call(checker, node, &object_type, method_name);
+            if frame_result.kind != TypeKind.TYPE_VOID || str_equals(method_name, "start" as *byte) != 0 ||
+                str_equals(method_name, "poll" as *byte) != 0 || str_equals(method_name, "stop" as *byte) != 0 {
+                return frame_result;
+            }
         }
         if object_type.kind == TypeKind.TYPE_INTERFACE && object_type.interface_name != null && checker.program_node != null {
             if method_name != null {
@@ -702,6 +819,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         return result;
                     }
                     j = j + 1;
+                }
+                var pi_pin: i32 = 0;
+                while pi_pin < node.call_expr_arg_count {
+                    const arg: &ASTNode = node.call_expr_args[pi_pin];
+                    if arg != null {
+                        const arg_type: Type = checker_infer_type(checker, arg);
+                        if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                            checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                            return result;
+                        }
+                    }
+                    pi_pin = pi_pin + 1;
                 }
                 return type_from_ast(checker, m.fn_decl_return_type);
             }
@@ -806,6 +935,19 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         j = j + 1;
                     }
                     
+                    // Pinned 参数检查
+                    var pi_pin: i32 = 0;
+                    while pi_pin < node.call_expr_arg_count {
+                        const arg: &ASTNode = node.call_expr_args[pi_pin];
+                        if arg != null {
+                            const arg_type: Type = checker_infer_type(checker, arg);
+                            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                                checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                                return result;
+                            }
+                        }
+                        pi_pin = pi_pin + 1;
+                    }
                     // 返回替换后的返回类型
                     const return_type: Type = type_from_ast(checker, m.fn_decl_return_type);
                     return substitute_generic_type(checker, return_type,
@@ -828,6 +970,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         return result;
                     }
                     j = j + 1;
+                }
+                var pi_pin: i32 = 0;
+                while pi_pin < node.call_expr_arg_count {
+                    const arg: &ASTNode = node.call_expr_args[pi_pin];
+                    if arg != null {
+                        const arg_type: Type = checker_infer_type(checker, arg);
+                        if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                            checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                            return result;
+                        }
+                    }
+                    pi_pin = pi_pin + 1;
                 }
                 return type_from_ast(checker, m.fn_decl_return_type);
             } else {
@@ -864,6 +1018,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                             return result;
                         }
                         j = j + 1;
+                    }
+                    var pi_pin: i32 = 0;
+                    while pi_pin < node.call_expr_arg_count {
+                        const arg: &ASTNode = node.call_expr_args[pi_pin];
+                        if arg != null {
+                            const arg_type: Type = checker_infer_type(checker, arg);
+                            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                                checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                                return result;
+                            }
+                        }
+                        pi_pin = pi_pin + 1;
                     }
                     return type_from_ast(checker, m_fallback.fn_decl_return_type);
                 }
@@ -1149,6 +1315,20 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
         i = i + 1;
     }
+
+    // Pinned 类型检查：禁止按值传递包含 async frame 的参数
+    var pi: i32 = 0;
+    while pi < check_count {
+        const arg: &ASTNode = node.call_expr_args[pi];
+        if arg != null {
+            const arg_type: Type = checker_infer_type(checker, arg);
+            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                return result;
+            }
+        }
+        pi = pi + 1;
+    }
     
     return sig.return_type;
 }
@@ -1158,19 +1338,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
 // 返回：字段类型（如果检查失败返回TYPE_VOID）
 fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_MEMBER_ACCESS {
         return result;
@@ -1201,6 +1369,21 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
         }
         return object_type.tuple_element_types[idx];
     }
+    if checker_is_async_frame_type(checker, &object_type) != 0 {
+        const method_name: &byte = node.member_access_field_name;
+        if method_name != null {
+            if str_equals(method_name, "start" as *byte) != 0 || str_equals(method_name, "stop" as *byte) != 0 {
+                return make_void_type();
+            }
+            if str_equals(method_name, "poll" as *byte) != 0 {
+                const fn_decl: &ASTNode = checker_async_frame_fn_decl_from_type(checker, &object_type);
+                if fn_decl != null {
+                    return checker_async_frame_poll_return_type(checker, fn_decl);
+                }
+                return make_void_type();
+            }
+        }
+    }
     
     // T.member：对象是标识符且不在符号表中、且是枚举类型名时，允许访问并校验 member 为该枚举变体
     // （不依赖 object_type，因 ASTNodeType.AST_IDENTIFIER 对未解析标识符统一返回 TypeKind.TYPE_VOID）
@@ -1217,9 +1400,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                     while i < enum_decl.enum_decl_variant_count {
                         if enum_decl.enum_decl_variants[i].name != null &&
                             str_equals(enum_decl.enum_decl_variants[i].name, field_name) != 0 {
-                            result.kind = TypeKind.TYPE_ENUM;
-                            result.enum_name = obj.identifier_name;
-                            return result;
+                            return make_named_type(TypeKind.TYPE_ENUM, obj.identifier_name);
                         }
                         i = i + 1;
                     }
@@ -1245,9 +1426,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                     if imp.module_name != null && strcmp(imp.module_name as *byte, "std" as *byte) == 0 {
                         const builtin_enum_name: &byte = std_cfg_selector_enum_name(node.member_access_field_name);
                         if builtin_enum_name != null {
-                            result.kind = TypeKind.TYPE_ENUM;
-                            result.enum_name = builtin_enum_name;
-                            return result;
+                            return make_named_type(TypeKind.TYPE_ENUM, builtin_enum_name);
                         }
                     }
                     break;
@@ -1315,22 +1494,20 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
         // 常见字段：struct_decl_fields, fn_decl_params, program_decls 等
         if field_name != null {
             // 对于数组字段，返回指针类型（&ASTNode）
-            if str_equals(field_name, "struct_decl_fields" as *byte) != 0 ||
+                if str_equals(field_name, "struct_decl_fields" as *byte) != 0 ||
                 str_equals(field_name, "fn_decl_params" as *byte) != 0 ||
                 str_equals(field_name, "program_decls" as *byte) != 0 ||
                 str_equals(field_name, "call_expr_args" as *byte) != 0 ||
                 str_equals(field_name, "array_literal_elements" as *byte) != 0 ||
                 str_equals(field_name, "struct_init_field_values" as *byte) != 0 {
                 // 返回 &ASTNode 类型（数组元素类型）
-                result.kind = TypeKind.TYPE_POINTER;
                 // 注意：Uya 不支持指针运算，需要使用数组访问
                 const pointed_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
                 if pointed_type_ptr != null {
-                    pointed_type_ptr[0].kind = TypeKind.TYPE_STRUCT;
-                    pointed_type_ptr[0].struct_name = "ASTNode" as *byte;
-                    result.pointer_to = pointed_type_ptr;
+                    pointed_type_ptr[0] = make_named_type(TypeKind.TYPE_STRUCT, "ASTNode" as *byte);
+                    return make_pointer_type(checker.arena, pointed_type_ptr, 0);
                 }
-                return result;
+                return make_void_type();
             }
             // 对于其他字段，返回 void 类型（表示类型推断失败，但不报错）
             // 这样可以允许访问，但不会进行严格的类型检查
@@ -1350,7 +1527,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     }
     
     // 查找字段类型（支持泛型类型参数替换）
-    var field_type: Type = Type { kind: TypeKind.TYPE_VOID };
+    var field_type: Type = make_void_type();
     if object_type.struct_type_args != null && object_type.struct_type_arg_count > 0 {
         // 泛型结构体实例：使用类型参数替换
         field_type = find_struct_field_type_with_substitution(checker, struct_decl,

@@ -1,8 +1,9 @@
 # 栈优先的异步状态机帧分配设计
 
-**状态**：设计草案 → 第一阶段已实现  
-**最后更新**：2026-04-13  
+**状态**：设计草案 → `@frame(foo)` 类型构造器与 pinned 语义已实现  
+**最后更新**：2026-04-16  
 **相关文档**：
+- [async_frame_lifecycle_naming_design.md](async_frame_lifecycle_naming_design.md) - `frame_start/frame_stop` 与 `@frame.start/poll/stop` 生命周期命名
 - [std_async_design.md](std_async_design.md) - `Future<T>` / `Poll<T>` / `Waker` / `Scheduler` 现状
 - [async_coroutine_transform_design.md](async_coroutine_transform_design.md) - 通用 async lowering / await 段发射
 - [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md) - 现有 lowering 计划
@@ -13,13 +14,13 @@
 ## 1. 背景
 
 当前真 `@async_fn/@await` 的 lowering 会把 async frame 直接装箱到堆上。  
-在 `benchmarks/http_bench_async_epoll_await_simple.uya` 这类高频短连接 / keep-alive 压测里，生成的 C 代码会出现热路径 `malloc/free`，典型现象是：
+在 `benchmarks/http_bench_async_epoll_await_simple.uya` 这类高频短连接 / keep-alive 压测里，生成的 C 代码曾经会出现热路径 `malloc/free`，典型现象是：
 
 - CPU 占用下降
 - RSS 持续上涨
 - 性能远低于手写 `Future` / 手写状态机版本
 
-根因不是 `epoll` 本身，而是 `@async_fn` 的状态机帧目前仍然以“接口 + 堆对象”方式构造。
+根因不是 `epoll` 本身，而是 `@async_fn` 的状态机帧曾经以“接口 + 堆对象”方式构造。当前主分支已通过 `AsyncFramePool`、caller-owned inline 和 `@frame(foo)` 收敛了大部分热路径分配。
 
 ## 2. 关键约束
 
@@ -60,21 +61,25 @@
 - 让逃逸的 future 走固定池分配，而不是默认堆分配
 - 保留调试回退路径，便于定位生命周期问题
 
-## 3.5 实现状态（2026-04-13 更新）
+## 3.5 实现状态（2026-04-16 更新）
 
 **第一阶段已完成**：
 - `src/codegen/c99/function.uya` 的核心 lowering 改造完成。
-- 每个 `@async_fn` 生成独立的 per-function free list allocator（`_uya_alloc_<fn>` / `_uya_free_<fn>`）。
-- wrapper 函数（`foo(args...)`）的热路径不再直接 `malloc`，改为调用 `_alloc()`；仅在 free list 空时 fallback 到 `malloc`。
+- 热路径已切到统一 `AsyncFramePool` + caller-owned inline，不再以默认 heap 为主。
+- wrapper 函数（`foo(args...)`）的热路径不再直接 `malloc`，仅在 pool 空或显式调试 fallback 时才回退。
 - 为每个 `@async_fn` 生成 `uya_<fn>_release` 函数，并在 vtable 中填充 `release` 指针。
 - poll 函数中 await 完成后的 child future 清理，改为通过 vtable 调用 `release`，避免直接 `free`。
-- `make check` 780/780 通过，`make b` 自举验证通过。
+- `make check` / `make b` 验证通过。
 - `benchmarks/http_bench_async_epoll_await_simple.uya` 编译运行正常，`curl` 测试通过。
 
-**待第二阶段实现**：
-- caller-owned stack 内联：直接 `@await foo()` 时把 child frame 放进 parent frame 字段，彻底消除接口值 boxing。
-- 统一运行时 `AsyncFramePool` 集成（当前 `lib/std/async_frame.uya` 已存在，尚未与 codegen 完全对接）。
-- `@frame(foo)` 类型构造器及 checker 侧的 pinned 语义、逃逸分析、诊断信息。
+**第二阶段已完成（v0.9.3）**：
+- `@frame(foo)` 类型构造器及 checker 侧的 pinned 语义、诊断信息。
+- C99 codegen 为函数原型中的 `@frame` 参数/返回类型自动生成前向声明。
+
+**后续可继续推进**：
+- 更激进的逃逸分析，减少非 direct await 的池化路径。
+- 更细粒度的池策略与 size class 调优。
+- 更完整的调试/统计与跨平台适配。
 
 ## 4. 总体方案
 

@@ -1296,6 +1296,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token {
             // 异步编程（规范 §18）
             if str_equals_lexer(value, "async_fn" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "await" as &byte) != 0 { is_builtin = 1; }
+            if str_equals_lexer(value, "frame" as &byte) != 0 { is_builtin = 1; }
             // naked 函数（无 prologue/epilogue）
             if str_equals_lexer(value, "naked_fn" as &byte) != 0 { is_builtin = 1; }
             // 系统调用（规范 §20）
@@ -1315,13 +1316,15 @@ fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token {
             // SIMD 类型内建（@vector / @mask）
             if str_equals_lexer(value, "vector" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "mask" as &byte) != 0 { is_builtin = 1; }
+            // 函数对齐属性（@align(N)）
+            if str_equals_lexer(value, "align" as &byte) != 0 { is_builtin = 1; }
 
             if is_builtin != 0 {
                 return make_token(arena, TokenType.TOKEN_AT_IDENTIFIER, value, line, column);
             }
 
             // 未知的内置函数
-            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@va_copy、@src_name、@src_path、@src_line、@src_col、@func_name、@async_fn、@await、@naked_fn、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@mc_source、@syscall、@ptr_from_usize、@usize_from_ptr、@error_id、@print、@println、@asm、@asm_target、@vector、@mask\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@va_copy、@src_name、@src_path、@src_line、@src_col、@func_name、@async_fn、@await、@frame、@naked_fn、@align、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@mc_source、@syscall、@ptr_from_usize、@usize_from_ptr、@error_id、@print、@println、@asm、@asm_target、@vector、@mask\n" as *byte, value);
             return null;
         }
         return null;
