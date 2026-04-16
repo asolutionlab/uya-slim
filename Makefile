@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup backup-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -80,12 +80,16 @@ from-c:
 	@echo "从 C99 代码构建编译器 (from-c)"
 	@echo "=========================================="
 	@if [ ! -f bin/uya.c ]; then \
-		if [ -f backup/uya.c ]; then \
+		if [ -f backup/uya-hosted.c ]; then \
+			echo "bin/uya.c 不存在，使用 hosted 备份 backup/uya-hosted.c ..."; \
+			mkdir -p bin; \
+			cp backup/uya-hosted.c bin/uya.c; \
+		elif [ -f backup/uya.c ]; then \
 			echo "bin/uya.c 不存在，从备份恢复..."; \
 			mkdir -p bin; \
 			cp backup/uya.c bin/uya.c; \
 		else \
-			echo "错误: bin/uya.c 和 backup/uya.c 都不存在"; \
+			echo "错误: bin/uya.c、backup/uya-hosted.c 和 backup/uya.c 都不存在"; \
 			exit 1; \
 		fi \
 	fi
@@ -101,7 +105,7 @@ from-c:
 		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
 			&& [ "$$HOST_OS" = "macos" ]; then \
 			echo "错误: backup/uya.c 为 Linux nostdlib（含 x86_64 Linux _start），无法在 macOS 上 make from-c。"; \
-			echo "请从已构建的 hosted bin/uya 自举，或参见 docs/macos_hosted_smoke.md"; \
+			echo "请使用 '\''make backup-hosted-seed'\'' 生成本地 hosted 备份，或参见 docs/macos_hosted_smoke.md"; \
 			exit 1; \
 		fi; \
 		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
@@ -117,7 +121,7 @@ from-c:
 				-o bin/uya "$$CRTI" bin/.from_c.o "$$CRTN" $$LDFLAGS; \
 			rm -f bin/.from_c.o; \
 		else \
-			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS bin/uya.c -o bin/uya $$LDFLAGS; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS bin/uya.c -o bin/uya -lm $$LDFLAGS; \
 		fi'
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
@@ -594,6 +598,14 @@ backup-seed:
 	@$(MAKE) from-c >/dev/null
 	@echo "✓ backup/uya.c 与 bin/uya.c 已更新（单文件种子）"
 
+# hosted 单文件 C 种子：更新 backup/uya-hosted.c（macOS 迁移用；非 nostdlib）
+backup-hosted-seed:
+	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 backup/uya-hosted.c …"
+	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --no-safety-proof'
+	@mkdir -p backup
+	@cp src/build/uya-hosted.c backup/uya-hosted.c
+	@echo "✓ backup/uya-hosted.c 已更新（hosted 单文件种子）"
+
 # 验证 + 多文件备份 + 单文件种子（提交前完整备份）
 backup-all:backup backup-seed
 
@@ -787,6 +799,7 @@ help:
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c 与 backup/uya.c（from-c / release 用）"
+	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c（macOS 迁移用）"
 	@echo "  make backup-all    - backup + backup-seed（提交前完整备份）"
 	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链 + strip"
 	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
