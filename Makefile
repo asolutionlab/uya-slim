@@ -102,13 +102,13 @@ from-c:
 		CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" \
 		CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
 		bash -c 'set -e; ulimit -s 32768 2>/dev/null || true; \
-		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
+		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
 			&& [ "$$HOST_OS" = "macos" ]; then \
 			echo "错误: backup/uya.c 为 Linux nostdlib（含 x86_64 Linux _start），无法在 macOS 上 make from-c。"; \
 			echo "请使用 '\''make backup-hosted-seed'\'' 生成本地 hosted 备份，或参见 docs/macos_hosted_smoke.md"; \
 			exit 1; \
 		fi; \
-		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
+		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
 			&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
 			echo "备份 C 含 nostdlib _start，使用 crti.o + uya.o + crtn.o 链接（避免与 Scrt1 _start 冲突）..."; \
 			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -fno-stack-protector -c bin/uya.c -o bin/.from_c.o; \
@@ -657,7 +657,7 @@ release-build:
 		CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" \
 		LDFLAGS="$(LDFLAGS)" \
 		bash -c 'set -e; ulimit -s 32768 2>/dev/null || true; \
-		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
+		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
 			&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
 			echo "nostdlib 种子：-O3 -DNDEBUG，crti.o + uya.o + crtn.o 链接（同 from-c）..."; \
 			$$CC_DRIVER $$CC_TARGET_FLAGS -std=c99 -O3 -fno-builtin -DNDEBUG -fno-stack-protector -c bin/uya.c -o bin/.release.o; \
