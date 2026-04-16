@@ -13,12 +13,29 @@
 
 ## 推荐冒烟步骤（macOS）
 
-1. **在 Linux 上**完成 `make backup`，将仓库（含 `backup/uya.c`）同步到 Mac；或在 Mac 上已有 `bin/uya`（hosted 构建产物）。
-2. 在仓库根目录：
+### 前置：Linux 准备 hosted 备份（推荐）
+
+在 **Linux 上**执行：
+```bash
+make backup-hosted-seed   # 生成 backup/uya-hosted.c（hosted 单文件种子）
+```
+然后将仓库同步到 Mac。
+
+### macOS 构建
+
+1. 在仓库根目录：
    ```bash
    export UYA_ROOT="$(pwd)/lib/"   # 必须，直到 Phase 2 落地
-   make uya-hosted    # 或已有 bin/uya 则跳过
+   make from-c   # 自动使用 backup/uya-hosted.c
+   make uya-hosted
    make b-hosted
+   ```
+
+2. 测试：
+   ```bash
+   TEST_PROFILE=hosted make tests-hosted
+   # 或强制跑全部：
+   SKIP_DARWIN_DEFAULT=0 ./tests/run_programs_parallel.sh --uya --c99
    ```
 3. 运行测试（默认会跳过部分 Linux 专用用例，见下）：
    ```bash
