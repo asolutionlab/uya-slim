@@ -147,14 +147,14 @@
 
 > 注：核心改造已完成。统一 `AsyncFramePool` 已集成；caller-owned stack inlining 已完成；每个 `@async_fn` 生成 wrapper 使用 `std_async_frame_pool_alloc()`、vtable 包含 `release` 指针、poll 内通过 vtable 递归释放 child future。
 
-### 3.1 拆出帧初始化入口
+### 3.1 拆出帧启动入口
 
-- [x] 为 async 函数生成 `*_frame_init`（caller-owned inline 场景下生成 `_uya_inline_await_N` 字段的 in-place init 代码）
+- [x] 为 async 函数生成 `*_frame_start`（caller-owned inline 场景下生成 `_uya_inline_await_N` 字段的 in-place init 代码；旧 `*_frame_init` 兼容别名仍保留）
 - [x] 为 async 函数生成 `*_poll`
 - [x] 让 `*_future_new` 只负责创建 first-class future（保留符号保证外部 C ABI 兼容，默认走统一 `AsyncFramePool`，绝不返回内部栈帧）
 - [x] 增加 `*_future_init_into(storage, args...)` 或等价内部入口，供 caller-owned storage 路径复用（caller-owned inline 通过父 struct 字段直接内联实现）
 - [x] 让 `@frame(foo)` 可用于普通变量、结构体字段与池中的显式声明
-- [x] **生成 `*_frame_drop_fields` 函数，保证 parent frame 释放时先递归清理仍然 live 的 child future 字段**（`release_fields` 函数中通过 vtable 调用 child `release` 实现）
+- [x] **生成 `*_frame_stop` 函数，保证 parent frame 释放时先递归清理仍然 live 的 child future 字段**（旧 `*_frame_drop_fields` 兼容别名仍保留；`release_fields` 函数中通过 vtable 调用 child `release` 实现）
 - [x] **生成统一 `future_release` / `frame_release` 包装，根据 ownership tag 归还 pool / debug heap；字段清理函数不释放当前 frame 本体**（`uya_<fn>_release` 已实现）
 
 ### 3.2 栈优先路径
