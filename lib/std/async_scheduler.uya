@@ -230,6 +230,8 @@ export type TaskQueueSlot_i32 = TaskQueueSlot<i32>;
 export type TaskQueue_i32 = TaskQueue<i32>;
 export type TaskQueueSlot_u32 = TaskQueueSlot<u32>;
 export type TaskQueue_u32 = TaskQueue<u32>;
+export type TaskQueueSlot_usize = TaskQueueSlot<usize>;
+export type TaskQueue_usize = TaskQueue<usize>;
 
 export fn task_queue_new<T>() TaskQueue<T> {
     return TaskQueue<T>{ len: 0 };
@@ -241,6 +243,10 @@ export fn task_queue_i32_new() TaskQueue_i32 {
 
 export fn task_queue_u32_new() TaskQueue_u32 {
     return task_queue_new<u32>();
+}
+
+export fn task_queue_usize_new() TaskQueue_usize {
+    return task_queue_new<usize>();
 }
 
 /// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
@@ -574,6 +580,10 @@ export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: E
 
 export fn scheduler_run_task_queue_u32_with_event_loop(self: &Scheduler, loop: EventLoop, queue: &TaskQueue_u32, timeout_ms: i32) !i32 {
     return scheduler_run_task_queue_with_event_loop<u32>(self, loop, queue, timeout_ms);
+}
+
+export fn scheduler_run_task_queue_usize_with_event_loop(self: &Scheduler, loop: EventLoop, queue: &TaskQueue_usize, timeout_ms: i32) !i32 {
+    return scheduler_run_task_queue_with_event_loop<usize>(self, loop, queue, timeout_ms);
 }
 
 // ============================================================

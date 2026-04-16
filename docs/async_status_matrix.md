@@ -9,8 +9,8 @@
 |------|------|---------|---------|-------|------|
 | async lowering / 状态机控制流 | ✅ 完成 | `if/else if`、`while`、范围 `for`、定长数组 `for`、嵌套块、循环间同步语句已稳定 | Bug A/B/C/D 已修复；`return error.X`、局部变量提升、await 间同步语句恢复 | `test_async_bug_b_sync_between.uya` `test_async_for_await.uya` `test_async_bug_d_nested_block.uya` | `async_coroutine_transform_design.md` `plan_async_coroutine_transform.md` `async_loop_await_design.md` |
 | async frame 分配 / 生命周期 | ✅ 完成 | 默认路径已切 `AsyncFramePool` + caller-owned inline + pinned 语义；Ready/Error/Cancel 统一释放 | `@frame(foo)` 类型构造器与 frame 生命周期命名已收口 | `test_async_frame_methods.uya` `test_async_frame_stack_ok.uya` `test_async_frame_release_path.uya` | `async_frame_allocation_design.md` `todo_async_frame_allocation.md` |
-| `Waker` / `EventLoop` / `AsyncFd` | ✅ Linux 主路径完成 | `Waker` 支持单 interest、`eventfd` 绑定/关闭、`cancel/is_cancelled`；`LinuxEpoll` + `AsyncFd` 已接通 readiness | 无额外关键缺口 | `test_std_async_event.uya` `test_async_fd.uya` `test_async_io.uya` | `std_async_design.md` `async_production_todo.md` |
-| `Scheduler` / 泛型 `TaskQueue<T>` | ✅ 完成 | `scheduler_run_*_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / typed wrappers、共享 `EventLoop` 单轮推进已完成 | 队列依赖的“数组元素上的接口字段方法调用”与“结构体依赖收集误展开接口模板”已修复 | `test_std_async_scheduler.uya` `test_async_multi_fd_concurrent.uya` | `std_async_design.md` `todo_async_runtime_and_http.md` `todo_mini_to_full.md` |
+| `Waker` / `EventLoop` / `AsyncFd` | ✅ Linux 主路径完成 | `Waker` 支持单 interest、`eventfd` 绑定/关闭、`cancel/is_cancelled`；`LinuxEpoll` + `AsyncFd` 已接通 readiness；`AsyncWriter/AsyncReader` 已具备 `write_all` / `read_exact`，helper 层已有 `async_write_bytes/cstr`、`async_print_to/println_to` | 无额外关键缺口 | `test_std_async_event.uya` `test_async_fd.uya` `test_async_io.uya` | `std_async_design.md` `async_production_todo.md` |
+| `Scheduler` / 泛型 `TaskQueue<T>` | ✅ 完成 | `scheduler_run_*_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / typed wrappers、共享 `EventLoop` 单轮推进已完成；`Future<!usize>` 的真实 shared-epoll I/O 队列也已验证 | 队列依赖的“数组元素上的接口字段方法调用”与“结构体依赖收集误展开接口模板”已修复 | `test_std_async_scheduler.uya` `test_async_multi_fd_concurrent.uya` `test_async_fd.uya` | `std_async_design.md` `todo_async_runtime_and_http.md` `todo_mini_to_full.md` |
 | 跨线程 wake / `eventfd` | ✅ 完成 | `Scheduler` 在 `Pending` 时同步注册 `eventfd + io fd`；worker/外部线程 `wake()` 可直接唤醒主 `EventLoop` | 无新增 codegen 依赖 | `test_std_async_scheduler.uya` 外部 wake 场景 | `async_production_todo.md` `todo_async_runtime_and_http.md` |
 | 协作式取消语义 | ✅ 完成 | `Waker.cancel()`、`TaskQueue.cancel()`、统一 deregister / eventfd close / slot cleanup；结果用 `error.Cancelled` 写回 | 无新增关键缺口 | `test_std_async_scheduler.uya` 取消 slot；`test_std_thread.uya` queued/running cancel | `std_async_design.md` `async_production_todo.md` |
 | `std.thread.async_compute<T>` 集成 | ✅ Linux 主路径完成 | 未启动/排队/one-shot 任务可立即取消；运行中的共享槽任务在结果回收时稳定返回 `error.Cancelled` | `Future<!T>` 单态、typedef 装箱、成员调用、`f32/f64` helper 已收口 | `test_std_thread.uya` `test_async_compute_types.uya` | `todo_async_runtime_and_http.md` `todo_mini_to_full.md` |
@@ -32,7 +32,7 @@
 ## 剩余 P2
 
 - 跨平台 `EventLoop` 后端：macOS `kqueue` / Windows `IOCP`
-- 更完整 async I/O 原语与多任务共享 I/O 扩展
+- 更丰富 async formatting/helper（typed writer、`write_byte`、更高层格式化输出等）
 - 多 interest `Waker`
 - HTTP 连接池与 keep-alive 复用
 - TLS 会话复用

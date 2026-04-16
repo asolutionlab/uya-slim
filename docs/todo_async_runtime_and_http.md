@@ -45,7 +45,7 @@
 | 11 | `async_compute<T>` 曾需 12 套重复 `Future` 实现 | 改用 `void*` + 类型擦除，或编译器泛型 + 单一 `AsyncComputeFuture<T>` | **已完成 API 收敛**：`AsyncComputeFuture<T>` 覆盖 **含 f32/f64** 的全部载荷；**仅**导出 **`async_compute<T>`**（已删 12 个 **`async_compute_*`**）；typedef 别名仍可用。 |
 | 12 | `ThreadPool` worker / pending 曾硬编码 8 | `thread_pool_new(n)` 已存在；**已**将 `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 与数组维度提升至 **32**，边界比较改用常量 | **部分完成**（仍固定上限数组，非动态扩容） |
 | 13 | 无超时/取消机制 | `Waker.cancel()/is_cancelled()`、`TaskQueue.cancel()`、`error.Cancelled`、统一 cleanup | `Future` 在 `poll()` 中显式检查取消位；Scheduler/TaskQueue 在取消或完成时统一 deregister + 释放 eventfd / I/O 资源；`async_compute` queued/running 路径都稳定返回 `error.Cancelled` | ✅ 已完成（协作式取消模型） |
-| 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 | ⚠️ 部分完成（`std.async.io` 已有最小路径与 `AsyncFd`，完整多任务 I/O 原语仍待扩展） |
+| 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 | ⚠️ 部分完成（`std.async.io` 已有 `read/write/read_exact/write_all/flush`、`async_write_bytes/cstr`、`async_print_to/println_to` 与真实 shared-epoll I/O 回归；更丰富格式化/helper 仍待扩展） |
 
 ### P1.5：编译器 / C99（与 `Future<!T>`、`std.thread` typedef 相关）✅ 近期已闭环
 
