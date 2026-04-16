@@ -20,6 +20,7 @@ error TimedOut;
 
 export const TASK_QUEUE_CAPACITY: i32 = 64;
 export const TASK_QUEUE_I32_CAPACITY: i32 = TASK_QUEUE_CAPACITY;
+const SCHEDULER_INLINE_REPOLL_LIMIT: i32 = 1024;
 
 // 本地时间辅助函数（避免跨模块 time.xxx 调用在泛型函数中的编译器 bug）
 fn sched_now_ms() !u64 {
@@ -86,10 +87,13 @@ fn scheduler_sync_registered_fd(loop: EventLoop, fd: i32, interest: EventKind, w
         _ = try scheduler_deregister_fd(loop, registered_fd);
         return 0;
     }
-    if *registered_fd == fd {
-        return 1;
+    // 即使数字 fd 相同，也要重新走 register：
+    // - interest 可能从 readable 切到 writable
+    // - 旧 fd 关闭后，新 socket 可能复用同一个数字 fd
+    //   此时需要让 EventLoop 通过 MOD/ADD 修正内核注册状态
+    if *registered_fd >= 0 && *registered_fd != fd {
+        _ = try scheduler_deregister_fd(loop, registered_fd);
     }
-    _ = try scheduler_deregister_fd(loop, registered_fd);
     const reg_result: !i32 = loop.register(fd, interest, waker);
     _ = reg_result catch {
         return reg_result as! i32;
@@ -317,6 +321,7 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
     var w: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
+    var inline_repoll_count: i32 = 0;
     const prepare_result: !i32 = scheduler_prepare_waker(&w);
     _ = prepare_result catch {
         return prepare_result as! T;
@@ -331,8 +336,14 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
             .Ready(ok_val) => { return ok_val; },
             .Pending(_) => {
                 if w.is_woken() {
+                    inline_repoll_count = 0;
                     continue;
                 }
+                if !w.has_io_interest() && inline_repoll_count < SCHEDULER_INLINE_REPOLL_LIMIT {
+                    inline_repoll_count = inline_repoll_count + 1;
+                    continue;
+                }
+                inline_repoll_count = 0;
                 const sync_result: !i32 = scheduler_sync_waker_registrations(loop, &w, &io_registered_fd, &event_registered_fd);
                 const registered: i32 = sync_result catch {
                     return sync_result as! T;
@@ -597,6 +608,7 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
     var w: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
+    var inline_repoll_count: i32 = 0;
     const prepare_result: !i32 = scheduler_prepare_waker(&w);
     _ = prepare_result catch {
         return prepare_result as! T;
@@ -611,8 +623,14 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
             .Ready(ok_val) => { return ok_val; },
             .Pending(_) => {
                 if w.is_woken() {
+                    inline_repoll_count = 0;
                     continue;
                 }
+                if !w.has_io_interest() && inline_repoll_count < SCHEDULER_INLINE_REPOLL_LIMIT {
+                    inline_repoll_count = inline_repoll_count + 1;
+                    continue;
+                }
+                inline_repoll_count = 0;
                 const sync_result: !i32 = scheduler_sync_waker_registrations(loop, &w, &io_registered_fd, &event_registered_fd);
                 const registered: i32 = sync_result catch {
                     return sync_result as! T;
@@ -641,6 +659,7 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
     var w: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
+    var inline_repoll_count: i32 = 0;
     const prepare_result: !i32 = scheduler_prepare_waker(&w);
     _ = prepare_result catch {
         return prepare_result as! T;
@@ -673,8 +692,14 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
                 }
 
                 if w.is_woken() {
+                    inline_repoll_count = 0;
                     continue;
                 }
+                if !w.has_io_interest() && inline_repoll_count < SCHEDULER_INLINE_REPOLL_LIMIT {
+                    inline_repoll_count = inline_repoll_count + 1;
+                    continue;
+                }
+                inline_repoll_count = 0;
                 const sync_result: !i32 = scheduler_sync_waker_registrations(loop, &w, &io_registered_fd, &event_registered_fd);
                 const registered: i32 = sync_result catch {
                     return sync_result as! T;

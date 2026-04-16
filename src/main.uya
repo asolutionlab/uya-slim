@@ -870,8 +870,119 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  - 内联汇编 @asm { }\n" as *byte);
 }
 
+fn detect_main_is_space(ch: byte) i32 {
+    if ch == 32 || ch == 10 || ch == 9 || ch == 13 {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_is_ident_start(ch: byte) i32 {
+    if (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 95 {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_is_ident_continue(ch: byte) i32 {
+    if detect_main_is_ident_start(ch) != 0 || (ch >= 48 && ch <= 57) {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_skip_string(buf: &byte, file_size: usize, pos: &usize, quote: byte) void {
+    if buf == null || pos == null || pos[0] >= file_size {
+        return;
+    }
+    pos[0] = pos[0] + 1;
+    while pos[0] < file_size {
+        const ch: byte = buf[pos[0]];
+        if ch == 92 && pos[0] + 1 < file_size {
+            pos[0] = pos[0] + 2;
+            continue;
+        }
+        pos[0] = pos[0] + 1;
+        if ch == quote {
+            return;
+        }
+    }
+}
+
+fn detect_main_skip_ws_and_comments(buf: &byte, file_size: usize, pos: &usize) void {
+    if buf == null || pos == null {
+        return;
+    }
+    while pos[0] < file_size {
+        const ch: byte = buf[pos[0]];
+        if detect_main_is_space(ch) != 0 {
+            pos[0] = pos[0] + 1;
+            continue;
+        }
+        if ch == 47 && pos[0] + 1 < file_size {
+            const next: byte = buf[pos[0] + 1];
+            if next == 47 {
+                pos[0] = pos[0] + 2;
+                while pos[0] < file_size && buf[pos[0]] != 10 {
+                    pos[0] = pos[0] + 1;
+                }
+                continue;
+            }
+            if next == 42 {
+                pos[0] = pos[0] + 2;
+                while pos[0] + 1 < file_size {
+                    if buf[pos[0]] == 42 && buf[pos[0] + 1] == 47 {
+                        pos[0] = pos[0] + 2;
+                        break;
+                    }
+                    pos[0] = pos[0] + 1;
+                }
+                continue;
+            }
+        }
+        return;
+    }
+}
+
+fn detect_main_token_eq(buf: &byte, start: usize, end: usize, text: &byte) i32 {
+    if buf == null || text == null || end < start {
+        return 0;
+    }
+    const len: usize = end - start;
+    if strlen(text as *byte) != len {
+        return 0;
+    }
+    if len == 0 {
+        return 0;
+    }
+    if strncmp(&buf[start], text as *byte, len) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_match_ident_after(buf: &byte, file_size: usize, pos: usize, text: &byte, next_pos: &usize) i32 {
+    var cursor: usize = pos;
+    detect_main_skip_ws_and_comments(buf, file_size, &cursor);
+    if cursor >= file_size || detect_main_is_ident_start(buf[cursor]) == 0 {
+        return 0;
+    }
+    const start: usize = cursor;
+    cursor = cursor + 1;
+    while cursor < file_size && detect_main_is_ident_continue(buf[cursor]) != 0 {
+        cursor = cursor + 1;
+    }
+    if detect_main_token_eq(buf, start, cursor, text) == 0 {
+        return 0;
+    }
+    if next_pos != null {
+        next_pos[0] = cursor;
+    }
+    return 1;
+}
+
 // 检测文件是否包含 main 函数
-// 返回值：0=无main，1=fn main，2=export fn main
+// 返回值：0=无main，1=fn main / test，2=export fn main，3=export extern fn main
 fn detect_main_function(filename: &byte) i32 {
     if filename == null {
         return 0;
@@ -880,51 +991,56 @@ fn detect_main_function(filename: &byte) i32 {
     if file_size < 0 {
         return 0;
     }
-    // 检测 "export fn main" (返回 2，表示需要自动包含 entry.uya)
+    const buf: &byte = &file_buffer[0];
+    const size: usize = file_size as usize;
     var i: usize = 0;
-    while i < file_size as usize {
-        if i + 15 <= file_size as usize {
-            if strncmp(&file_buffer[i], "export fn main" as *byte, 14) == 0 {
-                const next_char: byte = file_buffer[i + 14];
-                if next_char == 40 || next_char == 32 || next_char == 10 || next_char == 9 || next_char == 13 {
-                    return 2;
+    while i < size {
+        detect_main_skip_ws_and_comments(buf, size, &i);
+        if i >= size {
+            break;
+        }
+        const ch: byte = buf[i];
+        if ch == 34 || ch == 39 {
+            detect_main_skip_string(buf, size, &i, ch);
+            continue;
+        }
+        if detect_main_is_ident_start(ch) == 0 {
+            i = i + 1;
+            continue;
+        }
+        const token_start: usize = i;
+        i = i + 1;
+        while i < size && detect_main_is_ident_continue(buf[i]) != 0 {
+            i = i + 1;
+        }
+        if detect_main_token_eq(buf, token_start, i, "export" as &byte) != 0 {
+            var after_export: usize = i;
+            if detect_main_match_ident_after(buf, size, after_export, "extern" as &byte, &after_export) != 0 {
+                if detect_main_match_ident_after(buf, size, after_export, "fn" as &byte, &after_export) != 0 &&
+                    detect_main_match_ident_after(buf, size, after_export, "main" as &byte, null) != 0 {
+                    return 3;
                 }
             }
+            after_export = i;
+            if detect_main_match_ident_after(buf, size, after_export, "fn" as &byte, &after_export) != 0 &&
+                detect_main_match_ident_after(buf, size, after_export, "main" as &byte, null) != 0 {
+                return 2;
+            }
+            continue;
         }
-        i = i + 1;
-    }
-    // 检测 "fn main" (返回 1，普通 main)
-    i = 0;
-    while i < file_size as usize {
-        if i + 7 <= file_size as usize {
-            if strncmp(&file_buffer[i], "fn main" as *byte, 7) == 0 {
-                var is_export: i32 = 0;
-                if i >= 7 {
-                    if strncmp(&file_buffer[i - 7], "export " as *byte, 7) == 0 {
-                        is_export = 1;
-                    }
-                }
-                const next_char: byte = file_buffer[i + 7];
-                if is_export == 0 && (next_char == 40 || next_char == 32 || next_char == 10 || next_char == 9 || next_char == 13) {
-                    return 1;
-                }
+        if detect_main_token_eq(buf, token_start, i, "fn" as &byte) != 0 {
+            if detect_main_match_ident_after(buf, size, i, "main" as &byte, null) != 0 {
+                return 1;
+            }
+            continue;
+        }
+        if detect_main_token_eq(buf, token_start, i, "test" as &byte) != 0 {
+            var after_test: usize = i;
+            detect_main_skip_ws_and_comments(buf, size, &after_test);
+            if after_test < size && buf[after_test] == 34 {
+                return 1;
             }
         }
-        i = i + 1;
-    }
-    // 检测 "test \"" (返回 1，表示有测试代码)
-    i = 0;
-    while i < file_size as usize {
-        if i + 6 <= file_size as usize {
-            // 检测顶层 test 语句（前面是换行或文件开头）
-            if strncmp(&file_buffer[i], "test \"" as *byte, 6) == 0 {
-                // 检查前面是否是文件开头或换行
-                if i == 0 || file_buffer[i - 1] == 10 {  // 10 = '\n'
-                    return 1;
-                }
-            }
-        }
-        i = i + 1;
     }
     return 0;
 }
@@ -1274,6 +1390,23 @@ fn find_module_file(
 ) i32 {
     if module_path == null || buffer == null || buffer_size == 0 {
         return -1;
+    }
+
+    // `use std;` 仅用于引入平台选择器与 `std.cfg` 语义，应该稳定映射到
+    // lib/std/platform.uya，而不是从 lib/std/ 目录里任意挑一个 `.uya` 文件。
+    if uya_root != null && strcmp(module_path as *byte, "std" as *byte) == 0 {
+        var std_platform_path: [byte: PATH_MAX] = [];
+        const std_platform_len: i32 = snprintf(&std_platform_path[0], PATH_MAX, "%sstd/platform.uya" as *byte, uya_root as *byte);
+        if std_platform_len > 0 && std_platform_len < PATH_MAX as i32 {
+            const std_platform_file: *void = fopen(&std_platform_path[0], "r" as *byte);
+            if std_platform_file != null {
+                fclose(std_platform_file);
+                if (std_platform_len as usize) < buffer_size {
+                    strcpy(buffer as *byte, &std_platform_path[0]);
+                    return 0;
+                }
+            }
+        }
     }
     
     // 将模块路径转换为文件路径（std.io -> std/io/）
@@ -2821,13 +2954,16 @@ fn compile_files(
     }
     
     // 检测是否有 export fn main 或 test 语句，如果有则自动添加 entry.uya
-    // 返回值：0=无main/test，1=fn main 或 test，2=export fn main
+    // 返回值：0=无main/test，1=fn main 或 test，2=export fn main，3=export extern fn main
     var has_export_main: i32 = 0;
     var has_test_stmt: i32 = 0;
+    var has_export_extern_main: i32 = 0;
     i = 0;
     while i < resolved_count {
         const main_type: i32 = detect_main_function(resolved_files[i]);
-        if main_type == 2 {
+        if main_type == 3 {
+            has_export_extern_main = 1;
+        } else if main_type == 2 {
             has_export_main = 1;
         } else if main_type == 1 {
             has_test_stmt = 1;
@@ -2837,7 +2973,7 @@ fn compile_files(
     
     // 如果有 export fn main 或 test 语句（但没有 export fn main），自动添加 std.runtime.entry
     // test 模式下需要 entry.uya 来提供 C main 入口
-    if has_export_main != 0 || has_test_stmt != 0 {
+    if has_export_extern_main == 0 && (has_export_main != 0 || has_test_stmt != 0) {
         var entry_path: [byte: PATH_MAX] = [];
         const entry_len: i32 = snprintf(&entry_path[0], PATH_MAX, "%sstd/runtime/entry/entry.uya" as *byte, &uya_root_buffer[0] as *byte);
         if entry_len > 0 && entry_len < PATH_MAX {
@@ -2854,8 +2990,20 @@ fn compile_files(
                 if already_in_list == 0 && resolved_count < MAX_INPUT_FILES {
                     const entry_copy: &byte = compiler_arena_alloc(&temp_arena, entry_len + 1) as &byte;
                     if entry_copy != null {
+                        var entry_insert_idx: i32 = 0;
+                        while entry_insert_idx < resolved_count {
+                            if detect_main_function(resolved_files[entry_insert_idx]) == 0 {
+                                break;
+                            }
+                            entry_insert_idx = entry_insert_idx + 1;
+                        }
+                        var move_idx: i32 = resolved_count;
+                        while move_idx > entry_insert_idx {
+                            resolved_files[move_idx] = resolved_files[move_idx - 1];
+                            move_idx = move_idx - 1;
+                        }
                         strcpy(entry_copy as *byte, &entry_path[0]);
-                        resolved_files[resolved_count] = entry_copy;
+                        resolved_files[entry_insert_idx] = entry_copy;
                         resolved_count = resolved_count + 1;
                     }
                 }
@@ -3518,36 +3666,27 @@ export fn main() i32 {
         if pack_result != 0 {
             return pack_result;
         }
-        fprintf(libc.stderr, "=== microapp run: 编译 loader ===\n" as *byte);
-        var loader_exe_path: [byte: PATH_MAX] = [];
-        if host_fill_temp_microapp_loader_path(&loader_exe_path[0], PATH_MAX, get_target_exe_suffix()) != 0 {
-            fprintf(libc.stderr, "错误：无法生成 microapp loader 路径\n" as *byte);
-            return 1;
-        }
         const loader_source_path: &byte = "examples/microapp/microcontainer_hello_load.uya" as *byte;
-        var loader_cmd: [byte: 4096] = [];
-        const loader_cmd_len: i32 = snprintf(&loader_cmd[0] as *byte, 4096,
-            "\"%s\" build \"%s\" -o \"%s\"" as *byte,
-            get_argv(0),
-            loader_source_path as *byte,
-            &loader_exe_path[0] as *byte);
-        if loader_cmd_len <= 0 || loader_cmd_len >= 4096 {
-            fprintf(libc.stderr, "错误：无法生成 microapp loader 编译命令\n" as *byte);
-            return 1;
-        }
-        if system(&loader_cmd[0] as *byte) != 0 {
-            fprintf(libc.stderr, "错误：microapp loader 编译失败\n" as *byte);
-            return 1;
-        }
         var microapp_exe_path: [byte: PATH_MAX] = [];
         const microapp_exe_len: i32 = snprintf(&microapp_exe_path[0] as *byte, PATH_MAX, "%s.text.bin.elf" as *byte, &microapp_pobj_path[0] as *byte);
         if microapp_exe_len <= 0 || microapp_exe_len >= PATH_MAX {
             fprintf(libc.stderr, "错误：无法生成 microapp payload 可执行文件路径\n" as *byte);
             return 1;
         }
-        fprintf(libc.stderr, "=== microapp run: 运行 loader ===\n" as *byte);
-        // loader 会先验证 .uapp，再通过第三个参数按需启动同源码编出的 native payload。
-        const run_result: i32 = host_run_microapp_loader(&loader_exe_path[0] as &byte, &microapp_uapp_path[0] as &byte, &microapp_exe_path[0] as &byte);
+        fprintf(libc.stderr, "=== microapp run: 编译并运行 loader ===\n" as *byte);
+        var loader_cmd: [byte: 4096] = [];
+        const loader_cmd_len: i32 = snprintf(&loader_cmd[0] as *byte, 4096,
+            "\"%s\" run \"%s\" -- \"%s\" \"%s\"" as *byte,
+            get_argv(0),
+            loader_source_path as *byte,
+            &microapp_uapp_path[0] as *byte,
+            &microapp_exe_path[0] as *byte);
+        if loader_cmd_len <= 0 || loader_cmd_len >= 4096 {
+            fprintf(libc.stderr, "错误：无法生成 microapp loader 运行命令\n" as *byte);
+            return 1;
+        }
+        // 复用普通 `run` 路径，避免在 seed 编译器上走单独的 `build loader` 分支。
+        const run_result: i32 = system(&loader_cmd[0] as *byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);
         if child_exit != 0 {
             fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
@@ -3677,6 +3816,21 @@ export fn main() i32 {
                 &run_output[0] as *byte);
         } else {
             run_cmd_len = snprintf(&run_cmd[0], 4096, "%s" as *byte, &run_output[0] as *byte);
+            if run_cmd_len > 0 && run_cmd_len < 4096 && command == CommandType.COMMAND_RUN && run_arg_start >= 0 {
+                var run_arg_i: i32 = run_arg_start;
+                while run_arg_i < get_argc() {
+                    const run_arg: *byte = get_argv(run_arg_i);
+                    if run_arg != null {
+                        const appended: i32 = snprintf((&run_cmd[0] as *byte) + run_cmd_len, 4096 - run_cmd_len, " \"%s\"" as *byte, run_arg);
+                        if appended <= 0 || run_cmd_len + appended >= 4096 {
+                            fprintf(libc.stderr, "错误：运行时参数过长\n" as *byte);
+                            return 1;
+                        }
+                        run_cmd_len = run_cmd_len + appended;
+                    }
+                    run_arg_i = run_arg_i + 1;
+                }
+            }
         }
         const run_result: i32 = system(&run_cmd[0] as *byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);

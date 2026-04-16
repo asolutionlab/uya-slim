@@ -69,7 +69,12 @@ fn c99_safe_ident_cache_store(codegen: &C99CodeGenerator, name: &byte, safe_name
     }
     c99_utils_cache_ensure(codegen);
     const slot: i32 = (hash_string(name) & C99_SAFE_IDENT_CACHE_MASK) as i32;
-    g_c99_safe_ident_keys[slot] = name;
+    const name_copy: &byte = c99_arena_strdup(codegen.arena, name);
+    if name_copy != null {
+        g_c99_safe_ident_keys[slot] = name_copy;
+    } else {
+        g_c99_safe_ident_keys[slot] = name;
+    }
     g_c99_safe_ident_values[slot] = safe_name;
 }
 
@@ -1474,6 +1479,14 @@ fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
         return sanitized;
     }
     if is_c_keyword(name) == 0 && is_c_reserved_name(name) == 0 {
+        // Callers frequently pass stack-backed scratch buffers here (for mono names,
+        // synthetic helper names, etc). Returning the raw pointer makes the cache
+        // hold dangling data and later codegen can emit corrupted identifiers.
+        const safe_copy: &byte = c99_arena_strdup(codegen.arena, name);
+        if safe_copy != null {
+            c99_safe_ident_cache_store(codegen, name, safe_copy);
+            return safe_copy;
+        }
         c99_safe_ident_cache_store(codegen, name, name);
         return name;
     }
@@ -1505,6 +1518,11 @@ fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
     }
     
     // 如果仍然冲突，返回原名称（虽然可能导致编译错误）
+    const fallback_copy: &byte = c99_arena_strdup(codegen.arena, name);
+    if fallback_copy != null {
+        c99_safe_ident_cache_store(codegen, name, fallback_copy);
+        return fallback_copy;
+    }
     c99_safe_ident_cache_store(codegen, name, name);
     return name;
 }

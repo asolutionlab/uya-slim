@@ -2179,8 +2179,9 @@ fn c99_async_scan_inline_temp_vars(codegen: &C99CodeGenerator, body: &ASTNode) v
                     if fd != null && fd.fn_decl_is_async != 0 {
                         const use_count: i32 = c99_async_count_identifier_uses(body, name);
                         if use_count == 1 {
-                            if codegen.async_inline_temp_var_count < 32 {
-                                codegen.async_inline_temp_var_names[codegen.async_inline_temp_var_count] = name;
+                            const inline_temp_idx: i32 = codegen.async_inline_temp_var_count;
+                            if inline_temp_idx >= 0 && inline_temp_idx < 32 {
+                                codegen.async_inline_temp_var_names[inline_temp_idx] = name;
                                 codegen.async_inline_temp_var_count = codegen.async_inline_temp_var_count + 1;
                                 codegen.async_collect_operands[j] = init;
                             }
@@ -5273,7 +5274,11 @@ fn gen_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_na
         }
         pi_fwd_m = pi_fwd_m + 1;
     }
-    fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, c_name as *byte);
+    if fn_decl.fn_decl_is_async != 0 && codegen.split_enabled == 0 {
+        fprintf(codegen.emit_stream as *void, "static __attribute__((used)) %s %s(" as *byte, return_c as *byte, c_name as *byte);
+    } else {
+        fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, c_name as *byte);
+    }
     var i: i32 = 0;
     while i < param_count {
         const param: &ASTNode = params[i];
@@ -6299,7 +6304,11 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
         pi_fwd_mm = pi_fwd_mm + 1;
     }
     
-    fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_method_name as *byte);
+    if fn_decl.fn_decl_is_async != 0 && codegen.split_enabled == 0 {
+        fprintf(codegen.emit_stream as *void, "static __attribute__((used)) %s %s(" as *byte, return_c as *byte, mono_method_name as *byte);
+    } else {
+        fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_method_name as *byte);
+    }
     
     var i: i32 = 0;
     while i < param_count {

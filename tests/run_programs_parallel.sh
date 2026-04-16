@@ -378,17 +378,36 @@ run_compiled_test_args() {
     local expect_fail="$3"
     local output_dir="$4"
     shift 4
-    local output_file="${output_dir}/${base_name}.c"
+    local compiler_work_dir="${output_dir}/compiler_work"
+    local output_file="${compiler_work_dir}/${base_name}.c"
     local safety_proof_arg="--safety-proof"
     local compiler_exit=0
     local exe_file=""
     local exit_code=0
+    local compiler_output=""
+    local -a compiler_args=()
 
-    local extra_args=""
+    local -a extra_args=()
     if [[ "$base_name" =~ ^error_microapp_mode_ ]]; then
-        extra_args="--app microapp"
+        extra_args=(--app microapp)
     fi
-    compiler_output=$("$COMPILER" --c99 $safety_proof_arg $extra_args "$@" -o "$output_file" 2>&1)
+
+    mkdir -p "$compiler_work_dir"
+
+    local arg=""
+    for arg in "$@"; do
+        if [[ "$arg" == -* ]] || [[ "$arg" == /* ]]; then
+            compiler_args+=("$arg")
+        elif [ -e "$arg" ]; then
+            compiler_args+=("$(realpath "$arg" 2>/dev/null || printf '%s/%s' "$REPO_ROOT" "$arg")")
+        elif [ -e "$REPO_ROOT/$arg" ]; then
+            compiler_args+=("$REPO_ROOT/$arg")
+        else
+            compiler_args+=("$arg")
+        fi
+    done
+
+    compiler_output=$(cd "$compiler_work_dir" && "$COMPILER" --c99 "$safety_proof_arg" "${extra_args[@]}" "${compiler_args[@]}" -o "${base_name}.c" 2>&1)
     compiler_exit=$?
     if [ $compiler_exit -ne 0 ]; then
         if [ "$expect_fail" = true ]; then
@@ -595,6 +614,7 @@ SERIAL_TESTS=(
     test_https_loopback
     test_epoll_server
     test_std_dns_async_transport
+    test_http1_async_client
     test_http_server
 )
 if [ -n "${SERIAL_TESTS_EXTRA:-}" ]; then

@@ -120,7 +120,7 @@ fn checker_find_async_frame_meta_by_mono(checker: &TypeChecker, generic_name: &b
         if type_arg_count == meta.type_arg_count {
             var match_all: i32 = 1;
             var j: i32 = 0;
-            while j < type_arg_count {
+            while j < type_arg_count && j < 32 {
                 // 简化比较：只比较 kind（实际完整实现需比较更多字段）
                 if type_args[j].kind != meta.fields[j].field_type.kind {
                     match_all = 0;

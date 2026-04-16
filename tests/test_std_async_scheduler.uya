@@ -83,6 +83,10 @@ var scheduler_queue_register_count: i32 = 0;
 var scheduler_queue_task_poll_counts: [i32: 3] = [];
 var scheduler_queue_registered_wakers: [usize: 8] = [];
 var scheduler_queue_registered_count: i32 = 0;
+var scheduler_interest_switch_poll_count: i32 = 0;
+var scheduler_interest_switch_waker_count: i32 = 0;
+var scheduler_interest_switch_seen_count: i32 = 0;
+var scheduler_interest_switch_seen: [i32: 4] = [];
 
 struct TestEventLoop : EventLoop {
     fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
@@ -339,6 +343,74 @@ struct ExternalWakeThenReady : Future<!i32> {
     }
 }
 
+struct InterestSwitchEventLoop : EventLoop {
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
+        _ = self;
+        if fd == 555 && scheduler_interest_switch_seen_count < 4 {
+            match interest {
+                .Readable(_) => {
+                    scheduler_interest_switch_seen[scheduler_interest_switch_seen_count as usize] = 1;
+                    scheduler_interest_switch_seen_count = scheduler_interest_switch_seen_count + 1;
+                },
+                .Writable(_) => {
+                    scheduler_interest_switch_seen[scheduler_interest_switch_seen_count as usize] = 2;
+                    scheduler_interest_switch_seen_count = scheduler_interest_switch_seen_count + 1;
+                },
+                .ReadWrite(_) => {
+                    scheduler_interest_switch_seen[scheduler_interest_switch_seen_count as usize] = 3;
+                    scheduler_interest_switch_seen_count = scheduler_interest_switch_seen_count + 1;
+                },
+            };
+        }
+        scheduler_interest_switch_waker_count = scheduler_interest_switch_waker_count + 1;
+        scheduler_pair_registered_wakers[(scheduler_interest_switch_waker_count - 1) as usize] = (waker as &void) as usize;
+        return 0;
+    }
+
+    fn deregister(self: &Self, fd: i32) !i32 {
+        _ = self;
+        _ = fd;
+        return 0;
+    }
+
+    fn poll(self: &Self, timeout_ms: i32) !i32 {
+        _ = self;
+        _ = timeout_ms;
+        scheduler_interest_switch_poll_count = scheduler_interest_switch_poll_count + 1;
+        var i: i32 = 0;
+        while i < scheduler_interest_switch_waker_count {
+            const w: &Waker = (scheduler_pair_registered_wakers[i as usize] as &void) as &Waker;
+            w.wake();
+            i = i + 1;
+        }
+        scheduler_interest_switch_waker_count = 0;
+        return 1;
+    }
+}
+
+struct ReadableThenWritableFuture : Future<!i32> {
+    fd: i32,
+    stage: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        if self.stage == 0 {
+            self.stage = 1;
+            waker.wait_readable(self.fd);
+            return Poll<!i32>.Pending({});
+        }
+        if self.stage == 1 {
+            self.stage = 2;
+            waker.wait_writable(self.fd);
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(77));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
 fn queue_event_loop() EventLoop {
     return QueueEventLoop{};
 }
@@ -504,4 +576,26 @@ test "scheduler_run_with_event_loop_handles_external_eventfd_wake" {
 
     try assert_eq_i32(result, 321);
     try assert_eq_i32(shared_flag[0], 1);
+}
+
+test "scheduler_run_with_event_loop_reregisters_same_fd_when_interest_changes" {
+    scheduler_interest_switch_poll_count = 0;
+    scheduler_interest_switch_waker_count = 0;
+    scheduler_interest_switch_seen_count = 0;
+    scheduler_interest_switch_seen[0] = 0;
+    scheduler_interest_switch_seen[1] = 0;
+    scheduler_interest_switch_seen[2] = 0;
+    scheduler_interest_switch_seen[3] = 0;
+
+    var s: Scheduler = scheduler_new();
+    const loop: EventLoop = InterestSwitchEventLoop{};
+    var future_impl: ReadableThenWritableFuture = ReadableThenWritableFuture{ fd: 555, stage: 0 };
+    const future: Future<!i32> = future_impl;
+    const result: i32 = try scheduler_run_with_event_loop<i32>(&s, loop, future, 0);
+
+    try assert_eq_i32(result, 77);
+    try assert_eq_i32(scheduler_interest_switch_poll_count, 2);
+    try assert_eq_i32(scheduler_interest_switch_seen_count, 2);
+    try assert_eq_i32(scheduler_interest_switch_seen[0], 1);
+    try assert_eq_i32(scheduler_interest_switch_seen[1], 2);
 }
