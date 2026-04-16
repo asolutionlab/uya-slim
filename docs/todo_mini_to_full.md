@@ -844,7 +844,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - 已完成最小闭环：`@async_fn` / `try @await`、`Future<!T>` 的 `poll` 状态机、单/多 `@await`、基础错误传播、`block_on`
 - **循环**：`while` / `if` 内含 await 的通用 lowering；**范围 `for` 与定长数组 `for` 内含 await**（`tests/test_async_for_await.uya`）
 - 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
-- 与最终目标仍有差距：泛型 `TaskQueue`、完整取消语义、跨线程唤醒与跨平台后端仍待完善
+- 与最终目标仍有差距：跨平台后端、更完整 async I/O 原语、多-interest `Waker` 与更严格唤醒安全性验证仍待完善
 
 **已知语义缺口（更新至 2026-04）**：
 - **已缓解**：连续 `while` 内多 await（Bug A）、`return try @await`（Bug C）、**范围/定长数组 `for` 内 await** 等已由通用段发射路径覆盖；见 `tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 与 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)。
@@ -916,8 +916,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`；`register`/`deregister` 当前返回 `!i32`，成功值为 `0`）
     - [x] `test_std_async_event.uya` 端到端通过（当前已覆盖 `LinuxEpoll.register()` + `poll()` 命中后 `Waker.wake()` 最小链路；codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
   - [x] `std.async.channel` 模块：泛型 `Channel<T>` 与运行时容量版 `MpscChannel<T>` 已落地（旧兼容别名入口已移除）；新增 `std.collections.ring_queue.RingQueue<T>` 作为可复用环形队列容器。`test_async_channel.uya` 已覆盖 generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回；`test_std_ring_queue.uya` 已独立覆盖运行时容量、满队列与环回行为。为支撑该能力，C99 后端补齐了泛型 `@size_of(T)` 在单态化代码中的替换。当前释放路径先通过显式 `deinit()` 收口；根因是“泛型 drop / 泛型类型跨模块调用泛型清理方法”的 codegen 仍有缺口，已单列到前面的泛型 RAII 待办
-  - [x] `std.async.scheduler` 模块：`Scheduler` 最小闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`/`scheduler_run_u32`、`scheduler_run_i32_with_event_loop`/`scheduler_run_u32_with_event_loop`/`scheduler_run_usize_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`；`Pending` 时可驱动 `EventLoop.poll()`，若 `poll()` 内调用 `waker.wake()` 则当前轮直接重试；当 `Waker` 携带 I/O interest 时会代为 `register/poll/deregister`；固定容量任务队列已验证“共享一个 EventLoop 单轮统一注册/轮询/唤醒”；同时 codegen 已修复“数组元素上的接口字段方法调用”和“结构体依赖收集误展开接口模板”这两个队列前置缺口；`test_std_async_scheduler.uya` 通过），通用泛型任务队列 / 更完整 `Waker` 调度待实现
-  - [x] `test_async_multi_fd_concurrent.uya` - 多 fd 并发调度：`MockEventLoop` + `WokenReadyFuture` 模拟 epoll 唤醒；验证多任务并发完成；`TaskQueueSlot_i32.epoll_fd` 持久化注册状态，`Waker.reset()` 仅在未注册时调用，完成任务不 deregister
+  - [x] `std.async.scheduler` 模块：`Scheduler` 主闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`/`scheduler_run_u32`、`scheduler_run_i32_with_event_loop`/`scheduler_run_u32_with_event_loop`/`scheduler_run_usize_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / `TaskQueue_i32` / `TaskQueue_u32`、`scheduler_run_task_queue_with_event_loop<T>`；`Pending` 时会同步注册 `eventfd + io fd`，`poll()` 内同步 `wake()` 时当前轮直接重试；`Waker.cancel()` / `TaskQueue.cancel()` 与 `error.Cancelled` 写回已接通；同时 codegen 已修复“数组元素上的接口字段方法调用”和“结构体依赖收集误展开接口模板”这两个队列前置缺口；`test_std_async_scheduler.uya` 通过）
+  - [x] `test_async_multi_fd_concurrent.uya` - 多 fd 并发调度：`MockEventLoop` + `WokenReadyFuture` 模拟共享 `EventLoop` 单轮推进；验证 2/3 任务并发完成、4/6 次注册以及每任务 2 次 poll，与当前“poll 前 reset、event loop 推进一步后 Ready”的调度契约一致
   - [x] `test_async_compute_types.uya` - 验证 `async_compute<T>` 新增类型（`i64`/`u64`/`i16`/`u16`/`i8`/`u8`/`bool`）通过 `scheduler_run_*_with_event_loop` 正确运行
   - [x] `std.thread` 模块：`ThreadPool` 最小实现稳定；**泛型 `export struct AsyncComputeFuture<T> : Future<!T>`** 覆盖整数/bool/**f32/f64**（typedef 别名保留）；共享 `thread_async_compute_future_new<T>`；worker/one-shot 路径对 `THREAD_TASK_KIND_F32`/`F64` 使用 `uya_thread_call_f32`/`f64`；**仅**导出 **`async_compute<T>`**（已移除 12 个 **`async_compute_*`**）。`test_std_thread.uya`、`test_async_compute_types.uya` 等在 `--c99` 与 `--uya --c99` 通过。C99：`Future<!T>` 单态 vtable、typedef **interface 装箱**与 **成员调用**；**`async_compute<T>`** 单态发射 **`std_thread_async_compute_future_new_<T>`** + 装箱（避免仅展开 Uya 体时 `thread_type_is_*` 全假）；泛型方法体内 `thread_type_is_*(T)` 在 C 端仍可折叠为 `0`/`1`；前导注入 `uya_thread_call_f32`/`f64`；`ok<bool>`/`ok<f32>`/`ok<f64>` 分别由 `thread_ok_*` 锚定。**待**：Send/Sync/跨线程验证。
 
@@ -961,7 +961,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_std_ring_queue.uya` - `RingQueue<T>` 运行时容量、满队列拒绝与出队后再入队的环回顺序
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
   - [x] `test_std_async_waker.uya` - `Waker` 的 `wake/reset/is_woken` 最小状态语义
-  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试；双任务与固定容量任务队列共享 EventLoop 单轮唤醒）
+  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / `TaskQueue_i32` / `TaskQueue_u32`、`scheduler_run_task_queue_with_event_loop<T>`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试；共享 EventLoop 单轮唤醒、泛型 `u32` 队列、取消语义、外部 `eventfd` wake 全覆盖）
   - [x] `test_interface_error_union_method.uya` - 接口方法与受约束泛型方法返回 `!T` 时，`try`/`catch` 类型推断正确
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
@@ -2584,7 +2584,7 @@ interface IReadWriter {
 
 ### 部分完成的特性（1 项）
 
-- ✅ **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 核心闭环已完成；后续 P2 仅剩泛型 TaskQueue / 取消 / 跨平台扩展）
+- ✅ **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 核心闭环已完成；跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义已收口；后续 P2 主要剩跨平台后端与更完整 async I/O 扩展）
 
 ### 待实现的核心特性（3 项）
 

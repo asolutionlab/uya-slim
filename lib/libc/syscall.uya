@@ -559,6 +559,12 @@ export const O_TRUNC: i64 = 0x200;
 export const O_APPEND: i64 = 0x400;
 export const O_DIRECTORY: i64 = 0x10000;
 export const O_NONBLOCK: i32 = 0x800;   // 非阻塞 I/O
+export const O_CLOEXEC: i32 = 0x80000;
+
+// eventfd 标志
+export const EFD_SEMAPHORE: i32 = 0x1;
+export const EFD_NONBLOCK: i32 = O_NONBLOCK;
+export const EFD_CLOEXEC: i32 = O_CLOEXEC;
 
 // fcntl 命令
 export const F_GETFL: i32 = 3;
@@ -1054,6 +1060,11 @@ export fn sys_fcntl(fd: i32, cmd: i32, arg: i32) !i32 {
 // flags: 管道标志（如 O_NONBLOCK）
 export fn sys_pipe2(pipefd: &i32, flags: i32) !i32 {
     return @syscall(SYS_pipe2, pipefd as i64, flags as i64) as! i32;
+}
+
+// sys_eventfd - 创建 eventfd（当前 SYS_eventfd 对应 Linux eventfd2 ABI，支持 flags）
+export fn sys_eventfd(initval: u32, flags: i32) !i32 {
+    return @syscall(SYS_eventfd, initval as i64, flags as i64) as! i32;
 }
 
 // ============================================================
