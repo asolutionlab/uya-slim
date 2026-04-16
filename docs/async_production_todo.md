@@ -1,6 +1,6 @@
 # Uya 异步量产 TODO
 
-**最后更新**：2026-04-16（跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义已收口；复合表达式 `try @await` lowering 已转正；`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）
+**最后更新**：2026-04-16（跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义、结构体/接口方法 `@async_fn` 主链路已收口；复合表达式 `try @await` lowering 已转正；`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）
 **目标范围**：Linux + C99 后端 + `@async_fn` / `@await` / `Future` / `Poll` / `Waker` + `AsyncFd` / `LinuxEpoll`，优先保障 DNS、HTTP/1.1、HTTPS 客户端主链路达到可量产状态。
 
 ## 量产定义
@@ -164,6 +164,7 @@
 - ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`、`AsyncFramePool`）
 - ✅ **跨线程 wake/eventfd 已打通**：`Waker` 可绑定/关闭 `eventfd`，`Scheduler` 在 `Pending` 时同步注册 `eventfd + io fd`；`async_compute` worker 与外部 wake 现可直接唤醒主 `EventLoop`
 - ✅ **复合表达式 `try @await` 已转正**：赋值 RHS 与 return 表达式已纳入通用 lowering，回归 `tests/test_async_compound_try_await.uya` 通过
+- ✅ **结构体/接口 async 方法已打通**：结构体内部方法、外部方法块与 interface 方法签名均可写 `@async_fn`；direct call 与 vtable 分派主链路回归见 `tests/test_async_method_interface.uya`
 - ✅ **通用泛型 `TaskQueue<T>` 已完成**：`TaskQueue<T>`、`TaskQueue_i32`、`TaskQueue_u32` 与 `scheduler_run_task_queue_with_event_loop<T>` / typed wrappers 已落地，`test_std_async_scheduler.uya` 与 `test_async_multi_fd_concurrent.uya` 已覆盖
 - ✅ **协作式完整取消语义已完成**：`Waker.cancel()/is_cancelled()`、`TaskQueue.cancel()`、slot/eventfd/I/O deregister 统一清理；`async_compute` 对未启动/排队/one-shot 路径立即取消，对已运行共享槽任务在结果回收时稳定返回 `error.Cancelled`
 - ✅ HTTP/DNS/TLS timeout 策略实现并启用（`http_check_deadline` 已取消注释）

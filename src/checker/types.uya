@@ -296,6 +296,8 @@ struct TypeChecker {
     in_function: i32,
     in_defer_or_errdefer: i32,
     current_function_decl: &ASTNode,
+    current_self_type_name: &byte,
+    current_self_is_union: i32,
     suppress_codegen_diagnostics: i32,
     error_names: [&byte: 256],
     error_hashes: [u32: 256],

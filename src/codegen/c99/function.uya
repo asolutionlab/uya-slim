@@ -421,7 +421,7 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
     if type_c == null || param_name == null {
         return;
     }
-    
+
     // 特殊处理：如果是 copy_type 函数的第一个参数且类型是 "struct Type *" 或 "const struct Type *"，则改为 "const struct Type *"
     // 检查当前函数名是否为 copy_type（通过 codegen.current_function_decl）
     var is_copy_type_param: i32 = 0;
@@ -436,7 +436,7 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
             }
         }
     }
-    
+
     // 检查是否是指向数组的指针（包含 "(*)" 和 "[数字]"）
     // 例如：uint8_t (*)[4096] -> uint8_t (*param_name)[4096]
     const paren_star: *byte = strstr(type_c as *byte, "(*)" as *byte);
@@ -3952,6 +3952,16 @@ fn emit_async_no_await_ready_return(
 // ===== async stage-B codegen（单 @await 最小状态机）=====
 // full_return_type: 函数声明的返回类型（可为 !Future<T> 或 Future<!T>）
 // effective_return_type: 用于状态机的 Future 类型（Future<T> 或 Future<!T>）
+fn c99_type_to_c_async_method_opt(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
+    if codegen == null {
+        return null;
+    }
+    if codegen.current_method_struct_name != null {
+        return c99_type_to_c_with_self(codegen, type_node, codegen.current_method_struct_name);
+    }
+    return c99_type_to_c(codegen, type_node);
+}
+
 fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, func_c_name: &byte, full_return_type: &ASTNode, effective_return_type: &ASTNode, only_struct: i32) void {
     if codegen == null || fn_decl == null || effective_return_type == null {
         return;
@@ -3994,11 +4004,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     const future_mono: &byte = get_mono_struct_name(codegen, "Future" as &byte, type_args, 1);
     const safe_future: &byte = get_safe_c_identifier(codegen, future_mono);
     var vtable_future_safe: &byte = safe_future;
-    const iface_c: &byte = c99_type_to_c(codegen, effective_return_type);
-    const inner_err_c: &byte = c99_type_to_c(codegen, inner);
+    const iface_c: &byte = c99_type_to_c_async_method_opt(codegen, effective_return_type);
+    const inner_err_c: &byte = c99_type_to_c_async_method_opt(codegen, inner);
     var outer_err_payload_value_c: &byte = null;
     if inner.type == ASTNodeType.AST_TYPE_ERROR_UNION && inner.type_error_union_payload_type != null {
-        outer_err_payload_value_c = c99_type_to_c(codegen, inner.type_error_union_payload_type);
+        outer_err_payload_value_c = c99_type_to_c_async_method_opt(codegen, inner.type_error_union_payload_type);
     }
     var concrete_future_safe: &byte = safe_future;
     if effective_return_type.type_named_type_args != null && effective_return_type.type_named_type_arg_count >= 1 {
@@ -4189,7 +4199,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     future_type_node.type_named_name = "Future" as &byte;
                     future_type_node.type_named_type_args = type_args_poll;
                     future_type_node.type_named_type_arg_count = 1;
-                    c99_type_to_c(codegen, future_type_node);
+                    c99_type_to_c_async_method_opt(codegen, future_type_node);
                 }
             }
         }
@@ -4298,7 +4308,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 future_inner_type_node.type_named_name = "Future" as &byte;
                 future_inner_type_node.type_named_type_args = type_args;
                 future_inner_type_node.type_named_type_arg_count = 1;
-                const slot_c: &byte = c99_type_to_c(codegen, future_inner_type_node);
+                const slot_c: &byte = c99_type_to_c_async_method_opt(codegen, future_inner_type_node);
                 if slot_c != null { state_slot_iface_c = slot_c; }
             }
         }
@@ -4647,7 +4657,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             codegen.async_param_count = codegen.async_param_count + 1;
             // 将捕获参数注册为 local_variables，使 get_identifier_type_c 能找到类型（用于 reader.read 等接口/方法调用）
             if param.var_decl_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                const ptype_c: &byte = c99_type_to_c(codegen, param.var_decl_type);
+                const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
                 if ptype_c != null {
                     codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = ptype_c;
@@ -4731,7 +4741,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             } else {
                 seg_inner_is_err = 0;
             }
-            const seg_rpc: &byte = c99_type_to_c(codegen, seg_inner_ast);
+            const seg_rpc: &byte = c99_type_to_c_async_method_opt(codegen, seg_inner_ast);
             if seg_rpc != null { seg_ready_payload_c = seg_rpc; }
         }
         fprintf(codegen.emit_stream as *void, "    if (s->state == %d) {\n" as *byte, state_k);
@@ -4845,7 +4855,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                         is_future_literal_ret = 1;
                     }
                     if is_future_literal_ret != 0 {
-                        const last_ret_c: &byte = c99_type_to_c(codegen, full_return_type);
+                        const last_ret_c: &byte = c99_type_to_c_async_method_opt(codegen, full_return_type);
                         if last_ret_c != null {
                             fprintf(codegen.emit_stream as *void, "        %s ok = (%s){ .error_id = 0, .value = " as *byte, last_ret_c as *byte, last_ret_c as *byte);
                             fprintf(codegen.emit_stream as *void, "({ struct %s _uya_f = " as *byte, concrete_future_safe as *byte);
@@ -5019,7 +5029,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         while pi < param_count && pi < 16 {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
-                const ptype_c: &byte = c99_type_to_c(codegen, param.var_decl_type);
+                const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
                 if ptype_c != null && pname != null {
                     fputs(", " as *byte, codegen.emit_stream as *void);
@@ -5053,7 +5063,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         while pi < param_count && pi < 16 {
             const param_old: &ASTNode = params[pi];
             if param_old != null && param_old.type == ASTNodeType.AST_VAR_DECL && param_old.var_decl_type != null && param_old.var_decl_name != null {
-                const ptype_old: &byte = c99_type_to_c(codegen, param_old.var_decl_type);
+                const ptype_old: &byte = c99_type_to_c_async_method_opt(codegen, param_old.var_decl_type);
                 const pname_old: &byte = get_safe_c_identifier(codegen, param_old.var_decl_name);
                 if ptype_old != null && pname_old != null {
                     fputs(", " as *byte, codegen.emit_stream as *void);
@@ -5150,7 +5160,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     var wrapper_ret_c: &byte = iface_c;
     var need_wrap: i32 = 0;
     if full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-        wrapper_ret_c = c99_type_to_c(codegen, full_return_type);
+        wrapper_ret_c = c99_type_to_c_async_method_opt(codegen, full_return_type);
         if wrapper_ret_c != null && strstr(wrapper_ret_c as *byte, "err_union_" as *byte) != null {
             need_wrap = 1;
         }
@@ -5174,7 +5184,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fputs(", " as *byte, codegen.emit_stream as *void);
             }
             first_param = 0;
-            const ptype_c: &byte = c99_type_to_c(codegen, param.var_decl_type);
+            const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
             const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
             if ptype_c != null && pname != null {
                 fprintf(codegen.emit_stream as *void, "%s %s" as *byte, ptype_c as *byte, pname as *byte);
@@ -5292,6 +5302,39 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
     if c_name == null {
         return;
     }
+    const saved_method_struct_early: &byte = codegen.current_method_struct_name;
+    codegen.current_method_struct_name = struct_name;
+    if fn_decl.fn_decl_is_async != 0 {
+        const return_type_async: &ASTNode = fn_decl.fn_decl_return_type;
+        var effective_return_type_async: &ASTNode = return_type_async;
+        var use_stage_b_async: i32 = 0;
+        if return_type_async != null && return_type_async.type == ASTNodeType.AST_TYPE_NAMED &&
+            return_type_async.type_named_name != null &&
+            strcmp(return_type_async.type_named_name as *byte, "Future" as *byte) == 0 &&
+            return_type_async.type_named_type_arg_count == 1 &&
+            return_type_async.type_named_type_args != null {
+            const a0_async: &ASTNode = return_type_async.type_named_type_args[0];
+            if a0_async != null && a0_async.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                a0_async.type_error_union_payload_type != null {
+                use_stage_b_async = 1;
+            }
+        }
+        if use_stage_b_async == 0 && return_type_async != null && return_type_async.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+            return_type_async.type_error_union_payload_type != null {
+            const pl_async: &ASTNode = return_type_async.type_error_union_payload_type;
+            if pl_async.type == ASTNodeType.AST_TYPE_NAMED && pl_async.type_named_name != null &&
+                strcmp(pl_async.type_named_name as *byte, "Future" as *byte) == 0 &&
+                pl_async.type_named_type_arg_count == 1 && pl_async.type_named_type_args != null {
+                use_stage_b_async = 1;
+                effective_return_type_async = pl_async;
+            }
+        }
+        if use_stage_b_async != 0 {
+            gen_async_function_stage_b(codegen, fn_decl, c_name, return_type_async, effective_return_type_async, 0);
+            codegen.current_method_struct_name = saved_method_struct_early;
+            return;
+        }
+    }
     var return_c: &byte = convert_array_return_type(codegen, fn_decl.fn_decl_return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
     const params: & & ASTNode = fn_decl.fn_decl_params;
@@ -5319,8 +5362,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
     codegen.current_function_return_type = fn_decl.fn_decl_return_type;
     const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
     codegen.current_function_decl = fn_decl;
-    const saved_method_struct: &byte = codegen.current_method_struct_name;
-    codegen.current_method_struct_name = struct_name;
+    const saved_method_struct: &byte = saved_method_struct_early;
     const saved_local_count: i32 = codegen.local_variable_count;
     const saved_depth: i32 = codegen.current_depth;
     codegen.local_variable_count = 0;
@@ -6323,6 +6365,43 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
     codegen.current_type_args = type_args;
     codegen.current_type_arg_count = type_arg_count;
+    const saved_method_struct_early: &byte = codegen.current_method_struct_name;
+    codegen.current_method_struct_name = struct_name;
+
+    if fn_decl.fn_decl_is_async != 0 {
+        var effective_return_type_async: &ASTNode = return_type;
+        var use_stage_b_async: i32 = 0;
+        if return_type != null && return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+            return_type.type_named_name != null &&
+            strcmp(return_type.type_named_name as *byte, "Future" as *byte) == 0 &&
+            return_type.type_named_type_arg_count == 1 &&
+            return_type.type_named_type_args != null {
+            const a0_async: &ASTNode = return_type.type_named_type_args[0];
+            if a0_async != null && a0_async.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                a0_async.type_error_union_payload_type != null {
+                use_stage_b_async = 1;
+            }
+        }
+        if use_stage_b_async == 0 && return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+            return_type.type_error_union_payload_type != null {
+            const pl_async: &ASTNode = return_type.type_error_union_payload_type;
+            if pl_async.type == ASTNodeType.AST_TYPE_NAMED && pl_async.type_named_name != null &&
+                strcmp(pl_async.type_named_name as *byte, "Future" as *byte) == 0 &&
+                pl_async.type_named_type_arg_count == 1 && pl_async.type_named_type_args != null {
+                use_stage_b_async = 1;
+                effective_return_type_async = pl_async;
+            }
+        }
+        if use_stage_b_async != 0 {
+            gen_async_function_stage_b(codegen, fn_decl, mono_method_name, return_type, effective_return_type_async, 0);
+            codegen.current_method_struct_name = saved_method_struct_early;
+            codegen.current_type_params = saved_type_params;
+            codegen.current_type_param_count = saved_type_param_count;
+            codegen.current_type_args = saved_type_args;
+            codegen.current_type_arg_count = saved_type_arg_count;
+            return;
+        }
+    }
     
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
     
@@ -6355,6 +6434,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
     const saved_local_count: i32 = codegen.local_variable_count;
     const saved_depth: i32 = codegen.current_depth;
+    const saved_method_struct: &byte = saved_method_struct_early;
     
     codegen.current_function_return_type = return_type;
     codegen.current_function_decl = fn_decl;
@@ -6445,6 +6525,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     codegen.current_function_decl = saved_current_function_decl;
     codegen.local_variable_count = saved_local_count;
     codegen.current_depth = saved_depth;
+    codegen.current_method_struct_name = saved_method_struct;
     codegen.indent_level = codegen.indent_level - 1;
     
     c99_emit_close_brace_newline(codegen);

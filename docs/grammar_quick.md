@@ -268,6 +268,16 @@ Name {
     }
 }
 
+// async 方法也可以写在结构体内部或外部方法块
+struct AsyncName {
+    field: i32,
+
+    @async_fn
+    fn next(self: &Self) Future<!i32> {
+        return self.field;
+    }
+}
+
 // 泛型结构体
 struct Vec<T: Default> {
     data: &T,
@@ -316,6 +326,12 @@ match v {
 // 接口定义
 interface IWriter {
     fn write(self: &Self, buf: *byte, len: i32) i32;
+}
+
+// async 接口签名
+interface IAsyncReader {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!usize>;
 }
 
 // 接口实现
@@ -928,4 +944,3 @@ fn main() i32 {
 - [uya.md](./uya.md) - 完整语言规范
 - [grammar_formal.md](./grammar_formal.md) - 正式BNF语法规范
 - [comparison.md](./comparison.md) - 与其他语言的对比
-

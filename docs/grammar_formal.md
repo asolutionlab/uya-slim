@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.45 同步（2026-04-14）
+> **版本**：与 [uya.md](./uya.md) 0.49.45 同步（2026-04-16）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -26,7 +26,8 @@ declaration    = fn_decl | struct_decl | struct_method_block | union_decl | unio
 ### 函数声明
 
 ```
-fn_decl        = [ ( 'export' 'extern' | 'extern' 'export' | 'export' | 'extern' [ STRING ] ) ] 'fn' ID [ '<' type_param_list '>' ] '(' [ param_list ] ')' type [ '{' statements '}' | ';' ]
+async_fn_attr  = '@async_fn'
+fn_decl        = [ async_fn_attr ] [ ( 'export' 'extern' | 'extern' 'export' | 'export' | 'extern' [ STRING ] ) ] 'fn' ID [ '<' type_param_list '>' ] '(' [ param_list ] ')' type [ '{' statements '}' | ';' ]
 param_list     = param { ',' param }
 param          = ID ':' type
 type_param_list = type_param { ',' type_param }
@@ -56,7 +57,7 @@ struct_body    = ( field_list | method_list | field_list method_list )
 field_list     = field { ',' field }
 field          = ID ':' type
 method_list    = method_decl { method_decl }
-method_decl    = fn_decl  # self 参数必须为 &Self 或 &StructName
+method_decl    = [ async_fn_attr ] 'fn' ID [ '<' type_param_list '>' ] '(' [ param_list ] ')' type '{' statements '}'  # self 参数必须为 &Self 或 &StructName
 
 # 结构体外部方法定义（方式2）
 struct_method_block = ID '{' method_list '}'
@@ -73,6 +74,7 @@ constraint_list = ID { '+' ID }
   - 语法：`struct StructName : InterfaceName { field: Type, fn method(self: &Self) ReturnType { ... } }`
 - **方式2：结构体外部定义**：使用块语法在结构体定义后添加方法
   - 语法：`StructName { fn method(self: &Self) ReturnType { ... } }`
+- 方法实现允许使用可选前缀 `@async_fn`
 - `self` 参数必须显式声明，使用指针：`self: &Self` 或 `self: *StructName`
 - 推荐使用 `Self` 占位符：`self: &Self` 更简洁
 - 详细语法说明见 [uya.md](./uya.md#29-扩展特性) 结构体方法部分
@@ -81,7 +83,7 @@ constraint_list = ID { '+' ID }
 
 ```
 interface_decl = 'interface' ID [ '<' type_param_list '>' ] '{' (method_sig | interface_name)+ '}'  # 方法签名或组合接口名
-method_sig     = 'fn' ID '(' [ param_list ] ')' type ';'
+method_sig     = [ async_fn_attr ] 'fn' ID '(' [ param_list ] ')' type ';'
 interface_name = ID ';'  # 组合接口名，用分号分隔
 type_param_list = type_param { ',' type_param }
 type_param     = ID [ ':' constraint_list ]
@@ -93,6 +95,7 @@ constraint_list = ID { '+' ID }
 - `interface_name` 表示接口组合，在接口体中直接列出被组合的接口名，用分号分隔
 - 接口必须至少包含一个方法签名或组合接口名
 - 接口实现：结构体在定义时声明接口（`struct StructName : InterfaceName { ... }`），接口方法作为结构体方法定义
+- 接口方法签名允许使用可选前缀 `@async_fn`；对接口而言，异步 ABI 仍由返回 `Future<!T>` / `!Future<T>` 表达
 - 详细语法说明见 [uya.md](./uya.md#6-接口interface)
 
 ### 联合体声明
@@ -537,4 +540,3 @@ macro_call     = ID '(' arg_list ')'
 - [uya.md](./uya.md) - 完整语言规范
 - [grammar_quick.md](./grammar_quick.md) - 语法速查手册
 - [comparison.md](./comparison.md) - 与其他语言的对比
-

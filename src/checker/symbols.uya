@@ -115,6 +115,8 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     checker.in_function = 0;
     checker.in_defer_or_errdefer = 0;
     checker.current_function_decl = null;
+    checker.current_self_type_name = null;
+    checker.current_self_is_union = 0;
     checker.error_name_count = 0;
     
     // 初始化错误集（所有槽位设为null）

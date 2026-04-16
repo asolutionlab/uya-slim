@@ -6149,11 +6149,15 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         if codegen.emitting_assign_lhs != 0 && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
             strcmp(object.identifier_name as *byte, "self" as *byte) == 0 && codegen.current_method_struct_name != null {
-            const safe_struct: &byte = get_safe_c_identifier(codegen, codegen.current_method_struct_name);
-            if safe_struct != null {
-                fprintf(codegen.emit_stream as *void, "((struct %s *)self)" as *byte, safe_struct as *byte);
+            if codegen.async_state_var != null {
+                fprintf(codegen.emit_stream as *void, "%s->self" as *byte, codegen.async_state_var as *byte);
             } else {
-                gen_expr(codegen, object);
+                const safe_struct: &byte = get_safe_c_identifier(codegen, codegen.current_method_struct_name);
+                if safe_struct != null {
+                    fprintf(codegen.emit_stream as *void, "((struct %s *)self)" as *byte, safe_struct as *byte);
+                } else {
+                    gen_expr(codegen, object);
+                }
             }
         } else {
             gen_expr(codegen, object);

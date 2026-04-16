@@ -1258,7 +1258,7 @@ fn main() i32 {
 ```
 
 **功能描述**：
-标记函数为异步函数，触发编译器进行 CPS 变换，生成显式状态机。
+标记异步入口，触发编译器进行 CPS 变换，生成显式状态机。当前可用于顶层函数、结构体/联合体的方法实现，以及接口方法签名。
 
 **使用示例**：
 ```uya
@@ -1267,12 +1267,26 @@ fn main() i32 {
     const data: i32 = try @await read_data(conn);
     return data;
 }
+
+interface Reader {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!usize>;
+}
+
+Socket {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!usize> {
+        _ = n;
+        return 0;
+    }
+}
 ```
 
 **注意事项**：
-- 必须返回 `!Future<T>` 类型
+- 必须返回 `Future<!T>` 或 `!Future<T>` 类型
 - 函数体内可以使用 `@await`
 - 编译器会自动生成状态机代码
+- 接口方法签名上的 `@async_fn` 只声明异步契约；真正的状态机生成发生在对应实现上
 
 ---
 
@@ -1949,4 +1963,3 @@ fn buffer_info<T>() void {
 ---
 
 **本文档由 Uya 编译器团队维护，最后更新：2026-04-02（0.49.44）**
-

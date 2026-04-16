@@ -3423,6 +3423,7 @@ fn log_printf(fmt: *byte, ...) i32 {
 - `interface InterfaceName { method_sig ... }`
 - 结构体在定义时声明接口：`struct StructName : InterfaceName { ... }`
 - 接口方法作为结构体方法定义，可以在结构体内部或外部方法块中定义
+- `@async_fn` 现在也可用于接口方法签名，以及结构体/联合体的方法实现；对接口而言，异步 ABI 仍由返回 `Future<!T>` 或 `!Future<T>` 表达
 
 ### 6.3 语义总览
 
@@ -5041,7 +5042,11 @@ for hello |byte| {
 
 #### 18.3.1 `@async_fn` 函数属性
 
-**语法**：`@async_fn fn function_name(...) !Future<T> { ... }`
+**语法**：
+
+- 顶层函数：`@async_fn fn function_name(...) !Future<T> { ... }`
+- 结构体/联合体方法实现：`@async_fn fn method(self: &Self, ...) !Future<T> { ... }`
+- 接口方法签名：`@async_fn fn method(self: &Self, ...) Future<!T>;`
 
 **功能**：
 - 函数属性，触发 CPS（Continuation-Passing Style）变换生成显式状态机
@@ -5050,6 +5055,7 @@ for hello |byte| {
 **约束**：
 - **必须**返回 `Future<!T>` 或 `!Future<T>`（显式异步，无隐式包装）；两种形式均支持，`!Future<T>` 为兼容写法
 - 状态机大小编译期确定，递归调用编译错误
+- 接口方法签名上的 `@async_fn` 用于声明异步契约；真正生成状态机的是对应的结构体/联合体方法实现
 
 **示例**：
 ```uya
@@ -5062,6 +5068,23 @@ fn fetch() !Future<&[i8]> {
 
 @async_fn
 fn bad() !void { ... }  // 错误：必须返回 Future
+
+interface Reader {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!i32>;
+}
+
+struct Socket : Reader {
+    fd: i32,
+}
+
+Socket {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!i32> {
+        _ = n;
+        return self.fd;
+    }
+}
 ```
 
 #### 18.3.2 `@await` 挂起点
@@ -7224,4 +7247,3 @@ bin/uya build main.uya -o main.c --c99 -e
 - **编译期证明**：编译器在当前函数内验证安全性，证明失败则报编译错误并给出修改建议。常量错误仍然直接报错。
 
 ---
-

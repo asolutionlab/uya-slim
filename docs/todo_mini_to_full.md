@@ -338,10 +338,11 @@
 - [x] **interface 定义**：`interface I { fn method(self: &Self,...) Ret; ... }`，规范 uya.md §6
 - [x] **实现**：`struct S : I { }`，方法块 `S { fn method(...) { ... } }`，Checker 校验实现
 - [x] **装箱与调用**：接口值 8/16B（vtable+data）、装箱点、接口方法调用；Codegen 已实现（vtable 生成、装箱、call 通过 vtable）
+- [x] **接口 async 方法签名**：`interface I { @async_fn fn method(...) Future<!T>; }` 与对应结构体/联合体 async 方法实现主链路已打通；固定回归 `test_async_method_interface.uya`
 
 **涉及**：AST、Parser、Checker、Codegen（vtable、装箱点、逃逸检查），uya-src。
 
-**当前进度**：Lexer、AST、Parser、Checker 已完成。**C 实现 Codegen 已完成**：types.c 接口类型→struct uya_interface_I；structs.c 生成 interface/vtable 结构体与 vtable 常量（修复：预先生成接口方法签名中使用的错误联合类型结构体定义，避免 err_union_void 等结构体定义出现在 vtable 内部）；function.c 方法块生成 uya_S_m 函数；expr.c 接口方法调用（vtable 派发）、装箱（struct→interface 传参）；main.c 处理 AST_METHOD_BLOCK、emit_vtable_constants。test_interface.uya 通过 `--c99`。**uya-src 已同步**：lexer.uya（TOKEN_INTERFACE、interface 关键字）；ast.uya（AST_INTERFACE_DECL、AST_METHOD_BLOCK、struct_decl_interface_*、method_block_*）；parser.uya（parse_interface、parse_method_block、struct : I、顶层 IDENTIFIER+{）；checker.uya（TYPE_INTERFACE、find_interface_decl_from_program、find_method_block_for_struct、struct_implements_interface、type_equals/type_from_ast/check_expr_type、member_access 接口方法）；codegen types/structs/function/expr/main（接口类型、emit_interface_structs_and_vtables 修复：预先生成错误联合类型结构体定义、emit_vtable_constants、方法前向声明与定义、接口方法调用与装箱、c99_type_to_c_with_self）。自举编译 `./compile.sh --c99 -e` 成功；test_interface.uya 通过 `--uya --c99`。**修复**：parser.uya 在「字段访问和数组访问链」循环中补全了 `TOKEN_LEFT_PAREN` 分支，以解析 `obj.method(args)` 形式的方法调用（如 `a.add(10)`）；structs.c/structs.uya 修复 err_union_void 结构体定义在 vtable 内部的问题：添加 pregenerate_error_union_structs_for_interface 函数，在生成 vtable 之前预先生成所有接口方法签名中使用的错误联合类型结构体定义。自举对比 `--c99 -b` 仅有单行空行差异。
+**当前进度**：Lexer、AST、Parser、Checker 已完成。**C 实现 Codegen 已完成**：types.c 接口类型→struct uya_interface_I；structs.c 生成 interface/vtable 结构体与 vtable 常量（修复：预先生成接口方法签名中使用的错误联合类型结构体定义，避免 err_union_void 等结构体定义出现在 vtable 内部）；function.c 方法块生成 uya_S_m 函数；expr.c 接口方法调用（vtable 派发）、装箱（struct→interface 传参）；main.c 处理 AST_METHOD_BLOCK、emit_vtable_constants。test_interface.uya 通过 `--c99`。**uya-src 已同步**：lexer.uya（TOKEN_INTERFACE、interface 关键字）；ast.uya（AST_INTERFACE_DECL、AST_METHOD_BLOCK、struct_decl_interface_*、method_block_*）；parser.uya（parse_interface、parse_method_block、struct : I、顶层 IDENTIFIER+{）；checker.uya（TYPE_INTERFACE、find_interface_decl_from_program、find_method_block_for_struct、struct_implements_interface、type_equals/type_from_ast/check_expr_type、member_access 接口方法）；codegen types/structs/function/expr/main（接口类型、emit_interface_structs_and_vtables 修复：预先生成错误联合类型结构体定义、emit_vtable_constants、方法前向声明与定义、接口方法调用与装箱、c99_type_to_c_with_self）。在此基础上，`@async_fn` 现也可用于接口方法签名，以及结构体内部/外部方法实现；method async wrapper、`Self` 解析与 vtable 分派主链路已由 `test_async_method_interface.uya` 覆盖。自举编译 `./compile.sh --c99 -e` 成功；test_interface.uya 通过 `--uya --c99`。**修复**：parser.uya 在「字段访问和数组访问链」循环中补全了 `TOKEN_LEFT_PAREN` 分支，以解析 `obj.method(args)` 形式的方法调用（如 `a.add(10)`）；structs.c/structs.uya 修复 err_union_void 结构体定义在 vtable 内部的问题：添加 pregenerate_error_union_structs_for_interface 函数，在生成 vtable 之前预先生成所有接口方法签名中使用的错误联合类型结构体定义。自举对比 `--c99 -b` 仅有单行空行差异。
 
 ---
 
@@ -843,6 +844,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 **当前实现状态（2026-03，2026-04 增补）**：
 - 已完成最小闭环：`@async_fn` / `try @await`、`Future<!T>` 的 `poll` 状态机、单/多 `@await`、基础错误传播、`block_on`
 - **循环**：`while` / `if` 内含 await 的通用 lowering；**范围 `for` 与定长数组 `for` 内含 await**（`tests/test_async_for_await.uya`）
+- **方法与接口**：结构体内部方法、外部方法块与接口方法签名现已支持 `@async_fn`；接口 async 调用经 vtable 分派 future 的主链路已打通（`tests/test_async_method_interface.uya`）
 - 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
 - 与最终目标仍有差距：跨平台后端、更完整 async I/O 原语、多-interest `Waker` 与更严格唤醒安全性验证仍待完善
 
@@ -865,7 +867,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 支持 `union Poll<T>` 类型定义和使用（基于联合体泛型单态化）
 
 - [x] **Parser**：异步编程语法解析（C 实现与 uya-src 已同步）
-  - [x] 解析 `@async_fn` 函数属性（函数声明前的属性）
+  - [x] 解析 `@async_fn` 函数属性（顶层函数、结构体/联合体方法实现、接口方法签名前的属性）
   - [x] 解析 `@await expression` 表达式
   - [x] 解析 `!Future<T>` 与 `Future<!T>` 返回类型（兼容双轨语义）
   - [x] 解析 `union Poll<T>` 类型定义（基于联合体泛型语法）
@@ -878,6 +880,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `@await` 返回类型推断为 `!T`（当前已接入 `Poll<!T>` 最小状态机闭环）
   - [x] `union Poll<T>` 类型检查（`test_poll_std_async.uya` 覆盖）
   - [x] `interface Future<T>` 接口定义和实现检查（`test_async_future_interface_box.uya` 覆盖）
+  - [x] 结构体/联合体 async 方法与接口 async 方法签名主链路（`Self` 解析、方法 async 上下文、vtable 派发 future）已接通；固定回归 `test_async_method_interface.uya`
   - [x] 接口方法 / 受约束泛型方法返回 `!T` 的推断（`test_interface_error_union_method.uya` 覆盖 `EventLoop.poll()` / `counter.next()`）
   - [x] 状态机大小编译期计算（已实现 `get_type_node_size_bytes()` 递归计算实际类型大小（基本类型、指针、数组、切片、元组、错误联合、具名 struct）；`@await` 上限 32 / 参数上限 16 已在 checker 阶段报错；估算 > 1024 字节时输出警告；栈分配优化暂未启用（待调度器存储期配合））
 
@@ -963,6 +966,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
   - [x] `test_std_async_waker.uya` - `Waker` 的 `wake/reset/is_woken` 最小状态语义
   - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / `TaskQueue_i32` / `TaskQueue_u32`、`scheduler_run_task_queue_with_event_loop<T>`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试；共享 EventLoop 单轮唤醒、泛型 `u32` 队列、取消语义、外部 `eventfd` wake 全覆盖）
+  - [x] `test_async_method_interface.uya` - 结构体内部 async 方法、方法块 async 实现与接口 async 方法签名的 direct call / vtable dispatch 回归
   - [x] `test_interface_error_union_method.uya` - 接口方法与受约束泛型方法返回 `!T` 时，`try`/`catch` 类型推断正确
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
