@@ -1,6 +1,6 @@
 # Uya 异步量产 TODO
 
-**最后更新**：2026-04-16（跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义已收口；`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）  
+**最后更新**：2026-04-16（跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义已收口；`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）
 **目标范围**：Linux + C99 后端 + `@async_fn` / `@await` / `Future` / `Poll` / `Waker` + `AsyncFd` / `LinuxEpoll`，优先保障 DNS、HTTP/1.1、HTTPS 客户端主链路达到可量产状态。
 
 ## 量产定义
