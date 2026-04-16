@@ -59,10 +59,11 @@ std/async/
 - `Scheduler` 已有单任务、双任务与固定容量任务队列入口，可让多个 future 共享一次 `EventLoop.poll()` 与唤醒周期
 - `LinuxEpoll.poll()` 已能在事件命中后唤醒对应 `Waker`
 - 后续主要剩余通用泛型任务队列、更多任务共享事件循环、跨线程唤醒等扩展
+- 实际代码中的最小 `AsyncWriter` / `AsyncReader` 先以 `write(data, count)` / `read(buf, count)` 落地；下列 `write_str` / `read_exact` / `async_print_*` 仍是目标 API。
 
 ### 核心接口
 
-- [ ] **AsyncWriter 接口**：统一的异步输出抽象
+- [~] **AsyncWriter 接口**：统一的异步输出抽象（最小版已实现 `write` / `flush`）
   ```uya
   export interface AsyncWriter {
       fn write(self: &Self, data: &[u8]) Future<!usize>;
@@ -71,7 +72,7 @@ std/async/
   }
   ```
 
-- [ ] **AsyncReader 接口**：统一的异步输入抽象
+- [~] **AsyncReader 接口**：统一的异步输入抽象（最小版已实现 `read`）
   ```uya
   export interface AsyncReader {
       fn read(self: &Self, buf: &[u8]) Future<!usize>;

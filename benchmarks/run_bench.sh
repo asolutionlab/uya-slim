@@ -54,6 +54,17 @@ TOKIO_EXEC="/tmp/http_bench_tokio"
 # async epoll 系列默认沿用已验证可启动的宿主编译旗标
 ASYNC_BENCH_CFLAGS="-std=c99 -O3 -g -fno-builtin -fno-inline-small-functions -I${REPO_ROOT}"
 
+# 表格列宽（第一列由 main 按 benchmark 名称自动计算）
+TABLE_NAME_WIDTH=0
+TABLE_REMARK_WIDTH=0
+TABLE_QPS_WIDTH=12
+TABLE_AB_REQ_WIDTH=14
+TABLE_AB_FAILED_WIDTH=12
+TABLE_AB_RPS_WIDTH=12
+TABLE_KA_REQ_WIDTH=14
+TABLE_KA_FAILED_WIDTH=12
+TABLE_KA_RPS_WIDTH=12
+
 # wrk / server 参数（默认对齐机器 CPU/2，可用环境变量覆盖）
 CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)"
 DEFAULT_BENCH_THREADS=$((CPU_COUNT / 2))
@@ -94,6 +105,63 @@ result_field() {
     local result="$1"
     local idx="$2"
     echo "$result" | awk -F'|' -v n="$idx" '{print $n}' | tr -d '\r\n '
+}
+
+table_dashes() {
+    local width="$1"
+    local dash_width=$((width + 2))
+    printf '%*s' "$dash_width" '' | tr ' ' '-'
+}
+
+table_name_width() {
+    local padding=1
+    local max=0
+    local name
+    local len
+
+    for name in "$@"; do
+        len=${#name}
+        if [ "$len" -gt "$max" ]; then
+            max=$len
+        fi
+    done
+
+    printf '%s' $((max + padding))
+}
+
+table_remark_for() {
+    local name="$1"
+    case "$name" in
+        http_bench.uya) echo "base" ;;
+        http_bench_fork.uya) echo "fork" ;;
+        http_bench_async_epoll.uya) echo "epoll" ;;
+        http_bench_async_epoll_await.uya) echo "await" ;;
+        http_bench_async_epoll_await_simple.uya) echo "simp" ;;
+        http_bench_async_epoll_await_stack.uya) echo "stack" ;;
+        http_bench.go) echo "go" ;;
+        http_bench.c) echo "c" ;;
+        http_bench_async_epoll.c) echo "c-ep" ;;
+        http_bench_tokio) echo "tokio" ;;
+        *) echo "" ;;
+    esac
+}
+
+table_remark_width() {
+    local padding=1
+    local max=0
+    local name
+    local remark
+    local len
+
+    for name in "$@"; do
+        remark="$(table_remark_for "$name")"
+        len=${#remark}
+        if [ "$len" -gt "$max" ]; then
+            max=$len
+        fi
+    done
+
+    printf '%s' $((max + padding))
 }
 
 # 检查依赖
@@ -823,15 +891,62 @@ main() {
     if [ -z "$c_async_epoll_ka_req" ]; then c_async_epoll_ka_req=0; fi
     if [ -z "$tokio_ka_req" ]; then tokio_ka_req=0; fi
 
+    TABLE_NAME_WIDTH="$(
+        table_name_width \
+            "http_bench.uya" \
+            "http_bench_fork.uya" \
+            "http_bench_async_epoll.uya" \
+            "http_bench_async_epoll_await.uya" \
+            "http_bench_async_epoll_await_simple.uya" \
+            "http_bench_async_epoll_await_stack.uya" \
+            "http_bench.go" \
+            "http_bench.c" \
+            "http_bench_async_epoll.c" \
+            "http_bench_tokio"
+    )"
+    TABLE_REMARK_WIDTH="$(
+        table_remark_width \
+            "http_bench.uya" \
+            "http_bench_fork.uya" \
+            "http_bench_async_epoll.uya" \
+            "http_bench_async_epoll_await.uya" \
+            "http_bench_async_epoll_await_simple.uya" \
+            "http_bench_async_epoll_await_stack.uya" \
+            "http_bench.go" \
+            "http_bench.c" \
+            "http_bench_async_epoll.c" \
+            "http_bench_tokio"
+    )"
+
     print_sep() {
+        local name_dashes
+        local remark_dashes
+        local qps_dashes
+        local ab_req_dashes
+        local ab_failed_dashes
+        local ab_rps_dashes
+        local ka_req_dashes
+        local ka_failed_dashes
+        local ka_rps_dashes
+
+        name_dashes="$(table_dashes "$TABLE_NAME_WIDTH")"
+        remark_dashes="$(table_dashes "$TABLE_REMARK_WIDTH")"
+        qps_dashes="$(table_dashes "$TABLE_QPS_WIDTH")"
+        ab_req_dashes="$(table_dashes "$TABLE_AB_REQ_WIDTH")"
+        ab_failed_dashes="$(table_dashes "$TABLE_AB_FAILED_WIDTH")"
+        ab_rps_dashes="$(table_dashes "$TABLE_AB_RPS_WIDTH")"
+        ka_req_dashes="$(table_dashes "$TABLE_KA_REQ_WIDTH")"
+        ka_failed_dashes="$(table_dashes "$TABLE_KA_FAILED_WIDTH")"
+        ka_rps_dashes="$(table_dashes "$TABLE_KA_RPS_WIDTH")"
+
         if [ "$do_ab" -eq 0 ] && [ "$do_abk" -eq 0 ]; then
-            echo "|------------------------------|--------------|"
+            echo "|${name_dashes}|${remark_dashes}|${qps_dashes}|"
         elif [ "$do_ab" -eq 1 ] && [ "$do_abk" -eq 0 ]; then
-            echo "|------------------------------|--------------|----------------|------------|------------|"
+            echo "|${name_dashes}|${remark_dashes}|${qps_dashes}|${ab_req_dashes}|${ab_failed_dashes}|${ab_rps_dashes}|"
         elif [ "$do_ab" -eq 0 ] && [ "$do_abk" -eq 1 ]; then
-            echo "|------------------------------|--------------|----------------|------------|------------|"
+            echo "|${name_dashes}|${remark_dashes}|${qps_dashes}|${ka_req_dashes}|${ka_failed_dashes}|${ka_rps_dashes}|"
         else
-            echo "|------------------------------|--------------|----------------|------------|------------|----------------|------------|------------|"
+            echo "|${name_dashes}|${remark_dashes}|${qps_dashes}|${ab_req_dashes}|${ab_failed_dashes}|${ab_rps_dashes}|${ka_req_dashes}|${ka_failed_dashes}|${ka_rps_dashes}|"
         fi
     }
 
@@ -844,26 +959,29 @@ main() {
         local ka_req="$6"
         local ka_failed="$7"
         local ka_rps="$8"
+        local remark
+
+        remark="$(table_remark_for "$name")"
         if [ "$do_ab" -eq 0 ] && [ "$do_abk" -eq 0 ]; then
-            printf "| %-28s | %-12s |\n" "$name" "$qps"
+            printf "| %-*s | %-*s | %-12s |\n" "$TABLE_NAME_WIDTH" "$name" "$TABLE_REMARK_WIDTH" "$remark" "$qps"
         elif [ "$do_ab" -eq 1 ] && [ "$do_abk" -eq 0 ]; then
-            printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "$name" "$qps" "$ab_req" "$ab_failed" "$ab_rps"
+            printf "| %-*s | %-*s | %-12s | %-14s | %-12s | %-12s |\n" "$TABLE_NAME_WIDTH" "$name" "$TABLE_REMARK_WIDTH" "$remark" "$qps" "$ab_req" "$ab_failed" "$ab_rps"
         elif [ "$do_ab" -eq 0 ] && [ "$do_abk" -eq 1 ]; then
-            printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "$name" "$qps" "$ka_req" "$ka_failed" "$ka_rps"
+            printf "| %-*s | %-*s | %-12s | %-14s | %-12s | %-12s |\n" "$TABLE_NAME_WIDTH" "$name" "$TABLE_REMARK_WIDTH" "$remark" "$qps" "$ka_req" "$ka_failed" "$ka_rps"
         else
-            printf "| %-28s | %-12s | %-14s | %-12s | %-12s | %-14s | %-12s | %-12s |\n" "$name" "$qps" "$ab_req" "$ab_failed" "$ab_rps" "$ka_req" "$ka_failed" "$ka_rps"
+            printf "| %-*s | %-*s | %-12s | %-14s | %-12s | %-12s | %-14s | %-12s | %-12s |\n" "$TABLE_NAME_WIDTH" "$name" "$TABLE_REMARK_WIDTH" "$remark" "$qps" "$ab_req" "$ab_failed" "$ab_rps" "$ka_req" "$ka_failed" "$ka_rps"
         fi
     }
 
     print_header() {
         if [ "$do_ab" -eq 0 ] && [ "$do_abk" -eq 0 ]; then
-            printf "| %-28s | %-12s |\n" "Benchmark" "QPS(wrk)"
+            printf "| %-*s | %-*s | %-12s |\n" "$TABLE_NAME_WIDTH" "Benchmark" "$TABLE_REMARK_WIDTH" "备注" "QPS(wrk)"
         elif [ "$do_ab" -eq 1 ] && [ "$do_abk" -eq 0 ]; then
-            printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "Benchmark" "QPS(wrk)" "AB-Req(ab)" "AB-Failed" "AB-RPS"
+            printf "| %-*s | %-*s | %-12s | %-14s | %-12s | %-12s |\n" "$TABLE_NAME_WIDTH" "Benchmark" "$TABLE_REMARK_WIDTH" "备注" "QPS(wrk)" "AB-Req(ab)" "AB-Failed" "AB-RPS"
         elif [ "$do_ab" -eq 0 ] && [ "$do_abk" -eq 1 ]; then
-            printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "Benchmark" "QPS(wrk)" "KA-Req(ab -k)" "KA-Failed" "KA-RPS"
+            printf "| %-*s | %-*s | %-12s | %-14s | %-12s | %-12s |\n" "$TABLE_NAME_WIDTH" "Benchmark" "$TABLE_REMARK_WIDTH" "备注" "QPS(wrk)" "KA-Req(ab -k)" "KA-Failed" "KA-RPS"
         else
-            printf "| %-28s | %-12s | %-14s | %-12s | %-12s | %-14s | %-12s | %-12s |\n" "Benchmark" "QPS(wrk)" "AB-Req(ab)" "AB-Failed" "AB-RPS" "KA-Req(ab -k)" "KA-Failed" "KA-RPS"
+            printf "| %-*s | %-*s | %-12s | %-14s | %-12s | %-12s | %-14s | %-12s | %-12s |\n" "$TABLE_NAME_WIDTH" "Benchmark" "$TABLE_REMARK_WIDTH" "备注" "QPS(wrk)" "AB-Req(ab)" "AB-Failed" "AB-RPS" "KA-Req(ab -k)" "KA-Failed" "KA-RPS"
         fi
     }
 

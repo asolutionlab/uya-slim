@@ -2,7 +2,7 @@
 
 **设计文档**：[async_frame_allocation_design.md](async_frame_allocation_design.md)、[async_frame_lifecycle_naming_design.md](async_frame_lifecycle_naming_design.md)  
 **相关问题**：[buglist.md](../buglist.md) 中“真 `@async_fn/@await` lowering 仍对 async frame 做堆分配”  
-**最后更新**：2026-04-14
+**最后更新**：2026-04-16
 
 > **状态总览**：Phase A/B/C 已完成，函数内保守逃逸分析（Phase 4.1）已完成。当前实现包含：统一 `AsyncFramePool`（Phase A）、caller-owned stack inlining（Phase B）、`@frame(foo)` 类型构造器与 pinned 语义检查（Phase C）、codegen 保守逃逸分析（Phase 4.1）。`make check` 796/796 通过，`make b` bootstrap 通过。
 

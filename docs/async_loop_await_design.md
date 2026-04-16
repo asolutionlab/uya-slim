@@ -1,7 +1,7 @@
 # 循环内 await 代码生成设计文档
 
 **版本**：v0.2  
-**状态**：通用 lowering 主路径已落地（维护/补洞）  
+**状态**：通用 lowering 主路径已落地，Bug B 已转正（维护/补洞）  
 **相关**：[std_async_design.md](std_async_design.md)、[todo_mini_to_full.md](todo_mini_to_full.md) §16 异步编程、[plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)
 
 ---
@@ -204,7 +204,7 @@ state 2 (poll writer)                                                  │
 | Poll / `Future<!T>` 类型链 | ✅ 主路径已对齐 | 详见 `test_async_state_machine.uya` 等 |
 | 循环变量持久化 | ✅ 通用提升 | 顶层 `var` → `_uya_loc_*`，不再依赖 `n`+`written` 特判 |
 | 无 `@await` 的 `@async_fn` 同步语句 / `try !void` | ✅ 已修 | `gen_async_function_stage_b` 现会先发出函数体再包装 `Poll.Ready`；回归见 `tests/test_async_codegen_edge_paths.uya` |
-| await 循环间同步语句 | ⚠️ 待办 | `tests/test_async_bug_b_sync_between.uya.pending` |
+| await 循环间同步语句 | ✅ 已修复 | `tests/test_async_bug_b_sync_between.uya` |
 | 迭代器 `for`、`for` 的 `&` 元素绑定 + `@async_fn` | ❌ 未支持 | 与同步 `for` 能力对齐后再做 |
 
 ---

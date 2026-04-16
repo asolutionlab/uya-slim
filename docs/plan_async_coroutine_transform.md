@@ -11,9 +11,9 @@
 ### 当前进度（2026-04）
 
 - **已落地**：`emit_async_segment` / `emit_async_continuation` 路径下的通用 lowering；`while` / `if` 内含 `try @await`；**范围 `for`** 与**定长数组 `for`** 内含 `try @await`（状态字段保存循环变量/索引/上界等，resume 后回跳或退出与 `while` 对称）。
-- **回归测试**：`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 等。
+- **回归测试**：`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 等。
 - **仍不支持或需 checker/codegen 明确报错**：迭代器形式 `for obj |v|` 与 `@await` 组合；`for |&x|` 与 `@await` 组合（与同步 `for` 能力对齐后再扩展）。
-- **部分历史待办**：await 循环之间的同步语句（原 Bug B）若仍有场景未覆盖，见 `tests/test_async_bug_b_sync_between.uya.pending` 与 [todo_async_loop_await.md](todo_async_loop_await.md)。
+- **历史备注**：await 循环之间的同步语句（原 Bug B）已由 `tests/test_async_bug_b_sync_between.uya` 复核通过并转正；后续若扩展新的循环形态，可继续对照 [todo_async_loop_await.md](todo_async_loop_await.md)。
 
 ---
 
@@ -190,7 +190,7 @@ if (cond) {  // 回跳
 ## 验证
 
 1. **Bug A**：`tests/test_async_bug_a_two_while.uya` 通过
-2. **Bug B**：`tests/test_async_bug_b_sync_between.uya.pending` 恢复为 `.uya` 后应通过（待办）
+2. **Bug B**：`tests/test_async_bug_b_sync_between.uya` 通过
 3. **Bug C**：`tests/test_async_bug_c_tail_await.uya` 通过
 4. **`for` + await**：`tests/test_async_for_await.uya`（范围 + 定长数组）
 5. **现有 async 测试**：`test_async_while_multi_await.uya`、`test_async_copy.uya` 等不回归

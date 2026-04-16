@@ -7,14 +7,15 @@
 - 自动支持所有 Uya 控制流（while/for/if/break/continue/return + @await 任意组合）
 - 自动分析跨 await 变量并提升到状态结构体
 
-## 当前问题
+## 历史问题
 
-codegen 层 `gen_async_function_stage_b()`（~800 行）通过模式匹配 AST 形状生成 C 状态机。
-只识别 `const x = try @await expr` 单一模式，对以下场景失败：
+codegen 层 `gen_async_function_stage_b()`（~800 行）曾通过模式匹配 AST 形状生成 C 状态机，只识别 `const x = try @await expr` 单一模式，对以下场景失败：
 - Bug A: 连续 while+@await 循环
 - Bug B: await 间同步代码丢失
 - Bug C: return try @await inner()
 - Bug D: 分裂点附近局部变量
+
+这些缺口已在主分支的通用 lowering / 回归中转正；当前请以 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md) 为准。
 
 ## 变换算法
 
