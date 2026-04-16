@@ -336,10 +336,10 @@ export fn ssl_read(ctx: &SslContext, cipher_in: &const byte, cipher_len: usize, 
         return error.TlsHandshakeFailure;
     }
     record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch |err| {
-        if err == error.TlsInvalidMac {
+        if @error_id(err) == @error_id(error.TlsInvalidMac) {
             return error.TlsInvalidMac;
         }
-        if err == error.TlsHandshakeFailure {
+        if @error_id(err) == @error_id(error.TlsHandshakeFailure) {
             return error.TlsHandshakeFailure;
         }
         return error.TlsDecodeError;
@@ -606,10 +606,10 @@ export fn ssl13_read(ctx: &SslContext13, cipher_in: &const byte, cipher_len: usi
         return error.TlsHandshakeFailure;
     }
     record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch |err| {
-        if err == error.TlsInvalidMac {
+        if @error_id(err) == @error_id(error.TlsInvalidMac) {
             return error.TlsInvalidMac;
         }
-        if err == error.TlsHandshakeFailure {
+        if @error_id(err) == @error_id(error.TlsHandshakeFailure) {
             return error.TlsHandshakeFailure;
         }
         return error.TlsDecodeError;

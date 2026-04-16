@@ -25,6 +25,42 @@ extern fn async_lower_analyze_escape_class(checker: &TypeChecker, fn_body: &ASTN
 // 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
 // 否则可达性分析与代码生成会锚到无体的声明，导致实现既不生成原型也不生成定义（如 libc time 的 _strftime_write）。
 // 策略：缓存命中时 O(1)，未命中或冲突时回退线性查找。
+fn c99_filename_is_in_lib_family(filename: &byte, family: &byte) i32 {
+    if filename == null || family == null {
+        return 0;
+    }
+    if strcmp(family as *byte, "libc" as *byte) == 0 {
+        if strstr(filename as *byte, "/lib/libc/" as *byte) != null ||
+            strstr(filename as *byte, "lib/libc/" as *byte) != null {
+            return 1;
+        }
+        return 0;
+    }
+    if strcmp(family as *byte, "std" as *byte) == 0 {
+        if strstr(filename as *byte, "/lib/std/" as *byte) != null ||
+            strstr(filename as *byte, "lib/std/" as *byte) != null {
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+fn c99_decl_matches_current_lib_family(codegen: &C99CodeGenerator, decl: &ASTNode) i32 {
+    if codegen == null || decl == null || decl.filename == null ||
+        codegen.current_function_decl == null || codegen.current_function_decl.filename == null {
+        return 0;
+    }
+    const current_filename: &byte = codegen.current_function_decl.filename;
+    if c99_filename_is_in_lib_family(current_filename, "libc" as &byte) != 0 {
+        return c99_filename_is_in_lib_family(decl.filename, "libc" as &byte);
+    }
+    if c99_filename_is_in_lib_family(current_filename, "std" as &byte) != 0 {
+        return c99_filename_is_in_lib_family(decl.filename, "std" as &byte);
+    }
+    return 0;
+}
+
 fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode {
     if codegen == null || func_name == null || codegen.program_node == null {
         return null;
@@ -37,24 +73,58 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
         if cached != null && cached.type == ASTNodeType.AST_FN_DECL {
             const cached_name: &byte = cached.fn_decl_name;
             if cached_name != null && strcmp(cached_name as *byte, func_name as *byte) == 0 {
-                // 缓存命中且唯一，直接返回（优先有 body 的）
-                if cached.fn_decl_body != null {
-                    return cached;
-                }
-                // 有缓存但无 body，线性查找是否有同名的有 body 版本
+                // 缓存命中后仍线性查找，优先非 extern 定义，再退回 extern/声明。
                 const decl_count: i32 = codegen.program_node.program_decl_count;
                 var i: i32 = 0;
+                var family_body_match: &ASTNode = null;
+                var family_stub_match: &ASTNode = null;
+                var body_match: &ASTNode = null;
+                var stub_match: &ASTNode = null;
                 while i < decl_count {
-                    const decl: &ASTNode = codegen.program_node.program_decls[i];
-                    if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
-                        const dn: &byte = decl.fn_decl_name;
-                        if dn != null && strcmp(dn as *byte, func_name as *byte) == 0 {
-                            return decl;
+                    const decl_cached_scan: &ASTNode = codegen.program_node.program_decls[i];
+                    if decl_cached_scan != null && decl_cached_scan.type == ASTNodeType.AST_FN_DECL {
+                        const dn_cached_scan: &byte = decl_cached_scan.fn_decl_name;
+                        if dn_cached_scan != null && strcmp(dn_cached_scan as *byte, func_name as *byte) == 0 {
+                            const same_family: i32 = c99_decl_matches_current_lib_family(codegen, decl_cached_scan);
+                            if same_family != 0 {
+                                if decl_cached_scan.fn_decl_body != null {
+                                    if decl_cached_scan.fn_decl_extern_lib_name == null {
+                                        return decl_cached_scan;
+                                    }
+                                    if family_body_match == null {
+                                        family_body_match = decl_cached_scan;
+                                    }
+                                } else if family_stub_match == null {
+                                    family_stub_match = decl_cached_scan;
+                                }
+                            } else {
+                                if decl_cached_scan.fn_decl_body != null {
+                                    if decl_cached_scan.fn_decl_extern_lib_name == null {
+                                        return decl_cached_scan;
+                                    }
+                                    if body_match == null {
+                                        body_match = decl_cached_scan;
+                                    }
+                                } else if stub_match == null {
+                                    stub_match = decl_cached_scan;
+                                }
+                            }
                         }
                     }
                     i = i + 1;
                 }
-                // 缓存本身就是唯一匹配
+                if family_body_match != null {
+                    return family_body_match;
+                }
+                if family_stub_match != null {
+                    return family_stub_match;
+                }
+                if body_match != null {
+                    return body_match;
+                }
+                if stub_match != null {
+                    return stub_match;
+                }
                 return cached;
             }
         }
@@ -64,23 +134,55 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
     const decl_count: i32 = codegen.program_node.program_decl_count;
 
     var i: i32 = 0;
+    var family_body_match: &ASTNode = null;
+    var family_stub: &ASTNode = null;
+    var body_match: &ASTNode = null;
     var stub: &ASTNode = null;
     while i < decl_count {
         const decl: &ASTNode = codegen.program_node.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
             const decl_name: &byte = decl.fn_decl_name;
             if decl_name != null && strcmp(decl_name as *byte, func_name as *byte) == 0 {
-                if decl.fn_decl_body != null {
-                    return decl;
-                }
-                if stub == null {
-                    stub = decl;
+                const same_family: i32 = c99_decl_matches_current_lib_family(codegen, decl);
+                if same_family != 0 {
+                    if decl.fn_decl_body != null {
+                        if decl.fn_decl_extern_lib_name == null {
+                            return decl;
+                        }
+                        if family_body_match == null {
+                            family_body_match = decl;
+                        }
+                    }
+                    if family_stub == null {
+                        family_stub = decl;
+                    }
+                } else {
+                    if decl.fn_decl_body != null {
+                        if decl.fn_decl_extern_lib_name == null {
+                            return decl;
+                        }
+                        if body_match == null {
+                            body_match = decl;
+                        }
+                    }
+                    if stub == null {
+                        stub = decl;
+                    }
                 }
             }
         }
         i = i + 1;
     }
 
+    if family_body_match != null {
+        return family_body_match;
+    }
+    if family_stub != null {
+        return family_stub;
+    }
+    if body_match != null {
+        return body_match;
+    }
     return stub;
 }
 
@@ -131,38 +233,49 @@ fn is_extern_libc_function(codegen: &C99CodeGenerator, func_name: &byte) i32 {
     return 0;
 }
 
-// extern "libc" 规范：byte 在 FFI 中映射为 C 的 char。
-// 返回值：0 = 非 byte 指针；1 = char *；2 = const char *
-fn get_extern_libc_byte_mode_for_type(type_node: &ASTNode) i32 {
-    if type_node == null || type_node.type != ASTNodeType.AST_TYPE_POINTER {
-        return 0;
+// extern "libc" 规范：byte 指针族在 FFI 中映射为 C 的 char 指针族。
+// 例如：
+//   &byte         -> char *
+//   &const byte   -> const char *
+//   &&const byte  -> const char * *
+fn get_extern_libc_pointer_chain_c_type(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
+    if codegen == null || type_node == null {
+        return null;
     }
-    const pointed_type: &ASTNode = type_node.type_pointer_pointed_type;
-    if pointed_type == null || pointed_type.type != ASTNodeType.AST_TYPE_NAMED || pointed_type.type_named_name == null {
-        return 0;
+    if type_node.type == ASTNodeType.AST_TYPE_NAMED &&
+        type_node.type_named_name != null &&
+        strcmp(type_node.type_named_name as *byte, "byte" as *byte) == 0 {
+        return ("char" as *byte) as &byte;
     }
-    if strcmp(pointed_type.type_named_name as *byte, "byte" as *byte) != 0 {
-        return 0;
+    if type_node.type != ASTNodeType.AST_TYPE_POINTER || type_node.type_pointer_pointed_type == null {
+        return null;
+    }
+    const pointee_c: &byte = get_extern_libc_pointer_chain_c_type(codegen, type_node.type_pointer_pointed_type);
+    if pointee_c == null {
+        return null;
+    }
+    const len: i32 = strlen(pointee_c as *byte) + 16;
+    const result: &byte = compiler_arena_alloc(codegen.arena, len as usize) as &byte;
+    if result == null {
+        return null;
     }
     if type_node.type_pointer_is_const != 0 {
-        return 2;
+        snprintf(result as *byte, len, "const %s *" as *byte, pointee_c as *byte);
+    } else {
+        snprintf(result as *byte, len, "%s *" as *byte, pointee_c as *byte);
     }
-    return 1;
+    return result;
 }
 
-fn get_extern_libc_c_type_override(type_node: &ASTNode) &byte {
-    const byte_mode: i32 = get_extern_libc_byte_mode_for_type(type_node);
-    if byte_mode == 2 {
-        return ("const char *" as *byte) as &byte;
+fn get_extern_libc_c_type_override(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
+    if type_node == null || type_node.type != ASTNodeType.AST_TYPE_POINTER {
+        return null;
     }
-    if byte_mode == 1 {
-        return ("char *" as *byte) as &byte;
-    }
-    return null;
+    return get_extern_libc_pointer_chain_c_type(codegen, type_node);
 }
 
-fn get_extern_libc_param_c_type(fn_decl: &ASTNode, param_index: i32) &byte {
-    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null ||
+fn get_extern_libc_param_c_type(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_index: i32) &byte {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null ||
         param_index < 0 || param_index >= fn_decl.fn_decl_param_count || fn_decl.fn_decl_params == null {
         return null;
     }
@@ -170,14 +283,14 @@ fn get_extern_libc_param_c_type(fn_decl: &ASTNode, param_index: i32) &byte {
     if param == null || param.type != ASTNodeType.AST_VAR_DECL {
         return null;
     }
-    return get_extern_libc_c_type_override(param.var_decl_type);
+    return get_extern_libc_c_type_override(codegen, param.var_decl_type);
 }
 
-fn get_extern_libc_return_c_type(fn_decl: &ASTNode) &byte {
-    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null {
+fn get_extern_libc_return_c_type(codegen: &C99CodeGenerator, fn_decl: &ASTNode) &byte {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null {
         return null;
     }
-    return get_extern_libc_c_type_override(fn_decl.fn_decl_return_type);
+    return get_extern_libc_c_type_override(codegen, fn_decl.fn_decl_return_type);
 }
 
 fn should_skip_libc_syscall_stub(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
@@ -368,19 +481,14 @@ fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_d
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
     }
     if for_definition == 0 && codegen != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
-        var di: i32 = 0;
-        while di < codegen.program_node.program_decl_count {
-            const d: &ASTNode = codegen.program_node.program_decls[di];
-            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
-               strcmp(d.fn_decl_name as *byte, name as *byte) == 0 &&
-               d.fn_decl_is_export != 0 && d.filename != null {
-                // 仅原始 libc 符号使用裸名（例如 extern "libc" 无函数体，或 --nostdlib 下带函数体）
-                if should_use_raw_libc_symbol_name(codegen, d) != 0 {
-                    return get_safe_c_identifier(codegen, name);
-                }
-                return get_export_function_c_name(codegen, name, d.filename);
+        const d: &ASTNode = find_function_decl_c99(codegen, name);
+        if d != null && d.type == ASTNodeType.AST_FN_DECL &&
+           d.fn_decl_is_export != 0 && d.filename != null {
+            // 仅原始 libc 符号使用裸名（例如 extern "libc" 无函数体，或 --nostdlib 下带函数体）
+            if should_use_raw_libc_symbol_name(codegen, d) != 0 {
+                return get_safe_c_identifier(codegen, name);
             }
-            di = di + 1;
+            return get_export_function_c_name(codegen, name, d.filename);
         }
     }
     return get_safe_c_identifier(codegen, name);
@@ -532,7 +640,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
-    const libc_return_c: &byte = get_extern_libc_return_c_type(fn_decl);
+    const libc_return_c: &byte = get_extern_libc_return_c_type(codegen, fn_decl);
     if libc_return_c != null {
         return_c = libc_return_c;
     }
@@ -690,7 +798,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 }
             }
             
-            const libc_param_c: &byte = get_extern_libc_param_c_type(fn_decl, i);
+            const libc_param_c: &byte = get_extern_libc_param_c_type(codegen, fn_decl, i);
             if libc_param_c != null {
                 param_type_c = libc_param_c;
             }
@@ -827,7 +935,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
-    const libc_return_c: &byte = get_extern_libc_return_c_type(fn_decl);
+    const libc_return_c: &byte = get_extern_libc_return_c_type(codegen, fn_decl);
     if libc_return_c != null {
         return_c = libc_return_c;
     }
@@ -921,7 +1029,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                     param_type_c = ("const struct Type *" as *byte) as &byte;
                 }
                 
-                const libc_param_c: &byte = get_extern_libc_param_c_type(fn_decl, i);
+                const libc_param_c: &byte = get_extern_libc_param_c_type(codegen, fn_decl, i);
                 if libc_param_c != null {
                     param_type_c = libc_param_c;
                 }

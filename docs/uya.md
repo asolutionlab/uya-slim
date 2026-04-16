@@ -2846,11 +2846,12 @@ bin/uya --c99 app.uya …   # 推荐：由驱动自动加入 entry.uya
   - **无运行时 panic 路径**：所有 UB 必须被编译期证明为安全，失败即编译错误
   - **灵活错误定义**：支持预定义错误（`error ErrorName;`）和运行时错误（`error.ErrorName`），无需预先声明
 - **错误类型的操作**：
-  - 错误类型支持相等性比较：`if err == error.FileNotFound { ... }` 或 `if err == error.SomeRuntimeError { ... }`
-  - 错误类型不支持不等性比较（仅支持 `==`）
+  - 错误类型支持直接使用 `==` / `!=` 比较
+  - 兼容旧写法：`if err == error.FileNotFound { ... }`
+  - 运行时错误同样如此：`if err == error.SomeRuntimeError { ... }`
   - catch 块中可以判断错误类型并做不同处理
   - 错误类型不能直接打印，需要通过模式匹配处理
-  - 支持预定义错误和运行时错误的混合比较：`if err == error.PredefinedError || err == error.RuntimeError { ... }`
+  - 也可显式比较错误 ID：`if @error_id(err) == @error_id(error.PredefinedError) || @error_id(err) == @error_id(error.RuntimeError) { ... }`
   - 可通过 `@error_id(err)` 读取错误值的数值 ID；对 `@syscall` 失败路径，该 ID 等于底层 errno 值
   
 **错误处理设计哲学**：
@@ -3890,7 +3891,7 @@ fn log_printf(fmt: *byte, ...) i32 {
 - **类型比较规则**：
   - 基础类型（整数、浮点、布尔）支持 `==` 和 `!=` 比较
   - 浮点数比较使用 IEEE 754 标准，进行精确比较（可能受浮点精度影响）
-  - 错误类型支持 `==` 比较
+  - 错误类型支持 `==` 和 `!=` 比较
   - 不支持结构体的 `==` 和 `!=` 比较（未来支持）
   - 不支持数组的 `==` 和 `!=` 比较（未来支持）
 - **表达式求值顺序**：从左到右（left-to-right）
@@ -4599,7 +4600,7 @@ fn caller() void {
 | `@len` | `fn @len(a: [T: N]) i32` | 返回数组元素个数 `N`（编译期常量） |
 | `@size_of` | `fn @size_of(T) i32` | 返回类型 `T` 的字节大小（编译期常量） |
 | `@align_of` | `fn @align_of(T) i32` | 返回类型 `T` 的对齐字节数（编译期常量） |
-| `@error_id` | `fn @error_id(err: error) u32` | 提取错误值的数值 ID；可用于检查 `@syscall` 返回的 errno |
+| `@error_id` | `fn @error_id(err: error) u32` | 提取错误值的数值 ID；可用于显式错误比较或检查 `@syscall` 返回的 errno |
 | `@max` | 上下文推断 | 整数类型最大值（编译期常量） |
 | `@min` | 上下文推断 | 整数类型最小值（编译期常量） |
 | `@va_start` | `@va_start(&ap, last)` | 可变参数函数内初始化 va_list（编译时展开为 C 宏） |

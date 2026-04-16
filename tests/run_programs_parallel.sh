@@ -606,16 +606,21 @@ if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then
     SKIP_TESTS+=("${SKIP_TESTS_EXTRA_ARR[@]}")
 fi
 
-# 已知会在整套高并发测试下互相争用本地 socket/epoll/loopback 资源的集成用例。
-# 单独串行执行能保持语义不变，同时避免整套测试中的稳定波动。
+# 已知会在整套高并发测试下互相争用本地/外网网络资源的集成用例。
+# 单独串行执行能保持语义不变，同时避免 DNS/TLS/loopback 相关的稳定波动。
 SERIAL_TESTS=(
     test_tcp_basic
     test_std_dns
     test_https_loopback
+    test_https_google
+    test_https_real_site
+    test_https_debug
+    test_https_production
     test_epoll_server
     test_std_dns_async_transport
     test_http1_async_client
     test_http_server
+    test_raw_tls
 )
 if [ -n "${SERIAL_TESTS_EXTRA:-}" ]; then
     read -r -a SERIAL_TESTS_EXTRA_ARR <<< "$SERIAL_TESTS_EXTRA"

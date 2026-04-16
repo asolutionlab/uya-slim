@@ -345,9 +345,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if stmt.type == ASTNodeType.AST_ASM {
                 gen_expr(codegen, stmt);
             } else {
-                c99_emit(codegen, "" as *byte);
+                c99_emit(codegen, "(void)(" as *byte);
                 gen_expr(codegen, stmt);
-                c99_emit_semi_newline(codegen);
+                c99_emit(codegen, ");\n" as *byte);
             }
         }
         // 忽略其他语句
@@ -424,7 +424,7 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if else_is_dead != 0 {
         c99_emit_indent(codegen);
         fputs("if (" as *byte, codegen.emit_stream as *void);
-        gen_expr(codegen, condition);
+        c99_emit_condition_expr(codegen, condition);
         fputs(") {\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         if then_is_dead == 0 {
@@ -439,7 +439,7 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     // 正常生成 if 语句
     c99_emit_indent(codegen);
     fputs("if (" as *byte, codegen.emit_stream as *void);
-    gen_expr(codegen, condition);
+    c99_emit_condition_expr(codegen, condition);
     fputs(") {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     if then_is_dead == 0 {
@@ -464,7 +464,7 @@ fn gen_while_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     
     c99_emit_indent(codegen);
     fputs("while (" as *byte, codegen.emit_stream as *void);
-    gen_expr(codegen, condition);
+    c99_emit_condition_expr(codegen, condition);
     fputs(") {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     const saved_async_control_while: &ASTNode = codegen.async_control_while;
@@ -942,6 +942,10 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     }
     var ret_c: &byte = convert_array_return_type(codegen, return_type);
     ret_c = normalize_poll_return_type(codegen, ret_c);
+    const libc_return_c_stmt: &byte = get_extern_libc_return_c_type(codegen, codegen.current_function_decl);
+    if libc_return_c_stmt != null {
+        ret_c = libc_return_c_stmt;
+    }
     if ret_c == null {
         ret_c = "int32_t" as *byte;
     }
@@ -1066,6 +1070,7 @@ fn gen_return_array(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &AS
 // 生成普通返回值
 fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &ASTNode, ret_c: &byte) void {
     var is_void: i32 = 0;
+    const libc_return_c: &byte = get_extern_libc_return_c_type(codegen, codegen.current_function_decl);
     if return_type != null && return_type.type == ASTNodeType.AST_TYPE_NAMED {
         const tn: &byte = return_type.type_named_name;
         if tn != null && strcmp(tn as *byte, "void" as *byte) == 0 {
@@ -1150,6 +1155,9 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
                 c99_emit(codegen, ");\n" as *byte);
             } else {
                 fprintf(codegen.emit_stream as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+                if libc_return_c != null {
+                    c99_emit_char_pointer_cast_for_type(codegen, libc_return_c);
+                }
                 gen_expr(codegen, expr);
                 c99_emit_semi_newline(codegen);
             }
@@ -2959,10 +2967,17 @@ fn gen_var_decl_void_type(codegen: &C99CodeGenerator, init_expr: &ASTNode) i32 {
                 gen_expr(codegen, operand);
                 fputs("; if (_uya_catch_tmp.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
                 codegen.indent_level = codegen.indent_level + 1;
+                const saved_local_count: i32 = codegen.local_variable_count;
                 if err_name != null {
                     const safe: &byte = get_safe_c_identifier(codegen, err_name);
                     c99_emit_indent(codegen);
-                    fprintf(codegen.emit_stream as *void, "%s %s = _uya_catch_tmp;\n" as *byte, union_c as *byte, safe as *byte);
+                    fprintf(codegen.emit_stream as *void, "const uint32_t %s = _uya_catch_tmp.error_id;\n" as *byte, safe as *byte);
+                    if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                        codegen.local_variables[codegen.local_variable_count].name = err_name;
+                        codegen.local_variables[codegen.local_variable_count].type_c = "const uint32_t" as *byte;
+                        codegen.local_variables[codegen.local_variable_count].type_node = null;
+                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                    }
                 }
                 var i: i32 = 0;
                 while i < block.block_stmt_count {
@@ -2972,6 +2987,7 @@ fn gen_var_decl_void_type(codegen: &C99CodeGenerator, init_expr: &ASTNode) i32 {
                     }
                     i = i + 1;
                 }
+                codegen.local_variable_count = saved_local_count;
                 codegen.indent_level = codegen.indent_level - 1;
                 c99_emit_indent(codegen);
                 c99_emit_close_brace_newline(codegen);

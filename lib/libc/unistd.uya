@@ -150,7 +150,7 @@ export extern "libc" fn system(cmd: &const byte) i32 {
         // 子进程：执行 /bin/sh -c cmd
         const sh_path: &const byte = "/bin/sh";
         const sh_c: &const byte = "-c";
-        var args: [&const byte: 4] = [sh_path, sh_c, cmd, null];
+        var args: [&const byte: 4] = [sh_path, sh_c, cmd as &const byte, null];
         var empty_env: [&const byte: 1] = [null];
         var envp: & &byte = &empty_env[0] as & &byte;
         if saved_envp != null {

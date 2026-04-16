@@ -107,7 +107,7 @@ extern fn malloc(size: usize) &void;
 
 export extern "libc" fn strdup(s: *const byte) *byte {
     if s == null { return null; }
-    const len: usize = strlen(s);
+    const len: usize = strlen(s as *const byte);
     const dup: *byte = malloc(len + 1) as *byte;
     if dup == null { return null; }
     var i: usize = 0;
@@ -122,7 +122,7 @@ export extern "libc" fn strdup(s: *const byte) *byte {
 // strndup - 复制字符串前 n 个字符（动态分配内存）
 export extern "libc" fn strndup(s: *const byte, n: usize) *byte {
     if s == null { return null; }
-    const len: usize = strlen(s);
+    const len: usize = strlen(s as *const byte);
     var copy_len: usize = len;
     if n < len { copy_len = n; }
     const dup: *byte = malloc(copy_len + 1) as *byte;
@@ -233,8 +233,8 @@ export extern "libc" fn strstr(haystack: *const byte, needle: *const byte) *byte
     if haystack == null || needle == null { return null; }
     if needle[0] == 0 { return haystack as *byte; }
     
-    const needle_len: usize = strlen(needle);
-    const haystack_len: usize = strlen(haystack);
+    const needle_len: usize = strlen(needle as *const byte);
+    const haystack_len: usize = strlen(haystack as *const byte);
     
     if needle_len > haystack_len { return null; }
     
@@ -264,7 +264,7 @@ export extern "libc" fn strstr(haystack: *const byte, needle: *const byte) *byte
 // strcspn - 计算不包含字符集的长度
 export extern "libc" fn strcspn(s: *const byte, reject: *const byte) usize {
     if s == null { return 0; }
-    if reject == null || reject[0] == 0 { return strlen(s); }
+    if reject == null || reject[0] == 0 { return strlen(s as *const byte); }
     
     var i: usize = 0;
     while s[i] != 0 {
@@ -325,7 +325,7 @@ export extern "libc" fn strtok(s: *byte, delim: *const byte) *byte {
     if delim == null || delim[0] == 0 { return null; }
     
     // 确定起始位置
-    var start: *byte = s;
+    var start: *byte = s as *byte;
     if s == null { start = _strtok_saved; }
     if start == null { return null; }
     

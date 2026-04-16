@@ -26,12 +26,8 @@ CC_TARGET_FLAGS ?=
 
 # 编译选项（可通过环境变量覆盖）
 # 默认 -O2：加快自举编译器与 codegen 性能；调试可用 CFLAGS='-std=c99 -O0 -g ...' 覆盖
-ZIG_CFLAGS_WARNINGS ?= -Wno-error=pointer-sign -Wno-error=parentheses-equality -Wno-error=unused-value -Wno-error=tautological-pointer-compare -Wno-error=tautological-compare -Wno-error=constant-conversion -Wno-error=deprecated-non-prototype
 CFLAGS ?= -std=c99 -O2 -fno-builtin -Werror
 LDFLAGS ?=
-ifeq ($(TOOLCHAIN),zig)
-CFLAGS += $(ZIG_CFLAGS_WARNINGS)
-endif
 
 # 并行程序测试 worker 数（默认 CPU 核数；可覆盖：make tests UYA_TEST_JOBS=4）
 UYA_TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)

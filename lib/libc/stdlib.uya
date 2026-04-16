@@ -546,35 +546,35 @@ export extern "libc" fn atoll(nptr: &const byte) i64 {
 export extern "libc" fn strtoll(nptr: &const byte, endptr: &&const byte, base: i32) i64 {
     if nptr == null { return 0; }
 
-    var p: &const byte = nptr;
+    var pos: usize = 0;
     var neg: bool = false;
     var result: u64 = 0;
     var cutoff: u64 = 9223372036854775807;  // LLONG_MAX
     var cutlim: i32 = 7;
 
     // 跳过空白
-    while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 11 || p[0] == 12 || p[0] == 13 {
-        p = p + 1;
+    while nptr[pos] == 32 || nptr[pos] == 9 || nptr[pos] == 10 || nptr[pos] == 11 || nptr[pos] == 12 || nptr[pos] == 13 {
+        pos = pos + 1;
     }
 
     // 检查符号
-    if p[0] == 45 {  // '-'
+    if nptr[pos] == 45 {  // '-'
         neg = true;
-        p = p + 1;
-    } else if p[0] == 43 {  // '+'
-        p = p + 1;
+        pos = pos + 1;
+    } else if nptr[pos] == 43 {  // '+'
+        pos = pos + 1;
     }
 
     // 确定进制
     var b: i32 = base;
     if b == 0 {
-        if p[0] == 48 {  // '0'
-            if p[1] == 120 || p[1] == 88 {  // 'x' or 'X'
+        if nptr[pos] == 48 {  // '0'
+            if nptr[pos + 1] == 120 || nptr[pos + 1] == 88 {  // 'x' or 'X'
                 b = 16;
-                p = p + 2;
-            } else if p[1] >= 48 && p[1] <= 55 {  // '0'-'7'
+                pos = pos + 2;
+            } else if nptr[pos + 1] >= 48 && nptr[pos + 1] <= 55 {  // '0'-'7'
                 b = 8;
-                p = p + 1;
+                pos = pos + 1;
             } else {
                 b = 10;
             }
@@ -582,16 +582,16 @@ export extern "libc" fn strtoll(nptr: &const byte, endptr: &&const byte, base: i
             b = 10;
         }
     } else if b == 16 {
-        if p[0] == 48 && (p[1] == 120 || p[1] == 88) {
-            p = p + 2;
+        if nptr[pos] == 48 && (nptr[pos + 1] == 120 || nptr[pos + 1] == 88) {
+            pos = pos + 2;
         }
     }
 
     if b < 2 || b > 36 { return 0; }
 
     // 转换
-    while p[0] != 0 {
-        var c: byte = p[0];
+    while nptr[pos] != 0 {
+        var c: byte = nptr[pos];
         var digit: i32 = -1;
 
         if c >= 48 && c <= 57 {  // '0'-'9'
@@ -614,11 +614,11 @@ export extern "libc" fn strtoll(nptr: &const byte, endptr: &&const byte, base: i
         }
 
         result = result * b as u64 + digit as u64;
-        p = p + 1;
+        pos = pos + 1;
     }
 
     if endptr != null {
-        endptr[0] = p;
+        endptr[0] = &nptr[pos];
     }
 
     if neg {
@@ -631,35 +631,35 @@ export extern "libc" fn strtoll(nptr: &const byte, endptr: &&const byte, base: i
 export extern "libc" fn strtoull(nptr: &const byte, endptr: &&const byte, base: i32) u64 {
     if nptr == null { return 0; }
 
-    var p: &const byte = nptr;
+    var pos: usize = 0;
     var neg: bool = false;
     var result: u64 = 0;
     var cutoff: u64 = 18446744073709551615;  // ULLONG_MAX
     var cutlim: i32 = 15;
 
     // 跳过空白
-    while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 11 || p[0] == 12 || p[0] == 13 {
-        p = p + 1;
+    while nptr[pos] == 32 || nptr[pos] == 9 || nptr[pos] == 10 || nptr[pos] == 11 || nptr[pos] == 12 || nptr[pos] == 13 {
+        pos = pos + 1;
     }
 
     // 检查符号
-    if p[0] == 45 {  // '-'
+    if nptr[pos] == 45 {  // '-'
         neg = true;
-        p = p + 1;
-    } else if p[0] == 43 {  // '+'
-        p = p + 1;
+        pos = pos + 1;
+    } else if nptr[pos] == 43 {  // '+'
+        pos = pos + 1;
     }
 
     // 确定进制
     var b: i32 = base;
     if b == 0 {
-        if p[0] == 48 {  // '0'
-            if p[1] == 120 || p[1] == 88 {  // 'x' or 'X'
+        if nptr[pos] == 48 {  // '0'
+            if nptr[pos + 1] == 120 || nptr[pos + 1] == 88 {  // 'x' or 'X'
                 b = 16;
-                p = p + 2;
-            } else if p[1] >= 48 && p[1] <= 55 {  // '0'-'7'
+                pos = pos + 2;
+            } else if nptr[pos + 1] >= 48 && nptr[pos + 1] <= 55 {  // '0'-'7'
                 b = 8;
-                p = p + 1;
+                pos = pos + 1;
             } else {
                 b = 10;
             }
@@ -667,16 +667,16 @@ export extern "libc" fn strtoull(nptr: &const byte, endptr: &&const byte, base: 
             b = 10;
         }
     } else if b == 16 {
-        if p[0] == 48 && (p[1] == 120 || p[1] == 88) {
-            p = p + 2;
+        if nptr[pos] == 48 && (nptr[pos + 1] == 120 || nptr[pos + 1] == 88) {
+            pos = pos + 2;
         }
     }
 
     if b < 2 || b > 36 { return 0; }
 
     // 转换
-    while p[0] != 0 {
-        var c: byte = p[0];
+    while nptr[pos] != 0 {
+        var c: byte = nptr[pos];
         var digit: i32 = -1;
 
         if c >= 48 && c <= 57 {  // '0'-'9'
@@ -698,11 +698,11 @@ export extern "libc" fn strtoull(nptr: &const byte, endptr: &&const byte, base: 
         }
 
         result = result * b as u64 + digit as u64;
-        p = p + 1;
+        pos = pos + 1;
     }
 
     if endptr != null {
-        endptr[0] = p;
+        endptr[0] = &nptr[pos];
     }
 
     if neg {
@@ -823,26 +823,26 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
         return 0;
     }
     
-    var p: &const byte = nptr;
+    var pos: usize = 0;
     
     // 跳过空白字符
-    while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 13 {
-        p = &p[1];
+    while nptr[pos] == 32 || nptr[pos] == 9 || nptr[pos] == 10 || nptr[pos] == 13 {
+        pos = pos + 1;
     }
     
     // 处理可选符号（忽略，因为无符号）
-    if p[0] == 43 {  // '+'
-        p = &p[1];
+    if nptr[pos] == 43 {  // '+'
+        pos = pos + 1;
     }
     
     // 确定基数
     var actual_base: i32 = base;
     if actual_base == 0 {
-        if p[0] == 48 {  // '0'
-            p = &p[1];
-            if p[0] == 120 || p[0] == 88 {  // 'x' or 'X'
+        if nptr[pos] == 48 {  // '0'
+            pos = pos + 1;
+            if nptr[pos] == 120 || nptr[pos] == 88 {  // 'x' or 'X'
                 actual_base = 16;
-                p = &p[1];
+                pos = pos + 1;
             } else {
                 actual_base = 8;
             }
@@ -850,8 +850,8 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
             actual_base = 10;
         }
     } else if actual_base == 16 {
-        if p[0] == 48 && (p[1] == 120 || p[1] == 88) {
-            p = &p[2];
+        if nptr[pos] == 48 && (nptr[pos + 1] == 120 || nptr[pos + 1] == 88) {
+            pos = pos + 2;
         }
     }
     
@@ -859,9 +859,9 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
     var result: u64 = 0;
     var overflow: i32 = 0;
     
-    while p[0] != 0 {
+    while nptr[pos] != 0 {
         var digit: i32 = 0;
-        const c: byte = p[0];
+        const c: byte = nptr[pos];
         
         if c >= 48 && c <= 57 {  // '0'-'9'
             digit = (c - 48) as i32;
@@ -884,12 +884,12 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
         }
         result = new_result;
         
-        p = &p[1];
+        pos = pos + 1;
     }
     
     // 设置结束指针
-    if endptr != null as & &const byte {
-        endptr[0] = p;
+    if endptr != null {
+        endptr[0] = &nptr[pos];
     }
     
     if overflow != 0 {
@@ -977,7 +977,7 @@ export extern "libc" fn getenv(name: &const byte) &byte {
 
     var i: usize = 0;
     while saved_envp[i] != null {
-        const value: &byte = env_lookup_value(saved_envp[i], name);
+        const value: &byte = env_lookup_value(saved_envp[i], name as &const byte);
         if value != null {
             return value;
         }

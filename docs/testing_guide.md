@@ -254,7 +254,7 @@ fn test_with_file() !void {
 fn test_error_case() !void {
     const result: i32 = divide(10, 0) catch |err| {
         // 验证返回了预期的错误
-        try expect(err == error.DivisionByZero);
+        try expect(@error_id(err) == @error_id(error.DivisionByZero));
         return;  // 测试通过
     };
     

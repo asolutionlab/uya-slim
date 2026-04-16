@@ -410,7 +410,7 @@ export extern "libc" fn fopen(filename: &const byte, mode: &const byte) &FILE {
     var flags: i64 = 0;
     var create_mode: i64 = 0;
     var i: usize = 0;
-    const mode_len: usize = strlen(mode);
+    const mode_len: usize = strlen(mode as &const byte);
     
     while i < mode_len {
         const c: byte = mode[i];
@@ -1723,7 +1723,7 @@ export extern "libc" fn vfprintf(stream: &FILE, format: &const byte, ap: va_list
     if fd < 0 {
         return 0 - 1;
     }
-    return _vfprintf_impl(stream, format, ap, 0, null, 0);
+    return _vfprintf_impl(stream, format as &const byte, ap, 0, null, 0);
 }
 
 // vprintf - 格式化输出到 stdout（接收 va_list 参数）
@@ -1736,7 +1736,7 @@ export extern "libc" fn vsprintf(buf: &byte, format: &const byte, ap: va_list) i
     if buf == null || format == null {
         return 0 - 1;
     }
-    return _vfprintf_impl(null, format, ap, 1, buf, _VSPRINTF_BUF_CAP);
+    return _vfprintf_impl(null, format as &const byte, ap, 1, buf, _VSPRINTF_BUF_CAP);
 }
 
 // vsnprintf - 格式化到字符串（带长度限制，接收 va_list 参数）
@@ -1745,7 +1745,7 @@ export extern "libc" fn vsnprintf(buf: &byte, n: usize, format: &const byte, ap:
     if buf == null || format == null {
         return 0 - 1;
     }
-    return _vfprintf_impl(null, format, ap, 1, buf, n);
+    return _vfprintf_impl(null, format as &const byte, ap, 1, buf, n);
 }
 
 // fwrite - 向文件流写入数据
@@ -1798,7 +1798,7 @@ export extern "libc" fn fputs(s: &const byte, stream: &FILE) i32 {
         return 0 - 1;  // EOF
     }
     
-    const len: usize = strlen(s);
+    const len: usize = strlen(s as &const byte);
     if len == 0 {
         return 0;
     }
@@ -2188,7 +2188,7 @@ export extern "libc" fn puts(s: &const byte) i32 {
         return 0 - 1;
     }
     
-    const len: usize = strlen(s);
+    const len: usize = strlen(s as &const byte);
     
     // 输出字符串
     if len > 0 {
@@ -2265,7 +2265,7 @@ export extern "libc" fn fscanf(stream: &FILE, format: &const byte, ...) i32 {
     
     var matched: i32 = 0;
     var format_pos: usize = 0;
-    const format_len: usize = strlen(format);
+    const format_len: usize = strlen(format as &const byte);
     
     while format_pos < format_len {
         const fc: byte = format[format_pos];
@@ -2391,8 +2391,8 @@ export extern "libc" fn sscanf(str: &const byte, format: &const byte, ...) i32 {
     var matched: i32 = 0;
     var format_pos: usize = 0;
     var str_pos: usize = 0;
-    const format_len: usize = strlen(format);
-    const str_len: usize = strlen(str);
+    const format_len: usize = strlen(format as &const byte);
+    const str_len: usize = strlen(str as &const byte);
     
     while format_pos < format_len && str_pos < str_len {
         const fc: byte = format[format_pos];
