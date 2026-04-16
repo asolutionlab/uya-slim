@@ -1346,6 +1346,7 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
                 codegen.async_collect_enclosing_while[codegen.async_collect_count] = enclosing_while;
                 codegen.async_collect_enclosing_for[codegen.async_collect_count] = enclosing_for;
                 codegen.async_collect_count = codegen.async_collect_count + 1;
+                return;
             }
         }
     } else if node.type == ASTNodeType.AST_RETURN_STMT {
@@ -1370,6 +1371,54 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
         }
         codegen.async_collect_ret_expr = ret_expr;
     }
+
+    // 复合表达式里的 try @await：把整个语句/表达式当成 await 点收集，并在 resume 时重放该语句。
+    if node.type != ASTNodeType.AST_BLOCK && node.type != ASTNodeType.AST_IF_STMT &&
+        node.type != ASTNodeType.AST_WHILE_STMT && node.type != ASTNodeType.AST_FOR_STMT &&
+        codegen.async_collect_count < max_count {
+        var nested_try: [&ASTNode: 1] = [null];
+        if c99_find_first_try_await_expr(node, &nested_try[0]) != 0 && nested_try[0] != null &&
+            nested_try[0].try_expr_operand != null && nested_try[0].try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
+            nested_try[0].try_expr_operand.await_expr_operand != null {
+            const idx2: i32 = codegen.async_collect_count;
+            var name_buf: [byte: 64] = [];
+            snprintf(&name_buf[0] as *byte, 64, "__uya_expr_tmp_%d" as *byte, idx2);
+            const bind_name2: &byte = c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
+            if bind_name2 == null {
+                return;
+            }
+            var bind_type2: &ASTNode = null;
+            if nested_try[0].try_expr_operand != null &&
+                nested_try[0].try_expr_operand.await_expr_operand != null && codegen.current_function_decl != null {
+                const future_inner2: &ASTNode = c99_async_operand_future_inner_ast(codegen, nested_try[0].try_expr_operand.await_expr_operand, codegen.current_function_decl);
+                if future_inner2 != null {
+                    if future_inner2.type == ASTNodeType.AST_TYPE_ERROR_UNION && future_inner2.type_error_union_payload_type != null {
+                        bind_type2 = future_inner2.type_error_union_payload_type;
+                    } else {
+                        bind_type2 = future_inner2;
+                    }
+                }
+            }
+            if bind_type2 == null && node.type == ASTNodeType.AST_ASSIGN && node.assign_dest != null && codegen.checker != null {
+                const dest_ty: Type = checker_infer_type(codegen.checker, node.assign_dest);
+                if dest_ty.kind != TypeKind.TYPE_VOID {
+                    bind_type2 = type_to_ast(codegen.checker, &dest_ty, node.line, node.column, node.filename);
+                }
+            }
+            if bind_type2 == null && node.type == ASTNodeType.AST_VAR_DECL {
+                bind_type2 = node.var_decl_type;
+            }
+            codegen.async_collect_operands[idx2] = nested_try[0].try_expr_operand.await_expr_operand;
+            codegen.async_collect_names[idx2] = bind_name2;
+            codegen.async_collect_types[idx2] = bind_type2;
+            codegen.async_collect_blocks[idx2] = parent_block;
+            codegen.async_collect_stmt_indices[idx2] = parent_stmt_index;
+            codegen.async_collect_enclosing_while[idx2] = enclosing_while;
+            codegen.async_collect_enclosing_for[idx2] = enclosing_for;
+            codegen.async_collect_count = idx2 + 1;
+            return;
+        }
+    }
 }
 
 // try @await 形式的 var 声明由 async_collect_* 单独捕获，此处跳过
@@ -1387,6 +1436,266 @@ fn c99_var_decl_init_is_try_await_bind(init: &ASTNode) i32 {
         return 0;
     }
     return 1;
+}
+
+fn c99_return_stmt_is_try_await_bind(stmt: &ASTNode) i32 {
+    if stmt == null || stmt.type != ASTNodeType.AST_RETURN_STMT || stmt.return_stmt_expr == null {
+        return 0;
+    }
+    if stmt.return_stmt_expr.type != ASTNodeType.AST_TRY_EXPR || stmt.return_stmt_expr.try_expr_operand == null {
+        return 0;
+    }
+    if stmt.return_stmt_expr.try_expr_operand.type != ASTNodeType.AST_AWAIT_EXPR ||
+        stmt.return_stmt_expr.try_expr_operand.await_expr_operand == null {
+        return 0;
+    }
+    return 1;
+}
+
+// 在任意语句/表达式子树中查找第一个 `try @await ...` 节点。
+// 用于把复合表达式里的 await 提前提取成状态机 await 点，并在 continuation 重放时做替换。
+fn c99_find_first_try_await_expr(node: &ASTNode, out_try_expr: &&ASTNode) i32 {
+    if node == null || out_try_expr == null {
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_TRY_EXPR && node.try_expr_operand != null {
+        if node.try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR && node.try_expr_operand.await_expr_operand != null {
+            out_try_expr[0] = node;
+            return 1;
+        }
+        if c99_find_first_try_await_expr(node.try_expr_operand, out_try_expr) != 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            if c99_find_first_try_await_expr(node.block_stmts[bi], out_try_expr) != 0 {
+                return 1;
+            }
+            bi = bi + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        return c99_find_first_try_await_expr(node.var_decl_init, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        return c99_find_first_try_await_expr(node.return_stmt_expr, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if c99_find_first_try_await_expr(node.assign_dest, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.assign_src, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if c99_find_first_try_await_expr(node.if_stmt_condition, out_try_expr) != 0 {
+            return 1;
+        }
+        if c99_find_first_try_await_expr(node.if_stmt_then_branch, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.if_stmt_else_branch, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        if c99_find_first_try_await_expr(node.while_stmt_condition, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.while_stmt_body, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        if c99_find_first_try_await_expr(node.for_stmt_range_start, out_try_expr) != 0 {
+            return 1;
+        }
+        if c99_find_first_try_await_expr(node.for_stmt_range_end, out_try_expr) != 0 {
+            return 1;
+        }
+        if c99_find_first_try_await_expr(node.for_stmt_array, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.for_stmt_body, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        if c99_find_first_try_await_expr(node.call_expr_callee, out_try_expr) != 0 {
+            return 1;
+        }
+        if node.call_expr_args != null {
+            var ai: i32 = 0;
+            while ai < node.call_expr_arg_count {
+                if c99_find_first_try_await_expr(node.call_expr_args[ai], out_try_expr) != 0 {
+                    return 1;
+                }
+                ai = ai + 1;
+            }
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        return c99_find_first_try_await_expr(node.member_access_object, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        if c99_find_first_try_await_expr(node.array_access_array, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.array_access_index, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_SLICE_EXPR {
+        if c99_find_first_try_await_expr(node.slice_expr_base, out_try_expr) != 0 {
+            return 1;
+        }
+        if c99_find_first_try_await_expr(node.slice_expr_start_expr, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.slice_expr_len_expr, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if c99_find_first_try_await_expr(node.binary_expr_left, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.binary_expr_right, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        return c99_find_first_try_await_expr(node.unary_expr_operand, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        return c99_find_first_try_await_expr(node.cast_expr_expr, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        if c99_find_first_try_await_expr(node.catch_expr_operand, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.catch_expr_catch_block, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR && node.match_expr_arms != null {
+        if c99_find_first_try_await_expr(node.match_expr_expr, out_try_expr) != 0 {
+            return 1;
+        }
+        var mi: i32 = 0;
+        while mi < node.match_expr_arm_count {
+            if c99_find_first_try_await_expr(node.match_expr_arms[mi].result_expr, out_try_expr) != 0 {
+                return 1;
+            }
+            mi = mi + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_STRUCT_INIT && node.struct_init_field_values != null {
+        var fi: i32 = 0;
+        while fi < node.struct_init_field_count {
+            if c99_find_first_try_await_expr(node.struct_init_field_values[fi], out_try_expr) != 0 {
+                return 1;
+            }
+            fi = fi + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_ARRAY_LITERAL && node.array_literal_elements != null {
+        var ei: i32 = 0;
+        while ei < node.array_literal_element_count {
+            if c99_find_first_try_await_expr(node.array_literal_elements[ei], out_try_expr) != 0 {
+                return 1;
+            }
+            ei = ei + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_TUPLE_LITERAL && node.tuple_literal_elements != null {
+        var ti: i32 = 0;
+        while ti < node.tuple_literal_element_count {
+            if c99_find_first_try_await_expr(node.tuple_literal_elements[ti], out_try_expr) != 0 {
+                return 1;
+            }
+            ti = ti + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_PRINT || node.type == ASTNodeType.AST_PRINTLN {
+        return c99_find_first_try_await_expr(node.print_expr, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_SYSCALL {
+        if c99_find_first_try_await_expr(node.syscall_number, out_try_expr) != 0 {
+            return 1;
+        }
+        if node.syscall_args != null {
+            var si2: i32 = 0;
+            while si2 < node.syscall_arg_count {
+                if c99_find_first_try_await_expr(node.syscall_args[si2], out_try_expr) != 0 {
+                    return 1;
+                }
+                si2 = si2 + 1;
+            }
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_STRING_INTERP && node.string_interp_segments != null {
+        var si3: i32 = 0;
+        while si3 < node.string_interp_segment_count {
+            const seg: &ASTStringInterpSegment = &node.string_interp_segments[si3];
+            if seg != null && seg.is_text == 0 && seg.expr != null &&
+                c99_find_first_try_await_expr(seg.expr, out_try_expr) != 0 {
+                return 1;
+            }
+            si3 = si3 + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_SIZEOF {
+        return c99_find_first_try_await_expr(node.sizeof_expr_target, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_LEN {
+        return c99_find_first_try_await_expr(node.len_expr_array, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_ALIGNOF {
+        return c99_find_first_try_await_expr(node.alignof_expr_target, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        return c99_find_first_try_await_expr(node.ptr_from_usize_value, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        return c99_find_first_try_await_expr(node.usize_from_ptr_ptr, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_ERROR_ID {
+        return c99_find_first_try_await_expr(node.error_id_operand, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_VA_START {
+        if c99_find_first_try_await_expr(node.va_start_ap, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.va_start_last_param, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_VA_END {
+        return c99_find_first_try_await_expr(node.va_end_ap, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_VA_ARG {
+        if c99_find_first_try_await_expr(node.va_arg_ap, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.va_arg_arg_type, out_try_expr);
+    }
+    if node.type == ASTNodeType.AST_VA_COPY {
+        if c99_find_first_try_await_expr(node.va_copy_dest, out_try_expr) != 0 {
+            return 1;
+        }
+        return c99_find_first_try_await_expr(node.va_copy_src, out_try_expr);
+    }
+    return 0;
+}
+
+// return 语句里是否包含嵌套的 try @await（例如 return 1 + (try @await foo())）
+fn c99_return_stmt_has_nested_try_await(stmt: &ASTNode) i32 {
+    if stmt == null || stmt.type != ASTNodeType.AST_RETURN_STMT || stmt.return_stmt_expr == null {
+        return 0;
+    }
+    var nested_try: [&ASTNode: 1] = [null];
+    if c99_find_first_try_await_expr(stmt.return_stmt_expr, &nested_try[0]) != 0 &&
+        nested_try[0] != null && nested_try[0].try_expr_operand != null &&
+        nested_try[0].try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
+        nested_try[0].try_expr_operand.await_expr_operand != null {
+        return 1;
+    }
+    return 0;
 }
 
 
@@ -1464,6 +1773,27 @@ fn c99_emit_async_arm_await_index(
 fn c99_async_operand_future_inner_ast(codegen: &C99CodeGenerator, operand: &ASTNode, fn_decl: &ASTNode) &ASTNode {
     if operand == null || codegen == null || codegen.checker == null || fn_decl == null {
         return null;
+    }
+    if operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
+        const id_type_node: &ASTNode = c99_find_identifier_type_node(codegen, operand.identifier_name);
+        if id_type_node != null {
+            const inner_id: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, id_type_node, fn_decl);
+            if inner_id != null {
+                return inner_id;
+            }
+        }
+    }
+    if operand.type == ASTNodeType.AST_CALL_EXPR && operand.call_expr_callee != null {
+        const cal: &ASTNode = operand.call_expr_callee;
+        if cal.type == ASTNodeType.AST_IDENTIFIER && cal.identifier_name != null {
+            const fd_ret: &ASTNode = find_function_decl_c99(codegen, cal.identifier_name);
+            if fd_ret != null && fd_ret.fn_decl_return_type != null {
+                const inner_decl: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, fd_ret.fn_decl_return_type, fn_decl);
+                if inner_decl != null {
+                    return inner_decl;
+                }
+            }
+        }
     }
     var ot: Type = checker_infer_type(codegen.checker, operand);
     if ot.kind == TypeKind.TYPE_ERROR_UNION && ot.error_union_payload_type != null {
@@ -1551,6 +1881,69 @@ fn c99_async_operand_future_inner_ast(codegen: &C99CodeGenerator, operand: &ASTN
         }
     }
     return null;
+}
+
+// 从 `try @await expr` 推导 `@await expr` 的结果类型 AST（用于 try 的临时错误联合类型）。
+// 这样 codegen 不必把整个 try 表达式重新交回 checker，避免重复打印语义错误。
+fn c99_async_await_result_ast(codegen: &C99CodeGenerator, await_expr: &ASTNode, fn_decl: &ASTNode) &ASTNode {
+    if codegen == null || codegen.checker == null || await_expr == null || fn_decl == null {
+        return null;
+    }
+    if await_expr.type != ASTNodeType.AST_AWAIT_EXPR || await_expr.await_expr_operand == null {
+        return null;
+    }
+    const op: &ASTNode = await_expr.await_expr_operand;
+    if op.type == ASTNodeType.AST_CALL_EXPR && op.call_expr_callee != null {
+        const cal: &ASTNode = op.call_expr_callee;
+        if cal.type == ASTNodeType.AST_IDENTIFIER && cal.identifier_name != null {
+            const fd_ret: &ASTNode = find_function_decl_c99(codegen, cal.identifier_name);
+            if fd_ret != null && fd_ret.fn_decl_return_type != null {
+                const inner_call: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, fd_ret.fn_decl_return_type, fn_decl);
+                if inner_call != null {
+                    if fd_ret.fn_decl_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                        const eu_call: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, await_expr.line, await_expr.column, codegen.arena, await_expr.filename);
+                        if eu_call != null {
+                            eu_call.type_error_union_payload_type = inner_call;
+                            return eu_call;
+                        }
+                    }
+                    return inner_call;
+                }
+            }
+        }
+    }
+    if op.type == ASTNodeType.AST_IDENTIFIER && op.identifier_name != null {
+        const id_type_node: &ASTNode = c99_find_identifier_type_node(codegen, op.identifier_name);
+        if id_type_node != null {
+            const inner_id: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, id_type_node, fn_decl);
+            if inner_id != null {
+                if id_type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                    const eu_id: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, await_expr.line, await_expr.column, codegen.arena, await_expr.filename);
+                    if eu_id != null {
+                        eu_id.type_error_union_payload_type = inner_id;
+                        return eu_id;
+                    }
+                }
+                return inner_id;
+            }
+        }
+    }
+    const inner: &ASTNode = c99_async_operand_future_inner_ast(codegen, await_expr.await_expr_operand, fn_decl);
+    if inner == null {
+        return null;
+    }
+    if inner.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+        return inner;
+    }
+    const awaited_type: Type = checker_infer_type(codegen.checker, await_expr.await_expr_operand);
+    if awaited_type.kind == TypeKind.TYPE_ERROR_UNION {
+        const eu_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, await_expr.line, await_expr.column, codegen.arena, await_expr.filename);
+        if eu_node != null {
+            eu_node.type_error_union_payload_type = inner;
+            return eu_node;
+        }
+    }
+    return inner;
 }
 
 // 判断 @await 操作数是否可直接内联为 caller-owned frame
@@ -2079,6 +2472,10 @@ fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTN
         const alc1: i32 = codegen.async_local_count - 1;
         if alc1 >= 0 && alc1 < @len(codegen.async_local_inits) {
             codegen.async_local_inits[alc1] = node.var_decl_init;
+            if node.var_decl_init != null && c99_stmt_tree_has_await(node.var_decl_init) != 0 {
+                // 该初始化本身含 await：state 0 不做前置初始化，等语句在 resume 后重放。
+                codegen.async_local_inits[alc1] = null;
+            }
         }
     }
 }
@@ -2283,8 +2680,137 @@ fn c99_stmt_tree_has_await(node: &ASTNode) i32 {
         if node.if_stmt_then_branch != null && c99_stmt_tree_has_await(node.if_stmt_then_branch) != 0 { return 1; }
         if node.if_stmt_else_branch != null && c99_stmt_tree_has_await(node.if_stmt_else_branch) != 0 { return 1; }
     }
-    if node.type == ASTNodeType.AST_ASSIGN && node.assign_src != null {
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if c99_stmt_tree_has_await(node.assign_dest) != 0 { return 1; }
         return c99_stmt_tree_has_await(node.assign_src);
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        if c99_stmt_tree_has_await(node.call_expr_callee) != 0 { return 1; }
+        if node.call_expr_args != null {
+            var ai: i32 = 0;
+            while ai < node.call_expr_arg_count {
+                if c99_stmt_tree_has_await(node.call_expr_args[ai]) != 0 { return 1; }
+                ai = ai + 1;
+            }
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        return c99_stmt_tree_has_await(node.member_access_object);
+    }
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        if c99_stmt_tree_has_await(node.array_access_array) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.array_access_index);
+    }
+    if node.type == ASTNodeType.AST_SLICE_EXPR {
+        if c99_stmt_tree_has_await(node.slice_expr_base) != 0 { return 1; }
+        if c99_stmt_tree_has_await(node.slice_expr_start_expr) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.slice_expr_len_expr);
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if c99_stmt_tree_has_await(node.binary_expr_left) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.binary_expr_right);
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        return c99_stmt_tree_has_await(node.unary_expr_operand);
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        return c99_stmt_tree_has_await(node.cast_expr_expr);
+    }
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        if c99_stmt_tree_has_await(node.catch_expr_operand) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.catch_expr_catch_block);
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR && node.match_expr_arms != null {
+        if c99_stmt_tree_has_await(node.match_expr_expr) != 0 { return 1; }
+        var mi: i32 = 0;
+        while mi < node.match_expr_arm_count {
+            if c99_stmt_tree_has_await(node.match_expr_arms[mi].result_expr) != 0 { return 1; }
+            mi = mi + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_STRUCT_INIT && node.struct_init_field_values != null {
+        var fi: i32 = 0;
+        while fi < node.struct_init_field_count {
+            if c99_stmt_tree_has_await(node.struct_init_field_values[fi]) != 0 { return 1; }
+            fi = fi + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_ARRAY_LITERAL && node.array_literal_elements != null {
+        var ei: i32 = 0;
+        while ei < node.array_literal_element_count {
+            if c99_stmt_tree_has_await(node.array_literal_elements[ei]) != 0 { return 1; }
+            ei = ei + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_TUPLE_LITERAL && node.tuple_literal_elements != null {
+        var ti: i32 = 0;
+        while ti < node.tuple_literal_element_count {
+            if c99_stmt_tree_has_await(node.tuple_literal_elements[ti]) != 0 { return 1; }
+            ti = ti + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_PRINT || node.type == ASTNodeType.AST_PRINTLN {
+        return c99_stmt_tree_has_await(node.print_expr);
+    }
+    if node.type == ASTNodeType.AST_SYSCALL {
+        if c99_stmt_tree_has_await(node.syscall_number) != 0 { return 1; }
+        if node.syscall_args != null {
+            var si2: i32 = 0;
+            while si2 < node.syscall_arg_count {
+                if c99_stmt_tree_has_await(node.syscall_args[si2]) != 0 { return 1; }
+                si2 = si2 + 1;
+            }
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_STRING_INTERP && node.string_interp_segments != null {
+        var si3: i32 = 0;
+        while si3 < node.string_interp_segment_count {
+            const seg: &ASTStringInterpSegment = &node.string_interp_segments[si3];
+            if seg != null && seg.is_text == 0 && seg.expr != null && c99_stmt_tree_has_await(seg.expr) != 0 {
+                return 1;
+            }
+            si3 = si3 + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_SIZEOF {
+        return c99_stmt_tree_has_await(node.sizeof_expr_target);
+    }
+    if node.type == ASTNodeType.AST_LEN {
+        return c99_stmt_tree_has_await(node.len_expr_array);
+    }
+    if node.type == ASTNodeType.AST_ALIGNOF {
+        return c99_stmt_tree_has_await(node.alignof_expr_target);
+    }
+    if node.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        return c99_stmt_tree_has_await(node.ptr_from_usize_value);
+    }
+    if node.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        return c99_stmt_tree_has_await(node.usize_from_ptr_ptr);
+    }
+    if node.type == ASTNodeType.AST_ERROR_ID {
+        return c99_stmt_tree_has_await(node.error_id_operand);
+    }
+    if node.type == ASTNodeType.AST_VA_START {
+        if c99_stmt_tree_has_await(node.va_start_ap) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.va_start_last_param);
+    }
+    if node.type == ASTNodeType.AST_VA_END {
+        return c99_stmt_tree_has_await(node.va_end_ap);
+    }
+    if node.type == ASTNodeType.AST_VA_ARG {
+        if c99_stmt_tree_has_await(node.va_arg_ap) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.va_arg_arg_type);
+    }
+    if node.type == ASTNodeType.AST_VA_COPY {
+        if c99_stmt_tree_has_await(node.va_copy_dest) != 0 { return 1; }
+        return c99_stmt_tree_has_await(node.va_copy_src);
     }
     return 0;
 }
@@ -3100,6 +3626,9 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
 fn c99_emit_async_local_init_single(codegen: &C99CodeGenerator, stmt: &ASTNode) i32 {
     if codegen == null || stmt == null || codegen.async_state_var == null { return 0; }
     if stmt.type != ASTNodeType.AST_VAR_DECL || stmt.var_decl_name == null { return 0; }
+    if stmt.var_decl_init != null && c99_stmt_tree_has_await(stmt.var_decl_init) != 0 {
+        return 0;
+    }
     // 检查是否在 async_local_names 中
     var li: i32 = 0;
     while li < codegen.async_local_count && li < @len(codegen.async_local_names) {
@@ -3228,6 +3757,20 @@ fn emit_async_segment(codegen: &C99CodeGenerator, block: &ASTNode, from_si: i32,
             si = si + 1;
             continue;
         }
+        // 复合表达式里的 try @await：把当前语句当成分裂点，resume 后再重放整条语句。
+        if stmt.type != ASTNodeType.AST_BLOCK && stmt.type != ASTNodeType.AST_IF_STMT &&
+            stmt.type != ASTNodeType.AST_WHILE_STMT && stmt.type != ASTNodeType.AST_FOR_STMT {
+            var nested_try: [&ASTNode: 1] = [null];
+            if c99_find_first_try_await_expr(stmt, &nested_try[0]) != 0 && nested_try[0] != null &&
+                nested_try[0].try_expr_operand != null && nested_try[0].try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
+                nested_try[0].try_expr_operand.await_expr_operand != null {
+                const ai2: i32 = c99_async_find_await_at(codegen, block, si);
+                if ai2 >= 0 {
+                    c99_emit_async_arm_and_fallthrough(codegen, ai2);
+                    return 0;
+                }
+            }
+        }
         // return 语句：仅对块末尾的尾部 return 停止（由 state loop 的 return Ready 逻辑处理，
         // 因 return_future_err_union 等需要 Future boxing）；中间 return（提前返回）走 gen_stmt。
         if stmt.type == ASTNodeType.AST_RETURN_STMT {
@@ -3255,9 +3798,34 @@ fn emit_async_continuation(codegen: &C99CodeGenerator, cur_ai: i32) i32 {
     const ab: &ASTNode = codegen.async_collect_blocks[cur_ai];
     const asi: i32 = codegen.async_collect_stmt_indices[cur_ai];
     if ab == null { return 0; }
+    var cur_stmt: &ASTNode = null;
+    if ab.block_stmts != null && asi >= 0 && asi < ab.block_stmt_count {
+        cur_stmt = ab.block_stmts[asi];
+    }
     const saved_epr: i32 = codegen.async_emit_poll_return;
     codegen.async_emit_poll_return = 1;
     var result: i32 = 0;
+    if cur_stmt != null && cur_stmt.type != ASTNodeType.AST_BLOCK && cur_stmt.type != ASTNodeType.AST_IF_STMT &&
+        cur_stmt.type != ASTNodeType.AST_WHILE_STMT && cur_stmt.type != ASTNodeType.AST_FOR_STMT {
+        var nested_try: [&ASTNode: 1] = [null];
+        if c99_find_first_try_await_expr(cur_stmt, &nested_try[0]) != 0 && nested_try[0] != null &&
+            nested_try[0].try_expr_operand != null && nested_try[0].try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
+            nested_try[0].try_expr_operand.await_expr_operand != null &&
+            (cur_stmt.type != ASTNodeType.AST_VAR_DECL || c99_var_decl_init_is_try_await_bind(cur_stmt.var_decl_init) == 0) &&
+            c99_return_stmt_is_try_await_bind(cur_stmt) == 0 {
+            const saved_subst_try_expr: &ASTNode = codegen.async_expr_subst_try_expr;
+            const saved_subst_name: &byte = codegen.async_expr_subst_name;
+            codegen.async_expr_subst_try_expr = nested_try[0];
+            codegen.async_expr_subst_name = codegen.async_bind_names[cur_ai];
+            gen_stmt(codegen, cur_stmt);
+            codegen.async_expr_subst_try_expr = saved_subst_try_expr;
+            codegen.async_expr_subst_name = saved_subst_name;
+            if cur_stmt.type == ASTNodeType.AST_RETURN_STMT {
+                codegen.async_emit_poll_return = saved_epr;
+                return 1;
+            }
+        }
+    }
     if ew != null && ew.type == ASTNodeType.AST_WHILE_STMT {
         // await 在 while 内：发射 while 体剩余语句
         const reached_end: i32 = emit_async_segment_with_control(codegen, ab, asi + 1, ab.block_stmt_count, ew, null);
@@ -4228,7 +4796,15 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             // 通用 continuation：递归段发射（emit_async_segment 遇 return 语句停止）
             {
                 const cont_r: i32 = emit_async_continuation(codegen, state_k - 1);
-                if cont_r != 0 && ret_expr != null {
+                var skip_ret_expr_emit: i32 = 0;
+                if await_blocks[state_k - 1] != null && await_stmt_indices[state_k - 1] >= 0 &&
+                    await_stmt_indices[state_k - 1] < await_blocks[state_k - 1].block_stmt_count {
+                    const cur_stmt2: &ASTNode = await_blocks[state_k - 1].block_stmts[await_stmt_indices[state_k - 1]];
+                    if c99_return_stmt_has_nested_try_await(cur_stmt2) != 0 {
+                        skip_ret_expr_emit = 1;
+                    }
+                }
+                if cont_r != 0 && ret_expr != null && skip_ret_expr_emit == 0 {
                     codegen.current_function_return_type = effective_return_type;
                     fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = " as *byte,
                         poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
@@ -4252,7 +4828,15 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             // 通用 continuation：递归段发射（emit_async_segment 遇 return 语句停止）
             {
                 const cont_r2: i32 = emit_async_continuation(codegen, state_k - 1);
-                if cont_r2 != 0 && ret_expr != null {
+                var skip_ret_expr_emit2: i32 = 0;
+                if await_blocks[state_k - 1] != null && await_stmt_indices[state_k - 1] >= 0 &&
+                    await_stmt_indices[state_k - 1] < await_blocks[state_k - 1].block_stmt_count {
+                    const cur_stmt3: &ASTNode = await_blocks[state_k - 1].block_stmts[await_stmt_indices[state_k - 1]];
+                    if c99_return_stmt_has_nested_try_await(cur_stmt3) != 0 {
+                        skip_ret_expr_emit2 = 1;
+                    }
+                }
+                if cont_r2 != 0 && ret_expr != null && skip_ret_expr_emit2 == 0 {
                     codegen.current_function_return_type = effective_return_type;
                     // return_future_err_union + Future 字面量：需要 boxing 为接口
                     var is_future_literal_ret: i32 = 0;

@@ -552,16 +552,14 @@ export fn async_print_bytes_to(writer: AsyncWriter, data: &[byte]) Future<!usize
 /// 便捷输出：写入 C 风格字符串并追加 `\n`。
 export @async_fn fn async_println_to(writer: AsyncWriter, text: &const byte) Future<!usize> {
     var total: usize = try @await async_write_cstr(writer, text);
-    const newline_written: usize = try @await async_write_cstr(writer, "\n\0" as &const byte);
-    total = total + newline_written;
+    total = total + (try @await async_write_cstr(writer, "\n\0" as &const byte));
     return total;
 }
 
 /// 便捷输出：写入字节切片并追加 `\n`。
 export @async_fn fn async_println_bytes_to(writer: AsyncWriter, data: &[byte]) Future<!usize> {
     var total: usize = try @await async_write_bytes(writer, data);
-    const newline_written: usize = try @await async_write_cstr(writer, "\n\0" as &const byte);
-    total = total + newline_written;
+    total = total + (try @await async_write_cstr(writer, "\n\0" as &const byte));
     return total;
 }
 

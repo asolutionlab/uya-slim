@@ -158,6 +158,7 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     // 证明超时机制：默认限制 1000 步
     checker.proof_step_limit = 1000;
     checker.proof_step_count = 0;
+    checker.suppress_codegen_diagnostics = 0;
     
     return 0;
 }

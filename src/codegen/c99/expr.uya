@@ -7729,6 +7729,15 @@ fn c99_try_emit_error_return_value(codegen: &C99CodeGenerator, ret_union_c: &byt
 
 // 生成 try 表达式
 fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        if codegen != null && expr != null && codegen.async_expr_subst_try_expr != null &&
+            @usize_from_ptr(expr as &void) == @usize_from_ptr(codegen.async_expr_subst_try_expr as &void) {
+            const subst_name: &byte = get_safe_c_identifier(codegen, codegen.async_expr_subst_name);
+            if codegen.async_state_var != null && subst_name != null {
+                fprintf(codegen.emit_stream as *void, "%s->_uya_bind_%s" as *byte,
+                    codegen.async_state_var as *byte, subst_name as *byte);
+                return;
+            }
+        }
         const operand: &ASTNode = expr.try_expr_operand;
         var try_ret_type: &ASTNode = codegen.current_function_return_type;
         if codegen.async_state_var != null && codegen.async_poll_try_propagate_type != null {
@@ -7852,6 +7861,15 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     eu_node.type_error_union_payload_type = payload_ast;
                                     try_union_c = c99_type_to_c(codegen, eu_node);
                                 }
+                            }
+                        }
+                    }
+                    if try_union_c == null {
+                        if operand != null && operand.type == ASTNodeType.AST_AWAIT_EXPR &&
+                            operand.await_expr_operand != null && codegen.current_function_decl != null {
+                            const await_try_ast: &ASTNode = c99_async_await_result_ast(codegen, operand, codegen.current_function_decl);
+                            if await_try_ast != null {
+                                try_union_c = c99_type_to_c(codegen, await_try_ast);
                             }
                         }
                     }
