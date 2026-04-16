@@ -7,7 +7,7 @@
 
 | 能力 | 状态 | Runtime | Codegen | Tests | Docs |
 |------|------|---------|---------|-------|------|
-| async lowering / 状态机控制流 | ✅ 完成 | `if/else if`、`while`、范围 `for`、定长数组 `for`、嵌套块、循环间同步语句已稳定 | Bug A/B/C/D 已修复；`return error.X`、局部变量提升、await 间同步语句恢复 | `test_async_bug_b_sync_between.uya` `test_async_for_await.uya` `test_async_bug_d_nested_block.uya` | `async_coroutine_transform_design.md` `plan_async_coroutine_transform.md` `async_loop_await_design.md` |
+| async lowering / 状态机控制流 | ✅ 完成 | `if/else if`、`while`、范围 `for`、定长数组 `for`、嵌套块、循环间同步语句已稳定 | Bug A/B/C/D 与复合表达式中的 `try @await`（赋值 RHS / return 表达式）已修复；`return error.X`、局部变量提升、await 间同步语句恢复 | `test_async_bug_b_sync_between.uya` `test_async_for_await.uya` `test_async_bug_d_nested_block.uya` `test_async_compound_try_await.uya` | `async_coroutine_transform_design.md` `plan_async_coroutine_transform.md` `async_loop_await_design.md` |
 | async frame 分配 / 生命周期 | ✅ 完成 | 默认路径已切 `AsyncFramePool` + caller-owned inline + pinned 语义；Ready/Error/Cancel 统一释放 | `@frame(foo)` 类型构造器与 frame 生命周期命名已收口 | `test_async_frame_methods.uya` `test_async_frame_stack_ok.uya` `test_async_frame_release_path.uya` | `async_frame_allocation_design.md` `todo_async_frame_allocation.md` |
 | `Waker` / `EventLoop` / `AsyncFd` | ✅ Linux 主路径完成 | `Waker` 支持单 interest、`eventfd` 绑定/关闭、`cancel/is_cancelled`；`LinuxEpoll` + `AsyncFd` 已接通 readiness；`AsyncWriter/AsyncReader` 已具备 `write_all` / `read_exact`，helper 层已有 `async_write_bytes/cstr`、`async_print_to/println_to` | 无额外关键缺口 | `test_std_async_event.uya` `test_async_fd.uya` `test_async_io.uya` | `std_async_design.md` `async_production_todo.md` |
 | `Scheduler` / 泛型 `TaskQueue<T>` | ✅ 完成 | `scheduler_run_*_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / typed wrappers、共享 `EventLoop` 单轮推进已完成；`Future<!usize>` 的真实 shared-epoll I/O 队列也已验证 | 队列依赖的“数组元素上的接口字段方法调用”与“结构体依赖收集误展开接口模板”已修复 | `test_std_async_scheduler.uya` `test_async_multi_fd_concurrent.uya` `test_async_fd.uya` | `std_async_design.md` `todo_async_runtime_and_http.md` `todo_mini_to_full.md` |
@@ -28,6 +28,7 @@
 - `test_async_multi_fd_concurrent.uya` 现在按“event loop 推进一步后 Ready”的契约断言，不再依赖旧的 `waker.is_woken()` 时序假设
 - `async_compute` 的“运行中取消”不会抢占停止宿主计算，而是保证调用侧最终看到 `error.Cancelled`
 - `TaskQueue<T>` 现已泛型化，但容量仍是固定 `64`，当前重点是统一调度与取消语义，不是动态扩容
+- 复合表达式中的 `try @await` 现已支持赋值 RHS 与 return 表达式，固定回归见 `tests/test_async_compound_try_await.uya`
 
 ## 剩余 P2
 

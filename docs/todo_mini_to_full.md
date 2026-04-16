@@ -849,6 +849,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 **已知语义缺口（更新至 2026-04）**：
 - **已缓解**：连续 `while` 内多 await（Bug A）、`return try @await`（Bug C）、**范围/定长数组 `for` 内 await** 等已由通用段发射路径覆盖；见 `tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 与 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)。
 - **已转正**：多个 `try @await` **循环之间**的同步语句已由 `tests/test_async_bug_b_sync_between.uya` 复核通过，不再是当前阻塞项；相关历史背景见 [todo_async_loop_await.md](todo_async_loop_await.md)。
+- **已转正**：复合表达式中的 `try @await`（赋值 RHS、return 表达式）已接入通用回放/替换路径；固定回归见 `tests/test_async_compound_try_await.uya`。
 - `benchmarks/http_bench_async_epoll.uya`：`make check` 中的 verify 脚本多仅保证 **C99 可编译**；**端到端 `curl` 成功**依赖 await 间及循环间语句完整发射。
 - 服务只监听 **IPv4 `127.0.0.1`** 时，`curl http://localhost:…` 先试 **IPv6 `::1`** 出现「拒绝连接」属预期，与 Empty reply 不是同一类问题。
 

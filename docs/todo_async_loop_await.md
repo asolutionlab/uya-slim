@@ -118,12 +118,20 @@
     - `src/codegen/c99/stmt.uya` / `expr.uya`：`return error.X` 与 `as!` 泛型 payload 类型正确单态化
   - 回归：`tests/test_http1_async_client.uya` 在 `http_check_deadline` 全部启用后通过
 
+- [x] **Bug F：复合表达式中的 `try @await` 未走通用回放/替换路径**（2026-04-16 修复）
+  - 状态：已修复
+  - 现象：`total = total + (try @await async_write_cstr(...))`、`return 1 + (try @await fut)` 等形态未进入统一 lowering 路径，可能触发 codegen 失败或语义缺失。
+  - 修复位置：
+    - `src/codegen/c99/async_transform.uya` / `function.uya`：将复合表达式内的 `try @await` 纳入 replay/substitution
+    - `src/checker/check_expr.uya` 等：补齐 `@await` 结果类型预注册，并压掉 codegen 阶段重复 checker 诊断
+  - 回归：`tests/test_async_compound_try_await.uya`
+
 **仍建议关注的方向**：
 1. collect/emit 覆盖更多 await 出现位置（assign、bare expr 等）若仍有缺口
 2. 迭代器 `for` / `for |&x|` 与 `@async_fn` 组合的 lowering 或明确诊断
 3. `Future<!void>` 相关 void monomorph 特化补齐后，再扩展直接 `return error.X` 的覆盖
 
-**验收**：Bug B / Bug D 已转正并通过；全量 `make check` 仍作为 release 闸门执行
+**验收**：Bug B / Bug D / Bug F 已转正并通过；全量 `make check` 仍作为 release 闸门执行
 
 ### 低优先级
 
@@ -166,6 +174,7 @@ make backup
 | `test_async_bug_c_tail_await.uya` | `return try @await` |
 | `test_async_bug_b_sync_between.uya` | await 循环间同步语句 |
 | `test_async_bug_d_nested_block.uya` | 分裂点附近局部变量、break/continue、切片表达式 |
+| `test_async_compound_try_await.uya` | 复合表达式中的 `try @await`（赋值 RHS / return 表达式） |
 | `test_async_io.uya` | AsyncReader/AsyncWriter 基础 |
 | `test_block_on.uya` | block_on 基础 |
 | `test_async_multiple_await.uya` | 多 await 线性 |

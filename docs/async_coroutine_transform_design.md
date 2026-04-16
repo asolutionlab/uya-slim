@@ -14,8 +14,9 @@ codegen 层 `gen_async_function_stage_b()`（~800 行）曾通过模式匹配 AS
 - Bug B: await 间同步代码丢失
 - Bug C: return try @await inner()
 - Bug D: 分裂点附近局部变量
+- 复合表达式中的 `try @await`（如 `total = total + (try @await inner())`、`return 1 + (try @await inner())`）未被正确重放/替换
 
-这些缺口已在主分支的通用 lowering / 回归中转正；当前请以 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md) 为准。
+这些缺口已在主分支的通用 lowering / 回归中转正；复合表达式形态的固定回归为 `tests/test_async_compound_try_await.uya`。当前请以 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md) 为准。
 
 ## 变换算法
 
