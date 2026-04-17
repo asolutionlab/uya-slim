@@ -2,6 +2,7 @@
 // 版本：v0.4.0
 // 说明：基于 syscall 的 POSIX 标准函数
 
+use std;
 use std.runtime.saved_envp;
 
 use libc.SYS_read;
@@ -17,12 +18,22 @@ use libc.SYS_chdir;
 use libc.SYS_getcwd;
 use libc.SYS_dup;
 use libc.SYS_dup2;
+use libc.sys_read;
+use libc.sys_write;
+use libc.sys_close;
+use libc.sys_lseek;
 use libc.sys_access;
+use libc.sys_chdir;
+use libc.sys_getcwd;
 use libc.sys_unlink;
 use libc.sys_mkdir;
 use libc.sys_rmdir;
 use libc.sys_dup2;
 use libc.errno;
+
+std.cfg(std.target_os == .tos_macos, {
+extern "libc" fn uya_macos_system(cmd: &const byte) !i32;
+}, {})
 
 // ============================================================
 // 标准文件描述符常量
@@ -38,27 +49,27 @@ export const STDERR_FILENO: i32 = 2;
 
 // read - 从文件描述符读取数据
 export extern "libc" fn read(fd: i32, buf: &byte, count: usize) i64 {
-    const result: !i64 = @syscall(SYS_read, fd as i64, buf as i64, count as i64);
-    const ret: i64 = result catch {
+    const result: !isize = sys_read(fd, buf as *byte, count);
+    const ret: isize = result catch {
         errno = ENOENT; // 简化错误处理
         return 0 - 1;
     };
-    return ret;
+    return ret as i64;
 }
 
 // write - 向文件描述符写入数据
 export extern "libc" fn write(fd: i32, buf: &const byte, count: usize) i64 {
-    const result: !i64 = @syscall(SYS_write, fd as i64, buf as i64, count as i64);
-    const ret: i64 = result catch {
+    const result: !isize = sys_write(fd, buf as *const byte, count);
+    const ret: isize = result catch {
         errno = ENOENT;
         return 0 - 1;
     };
-    return ret;
+    return ret as i64;
 }
 
 // close - 关闭文件描述符
 export extern "libc" fn close(fd: i32) i32 {
-    const result: !i64 = @syscall(SYS_close, fd as i64);
+    const result: !i32 = sys_close(fd);
     result catch {
         errno = EBADF;
         return 0 - 1;
@@ -73,7 +84,7 @@ export const SEEK_CUR: i32 = 1;
 export const SEEK_END: i32 = 2;
 
 export extern "libc" fn lseek(fd: i32, offset: i64, whence: i32) i64 {
-    const result: !i64 = @syscall(SYS_lseek, fd as i64, offset, whence as i64);
+    const result: !i64 = sys_lseek(fd, offset, whence);
     const ret: i64 = result catch {
         errno = EBADF;
         return 0 - 1;
@@ -140,6 +151,20 @@ export extern "libc" fn waitpid(pid: i32, status: &i32, options: i32) i32 {
 }
 
 // system - 执行 shell 命令（0 依赖实现）
+std.cfg(std.target_os == .tos_macos, {
+export extern "libc" fn system(cmd: &const byte) i32 {
+    if cmd == null {
+        return 0;
+    }
+
+    const mac_result: !i32 = uya_macos_system(cmd);
+    const mac_status: i32 = mac_result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return mac_status;
+}
+}, {
 export extern "libc" fn system(cmd: &const byte) i32 {
     if cmd == null {
         return 0;
@@ -166,6 +191,7 @@ export extern "libc" fn system(cmd: &const byte) i32 {
     }
     return 0 - 1;
 }
+})
 
 // ============================================================
 // 文件系统函数
@@ -218,7 +244,7 @@ export extern "libc" fn rmdir(pathname: &const byte) i32 {
 
 // chdir - 切换目录
 export extern "libc" fn chdir(path: &const byte) i32 {
-    const result: !i64 = @syscall(SYS_chdir, path as i64);
+    const result: !i32 = sys_chdir(path as *const byte);
     result catch {
         errno = ENOENT;
         return 0 - 1;

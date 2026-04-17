@@ -622,6 +622,7 @@ backup-hosted-seed:
 					arm64) TRIPLE="aarch64-macos-none" ;; \
 					x86_64) TRIPLE="x86_64-macos-none" ;; \
 				esac; \
+				STATUS=0; \
 				ulimit -s 32768 || true; \
 				( cd src && \
 					UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= \
@@ -630,8 +631,14 @@ backup-hosted-seed:
 					TOOLCHAIN="zig" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE=dynamic \
 					CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
 					./compile.sh --c99 -e --name "uya-hosted-macos-$$ARCH" --safety-proof \
-				); \
+				) || STATUS=$$?; \
+				if [ ! -f "src/build/uya-hosted-macos-$$ARCH.c" ]; then \
+					exit $$STATUS; \
+				fi; \
 				cp "src/build/uya-hosted-macos-$$ARCH.c" "backup/uya-hosted-macos-$$ARCH.c"; \
+				if [ "$$STATUS" -ne 0 ]; then \
+					echo "提示: zig 交叉链接 macOS $$ARCH hosted 可执行文件失败，但已保留并更新 C 种子"; \
+				fi; \
 			done; \
 			echo "✓ backup/uya-hosted-macos-arm64.c 与 backup/uya-hosted-macos-x86_64.c 已更新（zig 交叉 hosted 种子）"; \
 		else \
