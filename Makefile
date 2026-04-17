@@ -168,7 +168,7 @@ uya-hosted:
 	fi
 	@echo "使用 hosted 编译器编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'set -e; UYA_COMPILER_PATH=""; if [ -f "../bin/uya-hosted" ]; then UYA_COMPILER_PATH="../bin/uya-hosted"; else UYA_COMPILER_PATH="../bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
+	@bash -c 'set -e; REPO_ROOT="$$(pwd)"; UYA_COMPILER_PATH=""; if [ -f "$$REPO_ROOT/bin/uya-hosted" ]; then UYA_COMPILER_PATH="$$REPO_ROOT/bin/uya-hosted"; else UYA_COMPILER_PATH="$$REPO_ROOT/bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi
@@ -211,7 +211,7 @@ b-hosted: uya-hosted
 	@echo "=========================================="
 	@echo "hosted 自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@bash -c 'ulimit -s 32768 && cd src && UYA_COMPILER="../bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --safety-proof'
+	@bash -c 'REPO_ROOT="$$(pwd)"; ulimit -s 32768 && cd src && UYA_COMPILER="$$REPO_ROOT/bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --safety-proof'
 	@echo ""
 	@echo "✓ hosted 自举验证完成"
 

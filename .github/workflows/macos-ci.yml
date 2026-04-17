@@ -8,14 +8,14 @@ on:
 
 jobs:
   hosted:
-    # from-c 现在会优先选择 backup/uya-hosted-<host_os>-<host_arch>.c，
-    # CI 固定使用 Intel x86_64 runner，避免 macos-latest 漂移到 arm64 后切到另一套 seed。
-    runs-on: macos-13
+    # from-c 会优先选择 backup/uya-hosted-<host_os>-<host_arch>.c；
+    # hosted 主线固定走 Apple Silicon，稳定验证 macOS arm64 seeds。
+    runs-on: macos-15
     env:
       HOST_OS: macos
-      HOST_ARCH: x86_64
+      HOST_ARCH: arm64
       TARGET_OS: macos
-      TARGET_ARCH: x86_64
+      TARGET_ARCH: arm64
       UYA_ROOT: ${{ github.workspace }}/lib/
 
     steps:
