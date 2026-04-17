@@ -2411,12 +2411,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("int32_t uya_macos_host_readdir_fill(void *dirp, void *out) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    unsigned char *src = (unsigned char *)0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    unsigned char *dst = (unsigned char *)0;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    size_t clear_idx = 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    size_t name_len = 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (dirp == (void *)0 || out == (void *)0) return -1;\n" as *byte, codegen.emit_stream as *void);
     fputs("    src = (unsigned char *)uya_host_readdir(dirp);\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (src == (unsigned char *)0) return 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst = (unsigned char *)out;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    memset(dst, 0, 19u + 256u);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    while (clear_idx < 275u) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("        dst[clear_idx] = 0;\n" as *byte, codegen.emit_stream as *void);
+    fputs("        clear_idx++;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    }\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst[18] = src[20];\n" as *byte, codegen.emit_stream as *void);
     fputs("    while (name_len < 255u && src[21 + name_len] != 0) {\n" as *byte, codegen.emit_stream as *void);
     fputs("        dst[19 + name_len] = src[21 + name_len];\n" as *byte, codegen.emit_stream as *void);
