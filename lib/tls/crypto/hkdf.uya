@@ -2,11 +2,9 @@
 // SHA-256 版本：PRK 32 字节，L <= 255*32
 
 use tls.common;
-use tls.crypto.hmac;
+use tls.crypto.hmac.tls_hmac_sha256;
 use std.mem.mem.mem_copy;
 use std.mem.mem.mem_set;
-
-extern fn hmac_sha256(key: &const byte, key_len: usize, msg: &const byte, msg_len: usize, out: &byte) void;
 
 const SHA256_LEN: usize = 32;
 const HKDF_MAX_SALT: usize = 512;
@@ -37,7 +35,7 @@ export fn hkdf_extract_sha256(
         key = salt;
         key_len = salt_len;
     }
-    hmac_sha256(key, key_len, ikm, ikm_len, prk_out);
+    tls_hmac_sha256(key, key_len, ikm, ikm_len, prk_out);
 }
 
 // HKDF-Expand(PRK, info, L) -> OKM；L <= 255*HashLen
@@ -99,7 +97,7 @@ export fn hkdf_expand_sha256(
             hmac_in_len = hmac_in_len + 1;
         }
         var ti: [byte: SHA256_LEN] = [];
-        hmac_sha256(prk, SHA256_LEN, &hmac_in[0], hmac_in_len, &ti[0]);
+        tls_hmac_sha256(prk, SHA256_LEN, &hmac_in[0], hmac_in_len, &ti[0]);
         var k: usize = 0;
         while k < SHA256_LEN && written < out_len {
             out[written] = ti[k];

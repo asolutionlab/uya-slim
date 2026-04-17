@@ -301,7 +301,7 @@ fn find_content_length(req: &Request) usize {
 }
 
 /// 解析 HTTP/1.1 请求；`request.body` 为指向 `buf` 内部子切片；`consumed` 为本请求在 `buf` 中占用字节数。
-export fn parse(buf: &[byte]) !ParseResult {
+export fn http_parse_request(buf: &[byte]) !ParseResult {
     if buf.len == 0 {
         return error.IncompleteRequest;
     }

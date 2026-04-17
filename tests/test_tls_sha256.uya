@@ -4,13 +4,10 @@
 use std.runtime.entry;
 use tls.crypto.sha256;
 use tls.crypto.sha384;
-use tls.crypto.hmac;
-use tls.crypto.hkdf;
-
-extern fn hmac_sha256(key: &const byte, key_len: usize, msg: &const byte, msg_len: usize, out: &byte) void;
-extern fn hmac_sha384(key: &const byte, key_len: usize, msg: &const byte, msg_len: usize, out: &byte) void;
-extern fn hkdf_extract_sha256(salt: &const byte, salt_len: usize, ikm: &const byte, ikm_len: usize, prk_out: &byte) void;
-extern fn hkdf_expand_sha256(prk: &const byte, info: &const byte, info_len: usize, out: &byte, out_len: usize) i32;
+use tls.crypto.hmac.tls_hmac_sha256;
+use tls.crypto.hmac.tls_hmac_sha384;
+use tls.crypto.hkdf.hkdf_extract_sha256;
+use tls.crypto.hkdf.hkdf_expand_sha256;
 
 export fn main() i32 {
     // NIST 空串: SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -68,7 +65,7 @@ export fn main() i32 {
     const key1: [byte: 20] = [11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11];
     const data1: [byte: 8] = [72, 105, 32, 84, 104, 101, 114, 101];
     var out_hmac1: [byte: 32] = [];
-    hmac_sha256(&key1[0], 20, &data1[0], 8, &out_hmac1[0]);
+    tls_hmac_sha256(&key1[0], 20, &data1[0], 8, &out_hmac1[0]);
     if out_hmac1[0] != 0xb0 { return 12; }
     if out_hmac1[1] != 0x34 { return 13; }
     if out_hmac1[31] != 0xf7 { return 14; }
@@ -77,14 +74,14 @@ export fn main() i32 {
     const key2: [byte: 4] = [74, 101, 102, 101];
     const data2: [byte: 28] = [119, 104, 97, 116, 32, 100, 111, 32, 121, 97, 32, 119, 97, 110, 116, 32, 102, 111, 114, 32, 110, 111, 116, 104, 105, 110, 103, 63];
     var out_hmac2: [byte: 32] = [];
-    hmac_sha256(&key2[0], 4, &data2[0], 28, &out_hmac2[0]);
+    tls_hmac_sha256(&key2[0], 4, &data2[0], 28, &out_hmac2[0]);
     if out_hmac2[0] != 0x5b { return 15; }
     if out_hmac2[1] != 0xdc { return 16; }
     if out_hmac2[31] != 0x43 { return 17; }
 
     // RFC 4231 Test Case 2: HMAC-SHA-384
     var out_hmac384: [byte: 48] = [];
-    hmac_sha384(&key2[0], 4, &data2[0], 28, &out_hmac384[0]);
+    tls_hmac_sha384(&key2[0], 4, &data2[0], 28, &out_hmac384[0]);
     const expect_hmac384_2: [byte: 48] = [
         0xaf, 0x45, 0xd2, 0xe3, 0x76, 0x48, 0x40, 0x31,
         0x61, 0x7f, 0x78, 0xd2, 0xb5, 0x8a, 0x6b, 0x1b,

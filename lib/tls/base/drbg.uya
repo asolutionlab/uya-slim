@@ -2,9 +2,8 @@
 // SHA-256，无个性化串与附加输入；供 TLS 密钥材料等使用
 
 use tls.common;
+use tls.crypto.hmac.tls_hmac_sha256;
 use std.mem.mem.mem_set;
-
-extern fn hmac_sha256(key: &const byte, key_len: usize, msg: &const byte, msg_len: usize, out: &byte) void;
 
 const DRBG_OUTLEN: usize = 32;
 const DRBG_MAX_SEED: usize = 128;
@@ -33,9 +32,9 @@ fn _update(ctx: &DrbgCtx, provided_data: &const byte, provided_len: usize) void 
         i = i + 1;
     }
     var new_key: [byte: DRBG_OUTLEN] = [];
-    hmac_sha256(&ctx.key[0], DRBG_OUTLEN, &buf[0], DRBG_OUTLEN + 1 + provided_len, &new_key[0]);
+    tls_hmac_sha256(&ctx.key[0], DRBG_OUTLEN, &buf[0], DRBG_OUTLEN + 1 + provided_len, &new_key[0]);
     var new_v: [byte: DRBG_OUTLEN] = [];
-    hmac_sha256(&new_key[0], DRBG_OUTLEN, &ctx.v[0], DRBG_OUTLEN, &new_v[0]);
+    tls_hmac_sha256(&new_key[0], DRBG_OUTLEN, &ctx.v[0], DRBG_OUTLEN, &new_v[0]);
     if provided_len > 0 {
         i = 0;
         while i < DRBG_OUTLEN {
@@ -48,8 +47,8 @@ fn _update(ctx: &DrbgCtx, provided_data: &const byte, provided_len: usize) void 
             buf[DRBG_OUTLEN + 1 + i] = provided_data[i];
             i = i + 1;
         }
-        hmac_sha256(&new_key[0], DRBG_OUTLEN, &buf[0], DRBG_OUTLEN + 1 + provided_len, &ctx.key[0]);
-        hmac_sha256(&ctx.key[0], DRBG_OUTLEN, &new_v[0], DRBG_OUTLEN, &ctx.v[0]);
+        tls_hmac_sha256(&new_key[0], DRBG_OUTLEN, &buf[0], DRBG_OUTLEN + 1 + provided_len, &ctx.key[0]);
+        tls_hmac_sha256(&ctx.key[0], DRBG_OUTLEN, &new_v[0], DRBG_OUTLEN, &ctx.v[0]);
     } else {
         i = 0;
         while i < DRBG_OUTLEN {
@@ -90,7 +89,7 @@ export fn drbg_fill_random(ctx: &DrbgCtx, buf: &byte, len: usize) !void {
     var pos: usize = 0;
     while pos < len {
         var block: [byte: DRBG_OUTLEN] = [];
-        hmac_sha256(&ctx.key[0], DRBG_OUTLEN, &ctx.v[0], DRBG_OUTLEN, &block[0]);
+        tls_hmac_sha256(&ctx.key[0], DRBG_OUTLEN, &ctx.v[0], DRBG_OUTLEN, &block[0]);
         var k: usize = 0;
         while k < DRBG_OUTLEN && pos < len {
             ctx.v[k] = block[k];

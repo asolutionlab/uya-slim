@@ -3,7 +3,7 @@
 
 use tls.common;
 use libc.sys_write;
-use tls.crypto.hmac.hmac_sha256;
+use tls.crypto.hmac.tls_hmac_sha256;
 use tls.crypto.sha256.sha256;
 use tls.crypto.rsa.RsaPrivateKey;
 use tls.crypto.rsa.rsa_private_decrypt_pkcs1_v15;
@@ -179,21 +179,21 @@ fn hs_p_hash_sha256(secret: &const byte, secret_len: usize, seed: &const byte, s
     if seed_len > 0 {
         mem_copy(&block[0], seed, seed_len);
     }
-    hmac_sha256(secret, secret_len, &block[0], seed_len, &a[0]);
+    tls_hmac_sha256(secret, secret_len, &block[0], seed_len, &a[0]);
     var produced: usize = 0;
     while produced < out_len {
         mem_copy(&block[0], &a[0], 32);
         if seed_len > 0 {
             mem_copy(&block[32], seed, seed_len);
         }
-        hmac_sha256(secret, secret_len, &block[0], 32 + seed_len, &hmac_out[0]);
+        tls_hmac_sha256(secret, secret_len, &block[0], 32 + seed_len, &hmac_out[0]);
         var take: usize = 32;
         if take > out_len - produced {
             take = out_len - produced;
         }
         mem_copy(&out[produced], &hmac_out[0], take);
         produced = produced + take;
-        hmac_sha256(secret, secret_len, &a[0], 32, &a[0]);
+        tls_hmac_sha256(secret, secret_len, &a[0], 32, &a[0]);
     }
 }
 

@@ -63,7 +63,7 @@ fn sha256_compress(st: &[u32], block: &[byte]) void {
     var f: u32 = st.ptr[5];
     var g: u32 = st.ptr[6];
     var h: u32 = st.ptr[7];
-    const K: [u32: 64] = [
+    const round_k: [u32: 64] = [
         0x428a2f98 as u32, 0x71374491 as u32, 0xb5c0fbcf as u32, 0xe9b5dba5 as u32,
         0x3956c25b as u32, 0x59f111f1 as u32, 0x923f82a4 as u32, 0xab1c5ed5 as u32,
         0xd807aa98 as u32, 0x12835b01 as u32, 0x243185be as u32, 0x550c7dc3 as u32,
@@ -83,7 +83,7 @@ fn sha256_compress(st: &[u32], block: &[byte]) void {
     ];
     var r: usize = 0;
     while r < 64 {
-        const t1: u32 = h + sha256_bsig1(e) + sha256_ch(e, f, g) + K[r] + w[r];
+        const t1: u32 = h + sha256_bsig1(e) + sha256_ch(e, f, g) + round_k[r] + w[r];
         const t2: u32 = sha256_bsig0(a) + sha256_maj(a, b, c);
         h = g;
         g = f;

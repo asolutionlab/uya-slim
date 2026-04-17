@@ -1,7 +1,8 @@
 // test_http_multipart.uya — multipart boundary 提取与 parse_multipart
 
 use std.http.types;
-use std.http.parse;
+use std.http.parse.extract_multipart_boundary;
+use std.http.parse.parse_multipart;
 use std.testing.assert_eq_i32;
 
 fn slice_eq(a: &[byte], b: &[byte]) bool {

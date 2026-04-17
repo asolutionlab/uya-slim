@@ -3,7 +3,7 @@
 // 模块路径：use std.http.server
 
 use std.http.types;
-use std.http.parse;
+use std.http.parse.http_parse_request;
 use libc.syscall;
 use libc.errno;
 
@@ -187,7 +187,7 @@ export fn http_conn_read_parse(conn_fd: i32, base: &byte, cap: usize, filled: &u
             return error.PayloadTooLarge;
         }
         const sl: &[byte] = base[0: cur];
-        const p: !ParseResult = parse(sl);
+        const p: !ParseResult = http_parse_request(sl);
         // 须含 `else`：`match` 若只列 `IncompleteRequest` 与 `pr`（成功）两类，C 后端会对其它错误（如 InvalidRequest）生成空分支并在 while 中空转。
         match p {
             error.IncompleteRequest => {
@@ -221,7 +221,7 @@ export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize
             return error.PayloadTooLarge;
         }
         const sl: &[byte] = base[0: cur];
-        const p: !ParseResult = parse(sl);
+        const p: !ParseResult = http_parse_request(sl);
         match p {
             error.IncompleteRequest => {
                 if cur >= cap {

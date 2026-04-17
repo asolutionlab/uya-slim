@@ -2102,6 +2102,143 @@ fn c99_async_await_operand_is_inlineable(codegen: &C99CodeGenerator, operand: &A
     return 1;
 }
 
+fn c99_async_stage_b_effective_return_type(return_type: &ASTNode, out_effective_return_type: &&ASTNode) i32 {
+    if out_effective_return_type == null {
+        return 0;
+    }
+    out_effective_return_type[0] = return_type;
+    if return_type == null {
+        return 0;
+    }
+    if return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+        return_type.type_named_name != null &&
+        strcmp(return_type.type_named_name as *byte, "Future" as *byte) == 0 &&
+        return_type.type_named_type_arg_count == 1 &&
+        return_type.type_named_type_args != null {
+        const a0: &ASTNode = return_type.type_named_type_args[0];
+        if a0 != null && a0.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+            a0.type_error_union_payload_type != null {
+            return 1;
+        }
+    }
+    if return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+        return_type.type_error_union_payload_type != null {
+        const pl: &ASTNode = return_type.type_error_union_payload_type;
+        if pl.type == ASTNodeType.AST_TYPE_NAMED && pl.type_named_name != null &&
+            strcmp(pl.type_named_name as *byte, "Future" as *byte) == 0 &&
+            pl.type_named_type_arg_count == 1 && pl.type_named_type_args != null {
+            out_effective_return_type[0] = pl;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_decl: &ASTNode, operand: &ASTNode) void {
+    if codegen == null || operand == null {
+        return;
+    }
+    var child_struct_name: &byte = null;
+    if c99_async_await_operand_is_inlineable(codegen, operand, &child_struct_name) == 0 || child_struct_name == null {
+        return;
+    }
+    if operand.call_expr_callee == null || operand.call_expr_callee.type != ASTNodeType.AST_IDENTIFIER ||
+        operand.call_expr_callee.identifier_name == null {
+        return;
+    }
+    const child_decl: &ASTNode = find_function_decl_c99(codegen, operand.call_expr_callee.identifier_name);
+    if child_decl == null || child_decl.fn_decl_is_async == 0 || child_decl.fn_decl_return_type == null {
+        return;
+    }
+    if current_fn_decl != null && @usize_from_ptr(child_decl as &void) == @usize_from_ptr(current_fn_decl as &void) {
+        return;
+    }
+    if is_struct_defined(codegen, child_struct_name) != 0 {
+        return;
+    }
+    var child_func_c_name: &byte = null;
+    if child_decl.fn_decl_is_export != 0 && child_decl.filename != null {
+        child_func_c_name = get_export_function_c_name(codegen, child_decl.fn_decl_name, child_decl.filename);
+    } else {
+        child_func_c_name = get_safe_c_identifier(codegen, child_decl.fn_decl_name);
+    }
+    if child_func_c_name == null {
+        return;
+    }
+    var child_effective_return_type: &ASTNode = child_decl.fn_decl_return_type;
+    if c99_async_stage_b_effective_return_type(child_decl.fn_decl_return_type, &child_effective_return_type) == 0 {
+        return;
+    }
+
+    const saved_collect_count: i32 = codegen.async_collect_count;
+    const saved_collect_ret_expr: &ASTNode = codegen.async_collect_ret_expr;
+    const saved_collect_has_loop: i32 = codegen.async_collect_has_loop;
+    const saved_async_state_size: i32 = codegen.async_state_size;
+    const saved_async_local_count: i32 = codegen.async_local_count;
+    const saved_async_inline_temp_var_count: i32 = codegen.async_inline_temp_var_count;
+
+    var saved_collect_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_collect_names: [&byte: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_collect_types: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_collect_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_collect_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_collect_enclosing_while: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_collect_enclosing_for: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
+    var saved_async_local_names: [&byte: 32] = [];
+    var saved_async_local_types: [&ASTNode: 32] = [];
+    var saved_async_local_inits: [&ASTNode: 32] = [];
+    var saved_async_inline_temp_var_names: [&byte: 32] = [];
+
+    var save_i: i32 = 0;
+    while save_i < C99_ASYNC_MAX_AWAITS {
+        saved_collect_operands[save_i] = codegen.async_collect_operands[save_i];
+        saved_collect_names[save_i] = codegen.async_collect_names[save_i];
+        saved_collect_types[save_i] = codegen.async_collect_types[save_i];
+        saved_collect_blocks[save_i] = codegen.async_collect_blocks[save_i];
+        saved_collect_stmt_indices[save_i] = codegen.async_collect_stmt_indices[save_i];
+        saved_collect_enclosing_while[save_i] = codegen.async_collect_enclosing_while[save_i];
+        saved_collect_enclosing_for[save_i] = codegen.async_collect_enclosing_for[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < 32 {
+        saved_async_local_names[save_i] = codegen.async_local_names[save_i];
+        saved_async_local_types[save_i] = codegen.async_local_types[save_i];
+        saved_async_local_inits[save_i] = codegen.async_local_inits[save_i];
+        saved_async_inline_temp_var_names[save_i] = codegen.async_inline_temp_var_names[save_i];
+        save_i = save_i + 1;
+    }
+
+    gen_async_function_stage_b(codegen, child_decl, child_func_c_name, child_decl.fn_decl_return_type, child_effective_return_type, 1);
+
+    codegen.async_collect_count = saved_collect_count;
+    codegen.async_collect_ret_expr = saved_collect_ret_expr;
+    codegen.async_collect_has_loop = saved_collect_has_loop;
+    codegen.async_state_size = saved_async_state_size;
+    codegen.async_local_count = saved_async_local_count;
+    codegen.async_inline_temp_var_count = saved_async_inline_temp_var_count;
+
+    save_i = 0;
+    while save_i < C99_ASYNC_MAX_AWAITS {
+        codegen.async_collect_operands[save_i] = saved_collect_operands[save_i];
+        codegen.async_collect_names[save_i] = saved_collect_names[save_i];
+        codegen.async_collect_types[save_i] = saved_collect_types[save_i];
+        codegen.async_collect_blocks[save_i] = saved_collect_blocks[save_i];
+        codegen.async_collect_stmt_indices[save_i] = saved_collect_stmt_indices[save_i];
+        codegen.async_collect_enclosing_while[save_i] = saved_collect_enclosing_while[save_i];
+        codegen.async_collect_enclosing_for[save_i] = saved_collect_enclosing_for[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < 32 {
+        codegen.async_local_names[save_i] = saved_async_local_names[save_i];
+        codegen.async_local_types[save_i] = saved_async_local_types[save_i];
+        codegen.async_local_inits[save_i] = saved_async_local_inits[save_i];
+        codegen.async_inline_temp_var_names[save_i] = saved_async_inline_temp_var_names[save_i];
+        save_i = save_i + 1;
+    }
+}
+
 // 判断变量名是否在 async inline temp var 列表中
 fn c99_var_is_inline_temp(codegen: &C99CodeGenerator, name: &byte) i32 {
     if codegen == null || name == null || codegen.async_inline_temp_var_count <= 0 {
@@ -4581,6 +4718,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 确保 stdlib（malloc）可用
     codegen.needs_stdlib_h = 1;
+    if is_struct_in_table(codegen, async_struct) == 0 {
+        add_struct_definition(codegen, async_struct);
+    }
 
     // 若存在循环内 await，检查 ret_expr 是否引用非 await 绑定的循环内变量
     // 如果是，需要将该变量持久化到状态机结构体中
@@ -4634,6 +4774,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 若 poll 内会用到子 future 的 vtable：多段 await 时每段 Future<T> 的 T 可能不同，须为每个操作数对应的 Poll<T> 输出一次 vtable 声明
     if await_count > 0 {
+        var predef_i: i32 = 0;
+        while predef_i < await_count {
+            c99_async_emit_inline_child_predefs(codegen, fn_decl, await_operands[predef_i]);
+            predef_i = predef_i + 1;
+        }
         var vti: i32 = 0;
         while vti < await_count {
             const vop: &ASTNode = await_operands[vti];
@@ -4682,61 +4827,76 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 输出状态机 struct（含捕获参数 + 所有 await 绑定变量）
     // await 绑定变量必须存在结构体中，确保跨 poll 调用时值不丢失
-    emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
-    fputs("struct " as *byte, codegen.emit_stream as *void);
-    fprintf(codegen.emit_stream as *void, "%s" as *byte, async_struct as *byte);
-    fputs(" { int32_t state; int32_t _uya_frame_active; " as *byte, codegen.emit_stream as *void);
-    if await_count > 0 && concrete_future_safe != null && await_operand_is_err_future != 0 {
-        fprintf(codegen.emit_stream as *void, "struct %s _uya_await_storage; " as *byte, concrete_future_safe as *byte);
-    }
-    if await_count > 0 {
-        fputs("struct { void *vtable; void *data; } await_fut;" as *byte, codegen.emit_stream as *void);
-    } else {
-        fprintf(codegen.emit_stream as *void, "%s await_fut;" as *byte, state_slot_iface_c as *byte);
-    }
-    // 为可内联的 await 操作数添加 caller-owned child frame 字段
-    var inline_i: i32 = 0;
-    while inline_i < await_count {
-        var inline_struct_name: &byte = null;
-        if c99_async_await_operand_is_inlineable(codegen, await_operands[inline_i], &inline_struct_name) != 0 && inline_struct_name != null {
-            fprintf(codegen.emit_stream as *void, "struct %s _uya_inline_await_%d; " as *byte, inline_struct_name as *byte, inline_i);
-        }
-        inline_i = inline_i + 1;
-    }
-    // 输出所有 await 绑定变量到结构体（确保跨 poll 调用时值不丢失）
     var bind_i: i32 = 0;
-    while bind_i < await_count {
-        const bind_safe_name: &byte = get_safe_c_identifier(codegen, await_bind_names[bind_i]);
-        if await_bind_types[bind_i] != null && bind_safe_name != null {
-            c99_emit_struct_field_decl_fragment(codegen, await_bind_types[bind_i], "_uya_bind_" as &byte, bind_safe_name);
-        }
-        bind_i = bind_i + 1;
-    }
     var loc_i: i32 = 0;
-    while loc_i < codegen.async_local_count && loc_i < @len(codegen.async_local_names) {
-        const lname_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[loc_i]);
-        if codegen.async_local_types[loc_i] != null && lname_safe != null {
-            c99_emit_struct_field_decl_fragment(codegen, codegen.async_local_types[loc_i], "_uya_loc_" as &byte, lname_safe);
+    if is_struct_defined(codegen, async_struct) == 0 {
+        emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
+        fputs("struct " as *byte, codegen.emit_stream as *void);
+        fprintf(codegen.emit_stream as *void, "%s" as *byte, async_struct as *byte);
+        fputs(" { int32_t state; int32_t _uya_frame_active; " as *byte, codegen.emit_stream as *void);
+        if await_count > 0 && concrete_future_safe != null && await_operand_is_err_future != 0 {
+            fprintf(codegen.emit_stream as *void, "struct %s _uya_await_storage; " as *byte, concrete_future_safe as *byte);
         }
-        loc_i = loc_i + 1;
+        if await_count > 0 {
+            fputs("struct { void *vtable; void *data; } await_fut;" as *byte, codegen.emit_stream as *void);
+        } else {
+            fprintf(codegen.emit_stream as *void, "%s await_fut;" as *byte, state_slot_iface_c as *byte);
+        }
+        // 为可内联的 await 操作数添加 caller-owned child frame 字段
+        var inline_i: i32 = 0;
+        while inline_i < await_count {
+            var inline_struct_name: &byte = null;
+            if c99_async_await_operand_is_inlineable(codegen, await_operands[inline_i], &inline_struct_name) != 0 && inline_struct_name != null {
+                fprintf(codegen.emit_stream as *void, "struct %s _uya_inline_await_%d; " as *byte, inline_struct_name as *byte, inline_i);
+            }
+            inline_i = inline_i + 1;
+        }
+        // 输出所有 await 绑定变量到结构体（确保跨 poll 调用时值不丢失）
+        while bind_i < await_count {
+            const bind_safe_name: &byte = get_safe_c_identifier(codegen, await_bind_names[bind_i]);
+            if await_bind_types[bind_i] != null && bind_safe_name != null {
+                c99_emit_struct_field_decl_fragment(codegen, await_bind_types[bind_i], "_uya_bind_" as &byte, bind_safe_name);
+            }
+            bind_i = bind_i + 1;
+        }
+        while loc_i < codegen.async_local_count && loc_i < @len(codegen.async_local_names) {
+            const lname_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[loc_i]);
+            if codegen.async_local_types[loc_i] != null && lname_safe != null {
+                c99_emit_struct_field_decl_fragment(codegen, codegen.async_local_types[loc_i], "_uya_loc_" as &byte, lname_safe);
+            }
+            loc_i = loc_i + 1;
+        }
     }
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const params: & & ASTNode = fn_decl.fn_decl_params;
     var pi: i32 = 0;
-    while pi < param_count && pi < 16 {
-        const param: &ASTNode = params[pi];
-        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
-            const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
-            if pname != null {
-                c99_emit_struct_field_decl_fragment(codegen, param.var_decl_type, null, pname);
+    if is_struct_defined(codegen, async_struct) == 0 {
+        while pi < param_count && pi < 16 {
+            const param: &ASTNode = params[pi];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
+                const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                if pname != null {
+                    c99_emit_struct_field_decl_fragment(codegen, param.var_decl_type, null, pname);
+                }
             }
+            pi = pi + 1;
         }
-        pi = pi + 1;
+        if fn_decl.fn_decl_align > 0 {
+            fprintf(codegen.emit_stream as *void, " } __attribute__((aligned(%d)));\n" as *byte, fn_decl.fn_decl_align);
+        } else {
+            fputs(" };\n" as *byte, codegen.emit_stream as *void);
+        }
+        mark_struct_defined(codegen, async_struct);
     }
-    if fn_decl.fn_decl_align > 0 {
-        fprintf(codegen.emit_stream as *void, " } __attribute__((aligned(%d)));\n" as *byte, fn_decl.fn_decl_align);
-    } else {
-        fputs(" };\n" as *byte, codegen.emit_stream as *void);
+
+    if only_struct != 0 {
+        const frame_stop_forward_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+        if frame_stop_forward_name != null {
+            snprintf(frame_stop_forward_name as *byte, 256, "%s_frame_stop" as *byte, func_c_name as *byte);
+            fprintf(codegen.emit_stream as *void, "static %s %s(void *self, struct Waker *waker);\n" as *byte, poll_ret_c as *byte, poll_name as *byte);
+            fprintf(codegen.emit_stream as *void, "static void %s(struct %s *s);\n" as *byte, frame_stop_forward_name as *byte, async_struct as *byte);
+        }
+        return;
     }
 
     // 计算 async frame size / align（保守估算，用于 checker 元信息注册）
