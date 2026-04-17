@@ -144,6 +144,19 @@ fn capability_benchmark_elapsed_us(start_us: u64, end_us: u64) u64 {
     return end_us - start_us;
 }
 
+fn capability_benchmark_session_ptr(manager: &CapabilityManager, index: i32) &CapabilityBackendSession {
+    if manager == null || index < 0 {
+        return null;
+    }
+    const session_idx: usize = index as usize;
+    if session_idx >= 16 {
+        return null;
+    }
+    const base: &CapabilityBackendSession = &manager.sessions[0];
+    const off: usize = session_idx * @size_of(CapabilityBackendSession);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &CapabilityBackendSession;
+}
+
 fn capability_benchmark_record_status(metrics: &CapabilityBackendMetrics, status: CapabilityStatusCode) void {
     if status != CapabilityStatusCode.Ok {
         metrics.failure_count = metrics.failure_count + 1u32;
@@ -181,29 +194,33 @@ export fn capability_benchmark_run_manager_case(
         return error.CapabilityManagerInvalidState;
     }
     const session_idx: usize = index as usize;
+    const session: &CapabilityBackendSession = capability_benchmark_session_ptr(&manager, index);
+    if session == null {
+        return error.CapabilityManagerInvalidState;
+    }
     var end_us: u64 = capability_benchmark_usec_now();
     metrics.install_us = capability_benchmark_elapsed_us(start_us, end_us);
 
     if session_idx < @len(manager.sessions) {
         if case_kind == CapabilityBenchmarkCaseKind.Install {
-            manager.sessions[session_idx].metrics.rom_bytes = metrics.rom_bytes;
-            manager.sessions[session_idx].metrics.ram_idle_bytes = metrics.ram_idle_bytes;
-            manager.sessions[session_idx].metrics.ram_peak_bytes = metrics.ram_peak_bytes;
-            manager.sessions[session_idx].metrics.install_us = metrics.install_us;
-            manager.sessions[session_idx].metrics.activate_us = metrics.activate_us;
-            manager.sessions[session_idx].metrics.first_invoke_us = metrics.first_invoke_us;
-            manager.sessions[session_idx].metrics.avg_invoke_us = metrics.avg_invoke_us;
-            manager.sessions[session_idx].metrics.p99_invoke_us = metrics.p99_invoke_us;
-            manager.sessions[session_idx].metrics.host_call_overhead_us = metrics.host_call_overhead_us;
-            manager.sessions[session_idx].metrics.failure_count = metrics.failure_count;
-            manager.sessions[session_idx].metrics.timeout_count = metrics.timeout_count;
+            session.metrics.rom_bytes = metrics.rom_bytes;
+            session.metrics.ram_idle_bytes = metrics.ram_idle_bytes;
+            session.metrics.ram_peak_bytes = metrics.ram_peak_bytes;
+            session.metrics.install_us = metrics.install_us;
+            session.metrics.activate_us = metrics.activate_us;
+            session.metrics.first_invoke_us = metrics.first_invoke_us;
+            session.metrics.avg_invoke_us = metrics.avg_invoke_us;
+            session.metrics.p99_invoke_us = metrics.p99_invoke_us;
+            session.metrics.host_call_overhead_us = metrics.host_call_overhead_us;
+            session.metrics.failure_count = metrics.failure_count;
+            session.metrics.timeout_count = metrics.timeout_count;
             try capability_manager_unload(&manager, index);
             return capability_benchmark_result_from_session(CapabilityBenchmarkCase{
                 backend: case_backend,
                 case_kind: case_kind,
                 iterations: case_iterations,
                 payload_size: case_payload_size,
-            }, &manager.sessions[session_idx]);
+            }, session);
         }
 
         start_us = capability_benchmark_usec_now();
@@ -212,24 +229,24 @@ export fn capability_benchmark_run_manager_case(
         metrics.activate_us = capability_benchmark_elapsed_us(start_us, end_us);
 
         if case_kind == CapabilityBenchmarkCaseKind.Activate {
-            manager.sessions[session_idx].metrics.rom_bytes = metrics.rom_bytes;
-            manager.sessions[session_idx].metrics.ram_idle_bytes = metrics.ram_idle_bytes;
-            manager.sessions[session_idx].metrics.ram_peak_bytes = metrics.ram_peak_bytes;
-            manager.sessions[session_idx].metrics.install_us = metrics.install_us;
-            manager.sessions[session_idx].metrics.activate_us = metrics.activate_us;
-            manager.sessions[session_idx].metrics.first_invoke_us = metrics.first_invoke_us;
-            manager.sessions[session_idx].metrics.avg_invoke_us = metrics.avg_invoke_us;
-            manager.sessions[session_idx].metrics.p99_invoke_us = metrics.p99_invoke_us;
-            manager.sessions[session_idx].metrics.host_call_overhead_us = metrics.host_call_overhead_us;
-            manager.sessions[session_idx].metrics.failure_count = metrics.failure_count;
-            manager.sessions[session_idx].metrics.timeout_count = metrics.timeout_count;
+            session.metrics.rom_bytes = metrics.rom_bytes;
+            session.metrics.ram_idle_bytes = metrics.ram_idle_bytes;
+            session.metrics.ram_peak_bytes = metrics.ram_peak_bytes;
+            session.metrics.install_us = metrics.install_us;
+            session.metrics.activate_us = metrics.activate_us;
+            session.metrics.first_invoke_us = metrics.first_invoke_us;
+            session.metrics.avg_invoke_us = metrics.avg_invoke_us;
+            session.metrics.p99_invoke_us = metrics.p99_invoke_us;
+            session.metrics.host_call_overhead_us = metrics.host_call_overhead_us;
+            session.metrics.failure_count = metrics.failure_count;
+            session.metrics.timeout_count = metrics.timeout_count;
             try capability_manager_unload(&manager, index);
             return capability_benchmark_result_from_session(CapabilityBenchmarkCase{
                 backend: case_backend,
                 case_kind: case_kind,
                 iterations: case_iterations,
                 payload_size: case_payload_size,
-            }, &manager.sessions[session_idx]);
+            }, session);
         }
 
         start_us = capability_benchmark_usec_now();
@@ -241,24 +258,24 @@ export fn capability_benchmark_run_manager_case(
         if case_kind == CapabilityBenchmarkCaseKind.InvokeCold ||
            case_kind == CapabilityBenchmarkCaseKind.PermissionDenied ||
            case_kind == CapabilityBenchmarkCaseKind.Timeout {
-            manager.sessions[session_idx].metrics.rom_bytes = metrics.rom_bytes;
-            manager.sessions[session_idx].metrics.ram_idle_bytes = metrics.ram_idle_bytes;
-            manager.sessions[session_idx].metrics.ram_peak_bytes = metrics.ram_peak_bytes;
-            manager.sessions[session_idx].metrics.install_us = metrics.install_us;
-            manager.sessions[session_idx].metrics.activate_us = metrics.activate_us;
-            manager.sessions[session_idx].metrics.first_invoke_us = metrics.first_invoke_us;
-            manager.sessions[session_idx].metrics.avg_invoke_us = metrics.avg_invoke_us;
-            manager.sessions[session_idx].metrics.p99_invoke_us = metrics.p99_invoke_us;
-            manager.sessions[session_idx].metrics.host_call_overhead_us = metrics.host_call_overhead_us;
-            manager.sessions[session_idx].metrics.failure_count = metrics.failure_count;
-            manager.sessions[session_idx].metrics.timeout_count = metrics.timeout_count;
+            session.metrics.rom_bytes = metrics.rom_bytes;
+            session.metrics.ram_idle_bytes = metrics.ram_idle_bytes;
+            session.metrics.ram_peak_bytes = metrics.ram_peak_bytes;
+            session.metrics.install_us = metrics.install_us;
+            session.metrics.activate_us = metrics.activate_us;
+            session.metrics.first_invoke_us = metrics.first_invoke_us;
+            session.metrics.avg_invoke_us = metrics.avg_invoke_us;
+            session.metrics.p99_invoke_us = metrics.p99_invoke_us;
+            session.metrics.host_call_overhead_us = metrics.host_call_overhead_us;
+            session.metrics.failure_count = metrics.failure_count;
+            session.metrics.timeout_count = metrics.timeout_count;
             try capability_manager_unload(&manager, index);
             return capability_benchmark_result_from_session(CapabilityBenchmarkCase{
                 backend: case_backend,
                 case_kind: case_kind,
                 iterations: case_iterations,
                 payload_size: case_payload_size,
-            }, &manager.sessions[session_idx]);
+            }, session);
         }
 
         if case_kind == CapabilityBenchmarkCaseKind.InvokeWarm {
@@ -268,24 +285,24 @@ export fn capability_benchmark_run_manager_case(
             metrics.avg_invoke_us = capability_benchmark_elapsed_us(start_us, end_us);
             metrics.p99_invoke_us = metrics.avg_invoke_us;
             capability_benchmark_record_status(&metrics, warm_status);
-            manager.sessions[session_idx].metrics.rom_bytes = metrics.rom_bytes;
-            manager.sessions[session_idx].metrics.ram_idle_bytes = metrics.ram_idle_bytes;
-            manager.sessions[session_idx].metrics.ram_peak_bytes = metrics.ram_peak_bytes;
-            manager.sessions[session_idx].metrics.install_us = metrics.install_us;
-            manager.sessions[session_idx].metrics.activate_us = metrics.activate_us;
-            manager.sessions[session_idx].metrics.first_invoke_us = metrics.first_invoke_us;
-            manager.sessions[session_idx].metrics.avg_invoke_us = metrics.avg_invoke_us;
-            manager.sessions[session_idx].metrics.p99_invoke_us = metrics.p99_invoke_us;
-            manager.sessions[session_idx].metrics.host_call_overhead_us = metrics.host_call_overhead_us;
-            manager.sessions[session_idx].metrics.failure_count = metrics.failure_count;
-            manager.sessions[session_idx].metrics.timeout_count = metrics.timeout_count;
+            session.metrics.rom_bytes = metrics.rom_bytes;
+            session.metrics.ram_idle_bytes = metrics.ram_idle_bytes;
+            session.metrics.ram_peak_bytes = metrics.ram_peak_bytes;
+            session.metrics.install_us = metrics.install_us;
+            session.metrics.activate_us = metrics.activate_us;
+            session.metrics.first_invoke_us = metrics.first_invoke_us;
+            session.metrics.avg_invoke_us = metrics.avg_invoke_us;
+            session.metrics.p99_invoke_us = metrics.p99_invoke_us;
+            session.metrics.host_call_overhead_us = metrics.host_call_overhead_us;
+            session.metrics.failure_count = metrics.failure_count;
+            session.metrics.timeout_count = metrics.timeout_count;
             try capability_manager_unload(&manager, index);
             return capability_benchmark_result_from_session(CapabilityBenchmarkCase{
                 backend: case_backend,
                 case_kind: case_kind,
                 iterations: case_iterations,
                 payload_size: case_payload_size,
-            }, &manager.sessions[session_idx]);
+            }, session);
         }
 
         var total_invoke_us: u64 = 0u64;
@@ -307,24 +324,24 @@ export fn capability_benchmark_run_manager_case(
             metrics.avg_invoke_us = total_invoke_us / (case_iterations as u64);
         }
 
-        manager.sessions[session_idx].metrics.rom_bytes = metrics.rom_bytes;
-        manager.sessions[session_idx].metrics.ram_idle_bytes = metrics.ram_idle_bytes;
-        manager.sessions[session_idx].metrics.ram_peak_bytes = metrics.ram_peak_bytes;
-        manager.sessions[session_idx].metrics.install_us = metrics.install_us;
-        manager.sessions[session_idx].metrics.activate_us = metrics.activate_us;
-        manager.sessions[session_idx].metrics.first_invoke_us = metrics.first_invoke_us;
-        manager.sessions[session_idx].metrics.avg_invoke_us = metrics.avg_invoke_us;
-        manager.sessions[session_idx].metrics.p99_invoke_us = metrics.p99_invoke_us;
-        manager.sessions[session_idx].metrics.host_call_overhead_us = metrics.host_call_overhead_us;
-        manager.sessions[session_idx].metrics.failure_count = metrics.failure_count;
-        manager.sessions[session_idx].metrics.timeout_count = metrics.timeout_count;
+        session.metrics.rom_bytes = metrics.rom_bytes;
+        session.metrics.ram_idle_bytes = metrics.ram_idle_bytes;
+        session.metrics.ram_peak_bytes = metrics.ram_peak_bytes;
+        session.metrics.install_us = metrics.install_us;
+        session.metrics.activate_us = metrics.activate_us;
+        session.metrics.first_invoke_us = metrics.first_invoke_us;
+        session.metrics.avg_invoke_us = metrics.avg_invoke_us;
+        session.metrics.p99_invoke_us = metrics.p99_invoke_us;
+        session.metrics.host_call_overhead_us = metrics.host_call_overhead_us;
+        session.metrics.failure_count = metrics.failure_count;
+        session.metrics.timeout_count = metrics.timeout_count;
         try capability_manager_unload(&manager, index);
         return capability_benchmark_result_from_session(CapabilityBenchmarkCase{
             backend: case_backend,
             case_kind: case_kind,
             iterations: case_iterations,
             payload_size: case_payload_size,
-        }, &manager.sessions[session_idx]);
+        }, session);
     }
 
     return error.CapabilityManagerInvalidState;

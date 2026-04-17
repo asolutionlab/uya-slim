@@ -471,9 +471,22 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
         fprintf(libc.stderr, "错误: .pobj 源路径长度不一致\n" as *byte);
         return 1;
     }
+    if rodata_off >= pobj_len as usize {
+        fprintf(libc.stderr, "错误: .pobj rodata 偏移越界\n" as *byte);
+        return 1;
+    }
+    const rodata_idx: usize = rodata_off;
+    if rodata_idx >= @len(file_buffer) {
+        fprintf(libc.stderr, "错误: .pobj rodata 索引越界\n" as *byte);
+        return 1;
+    }
     const source_path_ptr: &byte = &file_buffer[source_path_off] as &byte;
     const code_ptr: &byte = &file_buffer[code_off] as &byte;
-    const rodata_ptr: &byte = &file_buffer[rodata_off] as &byte;
+    const rodata_ptr: &byte = main_file_buffer_ptr_at(rodata_idx);
+    if rodata_ptr == null {
+        fprintf(libc.stderr, "错误: .pobj rodata 指针为空\n" as *byte);
+        return 1;
+    }
     const source_path_bytes: &[byte] = source_path_ptr[0: source_path_len as usize];
     const code_bytes: &[byte] = code_ptr[0: code_len as usize];
     const rodata_bytes: &[byte] = rodata_ptr[0: rodata_len as usize];
@@ -526,6 +539,58 @@ var temp_arena_buffer: [byte: 16 * 1024 * 1024] = [];
 var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 // 将 resolved_files 也移到全局变量，避免栈溢出
 var resolved_files_global: [&byte: MAX_INPUT_FILES] = [];
+
+fn main_file_buffer_ptr_at(idx: usize) &byte {
+    const slot: usize = idx;
+    if slot >= @len(file_buffer) {
+        return null;
+    }
+    return &file_buffer[slot] as &byte;
+}
+
+fn main_path_buf_char_at(buf: [byte: PATH_MAX], idx: i32) byte {
+    const slot: i32 = idx;
+    if slot < 0 {
+        return 0 as byte;
+    }
+    if slot >= PATH_MAX {
+        return 0 as byte;
+    }
+    return buf[slot];
+}
+
+fn main_path_buf_set(buf: [byte: PATH_MAX], idx: i32, value: byte) void {
+    const slot: i32 = idx;
+    if slot < 0 {
+        return;
+    }
+    if slot >= PATH_MAX {
+        return;
+    }
+    buf[slot] = value;
+}
+
+fn resolved_file_at(files: [&byte: MAX_INPUT_FILES], idx: i32) &byte {
+    const slot: i32 = idx;
+    if slot < 0 {
+        return null;
+    }
+    if slot >= MAX_INPUT_FILES {
+        return null;
+    }
+    return files[slot];
+}
+
+fn resolved_file_set(files: [&byte: MAX_INPUT_FILES], idx: i32, value: &byte) void {
+    const slot: i32 = idx;
+    if slot < 0 {
+        return;
+    }
+    if slot >= MAX_INPUT_FILES {
+        return;
+    }
+    files[slot] = value;
+}
 
 // 读取文件内容到缓冲区
 // 成功返回读取字节数，失败返回 -1
@@ -836,7 +901,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
     fprintf(libc.stderr, "  --opt=<0-3>          优化级别（0=禁用, 1=默认, 2=+证明优化, 3=+内联）\n" as *byte);
     fprintf(libc.stderr, "  -O0, -O1, -O2, -O3   优化级别（简写形式）\n" as *byte);
-    fprintf(libc.stderr, "  --safety-proof       启用内存安全证明（默认已启用；自举脚本对编译器源码会传 --no-safety-proof）\n" as *byte);
+    fprintf(libc.stderr, "  --safety-proof       启用内存安全证明（默认已启用）\n" as *byte);
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  --async-frame-heap=on  async frame pool 满时回退到调试 heap（默认关闭）\n" as *byte);
@@ -1772,16 +1837,29 @@ fn collect_module_dependencies(
             // 如果目录不存在，尝试去掉最后一段（可能是 item_name 被错误地当作模块路径）
             if dlen <= 0 || dlen >= PATH_MAX || is_directory(&std_dir[0] as &byte) == 0 {
                 // 查找最后一个斜杠，截断路径
-                var last_slash: i32 = dlen - 1;
+                var scan_len: i32 = dlen;
+                if scan_len >= PATH_MAX {
+                    scan_len = PATH_MAX - 1;
+                }
+                var last_slash: i32 = scan_len - 1;
                 while last_slash > 0 {
-                    if std_dir[last_slash] == 47 {  // '/'
+                    const slash_idx: i32 = last_slash;
+                    if slash_idx < 0 {
+                        break;
+                    }
+                    if slash_idx >= @len(std_dir) {
+                        last_slash = last_slash - 1;
+                        continue;
+                    }
+                    if main_path_buf_char_at(std_dir, slash_idx) == 47 {  // '/'
                         break;
                     }
                     last_slash = last_slash - 1;
                 }
                 if last_slash > 0 {
-                    std_dir[last_slash + 1] = 0;  // 截断到最后一个斜杠后
-                    dlen = last_slash + 1;
+                    const truncate_idx: i32 = last_slash + 1;
+                    main_path_buf_set(std_dir, truncate_idx, 0);  // 截断到最后一个斜杠后
+                    dlen = truncate_idx;
                 }
             }
             if dlen > 0 && dlen < PATH_MAX && is_directory(&std_dir[0] as &byte) != 0 {
@@ -2269,7 +2347,7 @@ fn parse_args(
     output_file_index[0] = -1;
     backend_type[0] = BackendType.BACKEND_LLVM;
     emit_line_directives[0] = 0;
-    enable_safety_proof[0] = 1;  // 默认启用（compile.sh 自举编译编译器时传 --no-safety-proof）
+    enable_safety_proof[0] = 1;  // 默认启用
     opt_level[0] = 1;  // 默认优化级别 1
     outlibc_index[0] = -1;
     run_arg_start[0] = -1;
@@ -2859,7 +2937,7 @@ fn compile_files(
     // 例如：编译器在 /path/bin/uya，标准库在 /path/lib/
     // 与 C 编译器一致：若 UYA_ROOT 已指向 lib 目录则直接使用，否则追加 /lib/
     var base_len: usize = strlen(&uya_root_base[0]);
-    if base_len > 1 && uya_root_base[base_len - 1] == 47 {  // '/'
+    if base_len > 1 && base_len < PATH_MAX && uya_root_base[base_len - 1] == 47 {  // '/'
         uya_root_base[base_len - 1] = 0;
         base_len = base_len - 1;
     }
@@ -2931,7 +3009,7 @@ fn compile_files(
             // 设置项目根目录
             if project_root == null {
                 const input_len: usize = strlen(input_path);
-                if input_len < PATH_MAX - 1 {
+                if input_len > 0 && input_len < PATH_MAX - 1 {
                     strcpy(&project_root_buffer[0], input_path);
                     if project_root_buffer[input_len - 1] != 47 {
                         project_root_buffer[input_len] = 47 as byte;
@@ -3040,20 +3118,8 @@ fn compile_files(
                 if already_in_list == 0 && resolved_count < MAX_INPUT_FILES {
                     const entry_copy: &byte = compiler_arena_alloc(&temp_arena, entry_len + 1) as &byte;
                     if entry_copy != null {
-                        var entry_insert_idx: i32 = 0;
-                        while entry_insert_idx < resolved_count {
-                            if detect_main_function(resolved_files[entry_insert_idx]) == 0 {
-                                break;
-                            }
-                            entry_insert_idx = entry_insert_idx + 1;
-                        }
-                        var move_idx: i32 = resolved_count;
-                        while move_idx > entry_insert_idx {
-                            resolved_files[move_idx] = resolved_files[move_idx - 1];
-                            move_idx = move_idx - 1;
-                        }
                         strcpy(entry_copy as *byte, &entry_path[0]);
-                        resolved_files[entry_insert_idx] = entry_copy;
+                        resolved_files[resolved_count] = entry_copy;
                         resolved_count = resolved_count + 1;
                     }
                 }
@@ -3271,6 +3337,10 @@ fn compile_files(
         loop_depth: 0,
         program_node: null,
         error_count: 0,
+        last_reported_error_filename: null,
+        last_reported_error_message: null,
+        last_reported_error_line: 0,
+        last_reported_error_column: 0,
         default_filename: null,
         current_return_type: void_type,
         in_function: 0,
@@ -3950,9 +4020,14 @@ fn generate_libc(output_dir: &byte) i32 {
 
     // 标准库在编译器所在目录的上一级目录的 lib/ 下
     var base_len: usize = strlen(&uya_root_buffer[0]);
-    if base_len > 1 && uya_root_buffer[base_len - 1] == 47 {
-        uya_root_buffer[base_len - 1] = 0;
-        base_len = base_len - 1;
+    if base_len > 1 {
+        const trailing_idx: i32 = (base_len - 1) as i32;
+        if trailing_idx >= 0 && trailing_idx < PATH_MAX {
+            if main_path_buf_char_at(uya_root_buffer, trailing_idx) == 47 {
+                main_path_buf_set(uya_root_buffer, trailing_idx, 0);
+                base_len = base_len - 1;
+            }
+        }
     }
     const last_slash: *byte = strrchr(&uya_root_buffer[0], 47);
     if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {

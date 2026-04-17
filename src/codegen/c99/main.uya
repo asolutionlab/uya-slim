@@ -719,11 +719,13 @@ fn c99_codegen_ensure_mono_struct_1arg(codegen: &C99CodeGenerator, generic_name:
     }
     args[0] = arg_t;
     const idx: i32 = codegen.mono_instance_count;
-    codegen.mono_instances[idx].generic_name = generic_name;
-    codegen.mono_instances[idx].is_function = 0;
-    codegen.mono_instances[idx].type_arg_count = 1;
-    codegen.mono_instances[idx].type_args = args;
-    codegen.mono_instance_count = idx + 1;
+    if idx >= 0 && idx < @len(codegen.mono_instances) {
+        codegen.mono_instances[idx].generic_name = generic_name;
+        codegen.mono_instances[idx].is_function = 0;
+        codegen.mono_instances[idx].type_arg_count = 1;
+        codegen.mono_instances[idx].type_args = args;
+        codegen.mono_instance_count = idx + 1;
+    }
 }
 
 // 递归收集函数体内 try 表达式的类型，提前注册 err_union_*，避免 from_json 等中嵌套 try 使用未定义类型
@@ -995,11 +997,7 @@ fn collect_slice_push_param_locals(codegen: &C99CodeGenerator, fn_decl: &ASTNode
         const pp: &ASTNode = fn_decl.fn_decl_params[jp];
         if pp != null && pp.type == ASTNodeType.AST_VAR_DECL && pp.var_decl_name != null &&
             pp.var_decl_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-            codegen.local_variables[codegen.local_variable_count].name = pp.var_decl_name;
-            codegen.local_variables[codegen.local_variable_count].type_c = null;
-            codegen.local_variables[codegen.local_variable_count].type_node = pp.var_decl_type;
-            codegen.local_variables[codegen.local_variable_count].depth = 0;
-            codegen.local_variable_count = codegen.local_variable_count + 1;
+            c99_push_local_variable(codegen, pp.var_decl_name, "" as *byte, pp.var_decl_type, 0);
         }
         jp = jp + 1;
     }
@@ -1063,11 +1061,7 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
                     c99_type_to_c(codegen, st.var_decl_type);
                 }
                 collect_slice_types_from_node(codegen, st.var_decl_type);
-                codegen.local_variables[codegen.local_variable_count].name = st.var_decl_name;
-                codegen.local_variables[codegen.local_variable_count].type_c = null;
-                codegen.local_variables[codegen.local_variable_count].type_node = st.var_decl_type;
-                codegen.local_variables[codegen.local_variable_count].depth = 0;
-                codegen.local_variable_count = codegen.local_variable_count + 1;
+                c99_push_local_variable(codegen, st.var_decl_name, "" as *byte, st.var_decl_type, 0);
                 if st.var_decl_init != null {
                     collect_slice_types_from_node(codegen, st.var_decl_init);
                 }
@@ -1380,8 +1374,11 @@ fn mark_top_level_function_reachable(codegen: &C99CodeGenerator, fn_decl: &ASTNo
     if codegen.reachable_function_decl_count >= C99_MAX_REACHABLE_FUNCTIONS {
         return;
     }
-    codegen.reachable_function_decls[codegen.reachable_function_decl_count] = fn_decl;
-    codegen.reachable_function_decl_count = codegen.reachable_function_decl_count + 1;
+    const reachable_idx: i32 = codegen.reachable_function_decl_count;
+    if reachable_idx >= 0 && reachable_idx < @len(codegen.reachable_function_decls) {
+        codegen.reachable_function_decls[reachable_idx] = fn_decl;
+        codegen.reachable_function_decl_count = reachable_idx + 1;
+    }
     if fn_decl.fn_decl_type_param_count > 0 {
         mark_mono_instances_reachable_by_name(codegen, fn_decl.fn_decl_name, -1);
     }
@@ -3905,6 +3902,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器
     // 注意：has_main 只计算用户提供的 main（非 export extern），不包括 std.runtime.entry 的 C main
     var has_user_main: i32 = 0;  // 跟踪是否找到用户 main 函数
+    var has_plain_user_main: i32 = 0;  // 普通 fn main()，需要生成 main_main -> uya_main 桥接
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
@@ -3924,6 +3922,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 // 只有用户 main 才计入 has_user_main（排除 C main）
                 if is_c_main == 0 {
                     has_user_main = 1;
+                }
+                if is_app_main == 0 && is_c_main == 0 {
+                    has_plain_user_main = 1;
                 }
                 c99_mirror_emit_for_node(codegen, decl);
                 emit_line_directive(codegen, decl.line, decl.filename);
@@ -3985,6 +3986,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
         }
         i = i + 1;
+    }
+
+    // std.runtime.entry 始终通过 main_main() 进入用户程序。
+    // 对普通 fn main()，代码生成仍保留 uya_main() 作为真实实现，这里补一个稳定桥接，
+    // 这样多文件/单文件模式都不再依赖测试脚本额外注入 bridge.c。
+    if has_plain_user_main != 0 {
+        c99_mirror_emit_common(codegen);
+        fputs("int32_t main_main(void) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return uya_main();\n" as *byte, codegen.emit_stream as *void);
+        c99_emit_close_brace_newline(codegen);
     }
     
     // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器

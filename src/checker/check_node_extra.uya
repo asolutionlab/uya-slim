@@ -342,70 +342,50 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
     }
     
     // 安全证明：更新赋值后的约束
-    // 处理 var = var + const 或 var = var - const 模式
-    if checker.enable_safety_proof != 0 && dest.type == ASTNodeType.AST_IDENTIFIER {
-        const var_name: &byte = dest.identifier_name;
-        if src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
-            const left: &ASTNode = src.binary_expr_left;
-            const right: &ASTNode = src.binary_expr_right;
-            const op_tmp: !TokenType = src.binary_expr_op as! TokenType;
-            const op: TokenType = op_tmp.value;
-            
-            // 检查是否是 var = var op const 模式
-            if left != null && left.type == ASTNodeType.AST_IDENTIFIER &&
-                str_equals(left.identifier_name, var_name) != 0 {
+    // 同时支持普通变量和结构体计数字段（如 codegen.mono_instance_count）
+    if checker.enable_safety_proof != 0 {
+        const var_name: &byte = constraint_expr_name(checker, dest);
+        if var_name != null {
+            if src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
+                const left: &ASTNode = src.binary_expr_left;
+                const right: &ASTNode = src.binary_expr_right;
+                const op_tmp: !TokenType = src.binary_expr_op as! TokenType;
+                const op: TokenType = op_tmp.value;
+                const left_linear: LinearExpr = extract_linear_expr(checker, left);
                 const right_val: i32 = checker_eval_const_expr(checker, right);
+                var right_is_const: i32 = 0;
+                if right_val >= 0 {
+                    right_is_const = 1;
+                } else if right != null && right.type == ASTNodeType.AST_NUMBER {
+                    right_is_const = 1;
+                }
                 
-                if op == TokenType.TOKEN_PLUS {
-                    // i = i + n: 如果原来 i >= k，新值 i >= k + n
-                    // 对于 n > 0，如果原来 i >= 0，新值也 >= 0
-                    constraint_update_for_increment(checker, var_name, right_val);
-                } else if op == TokenType.TOKEN_MINUS {
-                    // i = i - n: 不确定新值的下界
-                    // 保守策略：清除该变量的约束
-                    constraint_remove_var(checker, var_name);
-                } else {
-                    // 其他操作：清除约束
-                    constraint_remove_var(checker, var_name);
-                }
-            } else {
-                // 不是 var = var op const 模式：检查右侧是否是常量
-                const src_val: i32 = checker_eval_const_expr(checker, src);
-                var is_valid_const: i32 = 0;
-                if src_val >= 0 {
-                    is_valid_const = 1;
-                } else if src_val < 0 && right != null && right.type == ASTNodeType.AST_NUMBER {
-                    is_valid_const = 1;
-                }
-                if is_valid_const != 0 {
-                    // 新值是常量：更新约束
-                    constraint_remove_var(checker, var_name);
-                    constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
-                    if src_val >= 0 {
-                        constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                // 检查是否是 var = var op const 模式
+                if left_linear.is_valid != 0 && left_linear.var_name != null &&
+                    left_linear.offset == 0 && str_equals(left_linear.var_name, var_name) != 0 &&
+                    right_is_const != 0 {
+                    if op == TokenType.TOKEN_PLUS {
+                        constraint_update_for_increment(checker, var_name, right_val);
+                    } else if op == TokenType.TOKEN_MINUS {
+                        constraint_update_for_increment(checker, var_name, 0 - right_val);
+                    } else {
+                        constraint_remove_var(checker, var_name);
                     }
                 } else {
-                    // 不是常量：清除约束
-                    constraint_remove_var(checker, var_name);
-                }
-            }
-        } else {
-            // 非二元表达式：检查是否是常量
-            const src_val: i32 = checker_eval_const_expr(checker, src);
-            var is_valid_const: i32 = 0;
-            if src_val >= 0 {
-                is_valid_const = 1;
-            } else if src_val < 0 && src != null && src.type == ASTNodeType.AST_NUMBER {
-                is_valid_const = 1;
-            }
-            if is_valid_const != 0 {
-                constraint_remove_var(checker, var_name);
-                constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
-                if src_val >= 0 {
-                    constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                    const src_interval: Interval = eval_expr_interval(checker, src);
+                    if src_interval.is_valid != 0 {
+                        constraint_replace_with_interval(checker, var_name, &src_interval);
+                    } else {
+                        constraint_remove_var(checker, var_name);
+                    }
                 }
             } else {
-                constraint_remove_var(checker, var_name);
+                const src_interval: Interval = eval_expr_interval(checker, src);
+                if src_interval.is_valid != 0 {
+                    constraint_replace_with_interval(checker, var_name, &src_interval);
+                } else {
+                    constraint_remove_var(checker, var_name);
+                }
             }
         }
     }

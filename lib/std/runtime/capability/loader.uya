@@ -4,8 +4,10 @@ use std.runtime.capability.abi.CapabilityStatusCode;
 use std.runtime.capability.manifest.CapabilityManifest;
 use std.runtime.capability.manifest.capability_manifest_validate;
 use std.runtime.capability.registry.CapabilityRegistry;
+use std.runtime.capability.registry.CapabilityRegistryEntry;
 use std.runtime.capability.registry.capability_registry_add;
 use std.runtime.capability.registry.capability_registry_disable;
+use std.runtime.capability.registry.capability_registry_entry_ptr;
 use std.runtime.capability.types.CapabilityState;
 
 export error CapabilityLoaderRejected;
@@ -21,14 +23,14 @@ export fn capability_loader_activate(registry: &CapabilityRegistry, index: i32) 
     if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityLoaderInvalidState;
     }
-    const entry_idx: usize = index as usize;
-    if entry_idx < @len(registry.entries) {
-        if registry.entries[entry_idx].in_use == false {
+    const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(registry, index);
+    if entry != null {
+        if entry.in_use == false {
             return error.CapabilityLoaderInvalidState;
         }
 
-        registry.entries[entry_idx].state = CapabilityState.Active;
-        registry.entries[entry_idx].last_status = CapabilityStatusCode.Ok;
+        entry.state = CapabilityState.Active;
+        entry.last_status = CapabilityStatusCode.Ok;
         return;
     }
     return error.CapabilityLoaderInvalidState;
@@ -43,10 +45,10 @@ export fn capability_loader_fail(registry: &CapabilityRegistry, index: i32, stat
     if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityLoaderInvalidState;
     }
-    const entry_idx: usize = index as usize;
-    if entry_idx < @len(registry.entries) {
-        registry.entries[entry_idx].state = CapabilityState.Failed;
-        registry.entries[entry_idx].last_status = status;
+    const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(registry, index);
+    if entry != null {
+        entry.state = CapabilityState.Failed;
+        entry.last_status = status;
         return;
     }
     return error.CapabilityLoaderInvalidState;
@@ -57,15 +59,15 @@ export fn capability_loader_rollback(registry: &CapabilityRegistry, index: i32) 
     if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityLoaderInvalidState;
     }
-    const entry_idx: usize = index as usize;
-    if entry_idx < @len(registry.entries) {
-        if registry.entries[entry_idx].in_use == false {
+    const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(registry, index);
+    if entry != null {
+        if entry.in_use == false {
             return error.CapabilityLoaderInvalidState;
         }
 
         // MVP 阶段先定义“回滚”最小语义：禁用当前失败版本，具体旧版本恢复逻辑后续补充。
-        registry.entries[entry_idx].state = CapabilityState.Disabled;
-        registry.entries[entry_idx].last_status = CapabilityStatusCode.Disabled;
+        entry.state = CapabilityState.Disabled;
+        entry.last_status = CapabilityStatusCode.Disabled;
         return;
     }
     return error.CapabilityLoaderInvalidState;

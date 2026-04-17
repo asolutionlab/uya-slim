@@ -1038,6 +1038,17 @@ struct DirState {
 
 const READDIR_BUF_SIZE: usize = 8192;
 
+fn dir_state_buf_ptr_at(state: &DirState, idx: usize) &byte {
+    if state == null {
+        return null;
+    }
+    if idx < READDIR_BUF_SIZE {
+        const base: &byte = &state.buf[0] as &byte;
+        return &base[idx] as &byte;
+    }
+    return null;
+}
+
 var opendir_storage: [DirState: 64] = [];
 var readdir_result: Dirent = Dirent { d_ino: 0, d_off: 0, d_reclen: 0, d_type: 0, d_name: [] };
 
@@ -1106,12 +1117,21 @@ export extern "libc" fn readdir(dirp: &DIR) &Dirent {
             state.buf_pos = 0;
         }
         const bl: usize = state.buf_len as usize;
-        if state.buf_pos >= bl {
+        const buf_pos: usize = state.buf_pos;
+        if buf_pos >= bl {
+            state.buf_len = 0 as isize;
+            continue;
+        }
+        if buf_pos >= @len(state.buf) {
             state.buf_len = 0 as isize;
             continue;
         }
         
-        const base: &byte = &state.buf[state.buf_pos];
+        const base: &byte = dir_state_buf_ptr_at(state, buf_pos);
+        if base == null {
+            state.buf_len = 0 as isize;
+            continue;
+        }
         var reclen: usize = 0;
         std.cfg(std.target_os == .tos_macos, {
             var native_reclen: i16 = 0;

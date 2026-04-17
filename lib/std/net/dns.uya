@@ -2008,6 +2008,20 @@ struct DnsTcpFuture : Future<!usize> {
     }
 }
 
+fn dns_tcp_query_ptr(self: &DnsTcpFuture, offset: usize) &byte {
+    if self == null || offset >= @len(self.query_packet) {
+        return null;
+    }
+    return (@usize_from_ptr(&self.query_packet[0] as &void) + offset) as &byte;
+}
+
+fn dns_tcp_response_ptr(self: &DnsTcpFuture, offset: usize) &byte {
+    if self == null || offset >= @len(self.response_packet) {
+        return null;
+    }
+    return (@usize_from_ptr(&self.response_packet[0] as &void) + offset) as &byte;
+}
+
 fn dns_tcp_future_poll(self: &DnsTcpFuture, waker: &Waker) Poll<!usize> {
     // 状态机：
     // stage 0: 获取 nameserver，构建查询包
@@ -2147,8 +2161,17 @@ fn dns_tcp_future_poll(self: &DnsTcpFuture, waker: &Waker) Poll<!usize> {
 
     if self.stage == 4 {
         // 发送查询
+        if self.bytes_sent >= self.query_len || self.bytes_sent >= @len(self.query_packet) {
+            dns_future_close_fd(&self.fd);
+            return dns_poll_ready_error(@error_id(error.DnsInvalidPacket));
+        }
         const remaining: usize = self.query_len - self.bytes_sent;
-        const send_res: !isize = sys_send(self.fd, &self.query_packet[self.bytes_sent], remaining, 0);
+        const send_base: &byte = dns_tcp_query_ptr(self, self.bytes_sent);
+        if send_base == null {
+            dns_future_close_fd(&self.fd);
+            return dns_poll_ready_error(@error_id(error.DnsInvalidPacket));
+        }
+        const send_res: !isize = sys_send(self.fd, send_base as &const byte, remaining, 0);
         const sent: isize = send_res catch |err| {
             const eid: i32 = (@error_id(err) as! i32).value;
             if dns_is_would_block_errno(eid) {
@@ -2176,7 +2199,16 @@ fn dns_tcp_future_poll(self: &DnsTcpFuture, waker: &Waker) Poll<!usize> {
 
     if self.stage == 5 {
         // 读取2字节长度前缀
-        const recv_res: !isize = sys_recv(self.fd, &self.response_packet[self.bytes_received], 2 - self.bytes_received, 0);
+        if self.bytes_received >= 2 || self.bytes_received >= @len(self.response_packet) {
+            dns_future_close_fd(&self.fd);
+            return dns_poll_ready_error(@error_id(error.DnsInvalidPacket));
+        }
+        const recv_base: &byte = dns_tcp_response_ptr(self, self.bytes_received);
+        if recv_base == null {
+            dns_future_close_fd(&self.fd);
+            return dns_poll_ready_error(@error_id(error.DnsInvalidPacket));
+        }
+        const recv_res: !isize = sys_recv(self.fd, recv_base, 2 - self.bytes_received, 0);
         const n: isize = recv_res catch |err| {
             const eid: i32 = (@error_id(err) as! i32).value;
             if dns_is_would_block_errno(eid) {
@@ -2212,7 +2244,17 @@ fn dns_tcp_future_poll(self: &DnsTcpFuture, waker: &Waker) Poll<!usize> {
     if self.stage == 6 {
         // 读取响应体
         const remaining: usize = self.expected_body_len - self.bytes_received;
-        const recv_res: !isize = sys_recv(self.fd, &self.response_packet[2 + self.bytes_received], remaining, 0);
+        const body_offset: usize = 2 + self.bytes_received;
+        if body_offset >= @len(self.response_packet) {
+            dns_future_close_fd(&self.fd);
+            return dns_poll_ready_error(@error_id(error.DnsInvalidPacket));
+        }
+        const recv_base: &byte = dns_tcp_response_ptr(self, body_offset);
+        if recv_base == null {
+            dns_future_close_fd(&self.fd);
+            return dns_poll_ready_error(@error_id(error.DnsInvalidPacket));
+        }
+        const recv_res: !isize = sys_recv(self.fd, recv_base, remaining, 0);
         const n: isize = recv_res catch |err| {
             const eid: i32 = (@error_id(err) as! i32).value;
             if dns_is_would_block_errno(eid) {

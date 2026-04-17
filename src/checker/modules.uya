@@ -1487,8 +1487,9 @@ fn dfs_visit_module(checker: &TypeChecker, module_name: &byte, path: & & byte, p
             new_path[i] = path[i];
             i = i + 1;
         }
-        if path_len < MAX_MODULES {
-            new_path[path_len] = module_name;
+        const path_idx: i32 = path_len;
+        if path_idx >= 0 && path_idx < MAX_MODULES {
+            new_path[path_idx] = module_name;
         }
         const new_path_len: i32 = path_len + 1;
         

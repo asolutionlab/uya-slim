@@ -106,17 +106,133 @@ fn is_va_list_var_name(codegen: &C99CodeGenerator, block: &ASTNode, var_name: &b
     return 0;
 }
 
+fn c99_drop_var_count_at(codegen: &C99CodeGenerator, idx: i32) i32 {
+    if codegen == null {
+        return -1;
+    }
+    if idx < 0 {
+        return -1;
+    }
+    if idx >= C99_MAX_DEFER_STACK {
+        return -1;
+    }
+    return codegen.drop_var_count[idx];
+}
+
+fn c99_drop_var_count_set(codegen: &C99CodeGenerator, idx: i32, value: i32) void {
+    if codegen == null {
+        return;
+    }
+    if idx < 0 {
+        return;
+    }
+    if idx >= C99_MAX_DEFER_STACK {
+        return;
+    }
+    codegen.drop_var_count[idx] = value;
+}
+
+fn c99_drop_entry_set(codegen: &C99CodeGenerator, slot: i32, var_name: &byte, mono_name: &byte) void {
+    if codegen == null {
+        return;
+    }
+    if slot < 0 {
+        return;
+    }
+    if slot >= C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+        return;
+    }
+    codegen.drop_var_safe[slot] = var_name;
+    codegen.drop_struct_name[slot] = mono_name;
+}
+
+fn c99_drop_var_safe_at(codegen: &C99CodeGenerator, slot: i32) &byte {
+    if codegen == null {
+        return null;
+    }
+    if slot < 0 {
+        return null;
+    }
+    if slot >= C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+        return null;
+    }
+    return codegen.drop_var_safe[slot];
+}
+
+fn c99_drop_struct_name_at(codegen: &C99CodeGenerator, slot: i32) &byte {
+    if codegen == null {
+        return null;
+    }
+    if slot < 0 {
+        return null;
+    }
+    if slot >= C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+        return null;
+    }
+    return codegen.drop_struct_name[slot];
+}
+
+fn c99_defer_count_at(codegen: &C99CodeGenerator, idx: i32, is_errdefer: i32) i32 {
+    if codegen == null {
+        return -1;
+    }
+    if idx < 0 {
+        return -1;
+    }
+    if idx >= C99_MAX_DEFER_STACK {
+        return -1;
+    }
+    if is_errdefer != 0 {
+        return codegen.errdefer_count[idx];
+    }
+    return codegen.defer_count[idx];
+}
+
+fn c99_defer_count_set(codegen: &C99CodeGenerator, idx: i32, is_errdefer: i32, value: i32) void {
+    if codegen == null {
+        return;
+    }
+    if idx >= 0 && idx < C99_MAX_DEFER_STACK {
+        if is_errdefer != 0 {
+            codegen.errdefer_count[idx] = value;
+            return;
+        }
+        codegen.defer_count[idx] = value;
+    }
+}
+
+fn c99_defer_node_at(codegen: &C99CodeGenerator, slot: i32, is_errdefer: i32) &ASTNode {
+    if codegen == null {
+        return null;
+    }
+    if slot < 0 {
+        return null;
+    }
+    if slot >= C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK {
+        return null;
+    }
+    if is_errdefer != 0 {
+        return codegen.errdefer_stack[slot];
+    }
+    return codegen.defer_stack[slot];
+}
+
 // 在 return/break/continue 前对当前块已声明的变量逆序调用 drop（规范 §12）。
 fn emit_current_block_drops(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.current_drop_scope < 0 {
         return;
     }
     const d: i32 = codegen.current_drop_scope;
-    const n: i32 = codegen.drop_var_count[d];
+    const n: i32 = c99_drop_var_count_at(codegen, d);
+    if n <= 0 {
+        return;
+    }
     var i: i32 = n - 1;
     while i >= 0 {
-        const drop_c: &byte = get_method_c_name(codegen, codegen.drop_struct_name[d * C99_MAX_DROP_VARS_PER_BLOCK + i], "drop" as *byte);
-        const var_safe: &byte = codegen.drop_var_safe[d * C99_MAX_DROP_VARS_PER_BLOCK + i];
+        const drop_slot: i32 = d * C99_MAX_DROP_VARS_PER_BLOCK + i;
+        const drop_struct_name: &byte = c99_drop_struct_name_at(codegen, drop_slot);
+        const drop_c: &byte = get_method_c_name(codegen, drop_struct_name, "drop" as *byte);
+        const var_safe: &byte = c99_drop_var_safe_at(codegen, drop_slot);
         if drop_c != null && var_safe != null {
             c99_emit(codegen, "/* drop */ " as *byte);
             fprintf(codegen.emit_stream as *void, "%s(%s);\n" as *byte, drop_c as *byte, var_safe as *byte);
@@ -174,9 +290,10 @@ fn emit_defer_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
     }
     const d: i32 = codegen.defer_stack_depth - 1;
     if emit_errdefer != 0 {
-        var i: i32 = codegen.errdefer_count[d] - 1;
+        var i: i32 = c99_defer_count_at(codegen, d, 1) - 1;
         while i >= 0 {
-            const n: &ASTNode = codegen.errdefer_stack[d * C99_MAX_DEFERS_PER_BLOCK + i];
+            const defer_slot: i32 = d * C99_MAX_DEFERS_PER_BLOCK + i;
+            const n: &ASTNode = c99_defer_node_at(codegen, defer_slot, 1);
             if n != null && n.type == ASTNodeType.AST_ERRDEFER_STMT && n.errdefer_stmt_body != null {
                 c99_emit(codegen, "/* errdefer */ " as *byte);
                 gen_stmt(codegen, n.errdefer_stmt_body);
@@ -184,9 +301,10 @@ fn emit_defer_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
             i = i - 1;
         }
     }
-    var i: i32 = codegen.defer_count[d] - 1;
+    var i: i32 = c99_defer_count_at(codegen, d, 0) - 1;
     while i >= 0 {
-        const n: &ASTNode = codegen.defer_stack[d * C99_MAX_DEFERS_PER_BLOCK + i];
+        const defer_slot: i32 = d * C99_MAX_DEFERS_PER_BLOCK + i;
+        const n: &ASTNode = c99_defer_node_at(codegen, defer_slot, 0);
         if n != null && n.type == ASTNodeType.AST_DEFER_STMT && n.defer_stmt_body != null {
             c99_emit(codegen, "/* defer */ " as *byte);
             gen_stmt(codegen, n.defer_stmt_body);
@@ -1123,12 +1241,22 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
                     expr.unary_expr_operand.slice_expr_base != null &&
                     expr.unary_expr_operand.slice_expr_base.type == ASTNodeType.AST_IDENTIFIER &&
                     expr.unary_expr_operand.slice_expr_base.identifier_name != null {
-                    var wi: i32 = codegen.local_variable_count - 1;
+                    var local_count: i32 = codegen.local_variable_count;
+                    if local_count > C99_MAX_LOCAL_VARS {
+                        local_count = C99_MAX_LOCAL_VARS;
+                    }
+                    var wi: i32 = local_count - 1;
                     while wi >= 0 {
-                        if codegen.local_variables[wi].name != null &&
-                            str_equals(codegen.local_variables[wi].name, expr.unary_expr_operand.slice_expr_base.identifier_name) != 0 &&
-                            codegen.local_variables[wi].type_node != null &&
-                            codegen.local_variables[wi].type_node.type == ASTNodeType.AST_TYPE_ARRAY {
+                        if wi >= C99_MAX_LOCAL_VARS {
+                            wi = wi - 1;
+                            continue;
+                        }
+                        const local_name: &byte = c99_local_var_name_at(codegen, wi);
+                        const local_type_node: &ASTNode = c99_local_var_type_node_at(codegen, wi);
+                        if local_name != null &&
+                            str_equals(local_name, expr.unary_expr_operand.slice_expr_base.identifier_name) != 0 &&
+                            local_type_node != null &&
+                            local_type_node.type == ASTNodeType.AST_TYPE_ARRAY {
                             need_heap_copy_local_slice = 1;
                             break;
                         }
@@ -1301,12 +1429,22 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                         expr.unary_expr_operand.slice_expr_base != null &&
                         expr.unary_expr_operand.slice_expr_base.type == ASTNodeType.AST_IDENTIFIER &&
                         expr.unary_expr_operand.slice_expr_base.identifier_name != null {
-                        var wi: i32 = codegen.local_variable_count - 1;
+                        var local_count2: i32 = codegen.local_variable_count;
+                        if local_count2 > C99_MAX_LOCAL_VARS {
+                            local_count2 = C99_MAX_LOCAL_VARS;
+                        }
+                        var wi: i32 = local_count2 - 1;
                         while wi >= 0 {
-                            if codegen.local_variables[wi].name != null &&
-                                str_equals(codegen.local_variables[wi].name, expr.unary_expr_operand.slice_expr_base.identifier_name) != 0 &&
-                                codegen.local_variables[wi].type_node != null &&
-                                codegen.local_variables[wi].type_node.type == ASTNodeType.AST_TYPE_ARRAY {
+                            if wi >= C99_MAX_LOCAL_VARS {
+                                wi = wi - 1;
+                                continue;
+                            }
+                            const local_name2: &byte = c99_local_var_name_at(codegen, wi);
+                            const local_type_node2: &ASTNode = c99_local_var_type_node_at(codegen, wi);
+                            if local_name2 != null &&
+                                str_equals(local_name2, expr.unary_expr_operand.slice_expr_base.identifier_name) != 0 &&
+                                local_type_node2 != null &&
+                                local_type_node2.type == ASTNodeType.AST_TYPE_ARRAY {
                                 need_heap_copy_local_slice = 1;
                                 break;
                             }
@@ -1536,10 +1674,19 @@ fn check_assign_is_array(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
         return 0;
     }
     const var_name: &byte = dest.identifier_name;
-    var i: i32 = codegen.local_variable_count - 1;
+    var local_count: i32 = codegen.local_variable_count;
+    if local_count > C99_MAX_LOCAL_VARS {
+        local_count = C99_MAX_LOCAL_VARS;
+    }
+    var i: i32 = local_count - 1;
     while i >= 0 {
-        if strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
-            const type_c: &byte = codegen.local_variables[i].type_c;
+        if i >= C99_MAX_LOCAL_VARS {
+            i = i - 1;
+            continue;
+        }
+        const local_name3: &byte = c99_local_var_name_at(codegen, i);
+        if local_name3 != null && strcmp(local_name3 as *byte, var_name as *byte) == 0 {
+            const type_c: &byte = c99_local_var_type_c_at(codegen, i);
             if type_c != null && strchr(type_c as *byte, 91) != null {
                 return 1;
             }
@@ -1739,7 +1886,7 @@ fn gen_block_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     var i: i32 = 0;
     if d < C99_MAX_DEFER_STACK {
         codegen.current_drop_scope = d;
-        codegen.drop_var_count[d] = 0;
+        c99_drop_var_count_set(codegen, d, 0);
         var nd: i32 = 0;
         var ne: i32 = 0;
         i = 0;
@@ -1754,8 +1901,8 @@ fn gen_block_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             }
             i = i + 1;
         }
-        codegen.defer_count[d] = nd;
-        codegen.errdefer_count[d] = ne;
+        c99_defer_count_set(codegen, d, 0, nd);
+        c99_defer_count_set(codegen, d, 1, ne);
         codegen.defer_stack_depth = codegen.defer_stack_depth + 1;
     }
     i = 0;
@@ -1828,10 +1975,7 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                 type_to_store = buf;
                             }
                         }
-                        codegen.local_variables[codegen.local_variable_count].name = safe_name;
-                        codegen.local_variables[codegen.local_variable_count].type_c = type_to_store;
-                        codegen.local_variables[codegen.local_variable_count].type_node = null;
-                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                        c99_push_local_variable(codegen, safe_name, type_to_store, null, codegen.current_depth);
                     }
                 }
             }
@@ -1911,10 +2055,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         if var_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                             const type_c2: &byte = c99_type_to_c(codegen, var_type);
                             if type_c2 != null {
-                                codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
-                                codegen.local_variables[codegen.local_variable_count].type_c = type_c2;
-                                codegen.local_variables[codegen.local_variable_count].type_node = var_type;
-                                codegen.local_variable_count = codegen.local_variable_count + 1;
+                                c99_push_local_variable(codegen, stmt.var_decl_name, type_c2, var_type, codegen.current_depth);
                             }
                         }
                         codegen.expected_type = saved_expected_type;
@@ -2025,10 +2166,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             c99_emit_indent(codegen);
                             fputs("}\n" as *byte, codegen.emit_stream as *void);
                             if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                                codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
-                                codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
-                                codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
-                                codegen.local_variable_count = codegen.local_variable_count + 1;
+                                c99_push_local_variable(codegen, stmt.var_decl_name, stored_type_c, stmt.var_decl_type, codegen.current_depth);
                             }
                             codegen.expected_type = saved_expected_type;
                             return;
@@ -2078,10 +2216,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
                         }
                         if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                            codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
-                            codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
-                            codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
-                            codegen.local_variable_count = codegen.local_variable_count + 1;
+                            c99_push_local_variable(codegen, stmt.var_decl_name, stored_type_c, stmt.var_decl_type, codegen.current_depth);
                         }
                         codegen.expected_type = saved_expected_type;
                         return;
@@ -2114,10 +2249,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_indent(codegen);
                 fprintf(codegen.emit_stream as *void, "va_list %s;\n" as *byte, var_name as *byte);
                 if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                    codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
-                    codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
-                    codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
-                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                    c99_push_local_variable(codegen, stmt.var_decl_name, "va_list" as *byte, stmt.var_decl_type, codegen.current_depth);
                 }
                 // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
                 if need_pragma_missing_braces != 0 {
@@ -2132,10 +2264,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_indent(codegen);
                 fprintf(codegen.emit_stream as *void, "va_list %s;\n" as *byte, var_name as *byte);
                 if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                    codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
-                    codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
-                    codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
-                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                    c99_push_local_variable(codegen, stmt.var_decl_name, "va_list" as *byte, stmt.var_decl_type, codegen.current_depth);
                 }
                 // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
                 if need_pragma_missing_braces != 0 {
@@ -2206,10 +2335,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             type_to_store = type_c;
         }
         if var_name != null && type_to_store != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-            codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
-            codegen.local_variables[codegen.local_variable_count].type_c = type_to_store;
-            codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
-            codegen.local_variable_count = codegen.local_variable_count + 1;
+            c99_push_local_variable(codegen, stmt.var_decl_name, type_to_store, stmt.var_decl_type, codegen.current_depth);
         }
         
         if init_expr != null {
@@ -2501,14 +2627,25 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             }
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;
-                if codegen.drop_var_count[dd] < C99_MAX_DROP_VARS_PER_BLOCK {
-                    var mono_drop: &byte = var_type.type_named_name;
-                    if var_type.type_named_type_arg_count > 0 && var_type.type_named_type_args != null {
-                        mono_drop = get_mono_struct_name(codegen, var_type.type_named_name, var_type.type_named_type_args, var_type.type_named_type_arg_count);
+                if dd >= 0 {
+                    if dd < C99_MAX_DEFER_STACK {
+                        const drop_count: i32 = c99_drop_var_count_at(codegen, dd);
+                        const drop_slot: i32 = dd * C99_MAX_DROP_VARS_PER_BLOCK + drop_count;
+                        if drop_count >= 0 {
+                            if drop_count < C99_MAX_DROP_VARS_PER_BLOCK {
+                                if drop_slot >= 0 {
+                                    if drop_slot < C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+                                        var mono_drop: &byte = var_type.type_named_name;
+                                        if var_type.type_named_type_arg_count > 0 && var_type.type_named_type_args != null {
+                                            mono_drop = get_mono_struct_name(codegen, var_type.type_named_name, var_type.type_named_type_args, var_type.type_named_type_arg_count);
+                                        }
+                                        c99_drop_entry_set(codegen, drop_slot, var_name, mono_drop);
+                                        c99_drop_var_count_set(codegen, dd, drop_count + 1);
+                                    }
+                                }
+                            }
+                        }
                     }
-                    codegen.drop_var_safe[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = var_name;
-                    codegen.drop_struct_name[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = mono_drop;
-                    codegen.drop_var_count[dd] = codegen.drop_var_count[dd] + 1;
                 }
             }
             }
@@ -2520,14 +2657,25 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             c99_emit_semi_newline(codegen);
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;
-                if codegen.drop_var_count[dd] < C99_MAX_DROP_VARS_PER_BLOCK {
-                    var mono_drop2: &byte = var_type.type_named_name;
-                    if var_type.type_named_type_arg_count > 0 && var_type.type_named_type_args != null {
-                        mono_drop2 = get_mono_struct_name(codegen, var_type.type_named_name, var_type.type_named_type_args, var_type.type_named_type_arg_count);
+                if dd >= 0 {
+                    if dd < C99_MAX_DEFER_STACK {
+                        const drop_count2: i32 = c99_drop_var_count_at(codegen, dd);
+                        const drop_slot2: i32 = dd * C99_MAX_DROP_VARS_PER_BLOCK + drop_count2;
+                        if drop_count2 >= 0 {
+                            if drop_count2 < C99_MAX_DROP_VARS_PER_BLOCK {
+                                if drop_slot2 >= 0 {
+                                    if drop_slot2 < C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+                                        var mono_drop2: &byte = var_type.type_named_name;
+                                        if var_type.type_named_type_arg_count > 0 && var_type.type_named_type_args != null {
+                                            mono_drop2 = get_mono_struct_name(codegen, var_type.type_named_name, var_type.type_named_type_args, var_type.type_named_type_arg_count);
+                                        }
+                                        c99_drop_entry_set(codegen, drop_slot2, var_name, mono_drop2);
+                                        c99_drop_var_count_set(codegen, dd, drop_count2 + 1);
+                                    }
+                                }
+                            }
+                        }
                     }
-                    codegen.drop_var_safe[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = var_name;
-                    codegen.drop_struct_name[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = mono_drop2;
-                    codegen.drop_var_count[dd] = codegen.drop_var_count[dd] + 1;
                 }
             }
         }
@@ -2664,10 +2812,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             c99_emit_indent(codegen);
                             fprintf(codegen.emit_stream as *void, "%s %s = _uya_m.u.%s;\n" as *byte, vtype as *byte, bind as *byte, vname as *byte);
                             if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                                codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
-                                codegen.local_variables[codegen.local_variable_count].type_c = vtype;
-                                codegen.local_variables[codegen.local_variable_count].type_node = null;
-                                codegen.local_variable_count = codegen.local_variable_count + 1;
+                                c99_push_local_variable(codegen, stmt.match_expr_arms[i].var_name, vtype, null, codegen.current_depth);
                             }
                         } else {
                             c99_emit_indent(codegen);
@@ -2734,19 +2879,13 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     c99_emit_indent(codegen);
                     fprintf(codegen.emit_stream as *void, "%s %s = _uya_m.value;\n" as *byte, bind_payload as *byte, v as *byte);
                     if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                        codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
-                        codegen.local_variables[codegen.local_variable_count].type_c = bind_payload;
-                        codegen.local_variables[codegen.local_variable_count].type_node = null;
-                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                        c99_push_local_variable(codegen, stmt.match_expr_arms[i].var_name, bind_payload, null, codegen.current_depth);
                     }
                     bind_err_union_ok = 1;
                 } else if v != null {
                     fprintf(codegen.emit_stream as *void, "%s{ %s %s = _uya_m;\n" as *byte, prefix as *byte, m_type as *byte, v as *byte);
                     if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                        codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
-                        codegen.local_variables[codegen.local_variable_count].type_c = m_type;
-                        codegen.local_variables[codegen.local_variable_count].type_node = null;
-                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                        c99_push_local_variable(codegen, stmt.match_expr_arms[i].var_name, m_type, null, codegen.current_depth);
                     }
                 } else {
                     fprintf(codegen.emit_stream as *void, "%s{\n" as *byte, prefix as *byte);
@@ -2973,10 +3112,7 @@ fn gen_var_decl_void_type(codegen: &C99CodeGenerator, init_expr: &ASTNode) i32 {
                     c99_emit_indent(codegen);
                     fprintf(codegen.emit_stream as *void, "const uint32_t %s = _uya_catch_tmp.error_id;\n" as *byte, safe as *byte);
                     if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                        codegen.local_variables[codegen.local_variable_count].name = err_name;
-                        codegen.local_variables[codegen.local_variable_count].type_c = "const uint32_t" as *byte;
-                        codegen.local_variables[codegen.local_variable_count].type_node = null;
-                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                        c99_push_local_variable(codegen, err_name, "const uint32_t" as *byte, null, codegen.current_depth);
                     }
                 }
                 var i: i32 = 0;

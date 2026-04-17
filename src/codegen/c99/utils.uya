@@ -18,6 +18,19 @@ extern fn rename(oldpath: *byte, newpath: *byte) i32;
 extern fn unlink(path: *byte) i32;
 extern fn fflush(stream: *void) i32;
 extern fn fread(ptr: *void, size: usize, nmemb: usize, stream: *void) usize;
+
+fn c99_path_buf_char_at(buf: &byte, idx: i32) byte {
+    if buf == null {
+        return 0 as byte;
+    }
+    if idx < 0 {
+        return 0 as byte;
+    }
+    if idx >= 1024 {
+        return 0 as byte;
+    }
+    return buf[idx];
+}
 extern fn getcwd(buf: *byte, size: usize) *byte;
 extern fn strstr(haystack: *byte, needle: *byte) *byte;
 
@@ -547,13 +560,21 @@ fn c99_mkdir_p_for_file(file_path: &byte) void {
         buf[j] = 0 as byte;
     }
     var k: i32 = j - 1;
+    if k >= 1024 {
+        k = 1023;
+    }
     while k > 0 {
-        if k >= 0 && k < @len(buf) {
-            if buf[k] != 47 as byte {
-                k = k - 1;
-            } else {
-                break;
-            }
+        const scan_idx: i32 = k;
+        if scan_idx <= 0 {
+            break;
+        }
+        if scan_idx >= 1024 {
+            k = k - 1;
+            continue;
+        }
+        const buf_k: byte = c99_path_buf_char_at(buf, scan_idx);
+        if buf_k != 47 as byte {
+            k = k - 1;
         } else {
             break;
         }
@@ -561,10 +582,40 @@ fn c99_mkdir_p_for_file(file_path: &byte) void {
     if k <= 0 {
         return;
     }
-    if k >= 0 && k < @len(buf) {
-        buf[k] = 0 as byte;
+    if k < 0 {
+        return;
     }
+    if k >= 1024 {
+        return;
+    }
+    buf[k] = 0 as byte;
     c99_mkdir_p_chain(&buf[0] as &byte);
+}
+
+fn c99_string_const_name_at(codegen: &C99CodeGenerator, idx: i32) &byte {
+    if codegen == null {
+        return null;
+    }
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_MAX_STRING_CONSTANTS {
+        return null;
+    }
+    return codegen.string_constants[idx].name;
+}
+
+fn c99_string_const_value_at(codegen: &C99CodeGenerator, idx: i32) &byte {
+    if codegen == null {
+        return null;
+    }
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_MAX_STRING_CONSTANTS {
+        return null;
+    }
+    return codegen.string_constants[idx].value;
 }
 
 fn c99_mirror_lcp_len_flat(uniq: &byte, count: i32) i32 {
@@ -1141,13 +1192,13 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
                         if pi2 >= 3 {
                             const p1: i32 = pi2 - 1;
                             const p2: i32 = pi2 - 2;
-                            if p2 >= 0 && p2 < @len(opath) {
-                                if p1 >= 0 && p1 < @len(opath) {
-                                    if opath[p2] == 46 as byte && opath[p1] == 99 as byte {
-                                        opath[p1] = 111 as byte;
-                                        if pi2 >= 0 && pi2 < @len(opath) {
-                                            opath[pi2] = 0 as byte;
-                                        }
+                            if p2 >= 0 && p2 < 512 && p1 >= 0 && p1 < 512 {
+                                const p2b: byte = opath[p2];
+                                const p1b: byte = opath[p1];
+                                if p2b == 46 as byte && p1b == 99 as byte {
+                                    opath[p1] = 111 as byte;
+                                    if pi2 >= 0 && pi2 < 512 {
+                                        opath[pi2] = 0 as byte;
                                     }
                                 }
                             }
@@ -1190,13 +1241,13 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
                         if qi2 >= 3 {
                             const q1: i32 = qi2 - 1;
                             const q2: i32 = qi2 - 2;
-                            if q2 >= 0 && q2 < @len(opr) {
-                                if q1 >= 0 && q1 < @len(opr) {
-                                    if opr[q2] == 46 as byte && opr[q1] == 99 as byte {
-                                        opr[q1] = 111 as byte;
-                                        if qi2 >= 0 && qi2 < @len(opr) {
-                                            opr[qi2] = 0 as byte;
-                                        }
+                            if q2 >= 0 && q2 < 512 && q1 >= 0 && q1 < 512 {
+                                const q2b: byte = opr[q2];
+                                const q1b: byte = opr[q1];
+                                if q2b == 46 as byte && q1b == 99 as byte {
+                                    opr[q1] = 111 as byte;
+                                    if qi2 >= 0 && qi2 < 512 {
+                                        opr[qi2] = 0 as byte;
                                     }
                                 }
                             }
@@ -1564,10 +1615,22 @@ fn add_string_constant(codegen: &C99CodeGenerator, value: &byte) &byte {
     snprintf(&name_buf[0] as *byte, NUM_BUF_SIZE, "str%d" as *byte, codegen.string_constant_count);
     
     // 存储到表中
-    codegen.string_constants[codegen.string_constant_count].name = c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
-    codegen.string_constants[codegen.string_constant_count].value = value;  // 注意：value 应该已经在 Arena 中
-    codegen.string_constant_count = codegen.string_constant_count + 1;
-    const const_name: &byte = codegen.string_constants[codegen.string_constant_count - 1].name;
+    const string_idx: i32 = codegen.string_constant_count;
+    if string_idx >= 0 && string_idx < @len(codegen.string_constants) {
+        codegen.string_constants[string_idx].name = c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
+        codegen.string_constants[string_idx].value = value;  // 注意：value 应该已经在 Arena 中
+        codegen.string_constant_count = string_idx + 1;
+    } else {
+        return null;
+    }
+    const stored_idx: i32 = codegen.string_constant_count - 1;
+    if stored_idx < 0 {
+        return null;
+    }
+    if stored_idx >= C99_MAX_STRING_CONSTANTS {
+        return null;
+    }
+    const const_name: &byte = codegen.string_constants[stored_idx].name;
     c99_string_const_cache_store(codegen, value, const_name);
     return const_name;
 }
@@ -1651,20 +1714,37 @@ export fn emit_pending_string_constants(codegen: &C99CodeGenerator) void {
         codegen.emit_stream = codegen.output;
     }
     fputs("\n// 延迟字符串常量（宏展开等）\n" as *byte, codegen.emit_stream as *void);
-    var i: i32 = codegen.string_constants_emitted_count;
-    while i < codegen.string_constant_count {
-        if codegen.string_constants[i].value != null {
+    var emit_start: i32 = codegen.string_constants_emitted_count;
+    if emit_start < 0 {
+        emit_start = 0;
+    }
+    var emit_end: i32 = codegen.string_constant_count;
+    if emit_end > C99_MAX_STRING_CONSTANTS {
+        emit_end = C99_MAX_STRING_CONSTANTS;
+    }
+    var i: i32 = emit_start;
+    while i < emit_end {
+        if i < 0 {
+            i = i + 1;
+            continue;
+        }
+        if i >= C99_MAX_STRING_CONSTANTS {
+            break;
+        }
+        const string_value: &byte = c99_string_const_value_at(codegen, i);
+        const string_name: &byte = c99_string_const_name_at(codegen, i);
+        if string_value != null {
             if codegen.split_enabled != 0 {
-                fprintf(codegen.emit_stream as *void, "const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+                fprintf(codegen.emit_stream as *void, "const char %s[] = \"" as *byte, string_name as *byte);
             } else {
-                fprintf(codegen.emit_stream as *void, "static const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+                fprintf(codegen.emit_stream as *void, "static const char %s[] = \"" as *byte, string_name as *byte);
             }
-            escape_string_for_c(codegen.emit_stream, codegen.string_constants[i].value);
+            escape_string_for_c(codegen.emit_stream, string_value);
             fputs("\";\n" as *byte, codegen.emit_stream as *void);
         }
         i = i + 1;
     }
-    codegen.string_constants_emitted_count = codegen.string_constant_count;
+    codegen.string_constants_emitted_count = emit_end;
     codegen.emit_stream = saved;
 }
 

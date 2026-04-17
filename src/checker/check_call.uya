@@ -143,10 +143,26 @@ fn async_call_add_edge(checker: &TypeChecker, from_name: &byte, to_name: &byte) 
     if checker.async_call_edge_count >= @len(checker.async_call_edge_from) {
         return 0;
     }
-    checker.async_call_edge_from[checker.async_call_edge_count] = from_name;
-    checker.async_call_edge_to[checker.async_call_edge_count] = to_name;
-    checker.async_call_edge_count = checker.async_call_edge_count + 1;
+    const edge_idx: i32 = checker.async_call_edge_count;
+    if edge_idx < 0 {
+        return 0;
+    }
+    if edge_idx >= @len(checker.async_call_edge_from) {
+        return 0;
+    }
+    async_call_set_edge(checker, edge_idx, from_name, to_name);
+    checker.async_call_edge_count = edge_idx + 1;
     return 1;
+}
+
+fn async_call_set_edge(checker: &TypeChecker, idx: i32, from_name: &byte, to_name: &byte) void {
+    if checker == null {
+        return;
+    }
+    if idx >= 0 && idx < MAX_ASYNC_CALL_EDGES {
+        checker.async_call_edge_from[idx] = from_name;
+        checker.async_call_edge_to[idx] = to_name;
+    }
 }
 
 fn async_call_path_exists(checker: &TypeChecker, from_name: &byte, target_name: &byte,

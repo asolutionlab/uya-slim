@@ -48,10 +48,11 @@ fn mark_struct_defined(codegen: &C99CodeGenerator, struct_name: &byte) void {
     }
     
     // 如果不在表中，添加
-    if codegen.struct_definition_count < C99_MAX_STRUCT_DEFINITIONS {
-        codegen.struct_definitions[codegen.struct_definition_count].name = struct_name;
-        codegen.struct_definitions[codegen.struct_definition_count].defined = 1;
-        codegen.struct_definition_count = codegen.struct_definition_count + 1;
+    const struct_idx: i32 = codegen.struct_definition_count;
+    if struct_idx >= 0 && struct_idx < C99_MAX_STRUCT_DEFINITIONS {
+        codegen.struct_definitions[struct_idx].name = struct_name;
+        codegen.struct_definitions[struct_idx].defined = 1;
+        codegen.struct_definition_count = struct_idx + 1;
     }
 }
 
@@ -64,10 +65,11 @@ fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void {
         return;
     }
     
-    if codegen.struct_definition_count < C99_MAX_STRUCT_DEFINITIONS {
-        codegen.struct_definitions[codegen.struct_definition_count].name = struct_name;
-        codegen.struct_definitions[codegen.struct_definition_count].defined = 0;
-        codegen.struct_definition_count = codegen.struct_definition_count + 1;
+    const struct_idx2: i32 = codegen.struct_definition_count;
+    if struct_idx2 >= 0 && struct_idx2 < C99_MAX_STRUCT_DEFINITIONS {
+        codegen.struct_definitions[struct_idx2].name = struct_name;
+        codegen.struct_definitions[struct_idx2].defined = 0;
+        codegen.struct_definition_count = struct_idx2 + 1;
     }
 }
 

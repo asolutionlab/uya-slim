@@ -756,6 +756,12 @@ var inline_depth: i32 = 0;
 var inline_call_stack: [&byte: 64] = [];  // 调用栈，防止递归
 var inline_call_stack_top: i32 = 0;
 
+fn inline_call_stack_set(idx: i32, value: &byte) void {
+    if idx >= 0 && idx < 64 {
+        inline_call_stack[idx] = value;
+    }
+}
+
 // 检查函数是否可内联
 fn can_inline_function(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
     if fn_decl == null || checker == null {
@@ -855,9 +861,12 @@ fn inline_call_expr(checker: &TypeChecker, call_node: &ASTNode, current_fn: &AST
     }
     
     // 将函数名加入调用栈
-    if inline_call_stack_top >= 0 && inline_call_stack_top < @len(inline_call_stack) {
-        inline_call_stack[inline_call_stack_top] = fn_name;
-        inline_call_stack_top = inline_call_stack_top + 1;
+    const call_stack_idx: i32 = inline_call_stack_top;
+    if call_stack_idx >= 0 {
+        if call_stack_idx < @len(inline_call_stack) {
+            inline_call_stack_set(call_stack_idx, fn_name);
+            inline_call_stack_top = call_stack_idx + 1;
+        }
     }
 
     // 递归处理内联后的函数体
@@ -868,7 +877,7 @@ fn inline_call_expr(checker: &TypeChecker, call_node: &ASTNode, current_fn: &AST
     // 从调用栈弹出
     inline_call_stack_top = inline_call_stack_top - 1;
     if inline_call_stack_top >= 0 && inline_call_stack_top < @len(inline_call_stack) {
-        inline_call_stack[inline_call_stack_top] = null;
+        inline_call_stack_set(inline_call_stack_top, null);
     }
     
     return call_node;

@@ -200,50 +200,68 @@ export extern "libc" fn asctime(timeptr: &const tm) *byte {
     if timeptr == null { return null; }
     
     // 星期名称
-    const wday_names: [&byte: 7] = [
-        "Sun\0" as &byte,
-        "Mon\0" as &byte,
-        "Tue\0" as &byte,
-        "Wed\0" as &byte,
-        "Thu\0" as &byte,
-        "Fri\0" as &byte,
-        "Sat\0" as &byte,
+    const wday_names: [&const byte: 7] = [
+        "Sun\0" as &const byte,
+        "Mon\0" as &const byte,
+        "Tue\0" as &const byte,
+        "Wed\0" as &const byte,
+        "Thu\0" as &const byte,
+        "Fri\0" as &const byte,
+        "Sat\0" as &const byte,
     ];
     
     // 月份名称
-    const mon_names: [&byte: 12] = [
-        "Jan\0" as &byte,
-        "Feb\0" as &byte,
-        "Mar\0" as &byte,
-        "Apr\0" as &byte,
-        "May\0" as &byte,
-        "Jun\0" as &byte,
-        "Jul\0" as &byte,
-        "Aug\0" as &byte,
-        "Sep\0" as &byte,
-        "Oct\0" as &byte,
-        "Nov\0" as &byte,
-        "Dec\0" as &byte,
+    const mon_names: [&const byte: 12] = [
+        "Jan\0" as &const byte,
+        "Feb\0" as &const byte,
+        "Mar\0" as &const byte,
+        "Apr\0" as &const byte,
+        "May\0" as &const byte,
+        "Jun\0" as &const byte,
+        "Jul\0" as &const byte,
+        "Aug\0" as &const byte,
+        "Sep\0" as &const byte,
+        "Oct\0" as &const byte,
+        "Nov\0" as &const byte,
+        "Dec\0" as &const byte,
     ];
     
     var i: usize = 0;
+    var wday_idx: i32 = timeptr.tm_wday;
+    if wday_idx < 0 || wday_idx >= 7 {
+        wday_idx = 0;
+    }
+    var mon_idx: i32 = timeptr.tm_mon;
+    if mon_idx < 0 || mon_idx >= 12 {
+        mon_idx = 0;
+    }
+    const wday_name_idx: i32 = wday_idx;
+    if wday_name_idx < 0 || wday_name_idx >= @len(wday_names) {
+        return null;
+    }
+    const mon_name_idx: i32 = mon_idx;
+    if mon_name_idx < 0 || mon_name_idx >= @len(mon_names) {
+        return null;
+    }
+    const wday_name: &const byte = _time_wday_name_at(wday_names, wday_name_idx);
+    const mon_name: &const byte = _time_mon_name_at(mon_names, mon_name_idx);
     
     // 星期
-    _asctime_buf[i] = wday_names[timeptr.tm_wday as usize][0];
+    _asctime_buf[i] = wday_name[0];
     i = i + 1;
-    _asctime_buf[i] = wday_names[timeptr.tm_wday as usize][1];
+    _asctime_buf[i] = wday_name[1];
     i = i + 1;
-    _asctime_buf[i] = wday_names[timeptr.tm_wday as usize][2];
+    _asctime_buf[i] = wday_name[2];
     i = i + 1;
     _asctime_buf[i] = 32;  // 空格
     i = i + 1;
     
     // 月份
-    _asctime_buf[i] = mon_names[timeptr.tm_mon as usize][0];
+    _asctime_buf[i] = mon_name[0];
     i = i + 1;
-    _asctime_buf[i] = mon_names[timeptr.tm_mon as usize][1];
+    _asctime_buf[i] = mon_name[1];
     i = i + 1;
-    _asctime_buf[i] = mon_names[timeptr.tm_mon as usize][2];
+    _asctime_buf[i] = mon_name[2];
     i = i + 1;
     _asctime_buf[i] = 32;  // 空格
     i = i + 1;
@@ -385,6 +403,54 @@ const _MON_ABBREV: [&const byte: 12] = [
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
+fn _time_wday_name_at(names: [&const byte: 7], idx: i32) &const byte {
+    if idx < 0 {
+        return null;
+    }
+    if idx >= 7 {
+        return null;
+    }
+    return names[idx];
+}
+
+fn _time_mon_name_at(names: [&const byte: 12], idx: i32) &const byte {
+    if idx < 0 {
+        return null;
+    }
+    if idx >= 12 {
+        return null;
+    }
+    return names[idx];
+}
+
+fn _time_wday_abbrev_from(names: [&const byte: 7], idx: i32) &const byte {
+    if idx < 0 {
+        return names[0];
+    }
+    if idx >= 7 {
+        return names[0];
+    }
+    return names[idx];
+}
+
+fn _time_mon_abbrev_from(names: [&const byte: 12], idx: i32) &const byte {
+    if idx < 0 {
+        return names[0];
+    }
+    if idx >= 12 {
+        return names[0];
+    }
+    return names[idx];
+}
+
+fn _wday_abbrev_at(idx: i32) &const byte {
+    return _time_wday_abbrev_from(_WDAY_ABBREV, idx);
+}
+
+fn _mon_abbrev_at(idx: i32) &const byte {
+    return _time_mon_abbrev_from(_MON_ABBREV, idx);
+}
+
 // 月份名称全称
 const _MON_FULL: [&const byte: 12] = [
     "January", "February", "March", "April", "May", "June",
@@ -516,9 +582,17 @@ export extern "libc" fn strftime(s: &byte, maxsize: usize, format: &const byte, 
                 if pos < maxsize { s[pos] = 45; pos = pos + 1; }
                 _strftime_write_2d(s, maxsize, &pos, timeptr.tm_mday);
             } else if spec == 99 {  // %c - 日期和时间
-                _strftime_write(s, maxsize, &pos, _WDAY_ABBREV[timeptr.tm_wday as usize]);
+                var fmt_wday_idx: i32 = timeptr.tm_wday;
+                if fmt_wday_idx < 0 || fmt_wday_idx >= 7 {
+                    fmt_wday_idx = 0;
+                }
+                var fmt_mon_idx: i32 = timeptr.tm_mon;
+                if fmt_mon_idx < 0 || fmt_mon_idx >= 12 {
+                    fmt_mon_idx = 0;
+                }
+                _strftime_write(s, maxsize, &pos, _wday_abbrev_at(fmt_wday_idx));
                 if pos < maxsize { s[pos] = 32; pos = pos + 1; }
-                _strftime_write(s, maxsize, &pos, _MON_ABBREV[timeptr.tm_mon as usize]);
+                _strftime_write(s, maxsize, &pos, _mon_abbrev_at(fmt_mon_idx));
                 if pos < maxsize { s[pos] = 32; pos = pos + 1; }
                 _strftime_write_2d(s, maxsize, &pos, timeptr.tm_mday);
                 if pos < maxsize { s[pos] = 32; pos = pos + 1; }

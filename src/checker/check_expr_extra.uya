@@ -616,6 +616,77 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     checker_walk_reachability_expr(checker, node.binary_expr_right);
     
     const op: TokenType = checker_token_or_plus_extra(node.binary_expr_op);
+    if op == TokenType.TOKEN_LOGICAL_AND || op == TokenType.TOKEN_LOGICAL_OR {
+        var left_type: Type = make_void_type();
+        var right_type: Type = make_void_type();
+        if node.binary_expr_left != null {
+            left_type = checker_infer_type(checker, node.binary_expr_left);
+        }
+
+        // 逻辑短路：右侧在更强的约束上下文里检查。
+        const saved_constraint_count: i32 = checker.constraint_count;
+        const saved_nonnull_count: i32 = checker.pointer_nonnull_count;
+        var saved_constraint_names: [&byte: 64] = [];
+        var saved_constraint_ops: [i32: 64] = [];
+        var saved_constraint_values: [i32: 64] = [];
+        var saved_nonnull_names: [&byte: 32] = [];
+        var sci: i32 = 0;
+        while sci < saved_constraint_count && sci < MAX_CONSTRAINTS {
+            saved_constraint_names[sci] = checker.constraint_var_names[sci];
+            saved_constraint_ops[sci] = checker.constraint_ops[sci];
+            saved_constraint_values[sci] = checker.constraint_values[sci];
+            sci = sci + 1;
+        }
+        var sni: i32 = 0;
+        while sni < saved_nonnull_count && sni < MAX_POINTER_NAMES {
+            saved_nonnull_names[sni] = checker.pointer_nonnull_names[sni];
+            sni = sni + 1;
+        }
+
+        if node.binary_expr_left != null {
+            if op == TokenType.TOKEN_LOGICAL_AND {
+                constraint_extract_from_binary(checker, node.binary_expr_left, 1);
+            } else {
+                constraint_extract_from_binary(checker, node.binary_expr_left, 0);
+            }
+        }
+        if node.binary_expr_right != null {
+            right_type = checker_infer_type(checker, node.binary_expr_right);
+        }
+
+        checker.constraint_count = saved_constraint_count;
+        checker.pointer_nonnull_count = saved_nonnull_count;
+        sci = 0;
+        while sci < saved_constraint_count && sci < MAX_CONSTRAINTS {
+            checker.constraint_var_names[sci] = saved_constraint_names[sci];
+            checker.constraint_ops[sci] = saved_constraint_ops[sci];
+            checker.constraint_values[sci] = saved_constraint_values[sci];
+            sci = sci + 1;
+        }
+        sni = 0;
+        while sni < saved_nonnull_count && sni < MAX_POINTER_NAMES {
+            checker.pointer_nonnull_names[sni] = saved_nonnull_names[sni];
+            sni = sni + 1;
+        }
+
+        if left_type.kind == TypeKind.TYPE_MASK || right_type.kind == TypeKind.TYPE_MASK {
+            checker_report_error(checker, node, "SIMD 第一阶段不支持 @mask 的 &&/||，请使用按位运算符 & 或 |" as *byte);
+            result.kind = TypeKind.TYPE_BOOL;
+            return result;
+        }
+        if left_type.kind != TypeKind.TYPE_BOOL || right_type.kind != TypeKind.TYPE_BOOL {
+            if left_type.kind == TypeKind.TYPE_VOID || right_type.kind == TypeKind.TYPE_VOID {
+                result.kind = TypeKind.TYPE_BOOL;
+                return result;
+            }
+            checker_report_error(checker, node, "逻辑运算符 && || 的操作数必须是 bool 类型" as *byte);
+            result.kind = TypeKind.TYPE_BOOL;
+            return result;
+        }
+        result.kind = TypeKind.TYPE_BOOL;
+        return result;
+    }
+
     var left_type: Type = checker_infer_type(checker, node.binary_expr_left);
     var right_type: Type = checker_infer_type(checker, node.binary_expr_right);
 

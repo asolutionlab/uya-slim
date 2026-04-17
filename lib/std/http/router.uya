@@ -154,6 +154,18 @@ fn pat_literal_eq_path_req(e: &RouteEntry, ps: &SegSpan, req: &Request, qs: &Seg
     return true;
 }
 
+fn route_entry_pattern_char_at(e: &RouteEntry, idx: usize) byte {
+    if e == null {
+        return 0 as byte;
+    }
+    if idx >= MAX_URI_LENGTH as usize {
+        return 0 as byte;
+    }
+    const base: &byte = &e.pattern[0] as &byte;
+    const p: &byte = @ptr_from_usize(@usize_from_ptr(base as &void) + idx) as &byte;
+    return p[0];
+}
+
 fn path_matches_pattern_request_entry(req: &Request, e: &RouteEntry) bool {
     const pl: usize = e.pattern_len as usize;
     if segment_count_req_path(req) != segment_count_pat_entry(e, pl) {
@@ -164,7 +176,7 @@ fn path_matches_pattern_request_entry(req: &Request, e: &RouteEntry) bool {
     while si < n {
         const ps: SegSpan = segment_span_pat_known_entry(e, pl, si);
         const qs: SegSpan = segment_span_req_path(req, si);
-        if ps.end > ps.start && ps.start < @len(e.pattern) && e.pattern[ps.start] == ':' as byte {
+        if ps.end > ps.start && ps.start < MAX_URI_LENGTH as usize && route_entry_pattern_char_at(e, ps.start) == ':' as byte {
             if qs.end <= qs.start {
                 return false;
             }
@@ -250,7 +262,7 @@ fn path_matches_pattern_entry(path: &[byte], e: &RouteEntry) bool {
     while si < n {
         const ps: SegSpan = segment_span_pat_known_entry(e, pl, si);
         const qs: SegSpan = segment_span_at_known(path, si);
-        if ps.end > ps.start && ps.start < @len(e.pattern) && e.pattern[ps.start] == ':' as byte {
+        if ps.end > ps.start && ps.start < MAX_URI_LENGTH as usize && route_entry_pattern_char_at(e, ps.start) == ':' as byte {
             if qs.end <= qs.start {
                 return false;
             }

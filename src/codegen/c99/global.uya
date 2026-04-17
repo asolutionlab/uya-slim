@@ -276,18 +276,31 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
     c99_emit_semi_newline(codegen);
     
     // 添加到全局变量表（可选，用于后续引用）
-    if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {
-        codegen.global_variables[codegen.global_variable_count].name = var_name;
-        codegen.global_variables[codegen.global_variable_count].original_name = orig_name;
-        codegen.global_variables[codegen.global_variable_count].type_c = type_c;
-        codegen.global_variables[codegen.global_variable_count].is_const = is_const;
-        codegen.global_variable_count = codegen.global_variable_count + 1;
+    const global_idx: i32 = codegen.global_variable_count;
+    if global_idx >= 0 && global_idx < C99_MAX_GLOBAL_VARS {
+        codegen.global_variables[global_idx].name = var_name;
+        codegen.global_variables[global_idx].original_name = orig_name;
+        codegen.global_variables[global_idx].type_c = type_c;
+        codegen.global_variables[global_idx].is_const = is_const;
+        codegen.global_variable_count = global_idx + 1;
     }
 }
 
 // 按 Uya 名称匹配全局变量（比较 original_name 或 name）
 fn global_var_name_matches(codegen: &C99CodeGenerator, i: i32, name: &byte) i32 {
-    if codegen == null || i < 0 || i >= codegen.global_variable_count || name == null {
+    if codegen == null {
+        return 0;
+    }
+    if i < 0 {
+        return 0;
+    }
+    if i >= codegen.global_variable_count {
+        return 0;
+    }
+    if i >= C99_MAX_GLOBAL_VARS {
+        return 0;
+    }
+    if name == null {
         return 0;
     }
     var key: &byte = codegen.global_variables[i].original_name;
@@ -295,6 +308,61 @@ fn global_var_name_matches(codegen: &C99CodeGenerator, i: i32, name: &byte) i32 
         key = codegen.global_variables[i].name;
     }
     if key != null && strcmp(key as *byte, name as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_local_var_name_at(codegen: &C99CodeGenerator, idx: i32) &byte {
+    if codegen == null {
+        return null;
+    }
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_MAX_LOCAL_VARS {
+        return null;
+    }
+    return codegen.local_variables[idx].name;
+}
+
+fn c99_local_var_type_c_at(codegen: &C99CodeGenerator, idx: i32) &byte {
+    if codegen == null {
+        return null;
+    }
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_MAX_LOCAL_VARS {
+        return null;
+    }
+    return codegen.local_variables[idx].type_c;
+}
+
+fn c99_local_var_type_node_at(codegen: &C99CodeGenerator, idx: i32) &ASTNode {
+    if codegen == null {
+        return null;
+    }
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_MAX_LOCAL_VARS {
+        return null;
+    }
+    return codegen.local_variables[idx].type_node;
+}
+
+fn c99_push_local_variable(codegen: &C99CodeGenerator, name: &byte, type_c: &byte, type_node: &ASTNode, depth: i32) i32 {
+    if codegen == null || name == null || type_c == null {
+        return 0;
+    }
+    const local_idx: i32 = codegen.local_variable_count;
+    if local_idx >= 0 && local_idx < C99_MAX_LOCAL_VARS {
+        codegen.local_variables[local_idx].name = name;
+        codegen.local_variables[local_idx].type_c = type_c;
+        codegen.local_variables[local_idx].type_node = type_node;
+        codegen.local_variables[local_idx].depth = depth;
+        codegen.local_variable_count = local_idx + 1;
         return 1;
     }
     return 0;
@@ -392,6 +460,12 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     }
     c99_ident_ref_cache_ensure(codegen);
     const slot: i32 = c99_ident_ref_cache_slot(codegen, name);
+    if slot < 0 {
+        return get_safe_c_identifier(codegen, name);
+    }
+    if slot >= C99_IDENT_REF_CACHE_SIZE {
+        return get_safe_c_identifier(codegen, name);
+    }
     if g_c99_ident_ref_keys[slot] != null &&
         strcmp(g_c99_ident_ref_keys[slot] as *byte, name as *byte) == 0 &&
         g_c99_ident_ref_functions[slot] == codegen.current_function_decl &&
@@ -558,12 +632,13 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
         c99_emit_semi_newline(codegen);
 
         // 添加到全局变量表
-        if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {
-            codegen.global_variables[codegen.global_variable_count].name = var_name;
-            codegen.global_variables[codegen.global_variable_count].original_name = name;
-            codegen.global_variables[codegen.global_variable_count].type_c = type_c;
-            codegen.global_variables[codegen.global_variable_count].is_const = is_const;
-            codegen.global_variable_count = codegen.global_variable_count + 1;
+        const global_idx2: i32 = codegen.global_variable_count;
+        if global_idx2 >= 0 && global_idx2 < C99_MAX_GLOBAL_VARS {
+            codegen.global_variables[global_idx2].name = var_name;
+            codegen.global_variables[global_idx2].original_name = name;
+            codegen.global_variables[global_idx2].type_c = type_c;
+            codegen.global_variables[global_idx2].is_const = is_const;
+            codegen.global_variable_count = global_idx2 + 1;
         }
     }
 }

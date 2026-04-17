@@ -17,6 +17,20 @@ extern fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, fi
 extern fn is_struct_in_table(codegen: &C99CodeGenerator, struct_name: &byte) i32;
 extern fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void;
 
+fn c99_write_byte_at(buf: &byte, idx: i32, limit: i32, value: byte) i32 {
+    if buf == null {
+        return 0;
+    }
+    if idx < 0 {
+        return 0;
+    }
+    if idx >= limit {
+        return 0;
+    }
+    buf[idx] = value;
+    return 1;
+}
+
 // 为 @frame 类型在 C 头中生成前向声明 struct uya_async_xxx;
 fn c99_emit_async_frame_forward_for_type(codegen: &C99CodeGenerator, type_node: &ASTNode) void {
     if codegen == null || type_node == null {
@@ -312,6 +326,12 @@ fn c99_type_to_c_cache_lookup(codegen: &C99CodeGenerator, type_node: &ASTNode) &
     }
     c99_type_to_c_cache_ensure(codegen);
     const slot: i32 = c99_type_to_c_cache_slot(codegen, type_node);
+    if slot < 0 {
+        return null;
+    }
+    if slot >= C99_TYPE_TO_C_CACHE_SIZE {
+        return null;
+    }
     if g_c99_type_to_c_cache_nodes[slot] != type_node {
         return null;
     }
@@ -332,6 +352,12 @@ fn c99_type_to_c_cache_store(codegen: &C99CodeGenerator, type_node: &ASTNode, re
     }
     c99_type_to_c_cache_ensure(codegen);
     const slot: i32 = c99_type_to_c_cache_slot(codegen, type_node);
+    if slot < 0 {
+        return;
+    }
+    if slot >= C99_TYPE_TO_C_CACHE_SIZE {
+        return;
+    }
     g_c99_type_to_c_cache_nodes[slot] = type_node;
     g_c99_type_to_c_cache_values[slot] = result;
     g_c99_type_to_c_cache_method_params[slot] = codegen.current_type_params;
@@ -486,12 +512,13 @@ fn c99_register_simd_struct(codegen: &C99CodeGenerator, name: &byte, element_typ
         i = i + 1;
     }
 
-    if codegen.simd_struct_count < C99_MAX_SIMD_STRUCTS {
-        codegen.simd_struct_names[codegen.simd_struct_count] = name;
-        codegen.simd_struct_element_types[codegen.simd_struct_count] = element_type;
-        codegen.simd_struct_lane_counts[codegen.simd_struct_count] = lanes;
-        codegen.simd_struct_is_mask[codegen.simd_struct_count] = is_mask;
-        codegen.simd_struct_count = codegen.simd_struct_count + 1;
+    const simd_idx: i32 = codegen.simd_struct_count;
+    if simd_idx >= 0 && simd_idx < C99_MAX_SIMD_STRUCTS {
+        codegen.simd_struct_names[simd_idx] = name;
+        codegen.simd_struct_element_types[simd_idx] = element_type;
+        codegen.simd_struct_lane_counts[simd_idx] = lanes;
+        codegen.simd_struct_is_mask[simd_idx] = is_mask;
+        codegen.simd_struct_count = simd_idx + 1;
         if is_mask == 0 && element_type != null {
             codegen.simd_vector_struct_reg_count = codegen.simd_vector_struct_reg_count + 1;
             c99_simd_update_max_lanes_for_element(codegen, element_type, lanes);
@@ -1189,11 +1216,12 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 ei = ei + 1;
             }
         }
-        if dup_eu == 0 && codegen.err_union_struct_count < C99_MAX_ERR_UNION_STRUCTS {
-            codegen.err_union_struct_names[codegen.err_union_struct_count] = name_copy;
-            codegen.err_union_payload_types[codegen.err_union_struct_count] = payload_node;
-            codegen.err_union_body_emitted[codegen.err_union_struct_count] = 0;
-            codegen.err_union_struct_count = codegen.err_union_struct_count + 1;
+        const err_union_idx: i32 = codegen.err_union_struct_count;
+        if dup_eu == 0 && err_union_idx >= 0 && err_union_idx < C99_MAX_ERR_UNION_STRUCTS {
+            codegen.err_union_struct_names[err_union_idx] = name_copy;
+            codegen.err_union_payload_types[err_union_idx] = payload_node;
+            codegen.err_union_body_emitted[err_union_idx] = 0;
+            codegen.err_union_struct_count = err_union_idx + 1;
         }
         const len: i32 = strlen(name_copy as *byte) + 9;
         const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
@@ -1360,10 +1388,11 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             }
             ii = ii + 1;
         }
-        if found == 0 && codegen.slice_struct_count < C99_MAX_SLICE_STRUCTS {
-            codegen.slice_struct_names[codegen.slice_struct_count] = safe;
-            codegen.slice_struct_element_types[codegen.slice_struct_count] = element_type;
-            codegen.slice_struct_count = codegen.slice_struct_count + 1;
+        const slice_idx: i32 = codegen.slice_struct_count;
+        if found == 0 && slice_idx >= 0 && slice_idx < C99_MAX_SLICE_STRUCTS {
+            codegen.slice_struct_names[slice_idx] = safe;
+            codegen.slice_struct_element_types[slice_idx] = element_type;
+            codegen.slice_struct_count = slice_idx + 1;
             add_struct_definition(codegen, safe);
         }
         const len2: i32 = strlen(safe as *byte) + 9;
@@ -6910,7 +6939,11 @@ fn c99_array_index_result_type_c(codegen: &C99CodeGenerator, array_type_c: &byte
     if suffix_len > 0 {
         memcpy((&result[prefix_len]) as *void, suffix as *void, suffix_len as usize);
     }
-    result[prefix_len + suffix_len] = 0 as byte;
+    const result_end_idx: i32 = prefix_len + suffix_len;
+    if result_end_idx < 0 || result_end_idx >= result_len {
+        return result;
+    }
+    _ = c99_write_byte_at(result, result_end_idx, result_len, 0 as byte);
     return result;
 }
 
@@ -7384,10 +7417,19 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
         
         // 查找变量类型
         var var_type_c: &byte = null;
-        var i: i32 = codegen.local_variable_count - 1;
+        var local_count: i32 = codegen.local_variable_count;
+        if local_count > C99_MAX_LOCAL_VARS {
+            local_count = C99_MAX_LOCAL_VARS;
+        }
+        var i: i32 = local_count - 1;
         while i >= 0 {
-            if codegen.local_variables[i].name != null && strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
-                var_type_c = codegen.local_variables[i].type_c;
+            if i >= C99_MAX_LOCAL_VARS {
+                i = i - 1;
+                continue;
+            }
+            const local_name: &byte = c99_local_var_name_at(codegen, i);
+            if local_name != null && strcmp(local_name as *byte, var_name as *byte) == 0 {
+                var_type_c = c99_local_var_type_c_at(codegen, i);
                 break;
             }
             i = i - 1;
@@ -7472,10 +7514,19 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
             
             // 查找变量类型
             var var_type_c2: &byte = null;
-            var i2: i32 = codegen.local_variable_count - 1;
+            var local_count2: i32 = codegen.local_variable_count;
+            if local_count2 > C99_MAX_LOCAL_VARS {
+                local_count2 = C99_MAX_LOCAL_VARS;
+            }
+            var i2: i32 = local_count2 - 1;
             while i2 >= 0 {
-                if codegen.local_variables[i2].name != null && strcmp(codegen.local_variables[i2].name as *byte, var_name2 as *byte) == 0 {
-                    var_type_c2 = codegen.local_variables[i2].type_c;
+                if i2 >= C99_MAX_LOCAL_VARS {
+                    i2 = i2 - 1;
+                    continue;
+                }
+                const local_name2: &byte = c99_local_var_name_at(codegen, i2);
+                if local_name2 != null && strcmp(local_name2 as *byte, var_name2 as *byte) == 0 {
+                    var_type_c2 = c99_local_var_type_c_at(codegen, i2);
                     break;
                 }
                 i2 = i2 - 1;
@@ -7632,6 +7683,13 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     if use_ident_cache != 0 {
         c99_identifier_type_cache_ensure(codegen);
         slot = c99_identifier_type_cache_slot(codegen, name);
+        if slot < 0 {
+            use_ident_cache = 0;
+        } else if slot >= C99_IDENTIFIER_TYPE_CACHE_SIZE {
+            use_ident_cache = 0;
+        }
+    }
+    if use_ident_cache != 0 {
         if g_c99_identifier_type_keys[slot] != null &&
             strcmp(g_c99_identifier_type_keys[slot] as *byte, name as *byte) == 0 &&
             g_c99_identifier_type_functions[slot] == codegen.current_function_decl &&
@@ -7643,18 +7701,28 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
             return g_c99_identifier_type_values[slot];
         }
     }
-    var i: i32 = codegen.local_variable_count - 1;
+    var local_count3: i32 = codegen.local_variable_count;
+    if local_count3 > C99_MAX_LOCAL_VARS {
+        local_count3 = C99_MAX_LOCAL_VARS;
+    }
+    var i: i32 = local_count3 - 1;
     while i >= 0 {
-        if strcmp(codegen.local_variables[i].name as *byte, name as *byte) == 0 {
-            if use_ident_cache != 0 && codegen.local_variables[i].type_c != null {
+        if i >= C99_MAX_LOCAL_VARS {
+            i = i - 1;
+            continue;
+        }
+        const local_name3: &byte = c99_local_var_name_at(codegen, i);
+        const local_type_c3: &byte = c99_local_var_type_c_at(codegen, i);
+        if local_name3 != null && strcmp(local_name3 as *byte, name as *byte) == 0 {
+            if use_ident_cache != 0 && local_type_c3 != null {
                 g_c99_identifier_type_keys[slot] = name;
-                g_c99_identifier_type_values[slot] = codegen.local_variables[i].type_c;
+                g_c99_identifier_type_values[slot] = local_type_c3;
                 g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
                 g_c99_identifier_type_local_counts[slot] = codegen.local_variable_count;
                 g_c99_identifier_type_global_counts[slot] = codegen.global_variable_count;
                 g_c99_identifier_type_method_structs[slot] = codegen.current_method_struct_name;
             }
-            return codegen.local_variables[i].type_c;
+            return local_type_c3;
         }
         i = i - 1;
     }
@@ -7674,18 +7742,28 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     }
     const safe_name: &byte = get_safe_c_identifier(codegen, name);
     if safe_name != null && strcmp(safe_name as *byte, name as *byte) != 0 {
-        i = codegen.local_variable_count - 1;
+        local_count3 = codegen.local_variable_count;
+        if local_count3 > C99_MAX_LOCAL_VARS {
+            local_count3 = C99_MAX_LOCAL_VARS;
+        }
+        i = local_count3 - 1;
         while i >= 0 {
-            if strcmp(codegen.local_variables[i].name as *byte, safe_name as *byte) == 0 {
-                if use_ident_cache != 0 && codegen.local_variables[i].type_c != null {
+            if i >= C99_MAX_LOCAL_VARS {
+                i = i - 1;
+                continue;
+            }
+            const local_safe_name: &byte = c99_local_var_name_at(codegen, i);
+            const local_safe_type_c: &byte = c99_local_var_type_c_at(codegen, i);
+            if local_safe_name != null && strcmp(local_safe_name as *byte, safe_name as *byte) == 0 {
+                if use_ident_cache != 0 && local_safe_type_c != null {
                     g_c99_identifier_type_keys[slot] = name;
-                    g_c99_identifier_type_values[slot] = codegen.local_variables[i].type_c;
+                    g_c99_identifier_type_values[slot] = local_safe_type_c;
                     g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
                     g_c99_identifier_type_local_counts[slot] = codegen.local_variable_count;
                     g_c99_identifier_type_global_counts[slot] = codegen.global_variable_count;
                     g_c99_identifier_type_method_structs[slot] = codegen.current_method_struct_name;
                 }
-                return codegen.local_variables[i].type_c;
+                return local_safe_type_c;
             }
             i = i - 1;
         }
@@ -7842,9 +7920,12 @@ fn gen_array_wrapper_struct(codegen: &C99CodeGenerator, array_type: &ASTNode, st
     
     // 添加到结构体定义表（避免重复生成）
     if codegen.struct_definition_count < C99_MAX_STRUCT_DEFINITIONS {
-        codegen.struct_definitions[codegen.struct_definition_count].name = struct_name;
-        codegen.struct_definitions[codegen.struct_definition_count].defined = 0;
-        codegen.struct_definition_count = codegen.struct_definition_count + 1;
+        const struct_idx3: i32 = codegen.struct_definition_count;
+        if struct_idx3 >= 0 && struct_idx3 < @len(codegen.struct_definitions) {
+            codegen.struct_definitions[struct_idx3].name = struct_name;
+            codegen.struct_definitions[struct_idx3].defined = 0;
+            codegen.struct_definition_count = struct_idx3 + 1;
+        }
     }
     
     // 生成结构体定义
@@ -7944,10 +8025,19 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
         }
         
         // 检查局部变量
-        var i: i32 = codegen.local_variable_count - 1;
+        var local_count4: i32 = codegen.local_variable_count;
+        if local_count4 > C99_MAX_LOCAL_VARS {
+            local_count4 = C99_MAX_LOCAL_VARS;
+        }
+        var i: i32 = local_count4 - 1;
         while i >= 0 {
-            if strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
-                const type_c: &byte = codegen.local_variables[i].type_c;
+            if i >= C99_MAX_LOCAL_VARS {
+                i = i - 1;
+                continue;
+            }
+            const local_name4: &byte = c99_local_var_name_at(codegen, i);
+            if local_name4 != null && strcmp(local_name4 as *byte, var_name as *byte) == 0 {
+                const type_c: &byte = c99_local_var_type_c_at(codegen, i);
                 if type_c == null {
                     return null;
                 }
@@ -8159,10 +8249,19 @@ fn is_array_access_pointer_type(codegen: &C99CodeGenerator, array_access: &ASTNo
         
         // 查找变量类型
         var array_type_c: &byte = null;
-        var i: i32 = codegen.local_variable_count - 1;
+        var local_count5: i32 = codegen.local_variable_count;
+        if local_count5 > C99_MAX_LOCAL_VARS {
+            local_count5 = C99_MAX_LOCAL_VARS;
+        }
+        var i: i32 = local_count5 - 1;
         while i >= 0 {
-            if codegen.local_variables[i].name != null && strcmp(codegen.local_variables[i].name as *byte, array_name as *byte) == 0 {
-                array_type_c = codegen.local_variables[i].type_c;
+            if i >= C99_MAX_LOCAL_VARS {
+                i = i - 1;
+                continue;
+            }
+            const local_name5: &byte = c99_local_var_name_at(codegen, i);
+            if local_name5 != null && strcmp(local_name5 as *byte, array_name as *byte) == 0 {
+                array_type_c = c99_local_var_type_c_at(codegen, i);
                 break;
             }
             i = i - 1;
@@ -8229,10 +8328,19 @@ fn is_array_access_pointer_type(codegen: &C99CodeGenerator, array_access: &ASTNo
             }
             
             // 查找变量类型
-            var i: i32 = codegen.local_variable_count - 1;
+            var local_count6: i32 = codegen.local_variable_count;
+            if local_count6 > C99_MAX_LOCAL_VARS {
+                local_count6 = C99_MAX_LOCAL_VARS;
+            }
+            var i: i32 = local_count6 - 1;
             while i >= 0 {
-                if codegen.local_variables[i].name != null && strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
-                    var_type_c = codegen.local_variables[i].type_c;
+                if i >= C99_MAX_LOCAL_VARS {
+                    i = i - 1;
+                    continue;
+                }
+                const local_name6: &byte = c99_local_var_name_at(codegen, i);
+                if local_name6 != null && strcmp(local_name6 as *byte, var_name as *byte) == 0 {
+                    var_type_c = c99_local_var_type_c_at(codegen, i);
                     break;
                 }
                 i = i - 1;

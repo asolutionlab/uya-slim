@@ -20,6 +20,19 @@ export struct CapabilityRegistry {
     count: i32,
 }
 
+export fn capability_registry_entry_ptr(registry: &CapabilityRegistry, index: i32) &CapabilityRegistryEntry {
+    if registry == null || index < 0 {
+        return null;
+    }
+    const entry_idx: usize = index as usize;
+    if entry_idx >= CAPABILITY_MAX_REGISTRY_ENTRIES as usize {
+        return null;
+    }
+    const base: &CapabilityRegistryEntry = &registry.entries[0];
+    const off: usize = entry_idx * @size_of(CapabilityRegistryEntry);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &CapabilityRegistryEntry;
+}
+
 export fn capability_registry_init() CapabilityRegistry {
     return CapabilityRegistry{};
 }
@@ -31,9 +44,9 @@ export fn capability_registry_add(registry: &CapabilityRegistry, manifest: Capab
     }
 
     const index: i32 = registry.count;
-    const entry_idx: usize = index as usize;
-    if entry_idx < @len(registry.entries) {
-        registry.entries[entry_idx] = CapabilityRegistryEntry{
+    const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(registry, index);
+    if entry != null {
+        *entry = CapabilityRegistryEntry{
             in_use: true,
             state: CapabilityState.Installed,
             manifest: manifest,
@@ -50,10 +63,10 @@ export fn capability_registry_disable(registry: &CapabilityRegistry, index: i32)
     if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityRegistryInvalidIndex;
     }
-    const entry_idx: usize = index as usize;
-    if entry_idx < @len(registry.entries) {
-        registry.entries[entry_idx].state = CapabilityState.Disabled;
-        registry.entries[entry_idx].last_status = CapabilityStatusCode.Disabled;
+    const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(registry, index);
+    if entry != null {
+        entry.state = CapabilityState.Disabled;
+        entry.last_status = CapabilityStatusCode.Disabled;
         return;
     }
     return error.CapabilityRegistryInvalidIndex;

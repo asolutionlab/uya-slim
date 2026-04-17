@@ -42,6 +42,15 @@ const MAX_ASYNC_FRAME_METAS: i32 = 512;
 
 // ===== 查询 helper（声明在 async_frame_meta.uya，实现在此文件中内联） =====
 
+fn checker_set_async_frame_meta(checker: &TypeChecker, idx: i32, meta: &AsyncFrameMeta) void {
+    if checker == null || meta == null {
+        return;
+    }
+    if idx >= 0 && idx < MAX_ASYNC_FRAME_METAS {
+        checker.async_frame_metas[idx] = *meta;
+    }
+}
+
 fn checker_register_async_frame_meta(checker: &TypeChecker, meta: &AsyncFrameMeta) i32 {
     if checker == null || meta == null {
         return -1;
@@ -50,7 +59,13 @@ fn checker_register_async_frame_meta(checker: &TypeChecker, meta: &AsyncFrameMet
         return -1;
     }
     const idx: i32 = checker.async_frame_meta_count;
-    checker.async_frame_metas[idx] = *meta;
+    if idx < 0 {
+        return -1;
+    }
+    if idx >= @len(checker.async_frame_metas) {
+        return -1;
+    }
+    checker_set_async_frame_meta(checker, idx, meta);
     checker.async_frame_meta_count = checker.async_frame_meta_count + 1;
     return idx;
 }

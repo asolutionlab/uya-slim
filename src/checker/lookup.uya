@@ -78,23 +78,47 @@ fn ensure_program_lookup_caches(program_node: &ASTNode) void {
             continue;
         }
         if decl.type == ASTNodeType.AST_ENUM_DECL && decl.enum_decl_name != null {
-            g_lookup_enum_decl_cache[lookup_decl_cache_slot(decl.enum_decl_name)] = decl;
+            const enum_slot: i32 = lookup_decl_cache_slot(decl.enum_decl_name);
+            if enum_slot >= 0 && enum_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                g_lookup_enum_decl_cache[enum_slot] = decl;
+            }
         } else if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
-            g_lookup_struct_decl_cache[lookup_decl_cache_slot(decl.struct_decl_name)] = decl;
+            const struct_slot: i32 = lookup_decl_cache_slot(decl.struct_decl_name);
+            if struct_slot >= 0 && struct_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                g_lookup_struct_decl_cache[struct_slot] = decl;
+            }
         } else if decl.type == ASTNodeType.AST_TYPE_ALIAS && decl.type_alias_name != null {
-            g_lookup_type_alias_cache[lookup_decl_cache_slot(decl.type_alias_name)] = decl;
+            const type_alias_slot: i32 = lookup_decl_cache_slot(decl.type_alias_name);
+            if type_alias_slot >= 0 && type_alias_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                g_lookup_type_alias_cache[type_alias_slot] = decl;
+            }
         } else if decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_name != null {
-            g_lookup_union_decl_cache[lookup_decl_cache_slot(decl.union_decl_name)] = decl;
+            const union_slot: i32 = lookup_decl_cache_slot(decl.union_decl_name);
+            if union_slot >= 0 && union_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                g_lookup_union_decl_cache[union_slot] = decl;
+            }
         } else if decl.type == ASTNodeType.AST_INTERFACE_DECL && decl.interface_decl_name != null {
-            g_lookup_interface_decl_cache[lookup_decl_cache_slot(decl.interface_decl_name)] = decl;
+            const interface_slot: i32 = lookup_decl_cache_slot(decl.interface_decl_name);
+            if interface_slot >= 0 && interface_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                g_lookup_interface_decl_cache[interface_slot] = decl;
+            }
         } else if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
-            g_lookup_fn_decl_cache[lookup_decl_cache_slot(decl.fn_decl_name)] = decl;
+            const fn_slot: i32 = lookup_decl_cache_slot(decl.fn_decl_name);
+            if fn_slot >= 0 && fn_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                g_lookup_fn_decl_cache[fn_slot] = decl;
+            }
         } else if decl.type == ASTNodeType.AST_METHOD_BLOCK {
             if decl.method_block_struct_name != null {
-                g_lookup_method_block_struct_cache[lookup_decl_cache_slot(decl.method_block_struct_name)] = decl;
+                const method_block_struct_slot: i32 = lookup_decl_cache_slot(decl.method_block_struct_name);
+                if method_block_struct_slot >= 0 && method_block_struct_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                    g_lookup_method_block_struct_cache[method_block_struct_slot] = decl;
+                }
             }
             if decl.method_block_union_name != null {
-                g_lookup_method_block_union_cache[lookup_decl_cache_slot(decl.method_block_union_name)] = decl;
+                const method_block_union_slot: i32 = lookup_decl_cache_slot(decl.method_block_union_name);
+                if method_block_union_slot >= 0 && method_block_union_slot < CHECKER_LOOKUP_CACHE_SIZE {
+                    g_lookup_method_block_union_cache[method_block_union_slot] = decl;
+                }
             }
         }
         i = i + 1;
@@ -112,7 +136,11 @@ fn find_enum_decl_from_program(program_node: &ASTNode, enum_name: &byte) &ASTNod
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_enum_decl_cache[lookup_decl_cache_slot(enum_name)];
+    var cached: &ASTNode = null;
+    const enum_slot: i32 = lookup_decl_cache_slot(enum_name);
+    if enum_slot >= 0 && enum_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_enum_decl_cache[enum_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_ENUM_DECL &&
         cached.enum_decl_name != null && str_equals(cached.enum_decl_name, enum_name) != 0 {
         return cached;
@@ -163,7 +191,11 @@ export fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &by
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_struct_decl_cache[lookup_decl_cache_slot(struct_name)];
+    var cached: &ASTNode = null;
+    const struct_slot: i32 = lookup_decl_cache_slot(struct_name);
+    if struct_slot >= 0 && struct_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_struct_decl_cache[struct_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_STRUCT_DECL &&
         lookup_name_matches_exact_or_generic_base(cached.struct_decl_name, struct_name) != 0 {
         return cached;
@@ -189,7 +221,11 @@ fn find_type_alias_from_program(program_node: &ASTNode, alias_name: &byte) &ASTN
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_type_alias_cache[lookup_decl_cache_slot(alias_name)];
+    var cached: &ASTNode = null;
+    const type_alias_slot: i32 = lookup_decl_cache_slot(alias_name);
+    if type_alias_slot >= 0 && type_alias_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_type_alias_cache[type_alias_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_TYPE_ALIAS &&
         cached.type_alias_name != null && str_equals(cached.type_alias_name, alias_name) != 0 {
         return cached;
@@ -215,7 +251,11 @@ fn find_union_decl_from_program(program_node: &ASTNode, union_name: &byte) &ASTN
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_union_decl_cache[lookup_decl_cache_slot(union_name)];
+    var cached: &ASTNode = null;
+    const union_slot: i32 = lookup_decl_cache_slot(union_name);
+    if union_slot >= 0 && union_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_union_decl_cache[union_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_UNION_DECL &&
         cached.union_decl_name != null && str_equals(cached.union_decl_name, union_name) != 0 {
         return cached;
@@ -241,7 +281,11 @@ fn find_interface_decl_from_program(program_node: &ASTNode, interface_name: &byt
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_interface_decl_cache[lookup_decl_cache_slot(interface_name)];
+    var cached: &ASTNode = null;
+    const interface_slot: i32 = lookup_decl_cache_slot(interface_name);
+    if interface_slot >= 0 && interface_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_interface_decl_cache[interface_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_INTERFACE_DECL &&
         lookup_name_matches_exact_or_generic_base(cached.interface_decl_name, interface_name) != 0 {
         return cached;
@@ -346,7 +390,11 @@ fn find_fn_decl_from_program(program_node: &ASTNode, fn_name: &byte) &ASTNode {
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_fn_decl_cache[lookup_decl_cache_slot(fn_name)];
+    var cached: &ASTNode = null;
+    const fn_slot: i32 = lookup_decl_cache_slot(fn_name);
+    if fn_slot >= 0 && fn_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_fn_decl_cache[fn_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_FN_DECL &&
         cached.fn_decl_name != null && str_equals(cached.fn_decl_name, fn_name) != 0 {
         return cached;
@@ -372,7 +420,11 @@ fn find_method_block_for_struct(program_node: &ASTNode, struct_name: &byte) &AST
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_method_block_struct_cache[lookup_decl_cache_slot(struct_name)];
+    var cached: &ASTNode = null;
+    const method_block_struct_slot: i32 = lookup_decl_cache_slot(struct_name);
+    if method_block_struct_slot >= 0 && method_block_struct_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_method_block_struct_cache[method_block_struct_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_METHOD_BLOCK &&
         cached.method_block_struct_name != null &&
         str_equals(cached.method_block_struct_name, struct_name) != 0 {
@@ -431,7 +483,11 @@ fn find_method_block_for_union(program_node: &ASTNode, union_name: &byte) &ASTNo
         return null;
     }
     ensure_program_lookup_caches(program_node);
-    const cached: &ASTNode = g_lookup_method_block_union_cache[lookup_decl_cache_slot(union_name)];
+    var cached: &ASTNode = null;
+    const method_block_union_slot: i32 = lookup_decl_cache_slot(union_name);
+    if method_block_union_slot >= 0 && method_block_union_slot < CHECKER_LOOKUP_CACHE_SIZE {
+        cached = g_lookup_method_block_union_cache[method_block_union_slot];
+    }
     if cached != null && cached.type == ASTNodeType.AST_METHOD_BLOCK &&
         cached.method_block_union_name != null &&
         str_equals(cached.method_block_union_name, union_name) != 0 {

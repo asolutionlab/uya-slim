@@ -147,12 +147,36 @@ fn peek_char(lexer: &Lexer, offset: usize) byte {
 }
 
 // 辅助：前进一个字符，更新位置信息
+fn lexer_buffer_at(lexer: &Lexer, idx: usize) byte {
+    const ptr: &byte = lexer_buffer_ptr_at(lexer, idx);
+    if ptr != null {
+        return ptr[0];
+    }
+    return 0 as byte;
+}
+
+fn lexer_buffer_ptr_at(lexer: &Lexer, idx: usize) &byte {
+    if lexer == null {
+        return null;
+    }
+    if idx < lexer.buffer_size {
+        if idx < LEXER_BUFFER_SIZE as usize {
+            return &lexer.buffer[idx] as &byte;
+        }
+    }
+    return null;
+}
+
 fn advance_char(lexer: &Lexer) byte {
-    if lexer.position >= lexer.buffer_size {
+    const pos: usize = lexer.position;
+    if pos >= lexer.buffer_size {
         return 0 as byte;
     }
-    const c: byte = lexer.buffer[lexer.position];
-    lexer.position = lexer.position + 1;
+    if pos >= @len(lexer.buffer) {
+        return 0 as byte;
+    }
+    const c: byte = lexer_buffer_at(lexer, pos);
+    lexer.position = pos + 1;
     if c == 10 {
         lexer.line = lexer.line + 1;
         lexer.column = 1;
@@ -360,7 +384,14 @@ fn read_identifier_or_keyword(lexer: &Lexer, arena: &CompilerArena) &Token {
     if n <= 0 || n > 256 {
         return null;
     }
-    const start_ptr: &byte = &lexer.buffer[start_index] as &byte;
+    const token_start_idx: usize = start_index;
+    if token_start_idx >= lexer.buffer_size {
+        return null;
+    }
+    if token_start_idx >= @len(lexer.buffer) {
+        return null;
+    }
+    const start_ptr: &byte = lexer_buffer_ptr_at(lexer, token_start_idx);
     const value: &byte = arena_copy_str(arena, start_ptr, n);
     if value == null {
         return null;
@@ -539,7 +570,7 @@ fn read_number(lexer: &Lexer, arena: &CompilerArena) &Token {
     
     // 保存完整字面量（含 0x/0o/0b 前缀以及类型后缀），供解析阶段使用
     const n: usize = lexer.position - start_index;
-    const start_ptr: &byte = &lexer.buffer[start_index] as &byte;
+    const start_ptr: &byte = lexer_buffer_ptr_at(lexer, start_index);
     const value: &byte = arena_copy_str(arena, start_ptr, n);
     if value == null {
         return null;
@@ -1262,7 +1293,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token {
             if n <= 0 || n > 256 {
                 return null;
             }
-            const start_ptr: &byte = &lexer.buffer[start_index] as &byte;
+            const start_ptr: &byte = lexer_buffer_ptr_at(lexer, start_index);
             const value: &byte = arena_copy_str(arena, start_ptr, n);
             if value == null {
                 return null;

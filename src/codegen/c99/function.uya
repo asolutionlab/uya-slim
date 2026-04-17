@@ -1155,19 +1155,13 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 
                 // 将参数名注册为局部数组（而不是参数）
                 if param_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                    codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;  // 使用原始名称
-                    codegen.local_variables[codegen.local_variable_count].type_c = array_type_c;
-                    codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
-                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                    c99_push_local_variable(codegen, param.var_decl_name, array_type_c, param.var_decl_type, codegen.current_depth);
                 }
             } else {
                 // 非数组参数：正常添加到局部变量表（slice 形参 C 侧为按值 struct，类型串无 *）
                 const param_type_c: &byte = c99_type_to_c(codegen, param_type);
                 if param_name != null && param_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                    codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
-                    codegen.local_variables[codegen.local_variable_count].type_c = param_type_c;
-                    codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
-                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                    c99_push_local_variable(codegen, param.var_decl_name, param_type_c, param.var_decl_type, codegen.current_depth);
                 }
             }
         }
@@ -1443,16 +1437,20 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
         const init: &ASTNode = node.var_decl_init;
         if init.type == ASTNodeType.AST_TRY_EXPR && init.try_expr_operand != null {
             const op: &ASTNode = init.try_expr_operand;
-            if op.type == ASTNodeType.AST_AWAIT_EXPR && op.await_expr_operand != null && codegen.async_collect_count < max_count {
-                codegen.async_collect_operands[codegen.async_collect_count] = op.await_expr_operand;
-                codegen.async_collect_names[codegen.async_collect_count] = node.var_decl_name;
-                codegen.async_collect_types[codegen.async_collect_count] = node.var_decl_type;
-                codegen.async_collect_blocks[codegen.async_collect_count] = parent_block;
-                codegen.async_collect_stmt_indices[codegen.async_collect_count] = parent_stmt_index;
-                codegen.async_collect_enclosing_while[codegen.async_collect_count] = enclosing_while;
-                codegen.async_collect_enclosing_for[codegen.async_collect_count] = enclosing_for;
-                codegen.async_collect_count = codegen.async_collect_count + 1;
-                return;
+            if op.type == ASTNodeType.AST_AWAIT_EXPR && op.await_expr_operand != null &&
+                codegen.async_collect_count < max_count && codegen.async_collect_count < C99_ASYNC_MAX_AWAITS {
+                const collect_idx: i32 = codegen.async_collect_count;
+                if collect_idx >= 0 && collect_idx < @len(codegen.async_collect_operands) {
+                    codegen.async_collect_operands[collect_idx] = op.await_expr_operand;
+                    codegen.async_collect_names[collect_idx] = node.var_decl_name;
+                    codegen.async_collect_types[collect_idx] = node.var_decl_type;
+                    codegen.async_collect_blocks[collect_idx] = parent_block;
+                    codegen.async_collect_stmt_indices[collect_idx] = parent_stmt_index;
+                    codegen.async_collect_enclosing_while[collect_idx] = enclosing_while;
+                    codegen.async_collect_enclosing_for[collect_idx] = enclosing_for;
+                    codegen.async_collect_count = collect_idx + 1;
+                    return;
+                }
             }
         }
     } else if node.type == ASTNodeType.AST_RETURN_STMT {
@@ -1460,19 +1458,23 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
         const ret_expr: &ASTNode = node.return_stmt_expr;
         if ret_expr != null && ret_expr.type == ASTNodeType.AST_TRY_EXPR && ret_expr.try_expr_operand != null {
             const ret_op: &ASTNode = ret_expr.try_expr_operand;
-            if ret_op.type == ASTNodeType.AST_AWAIT_EXPR && ret_op.await_expr_operand != null && codegen.async_collect_count < max_count {
+            if ret_op.type == ASTNodeType.AST_AWAIT_EXPR && ret_op.await_expr_operand != null &&
+                codegen.async_collect_count < max_count && codegen.async_collect_count < C99_ASYNC_MAX_AWAITS {
                 // 收集为 await 点，bind_name = null 表示 "return await"
-                codegen.async_collect_operands[codegen.async_collect_count] = ret_op.await_expr_operand;
-                codegen.async_collect_names[codegen.async_collect_count] = null;
-                codegen.async_collect_types[codegen.async_collect_count] = null;
-                codegen.async_collect_blocks[codegen.async_collect_count] = parent_block;
-                codegen.async_collect_stmt_indices[codegen.async_collect_count] = parent_stmt_index;
-                codegen.async_collect_enclosing_while[codegen.async_collect_count] = enclosing_while;
-                codegen.async_collect_enclosing_for[codegen.async_collect_count] = enclosing_for;
-                codegen.async_collect_count = codegen.async_collect_count + 1;
-                // ret_expr 设为 null，表示返回值由最后一个 await 的 Ready 值提供
-                codegen.async_collect_ret_expr = null;
-                return;
+                const collect_idx2: i32 = codegen.async_collect_count;
+                if collect_idx2 >= 0 && collect_idx2 < @len(codegen.async_collect_operands) {
+                    codegen.async_collect_operands[collect_idx2] = ret_op.await_expr_operand;
+                    codegen.async_collect_names[collect_idx2] = null;
+                    codegen.async_collect_types[collect_idx2] = null;
+                    codegen.async_collect_blocks[collect_idx2] = parent_block;
+                    codegen.async_collect_stmt_indices[collect_idx2] = parent_stmt_index;
+                    codegen.async_collect_enclosing_while[collect_idx2] = enclosing_while;
+                    codegen.async_collect_enclosing_for[collect_idx2] = enclosing_for;
+                    codegen.async_collect_count = collect_idx2 + 1;
+                    // ret_expr 设为 null，表示返回值由最后一个 await 的 Ready 值提供
+                    codegen.async_collect_ret_expr = null;
+                    return;
+                }
             }
         }
         codegen.async_collect_ret_expr = ret_expr;
@@ -1481,12 +1483,18 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
     // 复合表达式里的 try @await：把整个语句/表达式当成 await 点收集，并在 resume 时重放该语句。
     if node.type != ASTNodeType.AST_BLOCK && node.type != ASTNodeType.AST_IF_STMT &&
         node.type != ASTNodeType.AST_WHILE_STMT && node.type != ASTNodeType.AST_FOR_STMT &&
-        codegen.async_collect_count < max_count {
+        codegen.async_collect_count < max_count && codegen.async_collect_count < C99_ASYNC_MAX_AWAITS {
         var nested_try: [&ASTNode: 1] = [null];
         if c99_find_first_try_await_expr(node, &nested_try[0]) != 0 && nested_try[0] != null &&
             nested_try[0].try_expr_operand != null && nested_try[0].try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
             nested_try[0].try_expr_operand.await_expr_operand != null {
             const idx2: i32 = codegen.async_collect_count;
+            if idx2 < 0 {
+                return;
+            }
+            if idx2 >= C99_ASYNC_MAX_AWAITS {
+                return;
+            }
             var name_buf: [byte: 64] = [];
             snprintf(&name_buf[0] as *byte, 64, "__uya_expr_tmp_%d" as *byte, idx2);
             const bind_name2: &byte = c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
@@ -1816,7 +1824,10 @@ fn c99_emit_async_arm_await_index(
     concrete_future_safe: &byte,
     state_slot_iface_c: &byte
 ) void {
-    if j < 0 || j >= C99_ASYNC_MAX_AWAITS {
+    if j < 0 {
+        return;
+    }
+    if j >= C99_ASYNC_MAX_AWAITS {
         return;
     }
     // caller-owned stack 内联：直接初始化 child frame 字段，不调用 wrapper
@@ -2495,15 +2506,124 @@ fn c99_async_root_stmt_index_of_first_await(body: &ASTNode, await_blocks: [&ASTN
 }
 
 /// 若最后一个 await 与 return 同在函数体顶层，去掉「该 await 声明行之后」提升的 _uya_loc_*（由最后一态 gen_stmt 处理，避免与 s->_uya_loc_x 重名）。
+fn c99_async_operand_at(await_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS], idx: i32) &ASTNode {
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_ASYNC_MAX_AWAITS {
+        return null;
+    }
+    return await_operands[idx];
+}
+
+fn c99_async_bind_name_at(await_bind_names: [&byte: C99_ASYNC_MAX_AWAITS], idx: i32) &byte {
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_ASYNC_MAX_AWAITS {
+        return null;
+    }
+    return await_bind_names[idx];
+}
+
+fn c99_async_bind_type_at(await_bind_types: [&ASTNode: C99_ASYNC_MAX_AWAITS], idx: i32) &ASTNode {
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_ASYNC_MAX_AWAITS {
+        return null;
+    }
+    return await_bind_types[idx];
+}
+
+fn c99_async_await_block_at(await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], idx: i32) &ASTNode {
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_ASYNC_MAX_AWAITS {
+        return null;
+    }
+    return await_blocks[idx];
+}
+
+fn c99_async_await_stmt_index_at(await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], idx: i32) i32 {
+    if idx < 0 {
+        return -1;
+    }
+    if idx >= C99_ASYNC_MAX_AWAITS {
+        return -1;
+    }
+    return await_stmt_indices[idx];
+}
+
+fn c99_async_local_init_set(codegen: &C99CodeGenerator, idx: i32, init_expr: &ASTNode) void {
+    if codegen == null {
+        return;
+    }
+    if idx < 0 {
+        return;
+    }
+    if idx >= 32 {
+        return;
+    }
+    codegen.async_local_inits[idx] = init_expr;
+}
+
+fn c99_async_local_name_set(codegen: &C99CodeGenerator, idx: i32, name: &byte) void {
+    if codegen == null {
+        return;
+    }
+    if idx < 0 {
+        return;
+    }
+    if idx >= 32 {
+        return;
+    }
+    codegen.async_local_names[idx] = name;
+}
+
+fn c99_async_local_type_set(codegen: &C99CodeGenerator, idx: i32, typ: &ASTNode) void {
+    if codegen == null {
+        return;
+    }
+    if idx < 0 {
+        return;
+    }
+    if idx >= 32 {
+        return;
+    }
+    codegen.async_local_types[idx] = typ;
+}
+
+fn c99_async_local_root_stmt_set(codegen: &C99CodeGenerator, idx: i32, root_si: i32) void {
+    if codegen == null {
+        return;
+    }
+    if idx < 0 {
+        return;
+    }
+    if idx >= 32 {
+        return;
+    }
+    codegen.async_local_root_stmt[idx] = root_si;
+}
+
 fn c99_async_trim_locals_after_last_await_root(codegen: &C99CodeGenerator, body: &ASTNode, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) void {
     if codegen == null || body == null || await_count <= 0 {
         return;
     }
-    const lb: &ASTNode = await_blocks[await_count - 1];
+    const last_await_idx: i32 = await_count - 1;
+    if last_await_idx < 0 {
+        return;
+    }
+    if last_await_idx >= C99_ASYNC_MAX_AWAITS {
+        return;
+    }
+    const lb: &ASTNode = await_blocks[last_await_idx];
     if lb == null || @usize_from_ptr(lb as &void) != @usize_from_ptr(body as &void) {
         return;
     }
-    const last_ix: i32 = await_stmt_indices[await_count - 1];
+    const last_ix: i32 = await_stmt_indices[last_await_idx];
     if last_ix < 0 {
         return;
     }
@@ -2577,11 +2697,13 @@ fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTN
     c99_async_try_append_hoist_local(codegen, node.var_decl_name, node.var_decl_type, root_si);
     if codegen.async_local_count > before_count {
         const alc1: i32 = codegen.async_local_count - 1;
-        if alc1 >= 0 && alc1 < @len(codegen.async_local_inits) {
-            codegen.async_local_inits[alc1] = node.var_decl_init;
-            if node.var_decl_init != null && c99_stmt_tree_has_await(node.var_decl_init) != 0 {
-                // 该初始化本身含 await：state 0 不做前置初始化，等语句在 resume 后重放。
-                codegen.async_local_inits[alc1] = null;
+        if alc1 >= 0 {
+            if alc1 < @len(codegen.async_local_inits) {
+                c99_async_local_init_set(codegen, alc1, node.var_decl_init);
+                if node.var_decl_init != null && c99_stmt_tree_has_await(node.var_decl_init) != 0 {
+                    // 该初始化本身含 await：state 0 不做前置初始化，等语句在 resume 后重放。
+                    c99_async_local_init_set(codegen, alc1, null);
+                }
             }
         }
     }
@@ -3031,17 +3153,25 @@ fn c99_async_try_append_hoist_local(codegen: &C99CodeGenerator, name: &byte, typ
         li = li + 1;
     }
     const alc: i32 = codegen.async_local_count;
-    if alc >= 0 && alc < @len(codegen.async_local_names) {
-        codegen.async_local_names[alc] = name;
+    if alc >= 0 {
+        if alc < @len(codegen.async_local_names) {
+            c99_async_local_name_set(codegen, alc, name);
+        }
     }
-    if alc >= 0 && alc < @len(codegen.async_local_types) {
-        codegen.async_local_types[alc] = typ;
+    if alc >= 0 {
+        if alc < @len(codegen.async_local_types) {
+            c99_async_local_type_set(codegen, alc, typ);
+        }
     }
-    if alc >= 0 && alc < @len(codegen.async_local_inits) {
-        codegen.async_local_inits[alc] = null;
+    if alc >= 0 {
+        if alc < @len(codegen.async_local_inits) {
+            c99_async_local_init_set(codegen, alc, null);
+        }
     }
-    if alc >= 0 && alc < @len(codegen.async_local_root_stmt) {
-        codegen.async_local_root_stmt[alc] = root_si;
+    if alc >= 0 {
+        if alc < @len(codegen.async_local_root_stmt) {
+            c99_async_local_root_stmt_set(codegen, alc, root_si);
+        }
     }
     codegen.async_local_count = codegen.async_local_count + 1;
 }
@@ -3900,7 +4030,18 @@ fn emit_async_segment(codegen: &C99CodeGenerator, block: &ASTNode, from_si: i32,
 /// state K 的 continuation：await K-1 就绪后发射后续代码
 /// 返回: 1 = 到达 return 语句（需调用方发射 return Ready），0 = 已完成状态转移
 fn emit_async_continuation(codegen: &C99CodeGenerator, cur_ai: i32) i32 {
-    if codegen == null || cur_ai < 0 || cur_ai >= codegen.async_collect_count { return 0; }
+    if codegen == null {
+        return 0;
+    }
+    if cur_ai < 0 {
+        return 0;
+    }
+    if cur_ai >= codegen.async_collect_count {
+        return 0;
+    }
+    if cur_ai >= C99_ASYNC_MAX_AWAITS {
+        return 0;
+    }
     const ew: &ASTNode = codegen.async_collect_enclosing_while[cur_ai];
     const ab: &ASTNode = codegen.async_collect_blocks[cur_ai];
     const asi: i32 = codegen.async_collect_stmt_indices[cur_ai];
@@ -4766,10 +4907,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             if param.var_decl_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                 const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
                 if ptype_c != null {
-                    codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
-                    codegen.local_variables[codegen.local_variable_count].type_c = ptype_c;
-                    codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
-                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                    c99_push_local_variable(codegen, param.var_decl_name, ptype_c, param.var_decl_type, codegen.current_depth);
                 }
             }
         }
@@ -4815,15 +4953,27 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     fputs("    }\n" as *byte, codegen.emit_stream as *void);
 
+    var emit_await_count: i32 = await_count;
+    if emit_await_count > C99_ASYNC_MAX_AWAITS {
+        emit_await_count = C99_ASYNC_MAX_AWAITS;
+    }
     var state_k: i32 = 1;
-    while state_k <= await_count {
+    while state_k <= emit_await_count {
+        const state_idx: i32 = state_k - 1;
+        if state_idx < 0 {
+            state_k = state_k + 1;
+            continue;
+        }
+        if state_idx >= C99_ASYNC_MAX_AWAITS {
+            break;
+        }
         // 每段 await 的 Poll/vtable 类型可能不同：按操作数推断并单态化
         var seg_poll_ret_c: &byte = child_poll_ret_c;
         var seg_poll_union_c: &byte = child_poll_union_c;
         var seg_vtable_safe: &byte = child_vtable_safe;
         var seg_inner_is_err: i32 = child_inner_is_err_union;
         var seg_ready_payload_c: &byte = ready_payload_c;
-        const seg_op: &ASTNode = await_operands[state_k - 1];
+        const seg_op: &ASTNode = c99_async_operand_at(await_operands, state_idx);
         const seg_inner_ast: &ASTNode = c99_async_operand_future_inner_ast(codegen, seg_op, fn_decl);
         if seg_inner_ast != null {
             const poll_ud_seg: &ASTNode = find_union_decl_c99(codegen, "Poll" as &byte);
@@ -4866,7 +5016,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 const child_poll_key: &byte = &inline_struct_name_poll[prefix_len_poll];
                 snprintf(poll_fn_name as *byte, 256, "%s_poll" as *byte, child_poll_key as *byte);
                 fprintf(codegen.emit_stream as *void, "        %s p = %s(&s->_uya_inline_await_%d, waker);\n" as *byte,
-                    poll_line_ret as *byte, poll_fn_name as *byte, state_k - 1);
+                    poll_line_ret as *byte, poll_fn_name as *byte, state_idx);
             } else {
                 fprintf(codegen.emit_stream as *void, "        %s p = ((struct uya_vtable_%s *)s->await_fut.vtable)->poll(s->await_fut.data, waker);\n" as *byte,
                     poll_line_ret as *byte, poll_line_vt as *byte);
@@ -4890,8 +5040,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             } else {
                 fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = r } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
             }
-            const cur_bind_name: &byte = await_bind_names[state_k - 1];
-            const cur_bind_type: &ASTNode = await_bind_types[state_k - 1];
+            const cur_bind_name: &byte = c99_async_bind_name_at(await_bind_names, state_idx);
+            const cur_bind_type: &ASTNode = c99_async_bind_type_at(await_bind_types, state_idx);
             if cur_bind_name != null && cur_bind_type != null {
                 const bind_safe: &byte = get_safe_c_identifier(codegen, cur_bind_name);
                 fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = r.value;\n" as *byte, bind_safe as *byte);
@@ -4912,11 +5062,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             }
             // 通用 continuation：递归段发射（emit_async_segment 遇 return 语句停止）
             {
-                const cont_r: i32 = emit_async_continuation(codegen, state_k - 1);
+                const cont_r: i32 = emit_async_continuation(codegen, state_idx);
                 var skip_ret_expr_emit: i32 = 0;
-                if await_blocks[state_k - 1] != null && await_stmt_indices[state_k - 1] >= 0 &&
-                    await_stmt_indices[state_k - 1] < await_blocks[state_k - 1].block_stmt_count {
-                    const cur_stmt2: &ASTNode = await_blocks[state_k - 1].block_stmts[await_stmt_indices[state_k - 1]];
+                const await_block2: &ASTNode = c99_async_await_block_at(await_blocks, state_idx);
+                const await_stmt_index2: i32 = c99_async_await_stmt_index_at(await_stmt_indices, state_idx);
+                if await_block2 != null && await_stmt_index2 >= 0 &&
+                    await_stmt_index2 < await_block2.block_stmt_count {
+                    const cur_stmt2: &ASTNode = await_block2.block_stmts[await_stmt_index2];
                     if c99_return_stmt_has_nested_try_await(cur_stmt2) != 0 {
                         skip_ret_expr_emit = 1;
                     }
@@ -4931,7 +5083,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 }
             }
         } else {
-            const cur_bind_name2: &byte = await_bind_names[state_k - 1];
+            const cur_bind_name2: &byte = c99_async_bind_name_at(await_bind_names, state_idx);
             if cur_bind_name2 != null {
                 const bind_safe2: &byte = get_safe_c_identifier(codegen, cur_bind_name2);
                 fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = p.u.Ready;\n" as *byte, bind_safe2 as *byte);
@@ -4944,11 +5096,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             fputs("        s->await_fut.data = (void*)0; s->await_fut.vtable = (void*)0;\n" as *byte, codegen.emit_stream as *void);
             // 通用 continuation：递归段发射（emit_async_segment 遇 return 语句停止）
             {
-                const cont_r2: i32 = emit_async_continuation(codegen, state_k - 1);
+                const cont_r2: i32 = emit_async_continuation(codegen, state_idx);
                 var skip_ret_expr_emit2: i32 = 0;
-                if await_blocks[state_k - 1] != null && await_stmt_indices[state_k - 1] >= 0 &&
-                    await_stmt_indices[state_k - 1] < await_blocks[state_k - 1].block_stmt_count {
-                    const cur_stmt3: &ASTNode = await_blocks[state_k - 1].block_stmts[await_stmt_indices[state_k - 1]];
+                const await_block3: &ASTNode = c99_async_await_block_at(await_blocks, state_idx);
+                const await_stmt_index3: i32 = c99_async_await_stmt_index_at(await_stmt_indices, state_idx);
+                if await_block3 != null && await_stmt_index3 >= 0 &&
+                    await_stmt_index3 < await_block3.block_stmt_count {
+                    const cur_stmt3: &ASTNode = await_block3.block_stmts[await_stmt_index3];
                     if c99_return_stmt_has_nested_try_await(cur_stmt3) != 0 {
                         skip_ret_expr_emit2 = 1;
                     }
@@ -5488,10 +5642,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
             const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
             const param_type_c: &byte = c99_type_to_c_with_self_opt(codegen, param.var_decl_type, struct_name, 0);
             if param_name != null && param_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
-                codegen.local_variables[codegen.local_variable_count].type_c = param_type_c;
-                codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
-                codegen.local_variable_count = codegen.local_variable_count + 1;
+                c99_push_local_variable(codegen, param.var_decl_name, param_type_c, param.var_decl_type, codegen.current_depth);
             }
         }
         i = i + 1;
@@ -6276,11 +6427,8 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
         const param: &ASTNode = params[i];
         if param != null && param.type == ASTNodeType.AST_VAR_DECL {
             if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
-                codegen.local_variables[codegen.local_variable_count].type_c = c99_mono_type_to_c(codegen, param.var_decl_type);
-                codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
-                codegen.local_variables[codegen.local_variable_count].depth = codegen.current_depth;
-                codegen.local_variable_count = codegen.local_variable_count + 1;
+                const mono_param_type_c: &byte = c99_mono_type_to_c(codegen, param.var_decl_type);
+                c99_push_local_variable(codegen, param.var_decl_name, mono_param_type_c, param.var_decl_type, codegen.current_depth);
             }
         }
         i = i + 1;
@@ -6565,11 +6713,8 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
         const param: &ASTNode = params[i];
         if param != null && param.type == ASTNodeType.AST_VAR_DECL {
             if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
-                codegen.local_variables[codegen.local_variable_count].type_c = c99_type_to_c_with_self(codegen, param.var_decl_type, struct_name);
-                codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
-                codegen.local_variables[codegen.local_variable_count].depth = codegen.current_depth;
-                codegen.local_variable_count = codegen.local_variable_count + 1;
+                const method_param_type_c: &byte = c99_type_to_c_with_self(codegen, param.var_decl_type, struct_name);
+                c99_push_local_variable(codegen, param.var_decl_name, method_param_type_c, param.var_decl_type, codegen.current_depth);
             }
         }
         i = i + 1;

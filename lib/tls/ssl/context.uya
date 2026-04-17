@@ -52,6 +52,24 @@ export struct SslContext {
     insecure_skip_verify: bool,
 }
 
+fn ssl_server_identity_const_ptr(ctx: &const SslContext, slot: usize) &const SslServerIdentity {
+    if ctx == null || slot >= SSL_SERVER_ID_MAX || slot >= @len(ctx.server_identities) {
+        return null;
+    }
+    const base: &const SslServerIdentity = &ctx.server_identities[0];
+    const off: usize = slot * @size_of(SslServerIdentity);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &const SslServerIdentity;
+}
+
+fn ssl_server_identity_ptr(ctx: &SslContext, slot: usize) &SslServerIdentity {
+    if ctx == null || slot >= SSL_SERVER_ID_MAX || slot >= @len(ctx.server_identities) {
+        return null;
+    }
+    const base: &SslServerIdentity = &ctx.server_identities[0];
+    const off: usize = slot * @size_of(SslServerIdentity);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &SslServerIdentity;
+}
+
 fn ssl_copy_name(dst: &byte, src: &const byte, src_len: usize) usize {
     var n: usize = src_len;
     if n > SSL_HOSTNAME_MAX {
@@ -72,7 +90,10 @@ fn ssl_select_server_identity(ctx: &SslContext) void {
     var selected: usize = 0;
     var i: usize = 0;
     while i < ctx.server_identity_count && i < @len(ctx.server_identities) {
-        const ident: &SslServerIdentity = &ctx.server_identities[i];
+        const ident: &SslServerIdentity = ssl_server_identity_ptr(ctx, i);
+        if ident == null {
+            break;
+        }
         if ctx.hs.sni_len > 0 && ident.name_len > 0 && hostname_match(&ident.name[0], ident.name_len, &ctx.hs.hostname[0], ctx.hs.sni_len) {
             selected = i;
             i = ctx.server_identity_count;
@@ -83,8 +104,10 @@ fn ssl_select_server_identity(ctx: &SslContext) void {
     ctx.selected_server_identity = selected;
     const selected_slot: usize = selected;
     if selected_slot >= 0 && selected_slot < @len(ctx.server_identities) {
-        const chosen: &const SslServerIdentity = &ctx.server_identities[selected_slot];
-        ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+        const chosen: &const SslServerIdentity = ssl_server_identity_const_ptr(ctx, selected_slot);
+        if chosen != null {
+            ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+        }
     }
 }
 
@@ -98,10 +121,14 @@ fn ssl_server_identity_is_ready(ctx: &const SslContext) bool {
     if ctx.selected_server_identity >= @len(ctx.server_identities) {
         return false;
     }
-    if ctx.server_identities[ctx.selected_server_identity].cert == null as &const Cert {
+    const chosen: &const SslServerIdentity = ssl_server_identity_const_ptr(ctx, ctx.selected_server_identity);
+    if chosen == null {
         return false;
     }
-    if ctx.server_identities[ctx.selected_server_identity].rsa_key == null as &const RsaPrivateKey {
+    if chosen.cert == null as &const Cert {
+        return false;
+    }
+    if chosen.rsa_key == null as &const RsaPrivateKey {
         return false;
     }
     return true;
@@ -248,9 +275,13 @@ export fn ssl_server_add_identity(ctx: &SslContext, name: &const byte, name_len:
     }
     const slot: usize = ctx.server_identity_count;
     if slot < @len(ctx.server_identities) {
-        ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
-        ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
-        ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
+        const ident: &SslServerIdentity = ssl_server_identity_ptr(ctx, slot);
+        if ident == null {
+            return error.TlsBadInput;
+        }
+        ident.name_len = ssl_copy_name(&ident.name[0], name, name_len);
+        ident.san_len = ssl_copy_name(&ident.san[0], san, san_len);
+        ident.cn_len = ssl_copy_name(&ident.cn[0], cn, cn_len);
         ctx.server_identity_count = slot + 1;
         if ctx.server_identity_count == 1 && 0 < @len(ctx.server_identities) {
             ctx.selected_server_identity = 0;
@@ -266,8 +297,12 @@ export fn ssl_server_set_identity_credentials(ctx: &SslContext, slot: usize, cer
         return error.TlsBadInput;
     }
     if slot >= 0 && slot < @len(ctx.server_identities) {
-        ctx.server_identities[slot].cert = cert;
-        ctx.server_identities[slot].rsa_key = rsa_key;
+        const ident: &SslServerIdentity = ssl_server_identity_ptr(ctx, slot);
+        if ident == null {
+            return error.TlsBadInput;
+        }
+        ident.cert = cert;
+        ident.rsa_key = rsa_key;
         if slot == ctx.selected_server_identity && cert != null as &const Cert && cert.der != null as &const byte && cert.der_len > 0 {
             handshake_set_server_certificate(ctx.hs, cert.der, cert.der_len);
             handshake_set_server_rsa_key(ctx.hs, rsa_key);
@@ -297,8 +332,8 @@ export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: 
         } else {
             if ctx.selected_server_identity < ctx.server_identity_count &&
                ctx.selected_server_identity < @len(ctx.server_identities) {
-                const chosen: &const SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
-                if chosen.cert != null as &const Cert && chosen.cert.der != null as &const byte && chosen.cert.der_len > 0 {
+                const chosen: &const SslServerIdentity = ssl_server_identity_const_ptr(ctx, ctx.selected_server_identity);
+                if chosen != null && chosen.cert != null as &const Cert && chosen.cert.der != null as &const byte && chosen.cert.der_len > 0 {
                     handshake_set_server_certificate(ctx.hs, chosen.cert.der, chosen.cert.der_len);
                     handshake_set_server_rsa_key(ctx.hs, chosen.rsa_key);
                     if status == HS_STATUS_NEED_SEND {
@@ -375,6 +410,24 @@ export struct SslContext13 {
     server_identities: [SslServerIdentity: SSL_SERVER_ID_MAX],
 }
 
+fn ssl13_server_identity_const_ptr(ctx: &const SslContext13, slot: usize) &const SslServerIdentity {
+    if ctx == null || slot >= SSL_SERVER_ID_MAX || slot >= @len(ctx.server_identities) {
+        return null;
+    }
+    const base: &const SslServerIdentity = &ctx.server_identities[0];
+    const off: usize = slot * @size_of(SslServerIdentity);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &const SslServerIdentity;
+}
+
+fn ssl13_server_identity_ptr(ctx: &SslContext13, slot: usize) &SslServerIdentity {
+    if ctx == null || slot >= SSL_SERVER_ID_MAX || slot >= @len(ctx.server_identities) {
+        return null;
+    }
+    const base: &SslServerIdentity = &ctx.server_identities[0];
+    const off: usize = slot * @size_of(SslServerIdentity);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &SslServerIdentity;
+}
+
 fn ssl13_select_server_identity(ctx: &SslContext13) void {
     if ctx.role != HS13_ROLE_SERVER || ctx.server_identity_count == 0 {
         return;
@@ -382,7 +435,10 @@ fn ssl13_select_server_identity(ctx: &SslContext13) void {
     var selected: usize = 0;
     var i: usize = 0;
     while i < ctx.server_identity_count && i < @len(ctx.server_identities) {
-        const ident: &SslServerIdentity = &ctx.server_identities[i];
+        const ident: &SslServerIdentity = ssl13_server_identity_ptr(ctx, i);
+        if ident == null {
+            break;
+        }
         if ctx.hs13.sni_len > 0 && ident.name_len > 0 && hostname_match(&ident.name[0], ident.name_len, &ctx.hs13.hostname[0], ctx.hs13.sni_len) {
             selected = i;
             i = ctx.server_identity_count;
@@ -393,8 +449,10 @@ fn ssl13_select_server_identity(ctx: &SslContext13) void {
     ctx.selected_server_identity = selected;
     const selected_slot13: usize = selected;
     if selected_slot13 >= 0 && selected_slot13 < @len(ctx.server_identities) {
-        const chosen: &SslServerIdentity = &ctx.server_identities[selected_slot13];
-        ssl13_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+        const chosen: &const SslServerIdentity = ssl13_server_identity_const_ptr(ctx, selected_slot13);
+        if chosen != null {
+            ssl13_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+        }
     }
 }
 
@@ -408,10 +466,14 @@ fn ssl13_server_identity_is_ready(ctx: &const SslContext13) bool {
     if ctx.selected_server_identity >= @len(ctx.server_identities) {
         return false;
     }
-    if ctx.server_identities[ctx.selected_server_identity].cert == null as &const Cert {
+    const chosen: &const SslServerIdentity = ssl13_server_identity_const_ptr(ctx, ctx.selected_server_identity);
+    if chosen == null {
         return false;
     }
-    if ctx.server_identities[ctx.selected_server_identity].rsa_key == null as &const RsaPrivateKey {
+    if chosen.cert == null as &const Cert {
+        return false;
+    }
+    if chosen.rsa_key == null as &const RsaPrivateKey {
         return false;
     }
     return true;
@@ -536,9 +598,13 @@ export fn ssl13_server_add_identity(ctx: &SslContext13, name: &const byte, name_
     }
     const slot: usize = ctx.server_identity_count;
     if slot < @len(ctx.server_identities) {
-        ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
-        ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
-        ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
+        const ident: &SslServerIdentity = ssl13_server_identity_ptr(ctx, slot);
+        if ident == null {
+            return error.TlsBadInput;
+        }
+        ident.name_len = ssl_copy_name(&ident.name[0], name, name_len);
+        ident.san_len = ssl_copy_name(&ident.san[0], san, san_len);
+        ident.cn_len = ssl_copy_name(&ident.cn[0], cn, cn_len);
         ctx.server_identity_count = slot + 1;
         if ctx.server_identity_count == 1 && 0 < @len(ctx.server_identities) {
             ctx.selected_server_identity = 0;
@@ -554,8 +620,12 @@ export fn ssl13_server_set_identity_credentials(ctx: &SslContext13, slot: usize,
         return error.TlsBadInput;
     }
     if slot >= 0 && slot < @len(ctx.server_identities) {
-        ctx.server_identities[slot].cert = cert;
-        ctx.server_identities[slot].rsa_key = rsa_key;
+        const ident: &SslServerIdentity = ssl13_server_identity_ptr(ctx, slot);
+        if ident == null {
+            return error.TlsBadInput;
+        }
+        ident.cert = cert;
+        ident.rsa_key = rsa_key;
         return;
     }
     return error.TlsBadInput;

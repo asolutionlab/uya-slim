@@ -84,6 +84,12 @@ fn type_from_ast_cache_lookup(checker: &TypeChecker, type_node: &ASTNode) &Type 
     }
     type_from_ast_cache_ensure(checker);
     const slot: i32 = type_from_ast_cache_slot(checker, type_node);
+    if slot < 0 {
+        return null;
+    }
+    if slot >= TYPE_FROM_AST_CACHE_SIZE {
+        return null;
+    }
     const cached: &Type = g_type_from_ast_cache_values[slot];
     if cached == null {
         return null;
@@ -106,6 +112,12 @@ fn type_from_ast_cache_store(checker: &TypeChecker, type_node: &ASTNode, result:
     }
     type_from_ast_cache_ensure(checker);
     const slot: i32 = type_from_ast_cache_slot(checker, type_node);
+    if slot < 0 {
+        return;
+    }
+    if slot >= TYPE_FROM_AST_CACHE_SIZE {
+        return;
+    }
     const stored: &Type = compiler_arena_alloc(checker.arena, @size_of(Type) as usize) as &Type;
     if stored == null {
         return;

@@ -10,6 +10,13 @@ var reported_error_vars: [&byte: 32] = [];
 var reported_error_sizes: [i32: 32] = [];
 var reported_error_count: i32 = 0;
 
+fn reported_error_slot_set(idx: i32, var_name: &byte, array_size: i32) void {
+    if idx >= 0 && idx < 32 {
+        reported_error_vars[idx] = var_name;
+        reported_error_sizes[idx] = array_size;
+    }
+}
+
 // ===== 重复错误检测 =====
 
 // 检查是否已报告过相同的错误
@@ -39,10 +46,12 @@ fn mark_error_reported(var_name: &byte, array_size: i32) void {
         return;
     }
     // 证明：reported_error_count 在 [0, 32) 范围内
-    if reported_error_count >= 0 && reported_error_count < @len(reported_error_vars) {
-        reported_error_vars[reported_error_count] = var_name;
-        reported_error_sizes[reported_error_count] = array_size;
-        reported_error_count = reported_error_count + 1;
+    const reported_idx: i32 = reported_error_count;
+    if reported_idx >= 0 {
+        if reported_idx < @len(reported_error_vars) {
+            reported_error_slot_set(reported_idx, var_name, array_size);
+            reported_error_count = reported_idx + 1;
+        }
     }
 }
 
@@ -631,7 +640,11 @@ fn checker_print_note(checker: &TypeChecker, note: &CheckerNote) void {
 // 报告类型检查错误，附带 note 列表
 fn checker_report_error_with_notes(checker: &TypeChecker, node: &ASTNode, message: &byte, notes: &CheckerNote, note_count: i32) void {
     if checker != null && checker.suppress_codegen_diagnostics == 0 {
+        if checker_should_suppress_duplicate_error(checker, node, message) != 0 {
+            return;
+        }
         last_checker_error_message = stash_checker_error_message(message);
+        checker_record_reported_error(checker, node, last_checker_error_message);
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null && message != null {
             var filename: &byte = "(unknown)" as *byte;
@@ -684,10 +697,71 @@ fn stash_checker_error_message(message: &byte) &byte {
     return &last_checker_error_storage[0] as &byte;
 }
 
+fn checker_should_suppress_duplicate_error(checker: &TypeChecker, node: &ASTNode, message: &byte) i32 {
+    if checker == null || message == null {
+        return 0;
+    }
+    var filename: &byte = "(unknown)" as *byte;
+    var line: i32 = 0;
+    var column: i32 = 0;
+    if node != null {
+        if node.filename != null {
+            filename = node.filename;
+        } else if checker.default_filename != null {
+            filename = checker.default_filename;
+        }
+        line = node.line;
+        column = node.column;
+    } else if checker.default_filename != null {
+        filename = checker.default_filename;
+    }
+    if checker.last_reported_error_message == null || checker.last_reported_error_filename == null {
+        return 0;
+    }
+    if checker.last_reported_error_line != line || checker.last_reported_error_column != column {
+        return 0;
+    }
+    if str_equals(checker.last_reported_error_filename, filename) == 0 {
+        return 0;
+    }
+    if str_equals(checker.last_reported_error_message, message) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn checker_record_reported_error(checker: &TypeChecker, node: &ASTNode, message: &byte) void {
+    if checker == null || message == null {
+        return;
+    }
+    var filename: &byte = "(unknown)" as *byte;
+    var line: i32 = 0;
+    var column: i32 = 0;
+    if node != null {
+        if node.filename != null {
+            filename = node.filename;
+        } else if checker.default_filename != null {
+            filename = checker.default_filename;
+        }
+        line = node.line;
+        column = node.column;
+    } else if checker.default_filename != null {
+        filename = checker.default_filename;
+    }
+    checker.last_reported_error_filename = filename;
+    checker.last_reported_error_message = checker_intern_strdup(checker, message);
+    checker.last_reported_error_line = line;
+    checker.last_reported_error_column = column;
+}
+
 // 报告类型检查错误
 fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) void {
     if checker != null && checker.suppress_codegen_diagnostics == 0 {
+        if checker_should_suppress_duplicate_error(checker, node, message) != 0 {
+            return;
+        }
         last_checker_error_message = stash_checker_error_message(message);
+        checker_record_reported_error(checker, node, last_checker_error_message);
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null && message != null {
             var filename: &byte = "(unknown)" as *byte;
@@ -710,6 +784,10 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
 fn checker_report_error_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte) void {
     if checker != null && checker.suppress_codegen_diagnostics == 0 {
         last_checker_error_message = "变量已被移动，不能再次使用" as *byte;
+        if checker_should_suppress_duplicate_error(checker, node, last_checker_error_message) != 0 {
+            return;
+        }
+        checker_record_reported_error(checker, node, last_checker_error_message);
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null {
             var filename: &byte = "(unknown)" as *byte;

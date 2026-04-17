@@ -110,6 +110,10 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     checker.loop_depth = 0;
     checker.program_node = null;
     checker.error_count = 0;
+    checker.last_reported_error_filename = null;
+    checker.last_reported_error_message = null;
+    checker.last_reported_error_line = 0;
+    checker.last_reported_error_column = 0;
     checker.default_filename = default_filename;
     checker.current_return_type.kind = TypeKind.TYPE_VOID;
     checker.in_function = 0;
@@ -229,6 +233,82 @@ fn checker_canonicalize_fn_decl(checker: &TypeChecker, fn_decl: &ASTNode) &ASTNo
     return fn_decl;
 }
 
+fn checker_fn_root_decl_at(checker: &TypeChecker, idx: i32) &ASTNode {
+    if checker == null {
+        return null;
+    }
+    if idx >= 0 && idx < MAX_FN_ROOTS {
+        return checker.fn_root_decls[idx];
+    }
+    return null;
+}
+
+fn checker_fn_root_decl_set(checker: &TypeChecker, idx: i32, value: &ASTNode) void {
+    if checker == null {
+        return;
+    }
+    if idx >= 0 && idx < MAX_FN_ROOTS {
+        checker.fn_root_decls[idx] = value;
+    }
+}
+
+fn checker_scope_head_at(checker: &TypeChecker, idx: i32) &Symbol {
+    if checker == null {
+        return null;
+    }
+    if idx >= 0 && idx < 64 {
+        return checker.scope_heads[idx];
+    }
+    return null;
+}
+
+fn checker_scope_head_set(checker: &TypeChecker, idx: i32, value: &Symbol) void {
+    if checker == null {
+        return;
+    }
+    if idx >= 0 && idx < 64 {
+        checker.scope_heads[idx] = value;
+    }
+}
+
+fn checker_symbol_slot_at(checker: &TypeChecker, idx: i32) &Symbol {
+    if checker == null {
+        return null;
+    }
+    if idx >= 0 && idx < SYMBOL_TABLE_SIZE {
+        return checker.symbol_table.slots[idx];
+    }
+    return null;
+}
+
+fn checker_symbol_slot_set(checker: &TypeChecker, idx: i32, value: &Symbol) void {
+    if checker == null {
+        return;
+    }
+    if idx >= 0 && idx < SYMBOL_TABLE_SIZE {
+        checker.symbol_table.slots[idx] = value;
+    }
+}
+
+fn checker_function_slot_at(checker: &TypeChecker, idx: i32) &FunctionSignature {
+    if checker == null {
+        return null;
+    }
+    if idx >= 0 && idx < FUNCTION_TABLE_SIZE {
+        return checker.function_table.slots[idx];
+    }
+    return null;
+}
+
+fn checker_function_slot_set(checker: &TypeChecker, idx: i32, value: &FunctionSignature) void {
+    if checker == null {
+        return;
+    }
+    if idx >= 0 && idx < FUNCTION_TABLE_SIZE {
+        checker.function_table.slots[idx] = value;
+    }
+}
+
 fn checker_add_function_root_decl(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
     const canonical_fn_decl: &ASTNode = checker_canonicalize_fn_decl(checker, fn_decl);
     if checker == null || canonical_fn_decl == null || canonical_fn_decl.type != ASTNodeType.AST_FN_DECL {
@@ -236,7 +316,7 @@ fn checker_add_function_root_decl(checker: &TypeChecker, fn_decl: &ASTNode) i32 
     }
     var i: i32 = 0;
     while i < checker.fn_root_count {
-        if checker.fn_root_decls[i] == canonical_fn_decl {
+        if checker_fn_root_decl_at(checker, i) == canonical_fn_decl {
             return 1;
         }
         i = i + 1;
@@ -245,8 +325,12 @@ fn checker_add_function_root_decl(checker: &TypeChecker, fn_decl: &ASTNode) i32 
         checker_report_error(checker, canonical_fn_decl, "顶层函数 root 容量已满" as *byte);
         return 0;
     }
-    checker.fn_root_decls[checker.fn_root_count] = canonical_fn_decl;
-    checker.fn_root_count = checker.fn_root_count + 1;
+    const root_idx: i32 = checker.fn_root_count;
+    if root_idx < 0 || root_idx >= @len(checker.fn_root_decls) {
+        return 0;
+    }
+    checker_fn_root_decl_set(checker, root_idx, canonical_fn_decl);
+    checker.fn_root_count = root_idx + 1;
     return 1;
 }
 
@@ -276,10 +360,14 @@ fn checker_add_function_edge(checker: &TypeChecker, from_decl: &ASTNode, to_decl
         checker_report_error(checker, canonical_from_decl, "顶层函数 call edge 容量已满" as *byte);
         return 0;
     }
-    checker.fn_call_edge_from[checker.fn_call_edge_count] = canonical_from_decl;
-    checker.fn_call_edge_to[checker.fn_call_edge_count] = canonical_to_decl;
-    checker.fn_call_edge_count = checker.fn_call_edge_count + 1;
-    return 1;
+    const edge_idx: i32 = checker.fn_call_edge_count;
+    if edge_idx >= 0 && edge_idx < @len(checker.fn_call_edge_from) && edge_idx < @len(checker.fn_call_edge_to) {
+        checker.fn_call_edge_from[edge_idx] = canonical_from_decl;
+        checker.fn_call_edge_to[edge_idx] = canonical_to_decl;
+        checker.fn_call_edge_count = edge_idx + 1;
+        return 1;
+    }
+    return 0;
 }
 
 fn checker_mark_reachability_node_visited(checker: &TypeChecker, node: &ASTNode) i32 {
@@ -344,14 +432,18 @@ fn checker_compute_function_reachability(checker: &TypeChecker) void {
     var tail: i32 = 0;
     var i: i32 = 0;
     while i < checker.fn_root_count {
-        const root_decl: &ASTNode = checker.fn_root_decls[i];
+        const root_decl: &ASTNode = checker_fn_root_decl_at(checker, i);
         if root_decl != null && checker_is_function_reachable(checker, root_decl) == 0 {
             if checker.reachable_fn_decl_count >= MAX_REACHABLE_FN_DECLS {
                 checker_report_error(checker, root_decl, "顶层函数 reachable 集合已满" as *byte);
                 return;
             }
-            checker.reachable_fn_decls[checker.reachable_fn_decl_count] = root_decl;
-            checker.reachable_fn_decl_count = checker.reachable_fn_decl_count + 1;
+            const reachable_idx: i32 = checker.reachable_fn_decl_count;
+            if reachable_idx < 0 || reachable_idx >= @len(checker.reachable_fn_decls) {
+                return;
+            }
+            checker.reachable_fn_decls[reachable_idx] = root_decl;
+            checker.reachable_fn_decl_count = reachable_idx + 1;
             if tail >= MAX_REACHABLE_FN_DECLS {
                 checker_report_error(checker, root_decl, "顶层函数 reachable 队列已满" as *byte);
                 return;
@@ -374,8 +466,12 @@ fn checker_compute_function_reachability(checker: &TypeChecker) void {
                         checker_report_error(checker, to_decl, "顶层函数 reachable 集合已满" as *byte);
                         return;
                     }
-                    checker.reachable_fn_decls[checker.reachable_fn_decl_count] = to_decl;
-                    checker.reachable_fn_decl_count = checker.reachable_fn_decl_count + 1;
+                    const reachable_idx2: i32 = checker.reachable_fn_decl_count;
+                    if reachable_idx2 < 0 || reachable_idx2 >= @len(checker.reachable_fn_decls) {
+                        return;
+                    }
+                    checker.reachable_fn_decls[reachable_idx2] = to_decl;
+                    checker.reachable_fn_decl_count = reachable_idx2 + 1;
                     if tail >= MAX_REACHABLE_FN_DECLS {
                         checker_report_error(checker, to_decl, "顶层函数 reachable 队列已满" as *byte);
                         return;
@@ -409,15 +505,21 @@ fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
     // 从当前作用域开始向外查找
     var scope: i32 = checker.scope_level;
     while scope >= 0 {
-        if scope < @len(checker.scope_heads) {
-            var symbol: &Symbol = checker.scope_heads[scope];
-            while symbol != null {
-                // 使用优化的 str_equals（先比较指针）
-                if str_equals(symbol.name, name) != 0 {
-                    return symbol;  // 找到最内层匹配
-                }
-                symbol = symbol.next_in_scope;
+        const scope_idx: i32 = scope;
+        if scope_idx < 0 {
+            break;
+        }
+        if scope_idx >= @len(checker.scope_heads) {
+            scope = scope - 1;
+            continue;
+        }
+        var symbol: &Symbol = checker_scope_head_at(checker, scope_idx);
+        while symbol != null {
+            // 使用优化的 str_equals（先比较指针）
+            if str_equals(symbol.name, name) != 0 {
+                return symbol;  // 找到最内层匹配
             }
+            symbol = symbol.next_in_scope;
         }
         scope = scope - 1;
     }
@@ -446,16 +548,27 @@ fn symbol_table_insert(checker: &TypeChecker, symbol: &Symbol) i32 {
     var i: i32 = 0;
     while i < SYMBOL_TABLE_SIZE {
         const slot: i32 = (index + i) % SYMBOL_TABLE_SIZE;
+        const slot_idx: i32 = slot;
+        if slot_idx < 0 {
+            i = i + 1;
+            continue;
+        }
+        if slot_idx >= @len(checker.symbol_table.slots) {
+            i = i + 1;
+            continue;
+        }
         
-        if checker.symbol_table.slots[slot] == null {
-            checker.symbol_table.slots[slot] = symbol;
+        if checker_symbol_slot_at(checker, slot_idx) == null {
+            checker_symbol_slot_set(checker, slot_idx, symbol);
             checker.symbol_table.count = checker.symbol_table.count + 1;
 
             // 添加到当前作用域的链表头部
             const scope: i32 = symbol.scope_level;
-            if scope >= 0 && scope < @len(checker.scope_heads) {
-                symbol.next_in_scope = checker.scope_heads[scope];
-                checker.scope_heads[scope] = symbol;
+            if scope >= 0 {
+                if scope < @len(checker.scope_heads) {
+                    symbol.next_in_scope = checker_scope_head_at(checker, scope);
+                    checker_scope_head_set(checker, scope, symbol);
+                }
             }
 
             return 0;
@@ -483,7 +596,16 @@ fn function_table_lookup(checker: &TypeChecker, name: &byte) &FunctionSignature 
     var i: i32 = 0;
     while i < FUNCTION_TABLE_SIZE {
         const slot: i32 = (index + i) % FUNCTION_TABLE_SIZE;
-        const sig: &FunctionSignature = checker.function_table.slots[slot];
+        const slot_idx: i32 = slot;
+        if slot_idx < 0 {
+            i = i + 1;
+            continue;
+        }
+        if slot_idx >= @len(checker.function_table.slots) {
+            i = i + 1;
+            continue;
+        }
+        const sig: &FunctionSignature = checker_function_slot_at(checker, slot_idx);
         
         if sig == null {
             i = i + 1;
@@ -531,10 +653,19 @@ fn function_table_insert(checker: &TypeChecker, sig: &FunctionSignature) i32 {
     var i: i32 = 0;
     while i < FUNCTION_TABLE_SIZE {
         const slot: i32 = (index + i) % FUNCTION_TABLE_SIZE;
-        const existing: &FunctionSignature = checker.function_table.slots[slot];
+        const slot_idx: i32 = slot;
+        if slot_idx < 0 {
+            i = i + 1;
+            continue;
+        }
+        if slot_idx >= @len(checker.function_table.slots) {
+            i = i + 1;
+            continue;
+        }
+        const existing: &FunctionSignature = checker_function_slot_at(checker, slot_idx);
         
         if existing == null {
-            checker.function_table.slots[slot] = sig;
+            checker_function_slot_set(checker, slot_idx, sig);
             checker.function_table.count = checker.function_table.count + 1;
             return 0;
         }
@@ -558,7 +689,7 @@ fn function_table_insert(checker: &TypeChecker, sig: &FunctionSignature) i32 {
         if matched != 0 {
             if existing.is_extern != 0 && sig.is_extern != 0 {
                 if existing.param_count == sig.param_count &&
-                    type_equals(existing.return_type, sig.return_type) &&
+                    type_equals(existing.return_type, sig.return_type) != 0 &&
                     existing.is_varargs == sig.is_varargs {
                     return 0;
                 } else {
@@ -568,7 +699,7 @@ fn function_table_insert(checker: &TypeChecker, sig: &FunctionSignature) i32 {
                 return -1;
             } else {
                 if existing.is_extern != 0 {
-                    checker.function_table.slots[slot] = sig;
+                    checker_function_slot_set(checker, slot_idx, sig);
                     return 0;
                 } else {
                     return 0;
@@ -601,8 +732,15 @@ fn checker_exit_scope(checker: &TypeChecker) void {
     const current_scope: i32 = checker.scope_level;
 
     // 使用作用域链表遍历当前作用域的所有符号
-    if current_scope >= 0 && current_scope < @len(checker.scope_heads) {
-        var symbol: &Symbol = checker.scope_heads[current_scope];
+    if current_scope >= 0 {
+        const scope_idx: i32 = current_scope;
+        if scope_idx < 0 {
+            return;
+        }
+        if scope_idx >= @len(checker.scope_heads) {
+            return;
+        }
+        var symbol: &Symbol = checker_scope_head_at(checker, scope_idx);
         while symbol != null {
             // 从哈希表中移除符号
             const hash: i32 = hash_string(symbol.name);
@@ -614,12 +752,12 @@ fn checker_exit_scope(checker: &TypeChecker) void {
             var i: i32 = 0;
             while i < SYMBOL_TABLE_SIZE {
                 const slot: i32 = (index + i) % SYMBOL_TABLE_SIZE;
-                if checker.symbol_table.slots[slot] == symbol {
-                    checker.symbol_table.slots[slot] = null;
+                if checker_symbol_slot_at(checker, slot) == symbol {
+                    checker_symbol_slot_set(checker, slot, null);
                     checker.symbol_table.count = checker.symbol_table.count - 1;
                     break;
                 }
-                if checker.symbol_table.slots[slot] == null {
+                if checker_symbol_slot_at(checker, slot) == null {
                     break;
                 }
                 i = i + 1;
@@ -629,7 +767,7 @@ fn checker_exit_scope(checker: &TypeChecker) void {
             symbol.next_in_scope = null;
             symbol = next;
         }
-        checker.scope_heads[current_scope] = null;
+        checker_scope_head_set(checker, scope_idx, null);
     }
     
     checker.scope_level = checker.scope_level - 1;
@@ -677,6 +815,9 @@ fn string_pool_intern(pool: &StringPool, arena: &CompilerArena, str: &byte) &byt
     const hash: i32 = hash_string(str);
     const bucket_idx: i32 = hash % STRING_POOL_SIZE;
     if bucket_idx < 0 {
+        return str;
+    }
+    if bucket_idx >= STRING_POOL_SIZE {
         return str;
     }
 
@@ -772,7 +913,7 @@ fn has_active_pointer_to(checker: &TypeChecker, var_name: &byte) i32 {
     var scope: i32 = checker.scope_level;
     while scope >= 0 {
         if scope < @len(checker.scope_heads) {
-            var s: &Symbol = checker.scope_heads[scope];
+            var s: &Symbol = checker_scope_head_at(checker, scope);
             while s != null {
                 if s.pointee_of != null && str_equals(s.pointee_of, var_name) != 0 {
                     return 1;

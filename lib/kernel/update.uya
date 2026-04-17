@@ -38,6 +38,19 @@ export struct DualSlot {
     next_generation: u32,  // next generation number to assign
 }
 
+fn dualslot_slot_ptr(ds: &DualSlot, idx: u32) &ImageSlot {
+    if ds == null {
+        return null;
+    }
+    if idx >= 2u32 {
+        return null;
+    }
+    if idx == 0u32 {
+        return &ds.slots[0];
+    }
+    return &ds.slots[1];
+}
+
 // ── CRC32 (simple implementation for metadata integrity) ──
 
 fn crc32_byte(crc: u32, b: byte) u32 {
@@ -130,15 +143,19 @@ export fn update_stage(ds: &DualSlot, new_image: &[byte]) !void {
     var target: u32 = 0;
     if ds.active == 0 { target = 1; }
 
-    if target < @len(ds.slots) {
+    if target < 2u32 {
+        const slot: &ImageSlot = dualslot_slot_ptr(ds, target);
+        if slot == null {
+            return error.InvalidState;
+        }
         // Mark as updating
-        ds.slots[target].meta.state = SLOT_UPDATING;
-        ds.slots[target].meta.image_len = new_image.len as u32;
+        slot.meta.state = SLOT_UPDATING;
+        slot.meta.image_len = new_image.len as u32;
 
         // Copy image data
         var i: usize = 0;
-        while i < new_image.len && i < @len(ds.slots[target].data) {
-            ds.slots[target].data[i] = new_image.ptr[i];
+        while i < new_image.len && i < MAX_UPDATE_IMAGE_SIZE {
+            slot.data[i] = new_image.ptr[i];
             i = i + 1;
         }
 
@@ -153,27 +170,34 @@ export fn update_commit(ds: &DualSlot) !void {
     var target: u32 = 0;
     if ds.active == 0 { target = 1; }
 
-    if target < @len(ds.slots) {
-        if ds.slots[target].meta.state != SLOT_UPDATING {
+    if target < 2u32 {
+        const slot: &ImageSlot = dualslot_slot_ptr(ds, target);
+        if slot == null {
+            return error.InvalidState;
+        }
+        if slot.meta.state != SLOT_UPDATING {
             return error.InvalidState;
         }
 
         // Atomic commit sequence:
         // 1. Assign generation
         const gen: u32 = ds.next_generation;
-        ds.slots[target].meta.generation = gen;
+        slot.meta.generation = gen;
 
         // 2. Mark new slot active
-        ds.slots[target].meta.state = SLOT_ACTIVE;
+        slot.meta.state = SLOT_ACTIVE;
 
         // 3. Compute metadata CRC
-        ds.slots[target].meta.crc32 = meta_compute_crc(&ds.slots[target].meta);
+        slot.meta.crc32 = meta_compute_crc(&slot.meta);
 
         // 4. Mark old slot inactive
         const old: u32 = ds.active;
-        if old < @len(ds.slots) {
-            ds.slots[old].meta.state = SLOT_INACTIVE;
-            ds.slots[old].meta.crc32 = meta_compute_crc(&ds.slots[old].meta);
+        if old < 2u32 {
+            const old_slot: &ImageSlot = dualslot_slot_ptr(ds, old);
+            if old_slot != null {
+                old_slot.meta.state = SLOT_INACTIVE;
+                old_slot.meta.crc32 = meta_compute_crc(&old_slot.meta);
+            }
         }
 
         // 5. Switch active pointer
@@ -188,9 +212,12 @@ export fn update_rollback(ds: &DualSlot) void {
     var target: u32 = 0;
     if ds.active == 0 { target = 1; }
 
-    if target < @len(ds.slots) {
-        ds.slots[target].meta.state = SLOT_INVALID;
-        ds.slots[target].meta.crc32 = meta_compute_crc(&ds.slots[target].meta);
+    if target < 2u32 {
+        const slot: &ImageSlot = dualslot_slot_ptr(ds, target);
+        if slot != null {
+            slot.meta.state = SLOT_INVALID;
+            slot.meta.crc32 = meta_compute_crc(&slot.meta);
+        }
     }
 }
 
@@ -228,11 +255,15 @@ export fn update_boot_select(ds: &DualSlot) u32 {
 
 export fn update_get_active_len(ds: &DualSlot) !u32 {
     const idx: u32 = ds.active;
-    if idx >= 0 && idx < 2 {
-        if ds.slots[idx].meta.state != SLOT_ACTIVE {
+    if idx < 2u32 {
+        const slot: &ImageSlot = dualslot_slot_ptr(ds, idx);
+        if slot == null {
             return error.InvalidState;
         }
-        return ds.slots[idx].meta.image_len;
+        if slot.meta.state != SLOT_ACTIVE {
+            return error.InvalidState;
+        }
+        return slot.meta.image_len;
     }
     return error.InvalidState;
 }

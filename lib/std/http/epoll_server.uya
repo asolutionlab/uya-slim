@@ -96,6 +96,18 @@ export fn epoll_server_listen(cfg: &ServerConfig) !EpollServer {
     return srv;
 }
 
+fn epoll_connection_ptr(srv: &EpollServer, slot: usize) &EpollConnection {
+    if srv == null {
+        return null;
+    }
+    if slot >= EPOLL_SERVER_MAX_SLOTS {
+        return null;
+    }
+    const base: &EpollConnection = &srv.connections[0];
+    const off: usize = slot * @size_of(EpollConnection);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &EpollConnection;
+}
+
 fn epoll_find_free_slot(srv: &EpollServer) i32 {
     var i: usize = 0;
     while i < EPOLL_SERVER_MAX_SLOTS {
@@ -111,10 +123,14 @@ fn epoll_register_client_fd(srv: &EpollServer, slot: usize, cfd: i32) !void {
     if slot >= 0 && slot < @len(srv.connections) {
         var nd: i32 = 1;
         _ = sys_setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nd as &void, 4 as u32) catch {};
-        srv.connections[slot].state = ConnState.Recv;
-        srv.connections[slot].buf_len = 0;
-        srv.connections[slot].buf_pos = 0;
-        srv.connections[slot].wants_persist = false;
+        const conn: &EpollConnection = epoll_connection_ptr(srv, slot);
+        if conn == null {
+            return error.AcceptFailed;
+        }
+        conn.state = ConnState.Recv;
+        conn.buf_len = 0;
+        conn.buf_pos = 0;
+        conn.wants_persist = false;
         var ev_c: EpollEvent = EpollEvent{ events: EPOLLIN as u32, _pad: 0, data: cfd as u64 };
         const add_res: !i32 = sys_epoll_ctl(srv.epfd, EPOLL_CTL_ADD, cfd, &ev_c);
         match add_res {
@@ -126,7 +142,7 @@ fn epoll_register_client_fd(srv: &EpollServer, slot: usize, cfd: i32) !void {
                 _ = _v;
             }
         }
-        srv.connections[slot].fd = cfd;
+        conn.fd = cfd;
         srv.connection_count = srv.connection_count + 1;
     }
 }
@@ -244,7 +260,11 @@ export fn epoll_server_drain_listen_accepts_nb(srv: &EpollServer) !usize {
 export fn epoll_server_accept_register_nb(srv: &EpollServer) !usize {
     const slot: usize = try epoll_server_accept_register(srv);
     if slot >= 0 && slot < @len(srv.connections) {
-        _ = try epoll_server_fd_set_nonblocking(srv.connections[slot].fd);
+        const conn: &EpollConnection = epoll_connection_ptr(srv, slot);
+        if conn == null {
+            return error.AcceptFailed;
+        }
+        _ = try epoll_server_fd_set_nonblocking(conn.fd);
     }
     return slot;
 }
@@ -252,17 +272,21 @@ export fn epoll_server_accept_register_nb(srv: &EpollServer) !usize {
 /// 从 epoll 移除并关闭槽内连接（`listen_fd` 不受影响）
 export fn epoll_server_release_slot(srv: &EpollServer, slot: usize) void {
     if slot >= 0 && slot < @len(srv.connections) {
-        const cfd: i32 = srv.connections[slot].fd;
+        const conn: &EpollConnection = epoll_connection_ptr(srv, slot);
+        if conn == null {
+            return;
+        }
+        const cfd: i32 = conn.fd;
         if cfd < 0 {
             return;
         }
         _ = sys_epoll_ctl_del(srv.epfd, cfd) catch {};
         _ = sys_shutdown(cfd, SHUT_WR) catch {};
         _ = sys_close(cfd) catch {};
-        srv.connections[slot].fd = -1;
-        srv.connections[slot].state = ConnState.Closed;
-        srv.connections[slot].buf_len = 0;
-        srv.connections[slot].buf_pos = 0;
+        conn.fd = -1;
+        conn.state = ConnState.Closed;
+        conn.buf_len = 0;
+        conn.buf_pos = 0;
         if srv.connection_count > 0 {
             srv.connection_count = srv.connection_count - 1;
         }

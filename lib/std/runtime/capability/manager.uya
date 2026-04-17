@@ -16,6 +16,8 @@ use std.runtime.capability.loader.capability_loader_install;
 use std.runtime.capability.loader.capability_loader_rollback;
 use std.runtime.capability.manifest.CapabilityManifest;
 use std.runtime.capability.registry.CapabilityRegistry;
+use std.runtime.capability.registry.CapabilityRegistryEntry;
+use std.runtime.capability.registry.capability_registry_entry_ptr;
 use std.runtime.capability.registry.capability_registry_init;
 use std.runtime.capability.types.CapabilityState;
 use std.runtime.capability.types.CAPABILITY_MAX_REGISTRY_ENTRIES;
@@ -43,14 +45,38 @@ export fn capability_manager_init(manager: &CapabilityManager, config: Capabilit
     try capability_backend_adapter_init(&manager.adapter, config);
 }
 
+fn capability_manager_session_ptr(manager: &CapabilityManager, index: i32) &CapabilityBackendSession {
+    if manager == null || index < 0 {
+        return null;
+    }
+    const entry_idx: usize = index as usize;
+    if entry_idx >= CAPABILITY_MAX_REGISTRY_ENTRIES as usize {
+        return null;
+    }
+    const base: &CapabilityBackendSession = &manager.sessions[0];
+    const off: usize = entry_idx * @size_of(CapabilityBackendSession);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &CapabilityBackendSession;
+}
+
+fn capability_manager_session_loaded_ptr(manager: &CapabilityManager, index: i32) &bool {
+    if manager == null || index < 0 {
+        return null;
+    }
+    const entry_idx: usize = index as usize;
+    if entry_idx >= CAPABILITY_MAX_REGISTRY_ENTRIES as usize {
+        return null;
+    }
+    return (@usize_from_ptr(&manager.session_loaded[0] as &void) + entry_idx * @size_of(bool)) as &bool;
+}
+
 fn capability_manager_require_entry(manager: &CapabilityManager, index: i32) !void {
     const entry_cap: i32 = @len(manager.registry.entries) as i32;
     if index < 0 || index >= manager.registry.count || index >= entry_cap {
         return error.CapabilityManagerInvalidState;
     }
-    const entry_idx: usize = index as usize;
-    if entry_idx < @len(manager.registry.entries) {
-        if manager.registry.entries[entry_idx].in_use == false {
+    const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(&manager.registry, index);
+    if entry != null {
+        if entry.in_use == false {
             return error.CapabilityManagerInvalidState;
         }
         return;
@@ -68,14 +94,20 @@ export fn capability_manager_load(manager: &CapabilityManager, index: i32, paylo
     if entry_idx < @len(manager.registry.entries) &&
        entry_idx < @len(manager.sessions) &&
        entry_idx < @len(manager.session_loaded) {
+        const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(&manager.registry, index);
+        const session_ptr: &CapabilityBackendSession = capability_manager_session_ptr(manager, index);
+        const loaded_ptr: &bool = capability_manager_session_loaded_ptr(manager, index);
+        if entry == null || session_ptr == null || loaded_ptr == null {
+            return error.CapabilityManagerInvalidState;
+        }
         const session: CapabilityBackendSession = try capability_backend_adapter_load_module(
             &manager.adapter,
             payload,
             payload_len,
-            manager.registry.entries[entry_idx].manifest,
+            entry.manifest,
         );
-        manager.sessions[entry_idx] = session;
-        manager.session_loaded[entry_idx] = true;
+        *session_ptr = session;
+        loaded_ptr[0] = true;
         return;
     }
     return error.CapabilityManagerInvalidState;
@@ -85,7 +117,11 @@ export fn capability_manager_activate(manager: &CapabilityManager, index: i32) !
     try capability_manager_require_entry(manager, index);
     const entry_idx: usize = index as usize;
     if entry_idx < @len(manager.session_loaded) {
-        if manager.session_loaded[entry_idx] == false {
+        const loaded_ptr: &bool = capability_manager_session_loaded_ptr(manager, index);
+        if loaded_ptr == null {
+            return error.CapabilityManagerInvalidState;
+        }
+        if loaded_ptr[0] == false {
             return error.CapabilityManagerNotLoaded;
         }
 
@@ -101,15 +137,21 @@ export fn capability_manager_invoke(manager: &CapabilityManager, index: i32, tri
     if entry_idx < @len(manager.registry.entries) &&
        entry_idx < @len(manager.sessions) &&
        entry_idx < @len(manager.session_loaded) {
-        if manager.session_loaded[entry_idx] == false {
+        const entry: &CapabilityRegistryEntry = capability_registry_entry_ptr(&manager.registry, index);
+        const session_ptr: &CapabilityBackendSession = capability_manager_session_ptr(manager, index);
+        const loaded_ptr: &bool = capability_manager_session_loaded_ptr(manager, index);
+        if entry == null || session_ptr == null || loaded_ptr == null {
+            return error.CapabilityManagerInvalidState;
+        }
+        if loaded_ptr[0] == false {
             return error.CapabilityManagerNotLoaded;
         }
-        if manager.registry.entries[entry_idx].state != CapabilityState.Active {
+        if entry.state != CapabilityState.Active {
             return error.CapabilityManagerInvalidState;
         }
 
-        const status: CapabilityStatusCode = try capability_backend_adapter_invoke(&manager.adapter, &manager.sessions[entry_idx], trigger_id);
-        manager.registry.entries[entry_idx].last_status = status;
+        const status: CapabilityStatusCode = try capability_backend_adapter_invoke(&manager.adapter, session_ptr, trigger_id);
+        entry.last_status = status;
         if status != CapabilityStatusCode.Ok {
             try capability_loader_fail(&manager.registry, index, status);
         }
@@ -130,12 +172,17 @@ export fn capability_manager_unload(manager: &CapabilityManager, index: i32) !vo
     try capability_manager_require_entry(manager, index);
     const entry_idx: usize = index as usize;
     if entry_idx < @len(manager.sessions) && entry_idx < @len(manager.session_loaded) {
-        if manager.session_loaded[entry_idx] == false {
+        const session_ptr: &CapabilityBackendSession = capability_manager_session_ptr(manager, index);
+        const loaded_ptr: &bool = capability_manager_session_loaded_ptr(manager, index);
+        if session_ptr == null || loaded_ptr == null {
+            return error.CapabilityManagerInvalidState;
+        }
+        if loaded_ptr[0] == false {
             return error.CapabilityManagerNotLoaded;
         }
 
-        try capability_backend_adapter_destroy_session(&manager.adapter, &manager.sessions[entry_idx]);
-        manager.session_loaded[entry_idx] = false;
+        try capability_backend_adapter_destroy_session(&manager.adapter, session_ptr);
+        loaded_ptr[0] = false;
         try capability_loader_disable(&manager.registry, index);
         return;
     }

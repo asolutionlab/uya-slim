@@ -226,8 +226,8 @@ usage() {
   --c99               使用 C99 后端生成 C 代码（输出文件后缀为 .c 时自动启用）
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）
-  --safety-proof      启用内存安全检查（传给 uya；uya 默认已开，自举时一般不需）
-  --no-safety-proof   禁用内存安全检查（默认：向 uya 传此选项，便于自举编译尚未全量过证的编译器源码）
+  --safety-proof      启用内存安全检查（传给 uya；默认启用）
+  --no-safety-proof   禁用内存安全检查
   --stack-size KB     设置堆栈大小（KB），编译器启动时使用 setrlimit 设置
   --compiler PATH     指定编译器路径（默认: $COMPILER）
 
@@ -273,7 +273,7 @@ BOOTSTRAP_COMPARE=false
 USE_C99=false
 USE_LINE_DIRECTIVES=false
 USE_NOSTDLIB=false
-USE_SAFETY_PROOF=false  # 默认向 uya 传 --no-safety-proof（uya 默认开证明；自举编译器源码需关）
+USE_SAFETY_PROOF=true  # 默认向 uya 传 --safety-proof
 
 # 解析命令行选项
 while [[ $# -gt 0 ]]; do
@@ -954,7 +954,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             if [ "$USE_NOSTDLIB" = true ]; then
                 BOOTSTRAP_UYA_FLAGS+=(--nostdlib)
             fi
-            # 与主编译 COMPILER_CMD 一致：默认自举编译编译器源码须关证明
+            # 与主编译 COMPILER_CMD 一致：默认保持 safety proof 开启
             if [ "$USE_SAFETY_PROOF" = true ]; then
                 BOOTSTRAP_UYA_FLAGS+=(--safety-proof)
             else

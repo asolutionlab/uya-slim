@@ -126,10 +126,11 @@ fn add_enum_definition(codegen: &C99CodeGenerator, enum_name: &byte) void {
         i = i + 1;
     }
     
-    if codegen.enum_definition_count < C99_MAX_ENUM_DEFINITIONS {
-        codegen.enum_definitions[codegen.enum_definition_count].name = enum_name;
-        codegen.enum_definitions[codegen.enum_definition_count].defined = 0;
-        codegen.enum_definition_count = codegen.enum_definition_count + 1;
+    const enum_idx: i32 = codegen.enum_definition_count;
+    if enum_idx >= 0 && enum_idx < C99_MAX_ENUM_DEFINITIONS {
+        codegen.enum_definitions[enum_idx].name = enum_name;
+        codegen.enum_definitions[enum_idx].defined = 0;
+        codegen.enum_definition_count = enum_idx + 1;
     }
 }
 
@@ -210,4 +211,3 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
     mark_enum_defined(codegen, enum_name);
     return 0;
 }
-

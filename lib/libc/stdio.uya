@@ -2072,13 +2072,24 @@ export extern "libc" fn tmpfile() &FILE {
 var _file_storage: [FILE: 16] = [];
 var _file_storage_idx: usize = 0;
 
-fn _alloc_file_storage() &FILE {
-    if _file_storage_idx >= 0 && _file_storage_idx < @len(_file_storage) {
-        const ptr: &FILE = &_file_storage[_file_storage_idx];
-        _file_storage_idx = _file_storage_idx + 1;
-        return ptr;
+fn _file_storage_at(idx: i32) &FILE {
+    if idx >= 0 && idx < 16 {
+        return &_file_storage[idx];
     }
     return null;
+}
+
+fn _alloc_file_storage() &FILE {
+    const storage_idx: i32 = _file_storage_idx as i32;
+    if storage_idx < 0 {
+        return null;
+    }
+    if storage_idx >= @len(_file_storage) {
+        return null;
+    }
+    const ptr: &FILE = _file_storage_at(storage_idx);
+    _file_storage_idx = (storage_idx + 1) as usize;
+    return ptr;
 }
 
 // tmpnam - 生成临时文件名

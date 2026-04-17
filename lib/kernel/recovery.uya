@@ -44,6 +44,37 @@ export struct RecoveryManager {
     log_count: u32,
 }
 
+fn recovery_state_ptr(r: &RecoveryManager, cid: u32) &ContainerRecovery {
+    if r == null {
+        return null;
+    }
+    if cid >= MAX_CONTAINERS {
+        return null;
+    }
+    if cid == 0u32 {
+        return &r.states[0];
+    }
+    if cid == 1u32 {
+        return &r.states[1];
+    }
+    if cid == 2u32 {
+        return &r.states[2];
+    }
+    if cid == 3u32 {
+        return &r.states[3];
+    }
+    if cid == 4u32 {
+        return &r.states[4];
+    }
+    if cid == 5u32 {
+        return &r.states[5];
+    }
+    if cid == 6u32 {
+        return &r.states[6];
+    }
+    return &r.states[7];
+}
+
 export fn recovery_init(r: &RecoveryManager) void {
     r.log_head = 0;
     r.log_count = 0;
@@ -60,21 +91,25 @@ export fn recovery_init(r: &RecoveryManager) void {
 // ── Record a crash ──
 
 export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_code: u32) void {
-    if cid >= 0 && cid < @len(r.states) {
+    if cid < MAX_CONTAINERS {
+        const state: &ContainerRecovery = recovery_state_ptr(r, cid);
+        if state == null {
+            return;
+        }
         // Check if current window expired
-        if now - r.states[cid].window_start > CRASH_WINDOW_SEC {
-            r.states[cid].crash_count = 0;
-            r.states[cid].window_start = now;
+        if now - state.window_start > CRASH_WINDOW_SEC {
+            state.crash_count = 0;
+            state.window_start = now;
         }
 
-        r.states[cid].crash_count = r.states[cid].crash_count + 1;
+        state.crash_count = state.crash_count + 1;
 
-        if r.states[cid].crash_count >= CRASH_FUSE_THRESHOLD {
-            r.states[cid].fused = 1;
+        if state.crash_count >= CRASH_FUSE_THRESHOLD {
+            state.fused = 1;
         }
 
         // Write to crash log (circular)
-        const restarts: u32 = r.states[cid].total_restarts;
+        const restarts: u32 = state.total_restarts;
         if r.log_head >= 0 && r.log_head < 16 {
             r.log[r.log_head].timestamp = now;
             r.log[r.log_head].container_id = cid;
@@ -93,8 +128,12 @@ export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_c
 // ── Should this container auto-restart? ──
 
 export fn recovery_should_restart(r: &RecoveryManager, cid: u32) i32 {
-    if cid >= 0 && cid < 8 {
-        if r.states[cid].fused != 0 { return 0; }
+    if cid < 8u32 {
+        const state: &ContainerRecovery = recovery_state_ptr(r, cid);
+        if state == null {
+            return 0;
+        }
+        if state.fused != 0 { return 0; }
         return 1;
     }
     return 0;
@@ -103,25 +142,32 @@ export fn recovery_should_restart(r: &RecoveryManager, cid: u32) i32 {
 // ── Mark container as restarted ──
 
 export fn recovery_mark_restarted(r: &RecoveryManager, cid: u32) void {
-    if cid >= 0 && cid < 8 {
-        r.states[cid].total_restarts = r.states[cid].total_restarts + 1;
+    if cid < 8u32 {
+        const state: &ContainerRecovery = recovery_state_ptr(r, cid);
+        if state != null {
+            state.total_restarts = state.total_restarts + 1;
+        }
     }
 }
 
 // ── Reset fuse (explicit recovery command) ──
 
 export fn recovery_reset_fuse(r: &RecoveryManager, cid: u32) void {
-    if cid >= 0 && cid < 8 {
-        r.states[cid].fused = 0;
-        r.states[cid].crash_count = 0;
+    if cid < 8u32 {
+        const state: &ContainerRecovery = recovery_state_ptr(r, cid);
+        if state != null {
+            state.fused = 0;
+            state.crash_count = 0;
+        }
     }
 }
 
 // ── Query state ──
 
 export fn recovery_is_fused(r: &RecoveryManager, cid: u32) i32 {
-    if cid >= 0 && cid < 8 {
-        if r.states[cid].fused != 0u32 {
+    if cid < 8u32 {
+        const state: &ContainerRecovery = recovery_state_ptr(r, cid);
+        if state != null && state.fused != 0u32 {
             return 1;
         }
         return 0;
@@ -130,8 +176,11 @@ export fn recovery_is_fused(r: &RecoveryManager, cid: u32) i32 {
 }
 
 export fn recovery_crash_count(r: &RecoveryManager, cid: u32) u32 {
-    if cid >= 0 && cid < 8 {
-        return r.states[cid].crash_count;
+    if cid < 8u32 {
+        const state: &ContainerRecovery = recovery_state_ptr(r, cid);
+        if state != null {
+            return state.crash_count;
+        }
     }
     return 0;
 }

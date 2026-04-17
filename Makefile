@@ -145,7 +145,7 @@ uya:
 	fi
 	@echo "使用 bin/uya 编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'set -e; EXTRA_FLAGS=""; if [ -n "$$CI" ] || [ -n "$$GITHUB_ACTIONS" ]; then EXTRA_FLAGS="--verbose"; fi; ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --no-safety-proof $$EXTRA_FLAGS'
+	@bash -c 'set -e; EXTRA_FLAGS=""; if [ -n "$$CI" ] || [ -n "$$GITHUB_ACTIONS" ]; then EXTRA_FLAGS="--verbose"; fi; ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --safety-proof $$EXTRA_FLAGS'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi
@@ -168,7 +168,7 @@ uya-hosted:
 	fi
 	@echo "使用 hosted 编译器编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'set -e; UYA_COMPILER_PATH=""; if [ -f "../bin/uya-hosted" ]; then UYA_COMPILER_PATH="../bin/uya-hosted"; else UYA_COMPILER_PATH="../bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --no-safety-proof'
+	@bash -c 'set -e; UYA_COMPILER_PATH=""; if [ -f "../bin/uya-hosted" ]; then UYA_COMPILER_PATH="../bin/uya-hosted"; else UYA_COMPILER_PATH="../bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi
@@ -202,7 +202,7 @@ b: uya
 	@echo "=========================================="
 	@echo "自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --nostdlib --no-safety-proof'
+	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --nostdlib --safety-proof'
 	@echo ""
 	@echo "✓ 自举验证完成"
 
@@ -211,7 +211,7 @@ b-hosted: uya-hosted
 	@echo "=========================================="
 	@echo "hosted 自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@bash -c 'ulimit -s 32768 && cd src && UYA_COMPILER="../bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --no-safety-proof'
+	@bash -c 'ulimit -s 32768 && cd src && UYA_COMPILER="../bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --safety-proof'
 	@echo ""
 	@echo "✓ hosted 自举验证完成"
 
@@ -598,7 +598,7 @@ backup: check
 # 单文件 C 种子：更新 bin/uya.c 与 backup/uya.c（from-c / release 依赖单文件）
 backup-seed:
 	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 bin/uya.c 与 backup/uya.c …"
-	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --no-safety-proof'
+	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --safety-proof'
 	@cp src/build/uya.c bin/uya.c
 	@mkdir -p backup
 	@cp bin/uya.c backup/uya.c
@@ -609,7 +609,7 @@ backup-seed:
 # hosted 单文件 C 种子：更新通用备份与 host/arch 专用备份（std.cfg 会固化 host/target）
 backup-hosted-seed:
 	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 backup/uya-hosted.c 与 host/arch 专用备份 …"
-	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --no-safety-proof'
+	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
 	@mkdir -p backup
 	@cp src/build/uya-hosted.c backup/uya-hosted.c
 	@cp src/build/uya-hosted.c backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c

@@ -595,9 +595,6 @@ export @async_fn fn async_fd_write_all(fd: i32, data: &const byte, count: usize)
 
 use libc.syscall;
 
-const ASYNC_ERR_EAGAIN: u32 = EAGAIN as u32;
-const ASYNC_ERR_EWOULDBLOCK: u32 = EWOULDBLOCK as u32;
-
 struct AsyncFdWriteFuture : Future<!usize> {
     fd: i32,
     data: &const byte,
@@ -626,7 +623,7 @@ struct AsyncFdWriteFuture : Future<!usize> {
         const result: !isize = sys_write(self.fd, self.data as *const byte, self.count);
         const n: isize = result catch |err| {
             const err_id: u32 = @error_id(err);
-            if err_id == ASYNC_ERR_EAGAIN || err_id == ASYNC_ERR_EWOULDBLOCK {
+            if err_id == libc_EAGAIN as u32 || err_id == libc_EWOULDBLOCK as u32 {
                 waker.wait_writable(self.fd);
                 const p: Poll<!usize> = Poll<!usize>.Pending({});
                 return p;
@@ -671,7 +668,7 @@ struct AsyncFdReadFuture : Future<!usize> {
         const result: !isize = sys_read(self.fd, self.buf as *byte, self.count);
         const n: isize = result catch |err| {
             const err_id: u32 = @error_id(err);
-            if err_id == ASYNC_ERR_EAGAIN || err_id == ASYNC_ERR_EWOULDBLOCK {
+            if err_id == libc_EAGAIN as u32 || err_id == libc_EWOULDBLOCK as u32 {
                 waker.wait_readable(self.fd);
                 const p: Poll<!usize> = Poll<!usize>.Pending({});
                 return p;

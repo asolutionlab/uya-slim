@@ -10,6 +10,46 @@ var g_mono_index_initialized: i32 = 0;
 var g_mono_index_heads: [i32: MONO_INSTANCE_INDEX_SIZE] = [];
 var g_mono_index_next: [i32: MAX_MONO_INSTANCES] = [];
 
+fn mono_index_head_at(idx: i32) i32 {
+    if idx < 0 {
+        return 0;
+    }
+    if idx >= MONO_INSTANCE_INDEX_SIZE {
+        return 0;
+    }
+    return g_mono_index_heads[idx];
+}
+
+fn mono_index_head_set(idx: i32, value: i32) void {
+    if idx < 0 {
+        return;
+    }
+    if idx >= MONO_INSTANCE_INDEX_SIZE {
+        return;
+    }
+    g_mono_index_heads[idx] = value;
+}
+
+fn mono_index_next_at(idx: i32) i32 {
+    if idx < 0 {
+        return 0;
+    }
+    if idx >= MAX_MONO_INSTANCES {
+        return 0;
+    }
+    return g_mono_index_next[idx];
+}
+
+fn mono_index_next_set(idx: i32, value: i32) void {
+    if idx < 0 {
+        return;
+    }
+    if idx >= MAX_MONO_INSTANCES {
+        return;
+    }
+    g_mono_index_next[idx] = value;
+}
+
 fn mono_instance_index_reset() void {
     var i: i32 = 0;
     while i < MONO_INSTANCE_INDEX_SIZE {
@@ -46,14 +86,28 @@ fn mono_instance_index_link(checker: &TypeChecker, idx: i32) void {
     if idx < 0 || idx >= MAX_MONO_INSTANCES {
         return;
     }
-    if idx >= 0 && idx < @len(checker.mono_instances) {
+    if idx >= 0 && idx < checker.mono_instance_count && idx < MAX_MONO_INSTANCES {
         const inst: &MonoInstance = &checker.mono_instances[idx];
         if inst.generic_name == null {
             return;
         }
         const slot: i32 = mono_instance_index_slot(inst.generic_name, inst.is_function);
-        g_mono_index_next[idx] = g_mono_index_heads[slot];
-        g_mono_index_heads[slot] = idx + 1;
+        const slot_idx: i32 = slot;
+        if slot_idx < 0 {
+            return;
+        }
+        if slot_idx >= MONO_INSTANCE_INDEX_SIZE {
+            return;
+        }
+        const next_idx: i32 = idx;
+        if next_idx < 0 {
+            return;
+        }
+        if next_idx >= MAX_MONO_INSTANCES {
+            return;
+        }
+        mono_index_next_set(next_idx, mono_index_head_at(slot_idx));
+        mono_index_head_set(slot_idx, idx + 1);
     }
 }
 
@@ -115,7 +169,13 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     
     // 检查是否已存在相同实例
     const slot: i32 = mono_instance_index_slot(generic_name, is_function);
-    var entry: i32 = g_mono_index_heads[slot];
+    if slot < 0 {
+        return -1;
+    }
+    if slot >= @len(g_mono_index_heads) {
+        return -1;
+    }
+    var entry: i32 = mono_index_head_at(slot);
     while entry != 0 {
         const current_idx: i32 = entry - 1;
         if current_idx >= 0 && current_idx < checker.mono_instance_count && current_idx < MAX_MONO_INSTANCES {
@@ -128,7 +188,13 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
                 return 0;
             }
         }
-        entry = g_mono_index_next[current_idx];
+        if current_idx < 0 {
+            break;
+        }
+        if current_idx >= @len(g_mono_index_next) {
+            break;
+        }
+        entry = mono_index_next_at(current_idx);
     }
     
     // 注册新实例
