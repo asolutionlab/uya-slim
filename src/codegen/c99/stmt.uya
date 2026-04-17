@@ -2097,10 +2097,14 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if type_c != null {
                 const type_len: i32 = strlen(type_c as *byte);
                 if is_const != 0 {
-                    // 为 "const " 前缀分配空间
-                    stored_type_c = compiler_arena_alloc(codegen.arena, type_len + 7) as &byte;
-                    if stored_type_c != null {
-                        snprintf(stored_type_c as *byte, type_len + 7, "const %s" as *byte, type_c as *byte);
+                    if c99_c_type_str_leading_const(type_c) != 0 {
+                        stored_type_c = c99_arena_strdup(codegen.arena, type_c);
+                    } else {
+                        // 为 "const " 前缀分配空间
+                        stored_type_c = compiler_arena_alloc(codegen.arena, type_len + 7) as &byte;
+                        if stored_type_c != null {
+                            snprintf(stored_type_c as *byte, type_len + 7, "const %s" as *byte, type_c as *byte);
+                        }
                     }
                 } else {
                     stored_type_c = c99_arena_strdup(codegen.arena, type_c);
@@ -2176,7 +2180,11 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     // 生成数组声明：const base_type var_name dimensions（字符串插值初始化时不使用 const）
                     c99_emit_indent(codegen);
                     if is_const != 0 && is_string_interp_init == 0 {
-                        fprintf(codegen.emit_stream as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                        if c99_c_type_str_leading_const(base_type as &byte) != 0 {
+                            fprintf(codegen.emit_stream as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                        } else {
+                            fprintf(codegen.emit_stream as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                        }
                     } else {
                         fprintf(codegen.emit_stream as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                     }
@@ -2228,7 +2236,11 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if type_c != null {
                 if is_const != 0 && is_string_interp_init == 0 {
                     c99_emit_indent(codegen);
-                    fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                    if c99_c_type_str_leading_const(type_c) != 0 {
+                        fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                    } else {
+                        fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                    }
                 } else {
                     c99_emit_indent(codegen);
                     fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
@@ -2296,12 +2308,17 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if strstr(type_c as *byte, "struct " as *byte) != null {
                     fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
                 } else {
-                    fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
-                    // 存储类型字符串：const T（用于变量表）
-                    const str_len4: i32 = strlen(type_c as *byte) + 7; // "const " + null
-                    stored_type_c_for_pointer = compiler_arena_alloc(codegen.arena, str_len4) as &byte;
-                    if stored_type_c_for_pointer != null {
-                        snprintf(stored_type_c_for_pointer as *byte, str_len4, "const %s" as *byte, type_c as *byte);
+                    if c99_c_type_str_leading_const(type_c) != 0 {
+                        fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                        stored_type_c_for_pointer = c99_arena_strdup(codegen.arena, type_c);
+                    } else {
+                        fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                        // 存储类型字符串：const T（用于变量表）
+                        const str_len4: i32 = strlen(type_c as *byte) + 7; // "const " + null
+                        stored_type_c_for_pointer = compiler_arena_alloc(codegen.arena, str_len4) as &byte;
+                        if stored_type_c_for_pointer != null {
+                            snprintf(stored_type_c_for_pointer as *byte, str_len4, "const %s" as *byte, type_c as *byte);
+                        }
                     }
                 }
             } else {

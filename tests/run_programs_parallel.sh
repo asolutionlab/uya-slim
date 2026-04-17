@@ -442,6 +442,13 @@ run_compiled_test_args() {
     fi
 
     local test_timeout="${UYA_TEST_TIMEOUT:-60}"
+    case "$base_name" in
+        test_https_debug|test_https_google|test_https_real_site|test_https_production|test_raw_tls)
+            # 外网 TLS/HTTPS 用例偶发受 DNS/TCP/TLS 握手抖动影响，给它们单独更宽的超时窗口，
+            # 避免 release 验收被瞬时网络波动误判为编译器回归。
+            test_timeout="${UYA_TEST_TIMEOUT_NETWORK:-120}"
+            ;;
+    esac
     local run_exit=0
     if command -v timeout >/dev/null 2>&1; then
         timeout "${test_timeout}s" "$exe_file" > /dev/null 2>&1 || run_exit=$?

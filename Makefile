@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -607,16 +607,46 @@ backup-seed:
 	@echo "✓ backup/uya.c、backup/uya-$(HOST_OS)-$(HOST_ARCH).c 与 bin/uya.c 已更新（单文件种子）"
 
 # hosted 单文件 C 种子：更新通用备份与 host/arch 专用备份（std.cfg 会固化 host/target）
+# 若检测到 zig，则顺带交叉刷新 macOS hosted seeds，避免 Linux 发布后仓库里的 Darwin 种子仍停留在旧快照
 backup-hosted-seed:
 	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 backup/uya-hosted.c 与 host/arch 专用备份 …"
 	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
 	@mkdir -p backup
 	@cp src/build/uya-hosted.c backup/uya-hosted.c
 	@cp src/build/uya-hosted.c backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c
-	@echo "✓ backup/uya-hosted.c 与 backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c 已更新（hosted 单文件种子）"
+	@bash -c 'set -e; \
+		if [ -x "$(ZIG)" ]; then \
+			echo "检测到 zig，交叉更新 macOS hosted 种子 …"; \
+			for ARCH in arm64 x86_64; do \
+				case "$$ARCH" in \
+					arm64) TRIPLE="aarch64-macos-none" ;; \
+					x86_64) TRIPLE="x86_64-macos-none" ;; \
+				esac; \
+				ulimit -s 32768 || true; \
+				( cd src && \
+					UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= \
+					CC="$(CC)" CC_DRIVER="$(ZIG) cc" CC_TARGET_FLAGS="-target $$TRIPLE" \
+					HOST_OS="macos" HOST_ARCH="$$ARCH" TARGET_OS="macos" TARGET_ARCH="$$ARCH" TARGET_TRIPLE="$$TRIPLE" \
+					TOOLCHAIN="zig" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE=dynamic \
+					CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
+					./compile.sh --c99 -e --name "uya-hosted-macos-$$ARCH" --safety-proof \
+				); \
+				cp "src/build/uya-hosted-macos-$$ARCH.c" "backup/uya-hosted-macos-$$ARCH.c"; \
+			done; \
+			echo "✓ backup/uya-hosted-macos-arm64.c 与 backup/uya-hosted-macos-x86_64.c 已更新（zig 交叉 hosted 种子）"; \
+		else \
+			echo "提示: 未找到可执行 zig ($(ZIG))，跳过 macOS hosted 交叉种子"; \
+		fi'
+	@echo "✓ backup/uya-hosted.c、backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c 与可用的 macOS hosted 种子已更新"
 
-# 验证 + 多文件备份 + 单文件种子（提交前完整备份）
-backup-all:backup backup-seed
+# 全量单文件种子：Linux/host nostdlib + hosted + 可用的 macOS hosted 种子
+backup-all-seed: backup-seed backup-hosted-seed
+
+# 兼容缩写/旧口误：make back-all-seed
+back-all-seed: backup-all-seed
+
+# 验证 + 多文件备份 + 全量单文件种子（提交前完整备份）
+backup-all:backup backup-all-seed
 
 # 发布前检查：确保本地 release 结果可作为“一键最终验证”
 # 要求工作树干净；否则直接失败，避免把“本地脏状态”误当成可发布结果
@@ -655,7 +685,7 @@ release-preflight:
 
 # 发布版本：验证 + 多文件备份 + 单文件种子 + 构建优化版本
 # 与 from-c 一致：Linux x86_64 的 nostdlib 种子含裸 _start，不可直接 cc uya.c（会与 Scrt1 _start 冲突），须 crti + .o + crtn 链接
-release: release-preflight clean from-c uya b check backup-seed release-build
+release: release-preflight clean from-c uya b check backup-all-seed release-build
 
 release-build:
 	@echo "=========================================="
@@ -691,7 +721,7 @@ release-build:
 
 # 在当前工作树直接执行完整 release 流程；跳过干净树检查
 # 适合本地调试，不适合作为“最终验证”结论
-release-dirty: clean from-c uya b check backup-seed release-build
+release-dirty: clean from-c uya b check backup-all-seed release-build
 
 # 在干净快照里执行 release，尽量贴近 GitHub Actions 的 checkout 环境
 # 注意：只包含已提交到 HEAD 的内容；未提交修改不会进入快照
@@ -808,9 +838,11 @@ help:
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c、backup/uya.c 与 host/arch 专用备份"
-	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c 与 host/arch 专用备份"
-	@echo "  make backup-all    - backup + backup-seed（提交前完整备份）"
-	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链 + strip"
+	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c、host/arch 备份；有 zig 时顺带刷新 macOS hosted seeds"
+	@echo "  make backup-all-seed - 全量单文件种子：Linux/host nostdlib + hosted + 可用的 macOS hosted seeds"
+	@echo "  make back-all-seed - backup-all-seed 的别名"
+	@echo "  make backup-all    - backup + backup-all-seed（提交前完整备份）"
+	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-all-seed 后 -O3 -DNDEBUG 重链 + strip"
 	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
 	@echo "  make release-clean - 用 Git HEAD 干净快照执行 make release，贴近 CI（忽略未提交修改）"
 	@echo "  make install       - 安装 uya、lib/、前缀/docs/、前缀/tests/；BINDIR/LIBDIR/DOCDIR/TESTSDIR/DESTDIR"
