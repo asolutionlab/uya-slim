@@ -54,16 +54,33 @@ const PTHREAD_JOINSTATE_DETACHED: i32 = 3;
 // destructor 迭代轮数
 const PTHREAD_DESTRUCTOR_ITERATIONS: i32 = 4;
 
-// 通过 @asm 间接调用函数指针 start_fn(start_arg)，x86-64 调用约定：rdi=arg，返回值在 rax
-// 注意：手写 call 前要把栈补到 SysV ABI 期望的 16-byte call-site 对齐；
-// 否则被调用函数在 -O2/-O3 下可能因为假定栈对齐成立而崩溃。
-// 输出用 usize 存指针，再转回 &void（@asm 输出仅允许整数）
+// 通过 @asm 间接调用函数指针 start_fn(start_arg)。
+// x86-64 需要手动维持 SysV ABI 的 16-byte call-site 对齐；AArch64/ARM 走各自 ABI。
+// 输出用 usize 存指针，再转回 &void（@asm 输出仅允许整数）。
 fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
     var r: usize = 0;
-    @asm {
-        "subq $8, %%rsp\n\tmovq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\taddq $8, %%rsp\n\tmovq %%rax, %0"
-        (start_fn, start_arg, -> r);
-    } clobbers = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory"];
+    std.cfg(std.target_arch == .ta_x86_64, {
+        @asm {
+            "subq $8, %%rsp\n\tmovq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\taddq $8, %%rsp\n\tmovq %%rax, %0"
+            (start_fn, start_arg, -> r);
+        } clobbers = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory"];
+    }, {
+        std.cfg(std.target_arch == .ta_arm64, {
+            @asm {
+                "mov x16, %1\n\tmov x0, %2\n\tblr x16\n\tmov %0, x0"
+                (start_fn, start_arg, -> r);
+            } clobbers = ["x16", "x17", "memory"];
+        }, {
+            std.cfg(std.target_arch == .ta_arm, {
+                @asm {
+                    "mov r12, %1\n\tmov r0, %2\n\tblx r12\n\tmov %0, r0"
+                    (start_fn, start_arg, -> r);
+                } clobbers = ["r12", "lr", "memory"];
+            }, {
+                sys_exit(127);
+            })
+        })
+    })
     return r as &void;
 }
 
@@ -476,15 +493,27 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     var tid: i64 = 0;
     var child_ptid: i32 = 0;
     const flags: i64 = CLONE_FLAGS;
-    std.cfg(std.target_arch == .ta_x86_64, {
-        _pthread_start_fn_tmp = start_routine;
-        _pthread_start_arg_tmp = arg;
-        const stack_top: i64 = top as i64;
-        const ptid_ptr: i64 = (&child_ptid) as i64;
-        @asm {
-            "mov $56, %%rax\n\tmov $0x150f00, %%rdi\n\tmov %1, %%rsi\n\tmov %2, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\ttest %%rax, %%rax\n\tjnz 1f\n\tmov _pthread_child_desc(%%rip), %%rdi\n\tcall _pthread_child_bootstrap\n1:\n\tmov %%rax, %0"
-            (stack_top, ptid_ptr, -> tid);
-        } clobbers = ["rax", "rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
+    std.cfg(std.target_os == .tos_linux, {
+        std.cfg(std.target_arch == .ta_x86_64, {
+            _pthread_start_fn_tmp = start_routine;
+            _pthread_start_arg_tmp = arg;
+            const stack_top: i64 = top as i64;
+            const ptid_ptr: i64 = (&child_ptid) as i64;
+            @asm {
+                "mov $56, %%rax\n\tmov $0x150f00, %%rdi\n\tmov %1, %%rsi\n\tmov %2, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\ttest %%rax, %%rax\n\tjnz 1f\n\tmov _pthread_child_desc(%%rip), %%rdi\n\tcall _pthread_child_bootstrap\n1:\n\tmov %%rax, %0"
+                (stack_top, ptid_ptr, -> tid);
+            } clobbers = ["rax", "rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
+        }, {
+            const cl: !i64 = sys_clone(flags, top, &child_ptid, null, null);
+            tid = cl catch {
+                (0 - 1) as i64;
+            };
+            if tid == 0 {
+                _ = sys_set_tid_address(null);
+                desc.started = 1;
+                _pthread_thread_exit(desc, _pthread_call_start(desc.start_routine, desc.arg));
+            }
+        })
     }, {
         const cl: !i64 = sys_clone(flags, top, &child_ptid, null, null);
         tid = cl catch {

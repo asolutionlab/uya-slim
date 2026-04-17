@@ -2576,6 +2576,32 @@ fn resolve_cc_driver(buffer: &byte, buffer_size: i32) &byte {
     return get_env_or_default("CC" as *byte, "cc" as *byte);
 }
 
+fn cc_driver_is_clang_like(cc_driver: &byte) i32 {
+    if cc_driver == null {
+        return 0;
+    }
+    if strstr(cc_driver as *byte, "clang" as *byte) != null {
+        return 1;
+    }
+    if strstr(cc_driver as *byte, "zig cc" as *byte) != null || strstr(cc_driver as *byte, "zig c++" as *byte) != null {
+        return 1;
+    }
+    return 0;
+}
+
+fn hosted_cflags_add_clang_compat(cflags: &byte, cc_driver: &byte, buffer: &byte, buffer_size: i32) &byte {
+    if cflags == null || cc_driver_is_clang_like(cc_driver) == 0 {
+        return cflags;
+    }
+    const written: i32 = snprintf(buffer as *byte, buffer_size,
+        "%s -Wno-pointer-sign -Wno-parentheses-equality -Wno-ignored-optimization-argument" as *byte,
+        cflags as *byte);
+    if written > 0 && written < buffer_size {
+        return buffer;
+    }
+    return cflags;
+}
+
 fn target_matches_host_platform() i32 {
     const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
     const target_arch: &byte = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
@@ -2642,10 +2668,28 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
     var cc_driver_buffer: [byte: PATH_MAX] = [];
     const cc_driver: &byte = resolve_cc_driver(&cc_driver_buffer[0] as &byte, PATH_MAX);
     const cflags_env: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin" as *byte);
+    const target_triple: &byte = get_env_or_default("TARGET_TRIPLE" as *byte, "" as *byte);
+    var target_flags: &byte = get_env_or_default("CC_TARGET_FLAGS" as *byte, "" as *byte);
+    var target_flags_buffer: [byte: 256] = [];
+    if target_flags[0] == 0 && target_triple[0] != 0 {
+        const target_flags_len: i32 = snprintf(&target_flags_buffer[0], 256, "-target %s" as *byte, target_triple as *byte);
+        if target_flags_len > 0 && target_flags_len < 256 {
+            target_flags = &target_flags_buffer[0];
+        }
+    }
+    var cc_make_buffer: [byte: PATH_MAX] = [];
+    var cc_make: &byte = cc_driver;
+    if target_flags[0] != 0 {
+        const cc_make_len: i32 = snprintf(&cc_make_buffer[0] as *byte, PATH_MAX, "%s %s" as *byte, cc_driver as *byte, target_flags as *byte);
+        if cc_make_len > 0 && cc_make_len < PATH_MAX {
+            cc_make = &cc_make_buffer[0];
+        }
+    }
+    var cflags_clang_buf: [byte: 2048] = [];
     var cflags_buf: [byte: 2048] = [];
-    var cflags: &byte = cflags_env;
-    if hosted_cflags_need_no_small_inline(cflags_env) != 0 && hosted_cflags_has_no_small_inline(cflags_env) == 0 {
-        const wcf: i32 = snprintf(&cflags_buf[0] as *byte, 2048, "%s -fno-inline-small-functions" as *byte, cflags_env as *byte);
+    var cflags: &byte = hosted_cflags_add_clang_compat(cflags_env, cc_driver, &cflags_clang_buf[0] as &byte, 2048);
+    if cc_driver_is_clang_like(cc_driver) == 0 && hosted_cflags_need_no_small_inline(cflags_env) != 0 && hosted_cflags_has_no_small_inline(cflags_env) == 0 {
+        const wcf: i32 = snprintf(&cflags_buf[0] as *byte, 2048, "%s -fno-inline-small-functions" as *byte, cflags as *byte);
         if wcf > 0 && wcf < 2048 {
             cflags = &cflags_buf[0];
         }
@@ -2669,7 +2713,7 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
     }
     const jobs_env: &byte = get_env_or_default("UYA_GCC_JOBS" as *byte, "4" as *byte);
     _ = setenv("UYA_OUT" as *byte, output_exe, 1);
-    _ = setenv("CC" as *byte, cc_driver, 1);
+    _ = setenv("CC" as *byte, cc_make, 1);
     _ = setenv("CFLAGS" as *byte, cflags, 1);
     _ = setenv("LDFLAGS" as *byte, ld_use, 1);
     // 嵌套 make 时清除 GNU make jobserver 变量，避免在「外层 make -j」下子 make 与父 make 争用令牌而卡死
@@ -2705,10 +2749,11 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
     const cc_driver: &byte = resolve_cc_driver(&cc_driver_buffer[0] as &byte, PATH_MAX);
     // 默认对齐仓库 Makefile 的 hosted CFLAGS，避免 uya build/run/test 与 make check 走出不同的宿主代码路径。
     const cflags_env: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin" as *byte);
+    var cflags_clang_buf: [byte: 2048] = [];
     var cflags_buf: [byte: 2048] = [];
-    var cflags: &byte = cflags_env;
-    if hosted_cflags_need_no_small_inline(cflags_env) != 0 && hosted_cflags_has_no_small_inline(cflags_env) == 0 {
-        const wcf: i32 = snprintf(&cflags_buf[0] as *byte, 2048, "%s -fno-inline-small-functions" as *byte, cflags_env as *byte);
+    var cflags: &byte = hosted_cflags_add_clang_compat(cflags_env, cc_driver, &cflags_clang_buf[0] as &byte, 2048);
+    if cc_driver_is_clang_like(cc_driver) == 0 && hosted_cflags_need_no_small_inline(cflags_env) != 0 && hosted_cflags_has_no_small_inline(cflags_env) == 0 {
+        const wcf: i32 = snprintf(&cflags_buf[0] as *byte, 2048, "%s -fno-inline-small-functions" as *byte, cflags as *byte);
         if wcf > 0 && wcf < 2048 {
             cflags = &cflags_buf[0];
             fprintf(libc.stderr, "信息：CFLAGS 含 -O2/-O3/-Os，已自动追加 -fno-inline-small-functions（规避宿主 GCC 对部分生成代码的错误小函数内联）\n" as *byte);

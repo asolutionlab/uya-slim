@@ -77,15 +77,54 @@ if [ -n "$CC_TARGET_FLAGS" ]; then
     CC_CMD+=("${CC_TARGET_FLAGS_ARR[@]}")
 fi
 
+cc_driver_is_clang_like() {
+    case "$1" in
+        *clang*|*"zig cc"*|*"zig c++"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+append_clang_warning_compat() {
+    local base="$1"
+    if ! cc_driver_is_clang_like "$CC_DRIVER"; then
+        printf '%s' "$base"
+        return
+    fi
+    printf '%s' "$base"
+    case " $base " in
+        *" -Wno-pointer-sign "*) ;;
+        *) printf ' %s' "-Wno-pointer-sign" ;;
+    esac
+    case " $base " in
+        *" -Wno-parentheses-equality "*) ;;
+        *) printf ' %s' "-Wno-parentheses-equality" ;;
+    esac
+    case " $base " in
+        *" -Wno-ignored-optimization-argument "*) ;;
+        *) printf ' %s' "-Wno-ignored-optimization-argument" ;;
+    esac
+}
+
+build_make_cc_driver() {
+    if [ -n "$CC_TARGET_FLAGS" ]; then
+        printf '%s %s' "$CC_DRIVER" "$CC_TARGET_FLAGS"
+    else
+        printf '%s' "$CC_DRIVER"
+    fi
+}
+
 CFLAGS_ARR=()
-if [ -n "$CFLAGS" ]; then
-    read -r -a CFLAGS_ARR <<< "$CFLAGS"
+CFLAGS_EFFECTIVE="$(append_clang_warning_compat "$CFLAGS")"
+if [ -n "$CFLAGS_EFFECTIVE" ]; then
+    read -r -a CFLAGS_ARR <<< "$CFLAGS_EFFECTIVE"
 fi
 
 LDFLAGS_ARR=()
 if [ -n "$LDFLAGS" ]; then
     read -r -a LDFLAGS_ARR <<< "$LDFLAGS"
 fi
+
+CC_MAKE_DRIVER="$(build_make_cc_driver)"
 
 quote_cmd() {
     printf '%q ' "$@"
@@ -117,7 +156,7 @@ run_uya_split_make_link() {
         echo "多文件 C 链接: env -u MAKEFLAGS … make -C \"$split_dir\" -j$jobs UYA_OUT=\"$out_exe\" …"
     fi
     # 避免在外层 make -j 时子 make 继承 jobserver 导致死锁（与 src/main.uya link_split_with_make 一致）
-    env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_DRIVER" CFLAGS="$CFLAGS" LDFLAGS="$ld_use"
+    env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_MAKE_DRIVER" CFLAGS="$CFLAGS_EFFECTIVE" LDFLAGS="$ld_use"
 }
 
 # 多文件自举对比：主编译产物在 src/.uyacache/…，自举产物在 src/build/bootstrap_split_c/…。
