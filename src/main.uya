@@ -1277,16 +1277,11 @@ fn seed_function_reachability_roots(checker: &TypeChecker, program: &ASTNode) vo
     }
 }
 
-std.cfg(std.host_os == .hos_linux, {
-    const DIRENT_OFF_D_TYPE: usize = 18;
-    const DIRENT_OFF_D_NAME: usize = 19;
-}, std.cfg(std.host_os == .hos_macos, {
-    const DIRENT_OFF_D_TYPE: usize = 20;
-    const DIRENT_OFF_D_NAME: usize = 21;
-}, {
-    const DIRENT_OFF_D_TYPE: usize = 18;
-    const DIRENT_OFF_D_NAME: usize = 19;
-}))
+// 注意：这里访问的是 Uya `libc.Dirent` 抽象，不是宿主 libc 的原生 `struct dirent`。
+// `libc.stdlib.readdir` 已将平台原生目录项收敛到统一布局：
+// d_ino(8) d_off(8) d_reclen(2) d_type(1) d_name[]
+const DIRENT_OFF_D_TYPE: usize = 18;
+const DIRENT_OFF_D_NAME: usize = 19;
 
 fn dirent_get_type(entry_ptr: &byte) byte {
     return entry_ptr[DIRENT_OFF_D_TYPE];

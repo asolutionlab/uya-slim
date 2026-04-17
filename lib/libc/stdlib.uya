@@ -1023,6 +1023,10 @@ export extern "libc" fn clearenv() i32 {
 // 目录操作函数（C 标准库兼容）
 // ============================================================
 
+extern "libc" fn uya_macos_host_opendir(name: &const byte) &void;
+extern "libc" fn uya_macos_host_readdir_fill(dirp: &void, out: *void) i32;
+extern "libc" fn uya_macos_host_closedir(dirp: &void) i32;
+
 // 目录句柄不透明类型（与 POSIX DIR* 对应）
 export struct DIR {}
 
@@ -1058,31 +1062,39 @@ export extern "libc" fn opendir(name: &const byte) &DIR {
     if name == null {
         return null;
     }
-    
-    const result: !i32 = sys_open(name, (O_RDONLY | O_DIRECTORY) as i32, 0);
-    const fd: i32 = result catch {
-        return null;
-    };
-    
-    if fd < 0 {
-        return null;
-    }
-    
-    var j: i32 = 0;
-    while j < 64 {
-        const slot: &DirState = &opendir_storage[j];
-        if slot.fd <= 0 {
-            slot.fd = fd as i64;
-            slot.dir_pos = 0;
-            slot.buf_pos = 0;
-            slot.buf_len = 0;
-            return slot as &DIR;
+
+    std.cfg(std.target_os == .tos_macos, {
+        const host_dir: &void = uya_macos_host_opendir(name);
+        if host_dir == null {
+            return null;
         }
-        j = j + 1;
-    }
-    
-    _ = sys_close(fd);
-    return null;
+        return host_dir as &DIR;
+    }, {
+        const result: !i32 = sys_open(name, (O_RDONLY | O_DIRECTORY) as i32, 0);
+        const fd: i32 = result catch {
+            return null;
+        };
+
+        if fd < 0 {
+            return null;
+        }
+
+        var j: i32 = 0;
+        while j < 64 {
+            const slot: &DirState = &opendir_storage[j];
+            if slot.fd <= 0 {
+                slot.fd = fd as i64;
+                slot.dir_pos = 0;
+                slot.buf_pos = 0;
+                slot.buf_len = 0;
+                return slot as &DIR;
+            }
+            j = j + 1;
+        }
+
+        _ = sys_close(fd);
+        return null;
+    })
 }
 
 // readdir - 读取目录项（使用 getdents64 实现）
@@ -1092,89 +1104,49 @@ export extern "libc" fn readdir(dirp: &DIR) &Dirent {
     if dirp == null {
         return null;
     }
-    
-    const state: &DirState = dirp as &DirState;
-    if state.fd < 0 {
-        return null;
-    }
-    
-    while 1 != 0 {
-        if state.buf_len == 0 as isize {
-            std.cfg(std.target_os == .tos_macos, {
-                const getdents_result: !isize = sys_getdirentries64(state.fd as i32, &state.buf[0] as *void, READDIR_BUF_SIZE, &state.dir_pos);
-                state.buf_len = getdents_result catch {
-                    return null;
-                };
-            }, {
+
+    std.cfg(std.target_os == .tos_macos, {
+        const host_result: i32 = uya_macos_host_readdir_fill(dirp as &void, &readdir_result as *void);
+        if host_result <= 0 {
+            return null;
+        }
+        return &readdir_result;
+    }, {
+        const state: &DirState = dirp as &DirState;
+        if state.fd < 0 {
+            return null;
+        }
+
+        while 1 != 0 {
+            if state.buf_len == 0 as isize {
                 const getdents_result: !isize = sys_getdents64(state.fd as i32, &state.buf[0] as *void, READDIR_BUF_SIZE);
                 state.buf_len = getdents_result catch {
                     return null;
                 };
-            })
-            if state.buf_len <= 0 as isize {
-                return null;
-            }
-            state.buf_pos = 0;
-        }
-        const bl: usize = state.buf_len as usize;
-        const buf_pos: usize = state.buf_pos;
-        if buf_pos >= bl {
-            state.buf_len = 0 as isize;
-            continue;
-        }
-        if buf_pos >= @len(state.buf) {
-            state.buf_len = 0 as isize;
-            continue;
-        }
-        
-        const base: &byte = dir_state_buf_ptr_at(state, buf_pos);
-        if base == null {
-            state.buf_len = 0 as isize;
-            continue;
-        }
-        var reclen: usize = 0;
-        std.cfg(std.target_os == .tos_macos, {
-            var native_reclen: i16 = 0;
-            var namlen: u16 = 0;
-            memcpy(&native_reclen as *byte, &base[16] as *const byte, 2);
-            memcpy(&namlen as *byte, &base[18] as *const byte, 2);
-            if native_reclen <= 0 {
-                return null;
-            }
-            reclen = native_reclen as usize;
-            if state.buf_pos + reclen > bl || reclen < 21 {
-                return null;
-            }
-
-            memcpy(&readdir_result.d_ino as *byte, base as *const byte, 8);
-            memcpy(&readdir_result.d_off as *byte, &base[8] as *const byte, 8);
-            readdir_result.d_reclen = native_reclen;
-            readdir_result.d_type = base[20] as i8;
-
-            var copy_len: usize = namlen as usize;
-            if copy_len > 255 {
-                copy_len = 255;
-            }
-            if 21 + copy_len > reclen {
-                if reclen > 21 {
-                    copy_len = reclen - 21;
-                    if copy_len > 255 {
-                        copy_len = 255;
-                    }
-                } else {
-                    copy_len = 0;
+                if state.buf_len <= 0 as isize {
+                    return null;
                 }
+                state.buf_pos = 0;
             }
-            var k: usize = 0;
-            while k < copy_len {
-                readdir_result.d_name[k] = base[21 + k];
-                k = k + 1;
+            const bl: usize = state.buf_len as usize;
+            const buf_pos: usize = state.buf_pos;
+            if buf_pos >= bl {
+                state.buf_len = 0 as isize;
+                continue;
             }
-            readdir_result.d_name[copy_len] = 0 as byte;
-        }, {
+            if buf_pos >= @len(state.buf) {
+                state.buf_len = 0 as isize;
+                continue;
+            }
+
+            const base: &byte = dir_state_buf_ptr_at(state, buf_pos);
+            if base == null {
+                state.buf_len = 0 as isize;
+                continue;
+            }
             const reclen_lo: usize = base[16] as usize;
             const reclen_hi: usize = base[17] as usize;
-            reclen = reclen_lo | (reclen_hi * 256);
+            const reclen: usize = reclen_lo | (reclen_hi * 256);
             if reclen == 0 || state.buf_pos + reclen > bl {
                 return null;
             }
@@ -1194,12 +1166,12 @@ export extern "libc" fn readdir(dirp: &DIR) &Dirent {
                 k = k + 1;
             }
             readdir_result.d_name[copy_len] = 0 as byte;
-        })
 
-        state.buf_pos = state.buf_pos + reclen;
-        return &readdir_result;
-    }
-    return null;
+            state.buf_pos = state.buf_pos + reclen;
+            return &readdir_result;
+        }
+        return null;
+    })
 }
 
 // closedir - 关闭目录（C 标准库兼容）
@@ -1208,19 +1180,23 @@ export extern "libc" fn closedir(dirp: &DIR) i32 {
     if dirp == null {
         return 0 - 1;
     }
-    
-    const state: &DirState = dirp as &DirState;
-    const fd: i64 = state.fd;
-    
-    if fd < 0 {
-        return 0 - 1;
-    }
-    
-    const result: !i32 = sys_close(fd as i32);
-    _ = result catch {
-        return 0 - 1;
-    };
-    
-    state.fd = 0 - 1;
-    return 0;
+
+    std.cfg(std.target_os == .tos_macos, {
+        return uya_macos_host_closedir(dirp as &void);
+    }, {
+        const state: &DirState = dirp as &DirState;
+        const fd: i64 = state.fd;
+
+        if fd < 0 {
+            return 0 - 1;
+        }
+
+        const result: !i32 = sys_close(fd as i32);
+        _ = result catch {
+            return 0 - 1;
+        };
+
+        state.fd = 0 - 1;
+        return 0;
+    })
 }

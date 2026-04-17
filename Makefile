@@ -79,27 +79,36 @@ from-c:
 	@echo "=========================================="
 	@echo "从 C99 代码构建编译器 (from-c)"
 	@echo "=========================================="
-	@if [ ! -f bin/uya.c ]; then \
-		mkdir -p bin; \
+	@mkdir -p bin
+	@bash -c 'set -e; \
 		HOSTED_SEED="backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c"; \
 		NOSTDLIB_SEED="backup/uya-$(HOST_OS)-$(HOST_ARCH).c"; \
+		SEED_PATH=""; \
+		SEED_DESC=""; \
 		if [ -f "$$HOSTED_SEED" ]; then \
-			echo "bin/uya.c 不存在，使用 host/arch hosted 备份 $$HOSTED_SEED ..."; \
-			cp "$$HOSTED_SEED" bin/uya.c; \
+			SEED_PATH="$$HOSTED_SEED"; \
+			SEED_DESC="host/arch hosted 备份 $$HOSTED_SEED"; \
 		elif [ -f backup/uya-hosted.c ]; then \
-			echo "bin/uya.c 不存在，使用 hosted 备份 backup/uya-hosted.c ..."; \
-			cp backup/uya-hosted.c bin/uya.c; \
+			SEED_PATH="backup/uya-hosted.c"; \
+			SEED_DESC="hosted 备份 backup/uya-hosted.c"; \
 		elif [ -f "$$NOSTDLIB_SEED" ]; then \
-			echo "bin/uya.c 不存在，使用 host/arch nostdlib 备份 $$NOSTDLIB_SEED ..."; \
-			cp "$$NOSTDLIB_SEED" bin/uya.c; \
+			SEED_PATH="$$NOSTDLIB_SEED"; \
+			SEED_DESC="host/arch nostdlib 备份 $$NOSTDLIB_SEED"; \
 		elif [ -f backup/uya.c ]; then \
-			echo "bin/uya.c 不存在，从备份恢复..."; \
-			cp backup/uya.c bin/uya.c; \
-		else \
-			echo "错误: bin/uya.c、host/arch 备份、backup/uya-hosted.c 和 backup/uya.c 都不存在"; \
-			exit 1; \
-		fi \
-	fi
+			SEED_PATH="backup/uya.c"; \
+			SEED_DESC="备份 backup/uya.c"; \
+		fi; \
+		if [ ! -f bin/uya.c ]; then \
+			if [ -z "$$SEED_PATH" ]; then \
+				echo "错误: bin/uya.c、host/arch 备份、backup/uya-hosted.c 和 backup/uya.c 都不存在"; \
+				exit 1; \
+			fi; \
+			echo "bin/uya.c 不存在，使用 $$SEED_DESC ..."; \
+			cp "$$SEED_PATH" bin/uya.c; \
+		elif [ -n "$$SEED_PATH" ] && [ "$$SEED_PATH" -nt bin/uya.c ]; then \
+			echo "检测到 $$SEED_DESC 更新，刷新过期的 bin/uya.c ..."; \
+			cp "$$SEED_PATH" bin/uya.c; \
+		fi'
 	@echo "编译 bin/uya.c ..."
 	@echo "CFLAGS: $(CFLAGS)"
 	@echo "HOST_OS=$(HOST_OS) HOST_ARCH=$(HOST_ARCH)"
