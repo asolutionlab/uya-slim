@@ -8,10 +8,9 @@ on:
 
 jobs:
   hosted:
-    # backup/uya-hosted.c 目前仍是 x86_64 hosted seed；macos-latest 已切到 arm64 runner，
-    # 会在 from-c 阶段因为种子内的 x86_64 inline asm/clobber（rax/rdi/...）直接失败。
-    # 先固定到 Intel runner，后续等 arm64 hosted seed 独立落地后再恢复 matrix/arm64。
-    runs-on: macos-15-intel
+    # from-c 现在会优先选择 backup/uya-hosted-<host_os>-<host_arch>.c，
+    # 仓库已同时提供 macOS x86_64 / arm64 hosted seeds，可跟随 GitHub 默认 runner。
+    runs-on: macos-latest
     env:
       UYA_ROOT: ${{ github.workspace }}/lib/
 

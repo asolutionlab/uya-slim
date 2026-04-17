@@ -179,7 +179,7 @@ git add -A && git commit -m "fix: 描述修复内容"
 
 | 目标 | 说明 |
 |------|------|
-| `make from-c` | 从 `bin/uya.c`（或 `backup/uya.c`）构建 `bin/uya`；若 C 内含 nostdlib 的 `_start`，在 **Linux x86_64** 上用 `crti.o`+`.o`+`crtn.o` 静态链接，避免与默认 CRT 的 `_start` 冲突 |
+| `make from-c` | 从 `bin/uya.c` 构建 `bin/uya`；若缺失则优先挑选 `backup/uya-hosted-<host_os>-<host_arch>.c` / `backup/uya-<host_os>-<host_arch>.c`，再回退到通用备份；Linux x86_64 的 nostdlib `_start` 仍走 `crti.o`+`.o`+`crtn.o` 链接 |
 | `make uya-c` | 构建 C 编译器 bin/uya-c（用于编译 src/*.uya） |
 | `make uya` | 使用 bin/uya-c 编译 src/*.uya → bin/uya.c，然后构建 bin/uya |
 | `make b` | 自举验证：编译器编译自身，验证输出一致性 |

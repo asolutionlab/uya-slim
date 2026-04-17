@@ -80,16 +80,23 @@ from-c:
 	@echo "从 C99 代码构建编译器 (from-c)"
 	@echo "=========================================="
 	@if [ ! -f bin/uya.c ]; then \
-		if [ -f backup/uya-hosted.c ]; then \
+		mkdir -p bin; \
+		HOSTED_SEED="backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c"; \
+		NOSTDLIB_SEED="backup/uya-$(HOST_OS)-$(HOST_ARCH).c"; \
+		if [ -f "$$HOSTED_SEED" ]; then \
+			echo "bin/uya.c 不存在，使用 host/arch hosted 备份 $$HOSTED_SEED ..."; \
+			cp "$$HOSTED_SEED" bin/uya.c; \
+		elif [ -f backup/uya-hosted.c ]; then \
 			echo "bin/uya.c 不存在，使用 hosted 备份 backup/uya-hosted.c ..."; \
-			mkdir -p bin; \
 			cp backup/uya-hosted.c bin/uya.c; \
+		elif [ -f "$$NOSTDLIB_SEED" ]; then \
+			echo "bin/uya.c 不存在，使用 host/arch nostdlib 备份 $$NOSTDLIB_SEED ..."; \
+			cp "$$NOSTDLIB_SEED" bin/uya.c; \
 		elif [ -f backup/uya.c ]; then \
 			echo "bin/uya.c 不存在，从备份恢复..."; \
-			mkdir -p bin; \
 			cp backup/uya.c bin/uya.c; \
 		else \
-			echo "错误: bin/uya.c、backup/uya-hosted.c 和 backup/uya.c 都不存在"; \
+			echo "错误: bin/uya.c、host/arch 备份、backup/uya-hosted.c 和 backup/uya.c 都不存在"; \
 			exit 1; \
 		fi \
 	fi
@@ -595,16 +602,18 @@ backup-seed:
 	@cp src/build/uya.c bin/uya.c
 	@mkdir -p backup
 	@cp bin/uya.c backup/uya.c
+	@cp bin/uya.c backup/uya-$(HOST_OS)-$(HOST_ARCH).c
 	@$(MAKE) from-c >/dev/null
-	@echo "✓ backup/uya.c 与 bin/uya.c 已更新（单文件种子）"
+	@echo "✓ backup/uya.c、backup/uya-$(HOST_OS)-$(HOST_ARCH).c 与 bin/uya.c 已更新（单文件种子）"
 
-# hosted 单文件 C 种子：更新 backup/uya-hosted.c（macOS 迁移用；非 nostdlib）
+# hosted 单文件 C 种子：更新通用备份与 host/arch 专用备份（std.cfg 会固化 host/target）
 backup-hosted-seed:
-	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 backup/uya-hosted.c …"
+	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 backup/uya-hosted.c 与 host/arch 专用备份 …"
 	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --no-safety-proof'
 	@mkdir -p backup
 	@cp src/build/uya-hosted.c backup/uya-hosted.c
-	@echo "✓ backup/uya-hosted.c 已更新（hosted 单文件种子）"
+	@cp src/build/uya-hosted.c backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c
+	@echo "✓ backup/uya-hosted.c 与 backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c 已更新（hosted 单文件种子）"
 
 # 验证 + 多文件备份 + 单文件种子（提交前完整备份）
 backup-all:backup backup-seed
@@ -798,8 +807,8 @@ help:
 	@echo "  make check         - 验证（自举 + 测试），不备份"
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
-	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c 与 backup/uya.c（from-c / release 用）"
-	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c（macOS 迁移用）"
+	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c、backup/uya.c 与 host/arch 专用备份"
+	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c 与 host/arch 专用备份"
 	@echo "  make backup-all    - backup + backup-seed（提交前完整备份）"
 	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链 + strip"
 	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
@@ -822,4 +831,4 @@ help:
 	@echo "  make install DOCDIR=/path/docs       # 显式文档目录（默认 前缀/docs）"
 	@echo "  make install TESTSDIR=/path/tests    # 显式测试目录（默认 前缀/tests）"
 	@echo ""
-	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
+	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；from-c 会优先挑选 backup/uya-hosted-macos-<arch>.c。"

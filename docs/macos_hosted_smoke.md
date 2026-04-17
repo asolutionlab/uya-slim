@@ -8,7 +8,7 @@
 |------|------|
 | Linux 上用 `zig cc` 交叉产出 macOS hosted 编译器 | **已验证**：`arm64` / `x86_64` Mach-O 产物均可生成 |
 | macOS 上原生运行 hosted 编译器并继续自举 | **待真机 smoke 验证**：交叉产物已具备，运行语义仍需在 Darwin 上确认 |
-| `make from-c`（`backup/uya.c` 为 Linux nostdlib） | **不可用**：备份 C 内含 Linux x86_64 `_start`，需在 Mac 上从源码自举或换用将来提供的 Darwin/hosted 备份策略 |
+| `make from-c` | **hosted 主线可用**：优先使用 `backup/uya-hosted-macos-<arch>.c`；若回退到 `backup/uya.c`（Linux nostdlib `_start`）则仍不可用 |
 | `make uya`（`--nostdlib`） | **未实现**：见 Phase 6 |
 | 未设 `UYA_ROOT` 时编译器自找 `lib/` | **代码已接**：Darwin 上 `_NSGetExecutablePath` + `realpath`，但首次真机 smoke 仍建议显式设置 `UYA_ROOT` 做保底 |
 
