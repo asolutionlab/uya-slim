@@ -19,6 +19,10 @@ use std.runtime.saved_argc;
 use std.runtime.saved_argv;
 use std.runtime.saved_envp;
 
+std.cfg(std.target_os == .tos_macos, {
+extern fn _NSGetEnviron() & & &byte;
+}, {})
+
 // ============================================================
 // C main 入口（由 C 运行时调用）
 // ============================================================
@@ -70,13 +74,22 @@ export extern fn main(argc: i32, argv: & &byte) i32 {
     // 保存命令行参数到 std.runtime 的全局变量
     saved_argc = argc;
     saved_argv = argv;
-    if argv != null && argc >= 0 {
-        const argv_addr: usize = @usize_from_ptr(argv as &void);
-        const envp_addr: usize = argv_addr + (((argc as usize) + 1) * @size_of(&byte));
-        saved_envp = @ptr_from_usize(envp_addr) as & &byte;
-    } else {
-        saved_envp = null;
-    }
+    std.cfg(std.target_os == .tos_macos, {
+        const envpp: & & &byte = _NSGetEnviron();
+        if envpp != null {
+            saved_envp = envpp[0];
+        } else {
+            saved_envp = null;
+        }
+    }, {
+        if argv != null && argc >= 0 {
+            const argv_addr: usize = @usize_from_ptr(argv as &void);
+            const envp_addr: usize = argv_addr + (((argc as usize) + 1) * @size_of(&byte));
+            saved_envp = @ptr_from_usize(envp_addr) as & &byte;
+        } else {
+            saved_envp = null;
+        }
+    })
 
     // 调用应用程序主程序（export fn main() → main_main()）
     return main_main();
