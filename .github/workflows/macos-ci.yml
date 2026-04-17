@@ -9,9 +9,13 @@ on:
 jobs:
   hosted:
     # from-c 现在会优先选择 backup/uya-hosted-<host_os>-<host_arch>.c，
-    # 仓库已同时提供 macOS x86_64 / arm64 hosted seeds，可跟随 GitHub 默认 runner。
-    runs-on: macos-latest
+    # CI 固定使用 Intel x86_64 runner，避免 macos-latest 漂移到 arm64 后切到另一套 seed。
+    runs-on: macos-13
     env:
+      HOST_OS: macos
+      HOST_ARCH: x86_64
+      TARGET_OS: macos
+      TARGET_ARCH: x86_64
       UYA_ROOT: ${{ github.workspace }}/lib/
 
     steps:
