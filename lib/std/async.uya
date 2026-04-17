@@ -595,8 +595,8 @@ export @async_fn fn async_fd_write_all(fd: i32, data: &const byte, count: usize)
 
 use libc.syscall;
 
-const ASYNC_ERR_EAGAIN: u32 = 11;
-const ASYNC_ERR_EWOULDBLOCK: u32 = 11;
+const ASYNC_ERR_EAGAIN: u32 = EAGAIN as u32;
+const ASYNC_ERR_EWOULDBLOCK: u32 = EWOULDBLOCK as u32;
 
 struct AsyncFdWriteFuture : Future<!usize> {
     fd: i32,

@@ -231,7 +231,7 @@ export extern "libc" fn chdir(path: &const byte) i32 {
 export const PATH_MAX: usize = 4096;
 
 export extern "libc" fn getcwd(buf: &byte, size: usize) &byte {
-    const result: !i64 = @syscall(SYS_getcwd, buf as i64, size as i64);
+    const result: !isize = sys_getcwd(buf as *byte, size);
     result catch {
         errno = ENOENT;
         return null as &byte;

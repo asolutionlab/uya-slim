@@ -158,14 +158,33 @@ C Runtime → entry.uya::main() → main_main()
 ### 3.4 编译命令
 
 ```bash
-# 编译 Uya 测试文件（当前方式，兼容 bridge.c）
-bin/uya-c --c99 tests/programs/test_xxx.uya -o /tmp/test_xxx.c
+# 仅生成 C99
+bin/uya build tests/programs/test_xxx.uya -o /tmp/test_xxx.c --c99
 
-# 编译 C 代码
+# 手动编译生成的 C（当前 bridge.c 路线）
 gcc -std=c99 -no-pie /tmp/test_xxx.c tests/bridge_minimal.c -o /tmp/test_xxx -lm
 
 # 运行测试
 /tmp/test_xxx
+```
+
+当前更推荐直接让编译器在 `-e` 模式下调用宿主工具链完成链接：
+
+```bash
+# 原生 hosted 测试
+bin/uya build tests/programs/test_xxx.uya -o /tmp/test_xxx.c --c99 -e
+
+# 使用 zig cc 做统一工具链
+TOOLCHAIN=zig ZIG=/path/to/zig \
+bin/uya build tests/programs/test_xxx.uya -o /tmp/test_xxx.c --c99 -e
+```
+
+如需交叉或显式指定 C 驱动，可继续传入 `CC_DRIVER` / `CC_TARGET_FLAGS`：
+
+```bash
+CC_DRIVER="/path/to/zig cc" \
+CC_TARGET_FLAGS="-target aarch64-macos-none" \
+bin/uya build tests/programs/test_xxx.uya -o /tmp/test_xxx.c --c99 -e
 ```
 
 ---

@@ -29,7 +29,8 @@ export type clock_t = u64;
 // 系统调用定义
 // ============================================================
 
-use libc.SYS_gettimeofday;
+use libc.TimeVal;
+use libc.sys_gettimeofday;
 
 // ============================================================
 // 时间获取函数
@@ -47,9 +48,9 @@ struct timezone {
 }
 
 export extern "libc" fn gettimeofday(tv: &timeval, tz: &timezone) i32 {
-    var result: !i64 = @syscall(SYS_gettimeofday, tv as i64, tz as i64);
-    var ret: i64 = result catch { return -1; };
-    return ret as i32;
+    const result: !i32 = sys_gettimeofday(tv as &TimeVal, tz as &void);
+    const ret: i32 = result catch { return -1; };
+    return ret;
 }
 
 // time - 获取当前日历时间（自 Unix 纪元以来的秒数）

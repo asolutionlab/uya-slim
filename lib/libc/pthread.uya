@@ -14,6 +14,7 @@ use libc.sys_futex;
 use libc.FUTEX_WAIT;
 use libc.FUTEX_WAKE;
 use libc.gettimeofday;
+use libc.sys_clock_gettime;
 use libc.SYS_clock_gettime;
 use libc.sched_setaffinity;
 use libc.sched_getaffinity;
@@ -222,9 +223,9 @@ struct timeval {
 }
 
 fn _pthread_clock_gettime(clock_id: i32, tp: &timespec) i32 {
-    var result: !i64 = @syscall(SYS_clock_gettime, clock_id as i64, tp as i64);
-    var ret: i64 = result catch { return -1; };
-    return ret as i32;
+    const result: !i32 = sys_clock_gettime(clock_id, tp as &TimeSpec);
+    const ret: i32 = result catch { return -1; };
+    return ret;
 }
 
 // pthread_once_t - 一次性初始化控制结构体

@@ -6,6 +6,7 @@
 // 内存分配由 lib/libc/heap.uya 统一实现（lib/libc/ 目录合并为同一模块）。
 // malloc/free/realloc 在 heap.uya 中定义，此处直接使用，不重复定义。
 
+use std;
 use std.runtime.saved_envp;
 
 use libc.sys_stat;
@@ -1028,6 +1029,7 @@ export struct DIR {}
 // 目录流内部状态（fd + getdents64 缓冲区）
 struct DirState {
     fd: i64,
+    dir_pos: i64,
     buf: [byte: 8192],
     buf_pos: usize,
     buf_len: isize,
@@ -1046,7 +1048,7 @@ export extern "libc" fn opendir(name: &const byte) &DIR {
         return null;
     }
     
-    const result: !i32 = sys_open(name, O_RDONLY as i32, 0);
+    const result: !i32 = sys_open(name, (O_RDONLY | O_DIRECTORY) as i32, 0);
     const fd: i32 = result catch {
         return null;
     };
@@ -1060,6 +1062,7 @@ export extern "libc" fn opendir(name: &const byte) &DIR {
         const slot: &DirState = &opendir_storage[j];
         if slot.fd <= 0 {
             slot.fd = fd as i64;
+            slot.dir_pos = 0;
             slot.buf_pos = 0;
             slot.buf_len = 0;
             return slot as &DIR;
@@ -1086,10 +1089,17 @@ export extern "libc" fn readdir(dirp: &DIR) &Dirent {
     
     while 1 != 0 {
         if state.buf_len == 0 as isize {
-            const getdents_result: !isize = sys_getdents64(state.fd as i32, &state.buf[0] as *void, READDIR_BUF_SIZE);
-            state.buf_len = getdents_result catch {
-                return null;
-            };
+            std.cfg(std.target_os == .tos_macos, {
+                const getdents_result: !isize = sys_getdirentries64(state.fd as i32, &state.buf[0] as *void, READDIR_BUF_SIZE, &state.dir_pos);
+                state.buf_len = getdents_result catch {
+                    return null;
+                };
+            }, {
+                const getdents_result: !isize = sys_getdents64(state.fd as i32, &state.buf[0] as *void, READDIR_BUF_SIZE);
+                state.buf_len = getdents_result catch {
+                    return null;
+                };
+            })
             if state.buf_len <= 0 as isize {
                 return null;
             }
@@ -1102,30 +1112,70 @@ export extern "libc" fn readdir(dirp: &DIR) &Dirent {
         }
         
         const base: &byte = &state.buf[state.buf_pos];
-        const reclen_lo: usize = base[16] as usize;
-        const reclen_hi: usize = base[17] as usize;
-        const reclen: usize = reclen_lo | (reclen_hi * 256);
-        
-        if reclen == 0 {
-            return null;
-        }
-        
-        memcpy(&readdir_result as *byte, base as *const byte, 19);
-        var name_len: usize = 0;
-        if reclen > 19 {
-            name_len = reclen - 19;
-        }
-        var copy_len: usize = name_len;
-        if copy_len > 255 {
-            copy_len = 255;
-        }
-        var k: usize = 0;
-        while k < copy_len {
-            readdir_result.d_name[k] = base[19 + k];
-            k = k + 1;
-        }
-        readdir_result.d_name[copy_len] = 0 as byte;
-        
+        var reclen: usize = 0;
+        std.cfg(std.target_os == .tos_macos, {
+            var native_reclen: i16 = 0;
+            var namlen: u16 = 0;
+            memcpy(&native_reclen as *byte, &base[16] as *const byte, 2);
+            memcpy(&namlen as *byte, &base[18] as *const byte, 2);
+            if native_reclen <= 0 {
+                return null;
+            }
+            reclen = native_reclen as usize;
+            if state.buf_pos + reclen > bl || reclen < 21 {
+                return null;
+            }
+
+            memcpy(&readdir_result.d_ino as *byte, base as *const byte, 8);
+            memcpy(&readdir_result.d_off as *byte, &base[8] as *const byte, 8);
+            readdir_result.d_reclen = native_reclen;
+            readdir_result.d_type = base[20] as i8;
+
+            var copy_len: usize = namlen as usize;
+            if copy_len > 255 {
+                copy_len = 255;
+            }
+            if 21 + copy_len > reclen {
+                if reclen > 21 {
+                    copy_len = reclen - 21;
+                    if copy_len > 255 {
+                        copy_len = 255;
+                    }
+                } else {
+                    copy_len = 0;
+                }
+            }
+            var k: usize = 0;
+            while k < copy_len {
+                readdir_result.d_name[k] = base[21 + k];
+                k = k + 1;
+            }
+            readdir_result.d_name[copy_len] = 0 as byte;
+        }, {
+            const reclen_lo: usize = base[16] as usize;
+            const reclen_hi: usize = base[17] as usize;
+            reclen = reclen_lo | (reclen_hi * 256);
+            if reclen == 0 || state.buf_pos + reclen > bl {
+                return null;
+            }
+
+            memcpy(&readdir_result as *byte, base as *const byte, 19);
+            var name_len: usize = 0;
+            if reclen > 19 {
+                name_len = reclen - 19;
+            }
+            var copy_len: usize = name_len;
+            if copy_len > 255 {
+                copy_len = 255;
+            }
+            var k: usize = 0;
+            while k < copy_len {
+                readdir_result.d_name[k] = base[19 + k];
+                k = k + 1;
+            }
+            readdir_result.d_name[copy_len] = 0 as byte;
+        })
+
         state.buf_pos = state.buf_pos + reclen;
         return &readdir_result;
     }

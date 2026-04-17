@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.45（完整版 · 2026-04-14）
+# Uya 语言规范 0.49.46（完整版 · 2026-04-17）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,12 @@
 ---
 
 ## 规范变更
+
+### 0.49.46（2026-04-17）
+
+- **macOS hosted 交叉构建**：C99 `@syscall` backend 增加 Darwin `x86_64` / `arm64` 路径，`libc.syscall`、`libc.stdlib`、`libc.errno`、`libc.time` 等补入第一轮 Darwin hosted 兼容分支。
+- **Darwin libc bridge**：生成的 C99 在 hosted Darwin 目标下允许通过 helper bridge 到宿主 libc，当前已覆盖 `stat/fstat/lstat`、`fcntl`、`pipe2`、`clock_gettime`、`nanosleep`、`getcwd`、目录遍历等 bring-up 所需能力。
+- **验证边界**：已在 Linux 上通过 `zig cc` 实测交叉产出 `Mach-O 64-bit arm64` 与 `Mach-O 64-bit x86_64` 编译器产物；macOS 真机运行与主测试闭环仍属后续 smoke / 迁移工作。
 
 ### 0.49.45（2026-04-14）
 
@@ -7142,6 +7148,14 @@ TARGET_TRIPLE=aarch64-macos-none \
 make uya-hosted
 ```
 
+```bash
+# 示例：目标为 Intel macOS
+TOOLCHAIN=zig ZIG=/path/to/zig \
+TARGET_OS=macos TARGET_ARCH=x86_64 \
+TARGET_TRIPLE=x86_64-macos-none \
+make uya-hosted
+```
+
 原生宿主构建仍可使用默认 `make uya` / `make uya-hosted`（系统 `cc` 或 `TOOLCHAIN=zig`）。
 
 ### C.4 编译 Uya 应用程序
@@ -7158,8 +7172,9 @@ bin/uya build main.uya -o main.c --c99 -e
 
 ### C.5 限制与注意
 
-- **`@syscall`（C99 后端）**：已支持生成 **Linux x86_64**、**Linux AArch64** 与 **Linux ARM32（EABI）** 的 `uya_syscall*` 内联实现；其余 OS/ABI 仍会触发 C 预处理 `#error`（见规范变更 0.49.14）。
+- **`@syscall`（C99 后端）**：已支持生成 **Linux x86_64**、**Linux AArch64**、**Linux ARM32（EABI）**、**macOS x86_64** 与 **macOS arm64** 的 hosted 路径；Darwin 目标当前仍以 hosted bring-up 为主，不等同于 `--nostdlib` 已完成。
 - **`--nostdlib` / 静态零依赖路径**：当前实现与测试主线以 **Linux x86_64** 为主；其他目标的 `_start`、链接与 syscall 封装可能未完备，见 [UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md) 与平台相关 todo 文档。
+- **Darwin 真机验证**：Linux 上通过 `zig cc` 交叉产出 Mach-O 二进制，说明构建链已成立；但 `getcwd`、`stat/readdir`、`pthread`、`std.async` 等行为仍需在 macOS 真机上继续 smoke 与收口。
 - **内联汇编 `@asm`**：指令与约束与目标 ISA 相关；交叉编译时需确保仅启用当前 **TARGET** 支持的指令，或使用 `@asm_target()` 等机制区分平台（见 [asm_api_reference.md](./asm_api_reference.md) 等）。
 - **标准库与系统调用**：`libc` / `syscall` / 异步等模块依赖目标 OS/ABI；交叉到嵌入式或非常规环境时需自行核对链接库与运行时。
 

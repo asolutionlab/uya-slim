@@ -7,11 +7,30 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
+  hosted:
     runs-on: macos-latest
+    env:
+      UYA_ROOT: ${{ github.workspace }}/lib/
 
     steps:
     - uses: actions/checkout@v4
-    - name: release
-      run: make release
+
+    - name: Prepare hosted seed for macOS
+      run: |
+        rm -rf bin
+        mkdir -p bin
+
+    - name: Bootstrap seed compiler from hosted backup
+      run: make from-c
+
+    - name: Build hosted compiler
+      run: make uya-hosted
+
+    - name: Verify hosted self-host
+      run: make b-hosted
+
+    - name: Run hosted test profile
+      env:
+        TEST_PROFILE: hosted
+        SKIP_DARWIN_DEFAULT: "1"
+      run: make tests-hosted
