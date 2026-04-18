@@ -47,6 +47,7 @@ export const STDERR_FILENO: i32 = 2;
 // 文件操作函数
 // ============================================================
 
+std.cfg(std.target_os != .tos_macos, {
 // read - 从文件描述符读取数据
 export extern "libc" fn read(fd: i32, buf: &byte, count: usize) i64 {
     const result: !isize = sys_read(fd, buf as *byte, count);
@@ -91,6 +92,12 @@ export extern "libc" fn lseek(fd: i32, offset: i64, whence: i32) i64 {
     };
     return ret;
 }
+}, {
+// macOS hosted 走 codegen/c99 的 uya_macos_* bridge，避免导出 read/write/close/lseek 覆盖系统 _read/_write/... 符号
+export const SEEK_SET: i32 = 0;
+export const SEEK_CUR: i32 = 1;
+export const SEEK_END: i32 = 2;
+})
 
 // ============================================================
 // 进程控制函数

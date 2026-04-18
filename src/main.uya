@@ -502,16 +502,18 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
     _ = source_path_bytes;
     const out_ptr: &byte = &microapp_pack_output_buffer[0] as &byte;
     const out_bytes: &[byte] = out_ptr[0: @len(microapp_pack_output_buffer)];
-    const image_len: u32 = payload_pack_to_uapp(
+    const image_len_result: !u32 = payload_pack_to_uapp(
         &payload,
         out_bytes
-    ) catch {
+    );
+    const image_len: u32 = image_len_result catch {
         fprintf(libc.stderr, "错误: payload_pack_to_uapp 失败\n" as *byte);
         return 1;
     };
 
     const image_bytes: &[byte] = out_ptr[0: image_len as usize];
-    const validated_header: ImageHeader = image_validate(image_bytes) catch {
+    const validated_header_result: !ImageHeader = image_validate(image_bytes);
+    const validated_header: ImageHeader = validated_header_result catch {
         fprintf(libc.stderr, "错误: 生成的 .uapp 未通过自验证\n" as *byte);
         return 1;
     };
@@ -539,6 +541,11 @@ var temp_arena_buffer: [byte: 16 * 1024 * 1024] = [];
 var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 // 将 resolved_files 也移到全局变量，避免栈溢出
 var resolved_files_global: [&byte: MAX_INPUT_FILES] = [];
+
+// 大数组移到全局变量避免 compile_files/main 主栈帧膨胀（macOS x86_64 hosted seed 会在 ___chkstk_darwin 崩）
+var all_files_global: [&byte: MAX_INPUT_FILES] = [];
+var processed_files_global: [&byte: MAX_INPUT_FILES] = [];
+var main_files_global: [&byte: MAX_INPUT_FILES] = [];
 
 fn main_file_buffer_ptr_at(idx: usize) &byte {
     const slot: usize = idx;
@@ -2980,7 +2987,7 @@ fn compile_files(
         const is_dir_result: i32 = is_directory(input);
         if is_dir_result != 0 {
             // 是目录，查找包含 main 的文件
-            var main_files: [&byte: MAX_INPUT_FILES] = [];
+            var main_files: [&byte: MAX_INPUT_FILES] = main_files_global;
             var main_count: i32 = 0;
             if find_main_files_in_dir(input, &main_files[0], &main_file_paths_global[0], MAX_INPUT_FILES, &main_count) != 0 {
                 fprintf(libc.stderr, "错误: 无法读取目录 '%s'\n" as *byte, input_path);
@@ -3124,7 +3131,7 @@ fn compile_files(
     
     // 自动收集模块依赖
     // 只对包含 main 的文件进行依赖收集，库文件已经在列表中，不需要进行依赖收集
-    var all_files: [&byte: MAX_INPUT_FILES] = [];
+    var all_files: [&byte: MAX_INPUT_FILES] = all_files_global;
     var all_file_count: i32 = resolved_count;
     i = 0;
     while i < resolved_count {
@@ -3133,7 +3140,7 @@ fn compile_files(
     }
     
     // 收集依赖（只对包含 main 的文件进行依赖收集）
-    var processed_files: [&byte: MAX_INPUT_FILES] = [];
+    var processed_files: [&byte: MAX_INPUT_FILES] = processed_files_global;
     var processed_count: i32 = 0;
     
     // 找出包含 main 的文件（入口文件）
@@ -3337,7 +3344,33 @@ fn compile_files(
         last_reported_error_line: 0,
         last_reported_error_column: 0,
         default_filename: null,
-        current_return_type: void_type,
+        current_return_type: Type {
+            kind: TypeKind.TYPE_VOID,
+            data: TypeData.named(null as &byte),
+            enum_name: null,
+            interface_name: null,
+            interface_type_args: null,
+            interface_type_arg_count: 0,
+            struct_name: null,
+            union_name: null,
+            pointer_to: null,
+            is_ffi_pointer: 0,
+            element_type: null,
+            array_size: 0,
+            slice_element_type: null,
+            slice_len: 0,
+            slice_element_is_const: 0,
+            tuple_element_types: null,
+            tuple_count: 0,
+            error_union_payload_type: null,
+            error_error_id: 0,
+            atomic_inner_type: null,
+            generic_param_name: null,
+            struct_type_args: null,
+            struct_type_arg_count: 0,
+            union_type_args: null,
+            union_type_arg_count: 0,
+        },
         in_function: 0,
         in_defer_or_errdefer: 0,
         current_function_decl: null,

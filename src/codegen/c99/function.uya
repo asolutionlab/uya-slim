@@ -740,13 +740,11 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         }
         pi_fwd = pi_fwd + 1;
     }
-    if is_extern != 0 {
-        fprintf(codegen.emit_stream, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
-    } else {
-        if is_export == 0 && has_extern_same == 0 && codegen.split_enabled == 0 {
-            fprintf(codegen.emit_stream, "static " as *byte);
-        }
+    // 顶层 helper 可能在 main_main 之前被调用，单文件 C 统一生成非 static 原型，避免无前向声明时报 implicit declaration。
+    if is_extern == 0 {
         fprintf(codegen.emit_stream, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
+    } else {
+        fprintf(codegen.emit_stream, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
     }
     
     // 检查是否为 copy_type 函数（需要 const 限定符）
