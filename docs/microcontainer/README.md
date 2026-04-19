@@ -33,19 +33,25 @@
 - 当前 `.uapp` 可以由 `build --app microapp ... -o xxx.uapp` 直接生成，也可以先产 `.pobj` 再用 `pack-image` 打包；宿主示例仍保留用于对照和调试
 - 示例 loader 现在可通过命令行参数接收任意 `.uapp` 路径，默认仍回退到示例镜像
 - 热更新槽容量与示例 loader 读取缓冲已经拆成两个独立上限，便于后续分别调优
-- 当前 microapp 路径里，`payload code` 默认由 `MICROAPP_TARGET_ARCH` 决定目标架构；`MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；`MICROAPP_TARGET_CFLAGS` 默认是 `-std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fno-pie -ffunction-sections -fdata-sections -flto`，不含 `-g`；`MICROAPP_TARGET_LDFLAGS` 默认是 `-no-pie -Wl,--gc-sections -flto`；默认 gcc 是 `x86_64-linux-gnu-gcc`
+- 当前 microapp 路径里，目标选择已经切到 `profile-first`
+- 默认 profile 推导优先级是：`--microapp-profile` > `MICROAPP_TARGET_PROFILE` > `MICROAPP_TARGET_ARCH(+TARGET_OS)` > `TARGET_OS/TARGET_ARCH` > `HOST_OS/HOST_ARCH` > `linux_x86_64_hardvm`
+- `MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；若未覆盖，则走当前 profile 自带的默认 gcc
+- `MICROAPP_TARGET_CFLAGS` / `MICROAPP_TARGET_LDFLAGS` 现在也是按 profile 给默认值：
+  - `call_gate` profile 默认 `-fpie/-pie`
+  - `trap` profile 默认 `-fno-pie/-no-pie`
 - 当前 `microapp` 目标选择已逐步从 `arch-first` 迁移到 `profile-first`：
   - 可用 `--microapp-profile <name>` 显式指定
   - 也可用 `MICROAPP_TARGET_PROFILE`
   - CLI 优先级高于环境变量
   - 详细说明见 [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
 
-默认目标三元组映射：
+默认 profile 三元组映射：
 
-- `rv32` -> `riscv32-unknown-elf`
-- `x86_64` -> `x86_64-linux-gnu`
-- `aarch64` -> `aarch64-linux-gnu`
-- `xtensa` -> `xtensa-unknown-elf`
+- `linux_x86_64_hardvm` -> `x86_64-linux-gnu`
+- `linux_aarch64_hardvm` -> `aarch64-linux-gnu`
+- `macos_arm64_hardvm` -> `arm64-apple-darwin`
+- `rv32_baremetal_softvm` -> `riscv32-unknown-elf`
+- `xtensa_baremetal_softvm` -> `xtensa-unknown-elf`
 
 ---
 

@@ -254,9 +254,13 @@ fn w32_file(fp: &FILE, val: u32) void {
 }
 
 fn resolve_microapp_target_arch_raw() u32 {
-    var arch_name: &byte = get_env_or_default("MICROAPP_TARGET_ARCH" as *byte, "" as *byte);
+    const arch_name: &byte = resolve_microapp_target_platform_arch_name();
+    return microapp_target_arch_raw_from_name(arch_name);
+}
+
+fn microapp_target_arch_raw_from_name(arch_name: &byte) u32 {
     if arch_name == null || arch_name[0] == 0 as byte {
-        arch_name = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
+        return MICROAPP_TARGET_ARCH_X86_64_RAW;
     }
     if strcmp(arch_name, "rv32" as *byte) == 0 {
         return MICROAPP_TARGET_ARCH_RV32_RAW;
@@ -271,6 +275,28 @@ fn resolve_microapp_target_arch_raw() u32 {
         return MICROAPP_TARGET_ARCH_XTENSA_RAW;
     }
     return MICROAPP_TARGET_ARCH_X86_64_RAW;
+}
+
+fn resolve_microapp_target_platform_os_name() &byte {
+    var os_name: &byte = get_env_or_default("TARGET_OS" as *byte, "" as *byte);
+    if os_name == null || os_name[0] == 0 as byte {
+        os_name = get_env_or_default("HOST_OS" as *byte, "linux" as *byte);
+    }
+    if strcmp(os_name, "darwin" as *byte) == 0 {
+        return "macos" as &byte;
+    }
+    return os_name;
+}
+
+fn resolve_microapp_target_platform_arch_name() &byte {
+    var arch_name: &byte = get_env_or_default("MICROAPP_TARGET_ARCH" as *byte, "" as *byte);
+    if arch_name == null || arch_name[0] == 0 as byte {
+        arch_name = get_env_or_default("TARGET_ARCH" as *byte, "" as *byte);
+    }
+    if arch_name == null || arch_name[0] == 0 as byte {
+        arch_name = get_env_or_default("HOST_ARCH" as *byte, "x86_64" as *byte);
+    }
+    return arch_name;
 }
 
 fn microapp_target_arch_name(target_arch_raw: u32) &byte {
@@ -458,6 +484,19 @@ fn microapp_target_profile_from_name(name: &byte) MicroAppTargetProfile {
     return microapp_target_profile_from_arch_raw(resolve_microapp_target_arch_raw());
 }
 
+fn microapp_target_profile_from_platform(os_name: &byte, arch_name: &byte) MicroAppTargetProfile {
+    const arch_raw: u32 = microapp_target_arch_raw_from_name(arch_name);
+    if arch_raw == MICROAPP_TARGET_ARCH_AARCH64_RAW {
+        if os_name != null {
+            if strcmp(os_name, "macos" as *byte) == 0 || strcmp(os_name, "darwin" as *byte) == 0 {
+                return microapp_target_profile_from_name("macos_arm64_hardvm" as &byte);
+            }
+        }
+        return microapp_target_profile_from_arch_raw(MICROAPP_TARGET_ARCH_AARCH64_RAW);
+    }
+    return microapp_target_profile_from_arch_raw(arch_raw);
+}
+
 fn resolve_microapp_target_profile() MicroAppTargetProfile {
     if g_microapp_target_profile_override_active != 0 && g_microapp_target_profile_override[0] != 0 as byte {
         return microapp_target_profile_from_name(&g_microapp_target_profile_override[0] as &byte);
@@ -466,10 +505,12 @@ fn resolve_microapp_target_profile() MicroAppTargetProfile {
     if explicit_profile != null && explicit_profile[0] != 0 {
         return microapp_target_profile_from_name(explicit_profile as &byte);
     }
-    return microapp_target_profile_from_arch_raw(resolve_microapp_target_arch_raw());
+    const target_os: &byte = resolve_microapp_target_platform_os_name();
+    const target_arch_name: &byte = resolve_microapp_target_platform_arch_name();
+    return microapp_target_profile_from_platform(target_os, target_arch_name);
 }
 
-fn resolve_microapp_target_gcc(target_arch_raw: u32, buffer: &byte, buffer_size: i32) &byte {
+fn resolve_microapp_target_gcc(profile: &MicroAppTargetProfile, buffer: &byte, buffer_size: i32) &byte {
     const explicit_microapp_target_gcc: *byte = getenv("MICROAPP_TARGET_GCC" as *byte);
     if explicit_microapp_target_gcc != null && explicit_microapp_target_gcc[0] != 0 {
         return explicit_microapp_target_gcc as &byte;
@@ -478,7 +519,10 @@ fn resolve_microapp_target_gcc(target_arch_raw: u32, buffer: &byte, buffer_size:
     if explicit_target_gcc != null && explicit_target_gcc[0] != 0 {
         return explicit_target_gcc as &byte;
     }
-    const fallback_gcc: &byte = microapp_target_default_gcc(target_arch_raw);
+    var fallback_gcc: &byte = microapp_target_default_gcc(MICROAPP_TARGET_ARCH_X86_64_RAW);
+    if profile != null && profile.default_gcc != null && profile.default_gcc[0] != 0 as byte {
+        fallback_gcc = profile.default_gcc;
+    }
     const written: i32 = snprintf(buffer as *byte, buffer_size, "%s" as *byte, fallback_gcc);
     if written > 0 && written < buffer_size {
         return buffer;
@@ -697,7 +741,7 @@ fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, 
 fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_path: &byte, data_bin_path: &byte, target_arch_raw: u32) i32 {
     const profile: MicroAppTargetProfile = resolve_microapp_target_profile();
     var gcc_buf: [byte: PATH_MAX] = [];
-    const gcc: &byte = resolve_microapp_target_gcc(profile.arch_raw, &gcc_buf[0] as &byte, PATH_MAX);
+    const gcc: &byte = resolve_microapp_target_gcc(&profile, &gcc_buf[0] as &byte, PATH_MAX);
     const target_triple: &byte = profile.triple;
     var obj_path: [byte: PATH_MAX] = [];
     var exe_path: [byte: PATH_MAX] = [];
@@ -719,7 +763,11 @@ fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_pa
         fprintf(libc.stderr, "错误: 无法生成 microapp 目标 gcc 编译命令\n" as *byte);
         return 1;
     }
-    fprintf(libc.stderr, "信息：microapp 目标架构=%s, 默认三元组=%s\n" as *byte, microapp_target_arch_name(target_arch_raw), target_triple as *byte);
+    fprintf(libc.stderr, "信息：microapp profile=%s, bridge=%s, 目标架构=%s, 默认三元组=%s\n" as *byte,
+        profile.name as *byte,
+        microapp_bridge_kind_name(profile.bridge_kind_raw) as *byte,
+        microapp_target_arch_name(target_arch_raw) as *byte,
+        target_triple as *byte);
     fprintf(libc.stderr, "信息：microapp 目标 gcc 编译：%s\n" as *byte, &cmd[0] as *byte);
     var result: i32 = system(&cmd[0] as *byte);
     if result != 0 {
@@ -1772,11 +1820,12 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build --app microapp main.uya -o microapp.uapp  # 微应用模式\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH=x86_64 %s build --app microapp main.uya -o microapp.uapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_PROFILE=linux_x86_64_hardvm %s build --app microapp main.uya -o microapp.uapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  TARGET_OS=macos TARGET_ARCH=arm64 %s build --app microapp main.uya -o microapp.uapp  # 按目标平台自动推导 profile\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n选项:\n" as *byte);
     fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
     fprintf(libc.stderr, "  --app <app|microapp>  选择应用类型；app 为默认行为，microapp 会启用更严格检查\n" as *byte);
-    fprintf(libc.stderr, "  --microapp-profile <name>  覆盖 microapp target profile（优先于 MICROAPP_TARGET_PROFILE）\n" as *byte);
+    fprintf(libc.stderr, "  --microapp-profile <name>  覆盖 microapp target profile（推荐优先使用；优先于 MICROAPP_TARGET_PROFILE）\n" as *byte);
     fprintf(libc.stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
     fprintf(libc.stderr, "  --opt=<0-3>          优化级别（0=禁用, 1=默认, 2=+证明优化, 3=+内联）\n" as *byte);
@@ -1785,8 +1834,8 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  --async-frame-heap=on  async frame pool 满时回退到调试 heap（默认关闭）\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_CFLAGS  microapp 目标 gcc 编译旗标；默认 -std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fno-pie -ffunction-sections -fdata-sections -flto=auto（不含 -g）\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_LDFLAGS microapp 目标 gcc 链接旗标；默认 -no-pie -Wl,--gc-sections -flto=auto\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_CFLAGS  microapp 目标 gcc 编译旗标；call_gate profile 默认 -std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fpie -ffunction-sections -fdata-sections -flto=auto，trap profile 默认改为 -fno-pie（均不含 -g）\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_LDFLAGS microapp 目标 gcc 链接旗标；call_gate profile 默认 -pie -Wl,--gc-sections -flto=auto，trap profile 默认改为 -no-pie\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
     fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
     fprintf(libc.stderr, "  --split-c-dir [<dir>]  多文件 C 输出；省略或 --split-c-dir= 时目录默认为 .uyacache\n" as *byte);
@@ -1796,11 +1845,14 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  多文件布局：默认镜像分 TU（一源一 .c，便于 make -j）；UYA_SPLIT_C_MIRROR=0|false|no|off 时用 uya_part1+part2\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
     fprintf(libc.stderr, "\n微应用环境变量:\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH  microapp 目标架构；默认 x86_64\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_PROFILE microapp 目标 profile；可选 linux_x86_64_hardvm / linux_aarch64_hardvm / macos_arm64_hardvm / rv32_baremetal_softvm / xtensa_baremetal_softvm\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_PROFILE microapp 目标 profile；推荐优先使用；可选 linux_x86_64_hardvm / linux_aarch64_hardvm / macos_arm64_hardvm / rv32_baremetal_softvm / xtensa_baremetal_softvm\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH    microapp 目标架构；仅在未显式指定 profile 时参与回退推导\n" as *byte);
+    fprintf(libc.stderr, "  TARGET_OS/TARGET_ARCH  未显式指定 profile 时，优先按目标平台组合推导默认 profile\n" as *byte);
+    fprintf(libc.stderr, "  HOST_OS/HOST_ARCH      若 TARGET_OS/TARGET_ARCH 缺省，则继续回退到宿主平台信息\n" as *byte);
     fprintf(libc.stderr, "  MICROAPP_TARGET_GCC   microapp 专用 gcc；优先于 TARGET_GCC\n" as *byte);
     fprintf(libc.stderr, "  TARGET_GCC            通用 gcc；仅在未设 MICROAPP_TARGET_GCC 时生效\n" as *byte);
-    fprintf(libc.stderr, "  默认三元组：rv32=riscv32-unknown-elf, x86_64=x86_64-linux-gnu, aarch64=aarch64-linux-gnu, xtensa=xtensa-unknown-elf\n" as *byte);
+    fprintf(libc.stderr, "  默认 profile 推导优先级：--microapp-profile > MICROAPP_TARGET_PROFILE > MICROAPP_TARGET_ARCH(+TARGET_OS) > TARGET_OS/TARGET_ARCH > HOST_OS/HOST_ARCH > linux_x86_64_hardvm\n" as *byte);
+    fprintf(libc.stderr, "  默认 profile 三元组：linux_x86_64_hardvm=x86_64-linux-gnu, linux_aarch64_hardvm=aarch64-linux-gnu, macos_arm64_hardvm=arm64-apple-darwin, rv32_baremetal_softvm=riscv32-unknown-elf, xtensa_baremetal_softvm=xtensa-unknown-elf\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
     fprintf(libc.stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
@@ -4686,6 +4738,13 @@ export fn main() i32 {
             g_microapp_softvm_mode = 1;
         } else {
             g_microapp_softvm_mode = 0;
+        }
+        if command == CommandType.COMMAND_BUILD {
+            fprintf(libc.stderr, "信息：microapp active profile=%s, bridge=%s, target_os=%s, 目标架构=%s\n" as *byte,
+                active_profile.name as *byte,
+                microapp_bridge_kind_name(active_profile.bridge_kind_raw) as *byte,
+                resolve_microapp_target_platform_os_name() as *byte,
+                microapp_target_arch_name(active_profile.arch_raw) as *byte);
         }
     } else {
         g_microapp_softvm_mode = 0;

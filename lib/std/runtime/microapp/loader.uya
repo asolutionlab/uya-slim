@@ -182,6 +182,26 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
             @println("[microapp loader] payload exited non-zero");
             return payload_exit;
         }
+    } else {
+        var target_arch_name: &byte = "unknown" as &byte;
+        if loaded_hdr.target_arch == ImageTargetArch.ita_rv32 {
+            target_arch_name = "rv32" as &byte;
+        } else if loaded_hdr.target_arch == ImageTargetArch.ita_x86_64 {
+            target_arch_name = "x86_64" as &byte;
+        } else if loaded_hdr.target_arch == ImageTargetArch.ita_aarch64 {
+            target_arch_name = "aarch64" as &byte;
+        } else if loaded_hdr.target_arch == ImageTargetArch.ita_xtensa {
+            target_arch_name = "xtensa" as &byte;
+        }
+        var bridge_name: &byte = "unknown" as &byte;
+        if loaded_hdr.bridge_kind == ImageBridgeKind.ibk_trap {
+            bridge_name = "trap" as &byte;
+        } else if loaded_hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
+            bridge_name = "call_gate" as &byte;
+        }
+        @println("[microapp loader] no execution path for target_arch=${target_arch_name} bridge=${bridge_name}");
+        @println("[microapp loader] pass native payload path as argv[2] or add mapped execution support for this profile");
+        return 6;
     }
 
     @println("[microapp loader] done");

@@ -115,9 +115,9 @@
 - [~] 将当前 `MICROAPP_TARGET_ARCH` 扩展为 profile 驱动
   - [x] 新增 `MICROAPP_TARGET_PROFILE`
   - [x] `.pobj` / `.uapp` 已携带 `profile_id`
-  - [~] CLI / 文档 / 默认行为还未完全切到 profile-first 心智
+  - [x] CLI / 文档 / 默认行为已切到 profile-first 心智
     - [x] 已新增 `--microapp-profile` CLI 覆盖
-    - [ ] 默认行为与帮助文本仍未完全切到 profile-first
+    - [x] 默认行为与帮助文本已优先围绕 profile 与 target tuple 推导
 - [~] 建立首批 profile 常量/映射：
   - [x] `linux_x86_64_hardvm`
   - [x] `linux_aarch64_hardvm`
@@ -188,7 +188,8 @@
 - [~] 升级 [loader.uya](/home/winger/uya/uya/lib/std/runtime/microapp/loader.uya)：
   - [x] `linux_x86_64_hardvm + call-gate` 路径不再启动 native payload 对照 ELF
   - [x] 已真正调用 runtime execution path
-  - [ ] 其他 profile 仍保留 fallback / 未接线路径
+  - [~] 其他 profile 仍保留 fallback / 未接线路径
+    - [x] 未接线路径已改为显式报错，不再静默 `done`
 
 ### 7.2 Runtime Mapping
 

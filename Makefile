@@ -582,6 +582,14 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 microapp profile 默认推导..."
+	@./tests/verify_microapp_profile_default_resolution.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp profile 默认推导验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 microapp verify-image..."
 	@./tests/verify_microapp_verify_cli.sh; \
 	VERIFY_EXIT=$$?; \
@@ -619,6 +627,14 @@ check-hosted: b-hosted
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ microapp bss 映射执行验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 microapp unwired profile 显式失败..."
+	@./tests/verify_microapp_loader_unwired_profile.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp unwired profile 显式失败验证失败"; \
 		exit 1; \
 	fi
 	@echo ""

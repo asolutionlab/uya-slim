@@ -163,20 +163,23 @@
 
 1. `--microapp-profile <name>`
 2. `MICROAPP_TARGET_PROFILE`
-3. `MICROAPP_TARGET_ARCH`
-4. `TARGET_ARCH`
-5. 默认回退
+3. `MICROAPP_TARGET_ARCH` + `TARGET_OS`
+4. `TARGET_OS + TARGET_ARCH`
+5. `HOST_OS + HOST_ARCH`
+6. 默认回退
 
 也就是说：
 
 - CLI 显式指定优先级最高
-- 环境变量次之
-- 如果没有 profile，就退回到 arch 推导默认 profile
+- `profile` 显式指定次之
+- 如果没有显式 profile，编译器会优先按目标平台组合推导默认 profile
+- 只有在缺少完整平台信息时，才继续退回到 arch 推导
 
 例如：
 
-- `x86_64` 会默认推到 `linux_x86_64_hardvm`
-- `aarch64` 会默认推到 `linux_aarch64_hardvm`
+- `TARGET_OS=linux TARGET_ARCH=x86_64` 会默认推到 `linux_x86_64_hardvm`
+- `TARGET_OS=linux TARGET_ARCH=arm64` 会默认推到 `linux_aarch64_hardvm`
+- `TARGET_OS=macos TARGET_ARCH=arm64` 会默认推到 `macos_arm64_hardvm`
 - `rv32` 会默认推到 `rv32_baremetal_softvm`
 
 ---
@@ -204,6 +207,15 @@ MICROAPP_TARGET_PROFILE=linux_x86_64_hardvm \
 如果两者同时存在：
 
 - `--microapp-profile` 优先
+
+如果你不想显式写 profile，也可以让目标平台 tuple 自动推导：
+
+```bash
+TARGET_OS=macos TARGET_ARCH=arm64 \
+./bin/uya build --app microapp \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello.uapp
+```
 
 ---
 
