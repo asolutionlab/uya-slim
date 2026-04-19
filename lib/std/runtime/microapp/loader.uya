@@ -152,6 +152,17 @@ fn microapp_hosted_report_payload_result(kernel: &SimKernel, cid: u32) void {
         @println("[microapp loader] payload result=validated bridge=${bridge_name} target=${target_arch_name}");
         return;
     }
+    if kernel.loaded_result_kind[cid] == SIM_LOADED_RESULT_UNWIRED {
+        var target_arch_name: &byte = "unknown" as &byte;
+        var bridge_name: &byte = "unknown" as &byte;
+        if kernel.loaded_image_valid[cid] != 0u32 {
+            const hdr: ImageHeader = kernel.loaded_image_headers[cid];
+            target_arch_name = microapp_hosted_target_arch_name(hdr.target_arch);
+            bridge_name = microapp_hosted_bridge_name(hdr.bridge_kind);
+        }
+        @println("[microapp loader] payload result=unwired bridge=${bridge_name} target=${target_arch_name}");
+        return;
+    }
     if kernel.loaded_result_kind[cid] == SIM_LOADED_RESULT_FAULT {
         const fault_class: u32 = kernel.loaded_fault_class[cid];
         const fault_code: u32 = kernel.loaded_fault_code[cid];
@@ -361,6 +372,9 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
         }
         const target_arch_name: &byte = microapp_hosted_target_arch_name(loaded_hdr.target_arch);
         const bridge_name: &byte = microapp_hosted_bridge_name(loaded_hdr.bridge_kind);
+        if kernel.loaded_result_kind[0] == SIM_LOADED_RESULT_UNWIRED {
+            microapp_hosted_report_payload_result(&kernel, 0u32);
+        }
         @println("[microapp loader] no execution path for target_arch=${target_arch_name} bridge=${bridge_name}");
         @println("[microapp loader] pass native payload path as argv[2] or add mapped execution support for this profile");
         return 6;

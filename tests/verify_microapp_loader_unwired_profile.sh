@@ -33,6 +33,7 @@ if "$ROOT_DIR/bin/uya" run examples/microapp/microcontainer_hello_load.uya -- "$
 fi
 
 grep -a -q '\[microapp loader\] no execution path for target_arch=aarch64 bridge=call_gate' "$LOADER_LOG" || dump_log_and_fail "loader 未输出 unwired profile 诊断" "$LOADER_LOG"
+grep -a -q '\[microapp loader\] payload result=unwired bridge=call_gate target=aarch64' "$LOADER_LOG" || dump_log_and_fail "loader 未输出统一 unwired result" "$LOADER_LOG"
 grep -a -q '\[microapp loader\] pass native payload path as argv\[2\] or add mapped execution support for this profile' "$LOADER_LOG" || dump_log_and_fail "loader 未提示如何处理 unwired profile" "$LOADER_LOG"
 if grep -a -q '\[microapp loader\] done' "$LOADER_LOG"; then
     dump_log_and_fail "unwired profile 不应输出 done" "$LOADER_LOG"

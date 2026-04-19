@@ -45,6 +45,7 @@
 - 当前 x86_64 真执行回归也已经覆盖 fault/error 路径（通过子进程隔离把崩溃收口为可观测信号退出状态）
 - 当前统一 fault 结果模型已经在 x86_64 hosted loader 与 sim/recovery 链路落地，统一输出/记录 `fault_class / fault_code / fault_signal`
 - trap bridge 路径当前仍是“validated-only” 过渡态，但已经有显式 `payload result=validated bridge=trap target=...` 结果面
+- 尚未接线的 hosted profile 现在也会显式输出 `payload result=unwired bridge=... target=...`，不再只靠单独错误文案表达
 - `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`

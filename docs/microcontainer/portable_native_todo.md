@@ -225,6 +225,7 @@
   - [~] 崩溃/故障到统一错误模型仍待继续细化
     - [x] x86_64 hosted 路径已统一到 `fault_class / fault_code / fault_signal`
     - [x] sim/recovery 路径已把 structured fault 写入 crash log
+    - [x] unwired profile 路径已显式输出 `payload result=unwired ...`
     - [ ] 其他后端 / bridge 仍待接入同一结果模型
 
 验收标准：
