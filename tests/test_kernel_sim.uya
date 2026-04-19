@@ -9,6 +9,13 @@ use kernel.recovery;
 use kernel.scheduler;
 use kernel.sim;
 use kernel.syscall;
+use libc.sys_mmap;
+use libc.sys_munmap;
+use libc.PROT_READ;
+use libc.PROT_WRITE;
+use libc.PROT_EXEC;
+use libc.MAP_PRIVATE;
+use libc.MAP_ANONYMOUS;
 use std.crypto.sha256;
 use std.testing.assert_eq_i32;
 
@@ -53,10 +60,102 @@ fn build_sim_image(buf: &[byte], ro_len: u32) u32 {
     buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
     buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_trap);
     w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 4u32 + ro_len);
     w32(buf, IMAGE_HEADER_SIZE as usize, 115u32);
     var digest: [byte: 32] = [];
     sha256_digest(buf[0: total as usize], digest[0: 32]);
     i = 0;
+    while i < 32u32 {
+        buf.ptr[(28u32 + i) as usize] = digest[i as usize];
+        i = i + 1u32;
+    }
+    return total;
+}
+
+fn build_sim_image_with_data(buf: &[byte], ro_len: u32, data_len: u32) u32 {
+    const total: u32 = IMAGE_HEADER_SIZE + 4u32 + ro_len + data_len;
+    var i: u32 = 0;
+    while i < total {
+        buf.ptr[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+    w32(buf, 0, IMAGE_MAGIC);
+    w16(buf, 4, 2);
+    w16(buf, 6, 1);
+    w32(buf, 8, total);
+    w32(buf, 12, 0);
+    w32(buf, 16, 4);
+    w32(buf, 20, ro_len);
+    w32(buf, 24, 0u32);
+    w32(buf, 96, data_len);
+    w32(buf, 100, 0u32);
+    w32(buf, 104, 0u32);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 4u32 + ro_len + data_len);
+    w32(buf, 124, 0u32);
+    w32(buf, 128, 0u32);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 60, 0u32);
+    buf.ptr[64] = BUILD_MODE_CONTAINER;
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_trap);
+    w32(buf, IMAGE_HEADER_SIZE as usize, 115u32);
+    var digest: [byte: 32] = [];
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
+    i = 0u32;
+    while i < 32u32 {
+        buf.ptr[(28u32 + i) as usize] = digest[i as usize];
+        i = i + 1u32;
+    }
+    return total;
+}
+
+fn build_sim_x86_exit_image(buf: &[byte]) u32 {
+    const total: u32 = IMAGE_HEADER_SIZE + 4u32;
+    var i: u32 = 0u32;
+    while i < total {
+        buf.ptr[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+    w32(buf, 0, IMAGE_MAGIC);
+    w16(buf, 4, 2);
+    w16(buf, 6, 1);
+    w32(buf, 8, total);
+    w32(buf, 12, 0u32);
+    w32(buf, 16, 4u32);
+    w32(buf, 20, 0u32);
+    w32(buf, 24, 0u32);
+    w32(buf, 96, 0u32);
+    w32(buf, 100, 0u32);
+    w32(buf, 104, 0u32);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 124, 1u32);
+    w32(buf, 128, 0u32);
+    w32(buf, 60, 0u32);
+    buf.ptr[64] = BUILD_MODE_CONTAINER;
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_x86_64);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_call_gate);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 4u32);
+    buf.ptr[IMAGE_HEADER_SIZE as usize] = 49 as byte;       // xor eax, eax
+    buf.ptr[(IMAGE_HEADER_SIZE + 1u32) as usize] = 192 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 2u32) as usize] = 195 as byte; // ret
+    buf.ptr[(IMAGE_HEADER_SIZE + 3u32) as usize] = 144 as byte; // nop
+    var digest: [byte: 32] = [];
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
+    i = 0u32;
     while i < 32u32 {
         buf.ptr[(28u32 + i) as usize] = digest[i as usize];
         i = i + 1u32;
@@ -240,4 +339,49 @@ test "sim_load_image_print_rodata_sets_accessed_bit" {
         has_a = 1;
     }
     try assert_eq_i32(has_a, 1);
+}
+
+test "sim_load_image_data_page_sets_writable_bit" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536;
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_image_with_data(img[0: 256], 4u32, 4u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+
+    var has_w: i32 = 0;
+    if (k.host_ctx.pts[0].entries[0] & PTE_W) != 0 {
+        has_w = 1;
+    }
+    try assert_eq_i32(has_w, 1);
+}
+
+test "sim_load_image_x86_call_gate_executes_mapped_payload" {
+    const backing_size: usize = 65536;
+    const backing_raw: &void = try sys_mmap(
+        null as &void,
+        backing_size,
+        PROT_READ | PROT_WRITE | PROT_EXEC,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    k.host_ctx.pm.base = backing_raw as &byte;
+    k.host_ctx.pm.size = backing_size as u32;
+
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_x86_exit_image(img[0: 256]);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+    const cid: u32 = try sim_tick_loaded(&k);
+    try assert_eq_i32(cid as i32, 0);
+    const st: ContainerState = try scheduler_get_slot_state(&k.sched, 0u32);
+    var is_empty: i32 = 0;
+    if st == ContainerState.cs_empty { is_empty = 1; }
+    try assert_eq_i32(is_empty, 1);
+
+    _ = sys_munmap(backing_raw as *void, backing_size) catch {};
 }

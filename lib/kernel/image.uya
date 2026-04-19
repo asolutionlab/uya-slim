@@ -9,7 +9,7 @@ use std.crypto.sha256;
 
 export const IMAGE_MAGIC: u32 = 1431912704;     // 0x55594100 = "UYA\0"
 export const IMAGE_HEADER_SIZE_V1: u32 = 96;
-export const IMAGE_HEADER_SIZE_V2: u32 = 160;
+export const IMAGE_HEADER_SIZE_V2: u32 = 176;
 export const IMAGE_HEADER_SIZE: u32 = IMAGE_HEADER_SIZE_V2;
 export const BUILD_MODE_CONTAINER: byte = 1;
 
@@ -50,6 +50,9 @@ export const OFF_PROFILE: u32 = 124;
 export const OFF_FLAGS: u32 = 128;
 export const OFF_BRIDGE_KIND: u32 = 132;
 export const OFF_ENTRY_VA: u32 = 136;
+export const OFF_CODE_VA: u32 = 140;
+export const OFF_RODATA_VA: u32 = 144;
+export const OFF_DATA_VA: u32 = 148;
 
 export struct ImageHeader {
     magic: u32,
@@ -69,6 +72,9 @@ export struct ImageHeader {
     reloc_offset: u32,
     profile_id: u32,
     entry_va: u32,
+    code_va: u32,
+    rodata_va: u32,
+    data_va: u32,
     sha256: [byte: 32],
     required_caps: u32,
     flags: u32,
@@ -163,6 +169,9 @@ export fn image_parse_header(data: &[byte]) !ImageHeader {
     var flags: u32 = 0u32;
     var bridge_kind: ImageBridgeKind = ImageBridgeKind.ibk_unknown;
     var entry_va: u32 = code_offset + read_u32_le(data, OFF_ENTRY as usize);
+    var code_va: u32 = code_offset;
+    var rodata_va: u32 = rodata_offset;
+    var data_va: u32 = data_offset;
     if format_version >= 2u16 {
         data_size = read_u32_le(data, OFF_DATA_SIZE as usize);
         bss_size = read_u32_le(data, OFF_BSS_SIZE as usize);
@@ -175,6 +184,9 @@ export fn image_parse_header(data: &[byte]) !ImageHeader {
         flags = read_u32_le(data, OFF_FLAGS as usize);
         bridge_kind = image_bridge_kind_from_byte(data.ptr[OFF_BRIDGE_KIND as usize]);
         entry_va = read_u32_le(data, OFF_ENTRY_VA as usize);
+        code_va = read_u32_le(data, OFF_CODE_VA as usize);
+        rodata_va = read_u32_le(data, OFF_RODATA_VA as usize);
+        data_va = read_u32_le(data, OFF_DATA_VA as usize);
     }
 
     var hdr: ImageHeader = ImageHeader{
@@ -195,6 +207,9 @@ export fn image_parse_header(data: &[byte]) !ImageHeader {
         reloc_offset: reloc_offset,
         profile_id: profile_id,
         entry_va: entry_va,
+        code_va: code_va,
+        rodata_va: rodata_va,
+        data_va: data_va,
         sha256: [],
         required_caps: read_u32_le(data, OFF_CAPS as usize),
         flags: flags,
@@ -304,13 +319,19 @@ export fn image_verify_structure(hdr: &ImageHeader, total_len: u32) !void {
     if (hdr.entry_offset & 3u32) != 0 {
         return error.ImgLayoutInvalid;
     }
-    if hdr.entry_va < hdr.code_offset {
+    if hdr.entry_va < hdr.code_va {
         return error.ImgLayoutInvalid;
     }
-    if hdr.entry_va >= code_end {
+    if hdr.entry_va >= hdr.code_va + hdr.code_size {
         return error.ImgLayoutInvalid;
     }
     if (hdr.entry_va & 3u32) != 0 {
+        return error.ImgLayoutInvalid;
+    }
+    if hdr.rodata_size > 0u32 && hdr.rodata_va < hdr.code_va + hdr.code_size {
+        return error.ImgLayoutInvalid;
+    }
+    if hdr.data_size > 0u32 && hdr.data_va < hdr.rodata_va + hdr.rodata_size {
         return error.ImgLayoutInvalid;
     }
 }

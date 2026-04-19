@@ -19,9 +19,9 @@ from pathlib import Path
 path = Path("/tmp/microcontainer_hello.pobj")
 data = path.read_bytes()
 source_path = b"examples/microapp/microcontainer_hello_source.uya"
-assert len(data) >= 72, len(data)
+assert len(data) >= 84, len(data)
 assert data[:4] == b"POBJ", data[:4]
-assert data[4:6] == (7).to_bytes(2, "little"), data[4:6]
+assert data[4:6] == (8).to_bytes(2, "little"), data[4:6]
 assert data[6:8] == (0).to_bytes(2, "little"), data[6:8]
 assert int.from_bytes(data[8:12], "little") == 2, data[8:12]
 assert int.from_bytes(data[12:16], "little") == 1, data[12:16]
@@ -39,6 +39,9 @@ stack_hint = int.from_bytes(data[56:60], "little")
 data_len = int.from_bytes(data[60:64], "little")
 reloc_len = int.from_bytes(data[64:68], "little")
 entry_va = int.from_bytes(data[68:72], "little")
+code_va = int.from_bytes(data[72:76], "little")
+rodata_va = int.from_bytes(data[76:80], "little")
+data_va = int.from_bytes(data[80:84], "little")
 assert code_len > 0, code_len
 assert rodata_len > 0, rodata_len
 assert reloc_count == 0, reloc_count
@@ -48,12 +51,15 @@ assert bridge_kind == 2, bridge_kind
 assert bss_size == 0, bss_size
 assert stack_hint == 0, stack_hint
 assert reloc_len == 0, reloc_len
-assert entry_va == 160, entry_va
-assert data[72:72 + len(source_path)] == source_path, data[72:72 + len(source_path)]
-code_off = 72 + len(source_path)
+assert entry_va == code_va, (entry_va, code_va)
+assert code_va >= 65536, code_va
+assert data[84:84 + len(source_path)] == source_path, data[84:84 + len(source_path)]
+code_off = 84 + len(source_path)
 rodata_off = code_off + code_len
 data_off = rodata_off + rodata_len
 reloc_off = data_off + data_len
+assert rodata_va >= code_va + code_len, (rodata_va, code_va, code_len)
+assert data_va >= rodata_va + rodata_len, (data_va, rodata_va, rodata_len)
 assert len(data) == reloc_off + reloc_len, (len(data), reloc_off, reloc_len)
 assert b"hello microapp" in data[rodata_off:rodata_off + rodata_len], data[rodata_off:rodata_off + rodata_len]
 PY

@@ -16,6 +16,8 @@ use kernel.scheduler;
 use kernel.syscall;
 use kernel.update;
 
+extern fn uya_call0_i32(fn_ptr: &void) i32;
+
 // ── Container entry function type ──
 // fn(ctx: &SimContainerCtx) i32
 //   return 0 = yield (still alive)
@@ -159,6 +161,87 @@ fn sim_ctx_ref(k: &SimKernel, slot: u32) &SimContainerCtx {
     return &k.container_ctxs[7];
 }
 
+fn sim_range_overlaps(range_start: u32, range_len: u32, page_start: u32, page_end: u32) i32 {
+    if range_len == 0u32 {
+        return 0;
+    }
+    const range_end: u32 = range_start + range_len;
+    if range_end <= page_start {
+        return 0;
+    }
+    if range_start >= page_end {
+        return 0;
+    }
+    return 1;
+}
+
+fn sim_loaded_min_va(hdr: &ImageHeader) u32 {
+    var min_va: u32 = hdr.code_va;
+    if hdr.rodata_size > 0u32 && hdr.rodata_va < min_va {
+        min_va = hdr.rodata_va;
+    }
+    if hdr.data_size > 0u32 && hdr.data_va < min_va {
+        min_va = hdr.data_va;
+    }
+    if hdr.entry_va < min_va {
+        min_va = hdr.entry_va;
+    }
+    return min_va;
+}
+
+fn sim_loaded_max_end(hdr: &ImageHeader) u32 {
+    var max_end: u32 = hdr.code_va + hdr.code_size;
+    const ro_end: u32 = hdr.rodata_va + hdr.rodata_size;
+    const data_end: u32 = hdr.data_va + hdr.data_size;
+    if ro_end > max_end {
+        max_end = ro_end;
+    }
+    if data_end > max_end {
+        max_end = data_end;
+    }
+    return max_end;
+}
+
+fn sim_page_flags_for_image_range(hdr: &ImageHeader, page_start: u32, page_end: u32) u32 {
+    var flags: u32 = 0u32;
+    if sim_range_overlaps(hdr.code_va, hdr.code_size, page_start, page_end) != 0 {
+        flags = flags | PTE_R | PTE_X | PTE_U;
+    }
+    if sim_range_overlaps(hdr.rodata_va, hdr.rodata_size, page_start, page_end) != 0 {
+        flags = flags | PTE_R | PTE_U;
+    }
+    if sim_range_overlaps(hdr.data_va, hdr.data_size, page_start, page_end) != 0 {
+        flags = flags | PTE_R | PTE_W | PTE_U;
+    }
+    return flags;
+}
+
+fn sim_zero_mapped_pages(pm: &PhysMem, first_ppn: u32, page_count: u32) !void {
+    var page_idx: u32 = 0u32;
+    while page_idx < page_count {
+        const base: &byte = try physmem_ptr(pm, first_ppn + page_idx, 0u32);
+        var off: u32 = 0u32;
+        while off < PAGE_SIZE {
+            base[off] = 0 as byte;
+            off = off + 1u32;
+        }
+        page_idx = page_idx + 1u32;
+    }
+}
+
+fn sim_copy_segment(pm: &PhysMem, first_ppn: u32, base_vpn: u32, src: &[byte], dst_va: u32) !void {
+    var i: u32 = 0u32;
+    while i < src.len as u32 {
+        const cur_va: u32 = dst_va + i;
+        const vpn: u32 = cur_va / PAGE_SIZE;
+        const off: u32 = cur_va & (PAGE_SIZE - 1u32);
+        const ppn: u32 = first_ppn + (vpn - base_vpn);
+        const dst: &byte = try physmem_ptr(pm, ppn, off);
+        dst[0] = src.ptr[i as usize];
+        i = i + 1u32;
+    }
+}
+
 fn sim_handle_result(k: &SimKernel, cid: u32, result: i32) !void {
     if result == 0 {
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
@@ -204,7 +287,11 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         return error.NoMemory;
     }
     const hdr: ImageHeader = try image_validate(image_bytes);
-    const pages_needed: u32 = (hdr.image_size + PAGE_SIZE - 1u32) / PAGE_SIZE;
+    const min_va: u32 = sim_loaded_min_va(&hdr);
+    const max_end: u32 = sim_loaded_max_end(&hdr);
+    const base_vpn: u32 = min_va / PAGE_SIZE;
+    const end_vpn: u32 = (max_end - 1u32) / PAGE_SIZE;
+    const pages_needed: u32 = end_vpn - base_vpn + 1u32;
     var first_ppn: u32 = 0u32;
     var page_idx: u32 = 0u32;
     while page_idx < pages_needed {
@@ -212,28 +299,35 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         if page_idx == 0u32 {
             first_ppn = ppn;
         }
-        const base: &byte = try physmem_ptr(&k.host_ctx.pm, ppn, 0u32);
-        var offset: u32 = 0u32;
-        while offset < PAGE_SIZE {
-            const byte_idx: u32 = page_idx * PAGE_SIZE + offset;
-            if byte_idx >= hdr.image_size {
-                break;
-            }
-            base[offset] = image_bytes.ptr[byte_idx as usize];
-            offset = offset + 1u32;
-        }
         page_idx = page_idx + 1u32;
     }
+    try sim_zero_mapped_pages(&k.host_ctx.pm, first_ppn, pages_needed);
     const pt: &PageTable = sim_pt_ref(k, cid);
     pt_init(pt);
     page_idx = 0u32;
     while page_idx < pages_needed {
-        try pt_map_code(pt, page_idx, first_ppn + page_idx);
+        const page_start: u32 = (base_vpn + page_idx) * PAGE_SIZE;
+        const page_end: u32 = page_start + PAGE_SIZE;
+        var flags: u32 = sim_page_flags_for_image_range(&hdr, page_start, page_end);
+        if flags == 0u32 {
+            flags = PTE_R | PTE_U;
+        }
+        try pt_map(pt, base_vpn + page_idx, first_ppn + page_idx, flags);
         page_idx = page_idx + 1u32;
+    }
+    const code_slice: &[byte] = image_bytes[hdr.code_offset as usize: hdr.code_size as usize];
+    try sim_copy_segment(&k.host_ctx.pm, first_ppn, base_vpn, code_slice, hdr.code_va);
+    if hdr.rodata_size > 0u32 {
+        const ro_slice: &[byte] = image_bytes[hdr.rodata_offset as usize: hdr.rodata_size as usize];
+        try sim_copy_segment(&k.host_ctx.pm, first_ppn, base_vpn, ro_slice, hdr.rodata_va);
+    }
+    if hdr.data_size > 0u32 {
+        const data_slice: &[byte] = image_bytes[hdr.data_offset as usize: hdr.data_size as usize];
+        try sim_copy_segment(&k.host_ctx.pm, first_ppn, base_vpn, data_slice, hdr.data_va);
     }
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
-        _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 4u32, ACCESS_R);
+        _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 4u32, ACCESS_X);
     }
     sim_loaded_header_ref(k, cid)[0] = hdr;
     sim_loaded_ppn_ref(k, cid)[0] = first_ppn;
@@ -252,16 +346,23 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
     }
     const hdr: ImageHeader = sim_loaded_header_ref(k, cid)[0];
     const code_off: u32 = hdr.entry_va;
-    const loaded_ppn: u32 = sim_loaded_ppn_ref(k, cid)[0];
-    const insn_ptr: &byte = try physmem_ptr(&k.host_ctx.pm, loaded_ppn, code_off);
+    const pt: &PageTable = sim_pt_ref(k, cid);
+    const insn_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, code_off, 4u32, ACCESS_X);
     const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
     if hdr.target_arch == ImageTargetArch.ita_rv32 {
         if insn != 115u32 {
             return error.ImgInsnDenied;
         }
+    } else if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
+        const entry_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 1u32, ACCESS_X);
+        const exit_code: i32 = uya_call0_i32(entry_ptr as &void);
+        if exit_code == 0 {
+            return 1;
+        }
+        return 0 - exit_code;
     }
     if hdr.rodata_size > 0u32 {
-        const rodata_off: u32 = hdr.rodata_offset;
+        const rodata_off: u32 = hdr.rodata_va;
         // rodata 可能跨页；逐页验证映射存在，而不是一次性翻译整个范围。
         var rodata_rem: u32 = hdr.rodata_size;
         var rodata_cur: u32 = rodata_off;

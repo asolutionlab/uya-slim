@@ -17,6 +17,10 @@ test "payload_pack_to_uapp_roundtrip" {
         required_caps: 0u32,
         flags: 0u32,
         entry_offset: 0u32,
+        entry_va: IMAGE_HEADER_SIZE,
+        code_va: IMAGE_HEADER_SIZE,
+        rodata_va: IMAGE_HEADER_SIZE + 4u32,
+        data_va: IMAGE_HEADER_SIZE + 8u32,
         code: code[0: 4],
         rodata: rodata[0: 4],
         data: empty[0: 0],
@@ -27,12 +31,14 @@ test "payload_pack_to_uapp_roundtrip" {
     };
 
     const total: u32 = try payload_pack_to_uapp(&obj, out[0: 256]);
-    try assert_eq_i32(total as i32, 168);
+    try assert_eq_i32(total as i32, 184);
 
     const hdr: ImageHeader = try image_validate(out[0: total as usize]);
     try assert_eq_i32(hdr.code_size as i32, 4);
     try assert_eq_i32(hdr.rodata_size as i32, 4);
     try assert_eq_i32(hdr.entry_offset as i32, 0);
+    try assert_eq_i32(hdr.entry_va as i32, IMAGE_HEADER_SIZE as i32);
     try assert_eq_i32(hdr.code_offset as i32, IMAGE_HEADER_SIZE as i32);
     try assert_eq_i32(hdr.rodata_offset as i32, (IMAGE_HEADER_SIZE + 4u32) as i32);
+    try assert_eq_i32(hdr.code_va as i32, IMAGE_HEADER_SIZE as i32);
 }

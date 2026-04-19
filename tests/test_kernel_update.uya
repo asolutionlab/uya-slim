@@ -49,6 +49,9 @@ fn build_image(buf: &[byte], code_byte: byte) void {
     buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
     buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_trap);
     w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 4u32);
     w32(buf, 60, 0);
     // Code: ecall with a distinguishing byte at offset 97
     w32(buf, IMAGE_HEADER_SIZE as usize, 115);  // ecall

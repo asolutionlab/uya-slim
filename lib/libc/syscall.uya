@@ -749,10 +749,12 @@ std.cfg(std.target_os == .tos_macos, {
     export const MAP_ANONYMOUS: i32 = 0x1000;
     export const PROT_READ: i32 = 1;
     export const PROT_WRITE: i32 = 2;
+    export const PROT_EXEC: i32 = 4;
 }, {
     export const MAP_ANONYMOUS: i32 = 32;
     export const PROT_READ: i32 = 1;
     export const PROT_WRITE: i32 = 2;
+    export const PROT_EXEC: i32 = 4;
 })
 
 // ============================================================

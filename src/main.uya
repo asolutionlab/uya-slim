@@ -77,6 +77,7 @@ var g_async_frame_heap_fallback: i32 = 0;
 var g_container_mode: i32 = 0;
 // --app microapp: 微应用模式
 var g_app_mode_microapp: i32 = 0;
+var g_microapp_softvm_mode: i32 = 0;
 
 fn split_c_set_default_dir() void {
     const def: &byte = ".uyacache" as &byte;
@@ -119,8 +120,8 @@ fn is_uapp_output(path: &byte) i32 {
 const POBJ_MAGIC: u32 = 0x4A424F50;  // "POBJ"
 const POBJ_HEADER_SIZE_V1: u32 = 40;
 const POBJ_HEADER_SIZE: u32 = 68;
-const POBJ_HEADER_SIZE_V2: u32 = 72;
-const POBJ_VERSION: u16 = 7;
+const POBJ_HEADER_SIZE_V2: u32 = 84;
+const POBJ_VERSION: u16 = 8;
 const POBJ_BUILD_MODE_MICROAPP: u32 = 1;
 const MICROAPP_TARGET_ARCH_RV32_RAW: u32 = 1u32;
 const MICROAPP_TARGET_ARCH_X86_64_RAW: u32 = 2u32;
@@ -131,9 +132,11 @@ const MICROAPP_PROFILE_LINUX_X86_64_HARDVM_RAW: u32 = 1u32;
 const MICROAPP_PROFILE_LINUX_AARCH64_HARDVM_RAW: u32 = 2u32;
 const MICROAPP_PROFILE_RV32_BAREMETAL_SOFTVM_RAW: u32 = 3u32;
 const MICROAPP_PROFILE_XTENSA_BAREMETAL_SOFTVM_RAW: u32 = 4u32;
+const MICROAPP_PROFILE_MACOS_ARM64_HARDVM_RAW: u32 = 5u32;
 const MICROAPP_BRIDGE_UNKNOWN_RAW: u32 = 0u32;
 const MICROAPP_BRIDGE_TRAP_RAW: u32 = 1u32;
 const MICROAPP_BRIDGE_CALL_GATE_RAW: u32 = 2u32;
+const MICROAPP_VADDR_BASE: u32 = 65536u32;
 
 struct MicroAppTargetProfile {
     profile_id: u32,
@@ -358,12 +361,12 @@ fn microapp_target_profile_from_name(name: &byte) MicroAppTargetProfile {
         }
         if strcmp(name, "macos_arm64_hardvm" as *byte) == 0 {
             return MicroAppTargetProfile{
-                profile_id: MICROAPP_PROFILE_LINUX_AARCH64_HARDVM_RAW,
+                profile_id: MICROAPP_PROFILE_MACOS_ARM64_HARDVM_RAW,
                 arch_raw: MICROAPP_TARGET_ARCH_AARCH64_RAW,
                 bridge_kind_raw: MICROAPP_BRIDGE_CALL_GATE_RAW,
                 name: "macos_arm64_hardvm" as &byte,
-                triple: "aarch64-linux-gnu" as &byte,
-                default_gcc: "aarch64-linux-gnu-gcc" as &byte,
+                triple: "arm64-apple-darwin" as &byte,
+                default_gcc: "cc" as &byte,
             };
         }
         if strcmp(name, "rv32_baremetal_softvm" as *byte) == 0 {
@@ -413,6 +416,181 @@ fn microapp_profile_default_ldflags(profile: &MicroAppTargetProfile) &byte {
         return "-pie -Wl,--gc-sections -flto=auto" as &byte;
     }
     return "-no-pie -Wl,--gc-sections -flto=auto" as &byte;
+}
+
+fn microapp_ascii_is_space(c: byte) i32 {
+    if c == 32 as byte || c == 9 as byte || c == 10 as byte || c == 13 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_hex_to_u32_span(buf: &byte, start: usize, end: usize) !u32 {
+    var value: u32 = 0u32;
+    var i: usize = start;
+    if start >= end {
+        return error.InvalidSize;
+    }
+    while i < end {
+        const nib: i32 = hex_nibble(buf[i]);
+        if nib < 0 {
+            return error.InvalidSize;
+        }
+        value = (value << 4) | (nib as u32);
+        i = i + 1;
+    }
+    return value;
+}
+
+fn microapp_token_bounds(line: &byte, line_len: usize, token_index: i32, token_start: &usize, token_end: &usize) i32 {
+    var idx: i32 = 0;
+    var pos: usize = 0;
+    while pos < line_len {
+        while pos < line_len && microapp_ascii_is_space(line[pos]) != 0 {
+            pos = pos + 1;
+        }
+        if pos >= line_len {
+            break;
+        }
+        const start: usize = pos;
+        while pos < line_len && microapp_ascii_is_space(line[pos]) == 0 {
+            pos = pos + 1;
+        }
+        if idx == token_index {
+            token_start[0] = start;
+            token_end[0] = pos;
+            return 1;
+        }
+        idx = idx + 1;
+    }
+    return 0;
+}
+
+fn microapp_token_equals(line: &byte, token_start: usize, token_end: usize, expected: &byte) i32 {
+    const expected_len: usize = strlen(expected as *byte);
+    if token_end - token_start != expected_len {
+        return 0;
+    }
+    var i: usize = 0;
+    while i < expected_len {
+        if line[token_start + i] != expected[i] {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn microapp_section_vma_from_report(report: &byte, report_len: usize, section_name: &byte) !u32 {
+    var line_start: usize = 0;
+    while line_start < report_len {
+        var line_end: usize = line_start;
+        while line_end < report_len && report[line_end] != 10 as byte {
+            line_end = line_end + 1;
+        }
+        var tok0_s: usize = 0;
+        var tok0_e: usize = 0;
+        var tok1_s: usize = 0;
+        var tok1_e: usize = 0;
+        var tok3_s: usize = 0;
+        var tok3_e: usize = 0;
+        if microapp_token_bounds(report + line_start, line_end - line_start, 0, &tok0_s, &tok0_e) != 0 &&
+           microapp_token_bounds(report + line_start, line_end - line_start, 1, &tok1_s, &tok1_e) != 0 &&
+           microapp_token_bounds(report + line_start, line_end - line_start, 3, &tok3_s, &tok3_e) != 0 {
+            if microapp_token_equals(report + line_start, tok1_s, tok1_e, section_name) != 0 {
+                return try microapp_hex_to_u32_span(report + line_start, tok3_s, tok3_e);
+            }
+        }
+        if line_end >= report_len {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+    return error.InvalidState;
+}
+
+fn microapp_symbol_vma_from_report(report: &byte, report_len: usize, symbol_name: &byte) !u32 {
+    var line_start: usize = 0;
+    while line_start < report_len {
+        var line_end: usize = line_start;
+        while line_end < report_len && report[line_end] != 10 as byte {
+            line_end = line_end + 1;
+        }
+        var tok0_s: usize = 0;
+        var tok0_e: usize = 0;
+        var tok2_s: usize = 0;
+        var tok2_e: usize = 0;
+        if microapp_token_bounds(report + line_start, line_end - line_start, 0, &tok0_s, &tok0_e) != 0 &&
+           microapp_token_bounds(report + line_start, line_end - line_start, 2, &tok2_s, &tok2_e) != 0 {
+            if microapp_token_equals(report + line_start, tok2_s, tok2_e, symbol_name) != 0 {
+                return try microapp_hex_to_u32_span(report + line_start, tok0_s, tok0_e);
+            }
+        }
+        if line_end >= report_len {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+    return error.InvalidState;
+}
+
+fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, data_va: &u32, entry_va: &u32) i32 {
+    var report_path: [byte: PATH_MAX] = [];
+    var sym_path: [byte: PATH_MAX] = [];
+    var cmd: [byte: 8192] = [];
+    const report_len: i32 = snprintf(&report_path[0] as *byte, PATH_MAX, "%s.sections.txt" as *byte, exe_path as *byte);
+    const sym_len: i32 = snprintf(&sym_path[0] as *byte, PATH_MAX, "%s.symbols.txt" as *byte, exe_path as *byte);
+    if report_len <= 0 || report_len >= PATH_MAX || sym_len <= 0 || sym_len >= PATH_MAX {
+        return 1;
+    }
+    const objdump_env: &byte = get_env_or_default("OBJDUMP" as *byte, "objdump" as *byte);
+    const nm_env: &byte = get_env_or_default("NM" as *byte, "nm" as *byte);
+    var cmd_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -h %s > %s" as *byte, objdump_env as *byte, exe_path as *byte, &report_path[0] as *byte);
+    if cmd_len <= 0 || cmd_len >= 8192 {
+        return 1;
+    }
+    if system(&cmd[0] as *byte) != 0 {
+        return 1;
+    }
+    cmd_len = snprintf(&cmd[0] as *byte, 8192, "%s -n %s > %s" as *byte, nm_env as *byte, exe_path as *byte, &sym_path[0] as *byte);
+    if cmd_len <= 0 || cmd_len >= 8192 {
+        return 1;
+    }
+    if system(&cmd[0] as *byte) != 0 {
+        return 1;
+    }
+    var report_buf: [byte: FILE_BUFFER_SIZE] = [];
+    const report_size: i32 = read_file_content(&report_path[0] as &byte, &report_buf[0], FILE_BUFFER_SIZE as usize);
+    if report_size < 0 {
+        return 1;
+    }
+    var sym_buf: [byte: FILE_BUFFER_SIZE] = [];
+    const sym_size: i32 = read_file_content(&sym_path[0] as &byte, &sym_buf[0], FILE_BUFFER_SIZE as usize);
+    if sym_size < 0 {
+        return 1;
+    }
+    const text_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".text" as &byte) catch { return 1; };
+    var rodata_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".rodata" as &byte) catch { text_raw; };
+    var data_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".data" as &byte) catch { rodata_raw; };
+    var entry_raw: u32 = microapp_symbol_vma_from_report(&sym_buf[0] as &byte, sym_size as usize, "main_main" as &byte) catch { 0u32; };
+    if entry_raw == 0u32 {
+        entry_raw = microapp_symbol_vma_from_report(&sym_buf[0] as &byte, sym_size as usize, "main" as &byte) catch { 0u32; };
+    }
+    if entry_raw == 0u32 {
+        return 1;
+    }
+    var base_raw: u32 = text_raw;
+    if rodata_raw != 0u32 && rodata_raw < base_raw {
+        base_raw = rodata_raw;
+    }
+    if data_raw != 0u32 && data_raw < base_raw {
+        base_raw = data_raw;
+    }
+    text_va[0] = MICROAPP_VADDR_BASE + (text_raw - base_raw);
+    rodata_va[0] = MICROAPP_VADDR_BASE + (rodata_raw - base_raw);
+    data_va[0] = MICROAPP_VADDR_BASE + (data_raw - base_raw);
+    entry_va[0] = MICROAPP_VADDR_BASE + (entry_raw - base_raw);
+    return 0;
 }
 
 fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_path: &byte, data_bin_path: &byte, target_arch_raw: u32) i32 {
@@ -507,7 +685,10 @@ fn write_microapp_payload_obj(
     const bridge_kind_raw: u32 = profile.bridge_kind_raw;
     const bss_size: u32 = 0u32;
     const stack_size_hint: u32 = 0u32;
-    const entry_va: u32 = IMAGE_HEADER_SIZE + 0u32;
+    var entry_va: u32 = 0u32;
+    var code_va: u32 = 0u32;
+    var rodata_va: u32 = 0u32;
+    var data_va: u32 = 0u32;
     var text_bin_path: [byte: PATH_MAX] = [];
     var rodata_bin_path: [byte: PATH_MAX] = [];
     var data_bin_path: [byte: PATH_MAX] = [];
@@ -527,6 +708,16 @@ fn write_microapp_payload_obj(
         return 1;
     }
     if build_microapp_text_from_c(c_file, &text_bin_path[0] as &byte, &rodata_bin_path[0] as &byte, &data_bin_path[0] as &byte, target_arch_raw) != 0 {
+        return 1;
+    }
+    var exe_path: [byte: PATH_MAX] = [];
+    const exe_len_path: i32 = snprintf(&exe_path[0] as *byte, PATH_MAX, "%s.text.bin.elf" as *byte, output_path as *byte);
+    if exe_len_path <= 0 || exe_len_path >= PATH_MAX {
+        fprintf(libc.stderr, "错误: 无法生成 microapp ELF 路径\n" as *byte);
+        return 1;
+    }
+    if microapp_extract_elf_vaddrs(&exe_path[0] as &byte, &code_va, &rodata_va, &data_va, &entry_va) != 0 {
+        fprintf(libc.stderr, "错误: 无法提取 microapp ELF 虚拟地址信息\n" as *byte);
         return 1;
     }
     const code_len_raw: i32 = read_file_content(&text_bin_path[0] as &byte, &file_buffer[0], FILE_BUFFER_SIZE as usize);
@@ -583,6 +774,9 @@ fn write_microapp_payload_obj(
     w32_file(fp, data_len);
     w32_file(fp, reloc_len);
     w32_file(fp, entry_va);
+    w32_file(fp, code_va);
+    w32_file(fp, rodata_va);
+    w32_file(fp, data_va);
     _ = fwrite(source_path as *void, 1 as usize, source_len as usize, fp);
     _ = fwrite(&file_buffer[0] as *void, 1 as usize, code_len as usize, fp);
     _ = fwrite(&microapp_rodata_buffer[0] as *void, 1 as usize, rodata_len as usize, fp);
@@ -637,6 +831,9 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
     var reloc_len: u32 = 0u32;
     var pobj_header_size: u32 = POBJ_HEADER_SIZE_V1;
     var entry_va: u32 = IMAGE_HEADER_SIZE + entry_offset;
+    var code_va: u32 = IMAGE_HEADER_SIZE;
+    var rodata_va: u32 = code_va + code_len;
+    var data_va: u32 = rodata_va + rodata_len;
     if version >= 6u16 {
         pobj_header_size = POBJ_HEADER_SIZE;
         profile_id = read_u32_le_at(file_ptr, 40usize);
@@ -650,6 +847,9 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
     if version >= POBJ_VERSION {
         pobj_header_size = POBJ_HEADER_SIZE_V2;
         entry_va = read_u32_le_at(file_ptr, 68usize);
+        code_va = read_u32_le_at(file_ptr, 72usize);
+        rodata_va = read_u32_le_at(file_ptr, 76usize);
+        data_va = read_u32_le_at(file_ptr, 80usize);
     }
 
     if build_mode_raw != POBJ_BUILD_MODE_MICROAPP {
@@ -728,6 +928,9 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
         flags: image_flags,
         entry_offset: entry_offset,
         entry_va: entry_va,
+        code_va: code_va,
+        rodata_va: rodata_va,
+        data_va: data_va,
         code: code_bytes,
         rodata: rodata_bytes,
         data: data_bytes,
@@ -1556,27 +1759,28 @@ fn dirent_may_be_regular_file(entry_ptr: &byte) i32 {
     return 0;
 }
 
-// 默认中间 C 路径：$TMPDIR/uya_output.c，否则 /tmp/uya_output.c（Darwin/Linux 通用）
+// 默认中间 C 路径：$TMPDIR/uya_output_<pid>.c，否则 /tmp/uya_output_<pid>.c（Darwin/Linux 通用）
 fn host_fill_temp_c_compile_path(buf: &byte, cap: usize) i32 {
     if buf == null || cap < 24 {
         return -1;
     }
+    const pid: i32 = getpid();
     const tmpdir: *byte = getenv("TMPDIR" as *byte);
     if tmpdir != null && tmpdir[0] != 0 {
-        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_output.c" as *byte, tmpdir);
+        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_output_%d.c" as *byte, tmpdir, pid);
         if w > 0 && (w as usize) < cap {
             return 0;
         }
         return -1;
     }
-    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_output.c" as *byte);
+    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_output_%d.c" as *byte, pid);
     if w2 > 0 && (w2 as usize) < cap {
         return 0;
     }
     return -1;
 }
 
-// run/test 临时可执行路径：$TMPDIR/uya_out<suffix> 或 /tmp/uya_out<suffix>
+// run/test 临时可执行路径：$TMPDIR/uya_out_<pid><suffix> 或 /tmp/uya_out_<pid><suffix>
 fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
     if buf == null || cap < 32 {
         return -1;
@@ -1585,15 +1789,16 @@ fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
     if suf == null {
         suf = "" as *byte;
     }
+    const pid: i32 = getpid();
     const tmpdir: *byte = getenv("TMPDIR" as *byte);
     if tmpdir != null && tmpdir[0] != 0 {
-        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_out%s" as *byte, tmpdir, suf as *byte);
+        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_out_%d%s" as *byte, tmpdir, pid, suf as *byte);
         if w > 0 && (w as usize) < cap {
             return 0;
         }
         return -1;
     }
-    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_out%s" as *byte, suf as *byte);
+    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_out_%d%s" as *byte, pid, suf as *byte);
     if w2 > 0 && (w2 as usize) < cap {
         return 0;
     }
@@ -3802,6 +4007,7 @@ fn compile_files(
     c99_codegen_set_mono_instances(&c99_codegen, &checker);
     c99_codegen_set_reachable_functions(&c99_codegen, &checker);
     c99_codegen.container_mode = g_container_mode;
+    c99_codegen.microapp_softvm_mode = g_microapp_softvm_mode;
     if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
         c99_codegen_free(&c99_codegen);
@@ -3980,6 +4186,17 @@ export fn main() i32 {
                 backend = BackendType.BACKEND_C99;
             }
         }
+    }
+
+    if g_app_mode_microapp != 0 {
+        const active_profile: MicroAppTargetProfile = resolve_microapp_target_profile();
+        if active_profile.bridge_kind_raw == MICROAPP_BRIDGE_TRAP_RAW {
+            g_microapp_softvm_mode = 1;
+        } else {
+            g_microapp_softvm_mode = 0;
+        }
+    } else {
+        g_microapp_softvm_mode = 0;
     }
 
     // microapp 模式下，build 仍然先完成宿主编译检查，
@@ -4374,7 +4591,11 @@ fn generate_libc(output_dir: &byte) i32 {
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "#endif\n\n" as *byte);
 
-    fprintf(header_file, "/* std.thread：单参函数指针间接调用（与 codegen 前导一致；勿用 inline 以免 -O2 内联退化） */\n" as *byte);
+    fprintf(header_file, "/* std.thread / microapp：函数指针间接调用（与 codegen 前导一致；勿用 inline 以免 -O2 内联退化） */\n" as *byte);
+    fprintf(header_file, "static int32_t uya_call0_i32(void *fn) {\n" as *byte);
+    fprintf(header_file, "    typedef int32_t (*uya_fn0_i32)(void);\n" as *byte);
+    fprintf(header_file, "    return ((uya_fn0_i32)fn)();\n" as *byte);
+    fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "static int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte);
     fprintf(header_file, "    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte);
     fprintf(header_file, "    return ((uya_thrd_fn_i32)fn)(arg);\n" as *byte);

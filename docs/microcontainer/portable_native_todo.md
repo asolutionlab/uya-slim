@@ -32,6 +32,7 @@
 - `run --app microapp` 不再依赖对照 ELF
 - payload 从容器虚拟地址入口真执行
 - `SYS_PRINT / SYS_ALLOC / SYS_YIELD` 可用
+  - 当前已有 x86_64 mapped payload 回归覆盖 `print + alloc + yield`
 
 ### M2：Hosted 多平台
 
@@ -77,7 +78,8 @@
   - `flags`
 - [~] 将 `entry_offset` 升级为正式 `entry_va`
   - [x] `.pobj v7` / `.uapp v2` 已携带 `entry_va`
-  - [ ] 运行时还未真正以 `entry_va` 完成入口跳转
+  - [x] `sim_exec_loaded()` 已按 `entry_va` 完成 x86_64 call-gate 入口跳转
+  - [ ] 其他 profile / bridge 仍未统一到同一入口语义
 - [x] 保持 v1/v2 打包入口能并存
 
 ### 4.2 `ImageHeader`
@@ -156,7 +158,7 @@
   - [x] `std.microapp.io`
   - [x] `std.microapp.mem`
   - [x] `std.microapp.task`
-  - [ ] `std.microapp.time`
+  - [x] `std.microapp.time`
 - [ ] 审计并限制直接宿主 libc API 使用
 
 验收标准：
@@ -164,6 +166,8 @@
 - [~] `@syscall` 与 `std.microapp.*` 都统一走 bridge
   - [x] 直接 `@syscall`
   - [x] `std.microapp.io` wrapper
+  - [x] `std.microapp.mem` / `std.microapp.task` wrapper
+  - [x] `std.microapp.time` wrapper
 - [ ] payload 中不再出现 `write_stdout_bytes` / `posix_memalign` / `sched_yield` 这类宿主 helper 符号耦合
 
 ---
@@ -172,28 +176,39 @@
 
 ### 7.1 Loader
 
-- [ ] 升级 [loader.uya](/home/winger/uya/uya/lib/std/runtime/microapp/loader.uya)：
-  - [ ] 不再启动 native payload 对照 ELF
-  - [ ] 真正调用 runtime execution path
+- [~] 升级 [loader.uya](/home/winger/uya/uya/lib/std/runtime/microapp/loader.uya)：
+  - [x] `linux_x86_64_hardvm + call-gate` 路径不再启动 native payload 对照 ELF
+  - [x] 已真正调用 runtime execution path
+  - [ ] 其他 profile 仍保留 fallback / 未接线路径
 
 ### 7.2 Runtime Mapping
 
-- [ ] 在 [sim.uya](/home/winger/uya/uya/lib/kernel/sim.uya) 新增段级映射状态
-- [ ] 用 `mmap/mprotect` 建立 `RX/R/RW` 映射
+- [~] 在 [sim.uya](/home/winger/uya/uya/lib/kernel/sim.uya) 新增段级映射状态
+  - [x] 已按 `code_va/rodata_va/data_va` 建立段级页权限映射
+  - [ ] 还没有独立的运行时段元数据表
+- [~] 用 `mmap/mprotect` 建立 `RX/R/RW` 映射
+  - [x] hosted loader 已分配可执行 backing，并由页表保留 `RX/R/RW` 语义
+  - [ ] 仍未把宿主页权限细化为真正的 `mprotect` 分段权限
 - [ ] 建立 stack / heap 初始区域
 - [ ] 建立 call-gate 页面或 trampoline
 
 ### 7.3 真执行
 
-- [ ] 把 `sim_exec_loaded()` 从“校验入口”升级为“跳转入口执行”
+- [~] 把 `sim_exec_loaded()` 从“校验入口”升级为“跳转入口执行”
+  - [x] `linux_x86_64_hardvm + ibk_call_gate` 已跳转执行 mapped payload
+  - [ ] trap bridge / 其他架构仍停留在校验或过渡态
 - [ ] 入口调用前应用 relocation
 - [ ] 执行后能正确返回 yield / exit / error
 
 验收标准：
 
-- [ ] `run --app microapp examples/microapp/microcontainer_hello_source.uya`
+- [~] `run --app microapp examples/microapp/microcontainer_hello_source.uya`
   不再依赖 `.text.bin.elf`
-- [ ] `hello microapp` 能由 `.uapp` 真执行输出
+  - [x] x86_64 hard-vm 运行时已不再依赖对照 ELF
+  - [ ] 构建期仍依赖 ELF 提取 section/VMA
+- [x] `hello microapp` 能由 `.uapp` 真执行输出
+- [x] `alloc + yield` 能在 x86_64 mapped payload 路径中执行
+- [x] `time` 能在 x86_64 mapped payload 路径中执行
 
 ---
 

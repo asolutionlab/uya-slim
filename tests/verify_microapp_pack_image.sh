@@ -28,6 +28,8 @@ code_size = int.from_bytes(data[16:20], "little")
 rodata_size = int.from_bytes(data[20:24], "little")
 entry_offset = int.from_bytes(data[12:16], "little")
 entry_va = int.from_bytes(data[136:140], "little")
+code_va = int.from_bytes(data[140:144], "little")
+rodata_va = int.from_bytes(data[144:148], "little")
 code_off = int.from_bytes(data[108:112], "little")
 rodata_off = int.from_bytes(data[112:116], "little")
 build_mode = data[64]
@@ -35,12 +37,14 @@ target_arch = data[65]
 assert code_size > 0, code_size
 assert rodata_size > 0, rodata_size
 assert entry_offset == 0, entry_offset
-assert entry_va == code_off + entry_offset, (entry_va, code_off, entry_offset)
+assert entry_va == code_va + entry_offset, (entry_va, code_va, entry_offset)
+assert code_va >= 65536, code_va
+assert rodata_va >= code_va + code_size, (rodata_va, code_va, code_size)
 assert code_off >= 160, code_off
 assert rodata_off == code_off + code_size, (rodata_off, code_off, code_size)
 assert build_mode == 1, build_mode
 assert target_arch == 2, target_arch
-assert data[code_off:code_off + code_size] == pobj[72 + len(source_path):72 + len(source_path) + code_size]
+assert data[code_off:code_off + code_size] == pobj[84 + len(source_path):84 + len(source_path) + code_size]
 assert b"hello microapp" in data[rodata_off:rodata_off + rodata_size]
 PY
 
