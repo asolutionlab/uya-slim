@@ -10,6 +10,7 @@ SCRIPTS=(
     "tests/verify_microapp_portable_sources.sh"
     "tests/verify_microapp_example_codegen.sh"
     "tests/verify_microapp_host_api_diagnostics.sh"
+    "tests/verify_microapp_aarch64_hosted_runtime.sh"
 )
 
 for rel in "${SCRIPTS[@]}"; do

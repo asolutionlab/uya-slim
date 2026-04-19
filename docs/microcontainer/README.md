@@ -54,6 +54,7 @@
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`
 - 推荐本地用 `make microapp-check` 运行当前 microapp 回归集
 - 在 hosted 平台上做轻量 smoke test 时，可用 `make microapp-hosted-smoke`
+- 若只想单独触发 arm64-host-gated 的 aarch64 runtime 回归，可用 `make microapp-aarch64-runtime-check`
 - 若只想检查 `.uapp v1/v2` 兼容链路，可用 `make microapp-compat-check`
 - 若只想检查 crash/recovery/update 链路，可用 `make microapp-recovery-check`
 - `make microapp-recovery-check` 当前会覆盖 `test_kernel_update.uya` 与 `test_kernel_sim.uya`，并检查 crash log 的 structured fault 字段

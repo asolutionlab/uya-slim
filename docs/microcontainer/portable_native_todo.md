@@ -327,11 +327,13 @@
 - [~] 增加 profile 级 CI
   - [x] 已新增 `make microapp-check` 聚合 microapp 回归入口
   - [x] `ubuntu-ci` 已接入 `make microapp-check`
-  - [x] `macos-ci` 已接入 `make microapp-hosted-smoke`
+  - [~] `macos-ci` 已接入 `make microapp-hosted-smoke`
+    - [x] 已追加 arm64-host-gated `make microapp-aarch64-runtime-check`
+    - [ ] 仍待在 macOS arm64 CI 上实际观察一次真执行结果
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
   - [x] trap bridge 已补充 `validated` 结果面 smoke
-  - [~] aarch64 hosted runtime 已补 host-gated 回归入口
+  - [~] aarch64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke / macOS CI
   - [ ] 其余 profile 真执行仍待补齐
 - [~] 增加 crash/recovery / update 回归
   - [x] 已新增 `make microapp-recovery-check` 入口

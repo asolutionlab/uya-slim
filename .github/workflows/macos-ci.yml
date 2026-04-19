@@ -43,3 +43,6 @@ jobs:
 
     - name: Run microapp hosted smoke
       run: make microapp-hosted-smoke
+
+    - name: Run microapp aarch64 hosted runtime
+      run: make microapp-aarch64-runtime-check
