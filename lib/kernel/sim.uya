@@ -18,6 +18,7 @@ use kernel.update;
 use std;
 use libc.sys_mmap;
 use libc.sys_munmap;
+use libc.sys_mprotect;
 use libc.write;
 use libc.STDOUT_FILENO;
 use libc.PROT_READ;
@@ -41,6 +42,10 @@ export const SIM_FAULT_CLASS_BUS: u32 = 3u32;
 export const SIM_FAULT_CLASS_ABORT: u32 = 4u32;
 export const SIM_FAULT_CLASS_UNKNOWN: u32 = 255u32;
 export const SIM_CALL_GATE_TRAMPOLINE_SIZE: usize = 4096usize;
+export const SIM_FAULT_CODE_PAGE_FAULT: u32 = 257u32;
+export const SIM_FAULT_CODE_PAGE_PERMISSION: u32 = 258u32;
+export const SIM_FAULT_CODE_IMAGE_RELOC: u32 = 259u32;
+export const SIM_FAULT_CODE_IMAGE_INSN: u32 = 260u32;
 export const SIM_MICROAPP_BRIDGE_ABI_MAGIC: u32 = 0x55414249u32;
 export const SIM_MICROAPP_BRIDGE_ABI_VERSION: u32 = 1u32;
 const SIM_MICROAPP_BRIDGE_DISPATCH2_OFFSET: usize = 8usize;
@@ -505,6 +510,22 @@ export fn sim_microapp_bridge_dispatch2(nr: i64, a1: i64, a2: i64) i64 {
     return value_tmp.value;
 }
 
+fn sim_fault_code_from_error_id(err_id: u32) u32 {
+    if err_id == @error_id(error.PageFault) {
+        return SIM_FAULT_CODE_PAGE_FAULT;
+    }
+    if err_id == @error_id(error.PagePermission) {
+        return SIM_FAULT_CODE_PAGE_PERMISSION;
+    }
+    if err_id == @error_id(error.ImgRelocInvalid) {
+        return SIM_FAULT_CODE_IMAGE_RELOC;
+    }
+    if err_id == @error_id(error.ImgInsnDenied) {
+        return SIM_FAULT_CODE_IMAGE_INSN;
+    }
+    return 0u32;
+}
+
 export fn sim_reset_loaded_result(k: &SimKernel, cid: u32) !void {
     if cid >= 8u32 {
         return error.InvalidState;
@@ -684,7 +705,7 @@ export fn sim_make_x86_64_call_gate_trampoline(entry_ptr: &void) !&byte {
         const raw: *void = sys_mmap(
             null as *void,
             SIM_CALL_GATE_TRAMPOLINE_SIZE,
-            PROT_READ | PROT_WRITE | PROT_EXEC,
+            PROT_READ | PROT_WRITE,
             MAP_PRIVATE | MAP_ANONYMOUS,
             -1,
             0
@@ -700,6 +721,7 @@ export fn sim_make_x86_64_call_gate_trampoline(entry_ptr: &void) !&byte {
         page[10] = 255 as byte; // call rax
         page[11] = 208 as byte;
         page[12] = 195 as byte; // ret
+        _ = try sys_mprotect(page as *void, SIM_CALL_GATE_TRAMPOLINE_SIZE, PROT_READ | PROT_EXEC);
         return page;
     }, {
         return error.InvalidState;
@@ -722,7 +744,7 @@ export fn sim_make_aarch64_call_gate_trampoline(entry_ptr: &void) !&byte {
     const raw: *void = sys_mmap(
         null as *void,
         SIM_CALL_GATE_TRAMPOLINE_SIZE,
-        PROT_READ | PROT_WRITE | PROT_EXEC,
+        PROT_READ | PROT_WRITE,
         MAP_PRIVATE | MAP_ANONYMOUS,
         -1,
         0
@@ -747,6 +769,7 @@ export fn sim_make_aarch64_call_gate_trampoline(entry_ptr: &void) !&byte {
     sim_write_u32_le_at(page, 12usize, 0xF2E00010u32 | imm3_bits);
     sim_write_u32_le_at(page, 16usize, 0xD63F0200u32);  // blr x16
     sim_write_u32_le_at(page, 20usize, 0xD65F03C0u32);  // ret
+    _ = try sys_mprotect(page as *void, SIM_CALL_GATE_TRAMPOLINE_SIZE, PROT_READ | PROT_EXEC);
     return page;
 }
 
@@ -1168,7 +1191,16 @@ export fn sim_tick_loaded(k: &SimKernel) !u32 {
     const ctx: &SimContainerCtx = sim_ctx_ref(k, cid);
     ctx.tick = ctx.tick + 1u32;
     k.total_ticks = k.total_ticks + 1u32;
-    const result: i32 = try sim_exec_loaded(k, cid);
+    const result: i32 = sim_exec_loaded(k, cid) catch |err| {
+        const err_id: u32 = @error_id(err);
+        const fault_code: u32 = sim_fault_code_from_error_id(err_id);
+        if fault_code == 0u32 {
+            return err;
+        }
+        try sim_store_loaded_fault_result(k, cid, SIM_FAULT_CLASS_UNKNOWN, fault_code, 0u32);
+        try sim_handle_result(k, cid, 0 - 1);
+        return cid;
+    };
     try sim_handle_result(k, cid, result);
     return cid;
 }

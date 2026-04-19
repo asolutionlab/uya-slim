@@ -845,6 +845,39 @@ test "sim_load_image_print_rodata_sets_accessed_bit" {
     try assert_eq_i32(has_a, 1);
 }
 
+test "sim_load_image_rv32_bad_insn_records_kernel_fault" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536;
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_image(img[0: 256], 0u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+    const code_ptr: &byte = try physmem_ptr(&k.host_ctx.pm, k.loaded_image_ppn[0], IMAGE_HEADER_SIZE);
+    code_ptr[0] = 0 as byte;
+    const cid: u32 = try sim_tick_loaded(&k);
+    try assert_eq_i32(cid as i32, 0);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_FAULT as i32);
+    try assert_eq_i32(k.loaded_fault_code[0] as i32, SIM_FAULT_CODE_IMAGE_INSN as i32);
+}
+
+test "sim_load_image_page_permission_records_kernel_fault" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536;
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_image(img[0: 256], 0u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+    k.host_ctx.pts[0].entries[0] = k.host_ctx.pts[0].entries[0] & ~PTE_X;
+    const cid: u32 = try sim_tick_loaded(&k);
+    try assert_eq_i32(cid as i32, 0);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_FAULT as i32);
+    try assert_eq_i32(k.loaded_fault_code[0] as i32, SIM_FAULT_CODE_PAGE_PERMISSION as i32);
+}
+
 test "sim_load_image_rv32_trap_executes_print_yield_exit" {
     var k: SimKernel = make_kernel();
     sim_kernel_init(&k);

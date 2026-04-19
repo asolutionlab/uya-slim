@@ -155,7 +155,8 @@
 - [~] 收敛 [main.uya](/home/winger/uya/uya/src/codegen/c99/main.uya) 中现有 `uya_microapp_syscall*` helper
   - [x] `lib/std/microapp/*` 内部 `@syscall` 已强制走 microapp bridge
   - [x] 生成 C 已改成正式 `uya_microapp_bridge_dispatch*` ABI 命名
-  - [ ] helper 行为仍是过渡形态，尚未升级为最终 runtime bridge ABI
+  - [~] x86_64 call-gate 已经通过 runtime bridge ABI slot 进入宿主 runtime
+  - [ ] 仍待把其他 bridge/backend 也切到同一 ABI
 - [~] 把宿主 helper 符号依赖升级为正式 bridge ABI
   - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
   - [ ] 仍未切到真正 runtime call-gate / trap bridge
@@ -222,7 +223,7 @@
     - [x] trap bridge validated 路径已显式写入 `validated` 结果面，不再隐式折叠为 `exit 0`
     - [ ] 其他架构仍待补齐真正执行路径
 - [~] 入口调用前应用 relocation
-  - [x] `linux_x86_64_hardvm` 已在入口前应用最小 `RELATIVE` relocation
+  - [~] `linux_x86_64_hardvm` 已在入口前应用最小 `RELATIVE` relocation，并开始规范化内部 `R_X86_64_64`
   - [~] `linux_aarch64_hardvm` 已接入 hosted call-gate 装载级 `RELATIVE` relocation 应用
   - [ ] 其余架构 / relocation 类型仍待继续规范化与接线
 - [~] 执行后能正确返回 yield / exit / error
@@ -316,6 +317,7 @@
   - [x] 已增加专门的 host API 诊断回归覆盖
   - [ ] 其余 hosted helper / bridge 误用仍待继续审计
 - [x] 为“一次编写、多个 profile 编译”增加示例矩阵
+  - [x] 已新增 `microcontainer_reloc_data_source.uya` 覆盖 data-pointer relocation
 
 验收标准：
 
@@ -338,6 +340,7 @@
     - [ ] 仍待在 macOS arm64 CI 上实际观察一次真执行结果
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
+  - [x] 当前已补 `reloc64` 官方样例运行回归
   - [x] trap bridge 已补充 `validated` 结果面 smoke
   - [~] trap bridge 已补充最小 RV32 `print/yield/exit` runtime 回归
   - [~] aarch64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke / macOS CI

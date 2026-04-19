@@ -25,6 +25,7 @@ PORTABLE_SOURCES=(
     "examples/microapp/microcontainer_bss_source.uya"
     "examples/microapp/microcontainer_hello_source.uya"
     "examples/microapp/microcontainer_reloc_source.uya"
+    "examples/microapp/microcontainer_reloc_data_source.uya"
     "examples/microapp/microcontainer_time_source.uya"
     "tests/fixtures/microapp/test_std_microapp_alloc_yield.uya"
     "tests/fixtures/microapp/test_std_microapp_bss_runtime.uya"

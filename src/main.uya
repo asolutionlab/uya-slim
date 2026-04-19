@@ -538,6 +538,9 @@ fn microapp_profile_default_cflags(profile: &MicroAppTargetProfile) &byte {
 }
 
 fn microapp_profile_default_ldflags(profile: &MicroAppTargetProfile) &byte {
+    if profile != null && profile.profile_id == MICROAPP_PROFILE_LINUX_X86_64_HARDVM_RAW {
+        return "-pie -Wl,--gc-sections -Wl,--emit-relocs -flto=auto" as &byte;
+    }
     if profile != null && profile.bridge_kind_raw == MICROAPP_BRIDGE_CALL_GATE_RAW {
         return "-pie -Wl,--gc-sections -flto=auto" as &byte;
     }
@@ -566,6 +569,20 @@ fn microapp_hex_to_u32_span(buf: &byte, start: usize, end: usize) !u32 {
         i = i + 1;
     }
     return value;
+}
+
+fn microapp_parse_signed_u32_token(line: &byte, token_start: usize, token_end: usize, sign: i32) !u32 {
+    if line == null || token_end <= token_start {
+        return error.InvalidState;
+    }
+    const raw: u32 = try microapp_hex_to_u32_span(line, token_start, token_end);
+    if sign >= 0 {
+        return raw;
+    }
+    if raw == 0u32 {
+        return 0u32;
+    }
+    return error.InvalidState;
 }
 
 fn microapp_token_bounds(line: &byte, line_len: usize, token_index: i32, token_start: &usize, token_end: &usize) i32 {
@@ -840,21 +857,49 @@ fn microapp_extract_elf_relocations(exe_path: &byte, target_arch_raw: u32, base_
         if microapp_token_bounds(line_ptr, line_end - line_start, 0, &tok0_s, &tok0_e) != 0 &&
            microapp_token_bounds(line_ptr, line_end - line_start, 2, &tok2_s, &tok2_e) != 0 &&
            microapp_token_bounds(line_ptr, line_end - line_start, 3, &tok3_s, &tok3_e) != 0 {
+            const target_raw: u32 = microapp_hex_to_u32_span(line_ptr, tok0_s, tok0_e) catch { 0u32; };
+            var value_raw: u32 = 0u32;
+            var supported_type: i32 = 0;
             if microapp_token_equals(line_ptr, tok2_s, tok2_e, "R_X86_64_RELATIVE" as &byte) != 0 {
-                const target_raw: u32 = microapp_hex_to_u32_span(line_ptr, tok0_s, tok0_e) catch { 0u32; };
-                const addend_raw: u32 = microapp_hex_to_u32_span(line_ptr, tok3_s, tok3_e) catch { 0u32; };
-                if microapp_raw_va_in_writable_image_range(target_raw, data_raw, data_len, bss_raw, bss_len) != 0 &&
-                   microapp_raw_va_maps_into_image(addend_raw, text_raw, code_len, rodata_raw, rodata_len, data_raw, data_len, bss_raw, bss_len) != 0 {
-                    const target_va: u32 = MICROAPP_VADDR_BASE + (target_raw - base_raw);
-                    const value_va: u32 = MICROAPP_VADDR_BASE + (addend_raw - base_raw);
-                    const out_off: usize = out_count as usize * 8usize;
-                    if out_off + 8usize > FILE_BUFFER_SIZE as usize {
-                        return 1;
+                value_raw = microapp_hex_to_u32_span(line_ptr, tok3_s, tok3_e) catch { 0u32; };
+                supported_type = 1;
+            } else if microapp_token_equals(line_ptr, tok2_s, tok2_e, "R_X86_64_64" as &byte) != 0 ||
+                      microapp_token_equals(line_ptr, tok2_s, tok2_e, "R_X86_64_GLOB_DAT" as &byte) != 0 {
+                var tok5_s: usize = 0;
+                var tok5_e: usize = 0;
+                var tok6_s: usize = 0;
+                var tok6_e: usize = 0;
+                const sym_raw: u32 = microapp_hex_to_u32_span(line_ptr, tok3_s, tok3_e) catch { 0u32; };
+                value_raw = sym_raw;
+                if microapp_token_bounds(line_ptr, line_end - line_start, 5, &tok5_s, &tok5_e) != 0 &&
+                   microapp_token_bounds(line_ptr, line_end - line_start, 6, &tok6_s, &tok6_e) != 0 {
+                    var addend_sign: i32 = 0;
+                    if microapp_token_equals(line_ptr, tok5_s, tok5_e, "+" as &byte) != 0 {
+                        addend_sign = 1;
+                    } else if microapp_token_equals(line_ptr, tok5_s, tok5_e, "-" as &byte) != 0 {
+                        addend_sign = -1;
                     }
-                    write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off, target_va);
-                    write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off + 4usize, value_va);
-                    out_count = out_count + 1u32;
+                    if addend_sign != 0 {
+                        const addend_raw: u32 = microapp_parse_signed_u32_token(line_ptr, tok6_s, tok6_e, addend_sign) catch { 0u32; };
+                        if addend_sign > 0 {
+                            value_raw = sym_raw + addend_raw;
+                        }
+                    }
                 }
+                supported_type = 1;
+            }
+            if supported_type != 0 &&
+               microapp_raw_va_in_writable_image_range(target_raw, data_raw, data_len, bss_raw, bss_len) != 0 &&
+               microapp_raw_va_maps_into_image(value_raw, text_raw, code_len, rodata_raw, rodata_len, data_raw, data_len, bss_raw, bss_len) != 0 {
+                const target_va: u32 = MICROAPP_VADDR_BASE + (target_raw - base_raw);
+                const value_va: u32 = MICROAPP_VADDR_BASE + (value_raw - base_raw);
+                const out_off: usize = out_count as usize * 8usize;
+                if out_off + 8usize > FILE_BUFFER_SIZE as usize {
+                    return 1;
+                }
+                write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off, target_va);
+                write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off + 4usize, value_va);
+                out_count = out_count + 1u32;
             }
         }
         if line_end >= report_size as usize {
