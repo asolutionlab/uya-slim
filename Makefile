@@ -574,6 +574,14 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 microapp verify-image..."
+	@./tests/verify_microapp_verify_cli.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp verify-image 验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 microapp alloc/yield 映射执行..."
 	@./tests/verify_microapp_alloc_yield_runtime.sh; \
 	VERIFY_EXIT=$$?; \
