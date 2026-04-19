@@ -511,7 +511,7 @@ export fn sim_free_x86_64_call_gate_trampoline(trampoline_ptr: &byte) !void {
     }, {})
 }
 
-fn sim_apply_x86_64_relative_relocs(k: &SimKernel, cid: u32, hdr: &ImageHeader, image_bytes: &[byte]) !void {
+fn sim_apply_hosted_call_gate_relative_relocs(k: &SimKernel, cid: u32, hdr: &ImageHeader, image_bytes: &[byte]) !void {
     if k == null || hdr == null {
         return error.InvalidState;
     }
@@ -693,8 +693,9 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         const data_slice: &[byte] = image_bytes[hdr.data_offset as usize: hdr.data_size as usize];
         try sim_copy_segment(&k.host_ctx.pm, first_ppn, base_vpn, data_slice, hdr.data_va);
     }
-    if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
-        try sim_apply_x86_64_relative_relocs(k, cid, &hdr, image_bytes);
+    if hdr.bridge_kind == ImageBridgeKind.ibk_call_gate &&
+        (hdr.target_arch == ImageTargetArch.ita_x86_64 || hdr.target_arch == ImageTargetArch.ita_aarch64) {
+        try sim_apply_hosted_call_gate_relative_relocs(k, cid, &hdr, image_bytes);
     }
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。

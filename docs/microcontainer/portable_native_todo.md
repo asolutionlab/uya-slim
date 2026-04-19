@@ -217,6 +217,7 @@
     - [ ] 其他架构仍待补齐真正执行路径
 - [~] 入口调用前应用 relocation
   - [x] `linux_x86_64_hardvm` 已在入口前应用最小 `RELATIVE` relocation
+  - [~] `linux_aarch64_hardvm` 已接入 hosted call-gate 装载级 `RELATIVE` relocation 应用
   - [ ] 其余架构 / relocation 类型仍待继续规范化与接线
 - [~] 执行后能正确返回 yield / exit / error
   - [x] 当前已覆盖 `yield`

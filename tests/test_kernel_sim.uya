@@ -19,6 +19,7 @@ use libc.MAP_ANONYMOUS;
 use std;
 use std.crypto.sha256;
 use std.testing.assert_eq_i32;
+use std.testing.assert_eq_u64;
 
 extern fn uya_call0_i32(fn_ptr: &void) i32;
 extern fn uya_call0_i32_stack(fn_ptr: &void, stack_top: &void) i32;
@@ -53,6 +54,18 @@ fn w32(buf: &[byte], off: usize, val: u32) void {
 fn w16(buf: &[byte], off: usize, val: u16) void {
     buf.ptr[off] = (val & 255u16) as byte;
     buf.ptr[off + 1] = ((val >> 8) & 255u16) as byte;
+}
+
+fn r64(buf: &byte) u64 {
+    const b0: u64 = buf[0] as u64;
+    const b1: u64 = buf[1] as u64;
+    const b2: u64 = buf[2] as u64;
+    const b3: u64 = buf[3] as u64;
+    const b4: u64 = buf[4] as u64;
+    const b5: u64 = buf[5] as u64;
+    const b6: u64 = buf[6] as u64;
+    const b7: u64 = buf[7] as u64;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56);
 }
 
 fn build_sim_image(buf: &[byte], ro_len: u32) u32 {
@@ -356,6 +369,62 @@ fn build_sim_aarch64_unwired_image(buf: &[byte]) u32 {
     buf.ptr[(IMAGE_HEADER_SIZE + 1u32) as usize] = 32 as byte;
     buf.ptr[(IMAGE_HEADER_SIZE + 2u32) as usize] = 3 as byte;
     buf.ptr[(IMAGE_HEADER_SIZE + 3u32) as usize] = 213 as byte;
+    var digest: [byte: 32] = [];
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
+    i = 0u32;
+    while i < 32u32 {
+        buf.ptr[(28u32 + i) as usize] = digest[i as usize];
+        i = i + 1u32;
+    }
+    return total;
+}
+
+fn build_sim_aarch64_reloc_image(buf: &[byte]) u32 {
+    const total: u32 = IMAGE_HEADER_SIZE + 4u32 + 8u32 + 8u32 + 8u32;
+    var i: u32 = 0u32;
+    while i < total {
+        buf.ptr[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+    w32(buf, 0, IMAGE_MAGIC);
+    w16(buf, 4, 2);
+    w16(buf, 6, 1);
+    w32(buf, 8, total);
+    w32(buf, 12, 0u32);
+    w32(buf, 16, 4u32);
+    w32(buf, 20, 8u32);
+    w32(buf, 24, 1u32);
+    w32(buf, 96, 8u32);
+    w32(buf, 100, 0u32);
+    w32(buf, 104, 0u32);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 12u32);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 20u32);
+    w32(buf, 124, 2u32);
+    w32(buf, 128, 0u32);
+    w32(buf, 60, 0u32);
+    buf.ptr[64] = BUILD_MODE_CONTAINER;
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_aarch64);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_call_gate);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 12u32);
+    buf.ptr[IMAGE_HEADER_SIZE as usize] = 31 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 1u32) as usize] = 32 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 2u32) as usize] = 3 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 3u32) as usize] = 213 as byte; // nop
+    buf.ptr[(IMAGE_HEADER_SIZE + 4u32) as usize] = 114 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 5u32) as usize] = 101 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 6u32) as usize] = 108 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 7u32) as usize] = 111 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 8u32) as usize] = 99 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 9u32) as usize] = 0 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 10u32) as usize] = 0 as byte;
+    buf.ptr[(IMAGE_HEADER_SIZE + 11u32) as usize] = 0 as byte;
+    w32(buf, IMAGE_HEADER_SIZE as usize + 20usize, IMAGE_HEADER_SIZE + 12u32);
+    w32(buf, IMAGE_HEADER_SIZE as usize + 24usize, IMAGE_HEADER_SIZE + 4u32);
     var digest: [byte: 32] = [];
     sha256_digest(buf[0: total as usize], digest[0: 32]);
     i = 0u32;
@@ -690,6 +759,24 @@ test "sim_load_image_aarch64_call_gate_marks_unwired_result" {
     try assert_eq_i32(k.loaded_fault_class[0] as i32, SIM_FAULT_CLASS_NONE as i32);
     try assert_eq_i32(k.loaded_fault_code[0] as i32, 0);
     try assert_eq_i32(k.loaded_fault_signal[0] as i32, 0);
+}
+
+test "sim_load_image_aarch64_call_gate_applies_relocation" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536;
+
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_aarch64_reloc_image(img[0: 256]);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+
+    const data_ptr: &byte = try mmu_translate_ptr(&k.host_ctx.pts[0], &k.host_ctx.pm, IMAGE_HEADER_SIZE + 12u32, 8u32, ACCESS_R);
+    const ro_ptr: &byte = try mmu_translate_ptr(&k.host_ctx.pts[0], &k.host_ctx.pm, IMAGE_HEADER_SIZE + 4u32, 1u32, ACCESS_R);
+    const stored_addr: u64 = r64(data_ptr);
+    const ro_addr_tmp: !u64 = (@usize_from_ptr(ro_ptr as &void)) as! u64;
+    try assert_eq_u64(stored_addr, ro_addr_tmp.value);
 }
 
 test "sim_load_image_alloc_starts_after_loaded_pages" {
