@@ -190,6 +190,31 @@ test "recovery_normal_restart" {
     try assert_eq_i32(recovery_crash_count(&rm, 0) as i32, 1);
 }
 
+test "recovery_log_preserves_structured_fault_fields" {
+    var rm: RecoveryManager = RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 };
+    recovery_init(&rm);
+
+    recovery_record_fault(&rm, 0, 100, RECOVERY_FAULT_CLASS_SEGV, 1u32, 11u32);
+
+    try assert_eq_i32(rm.log_count as i32, 1);
+    try assert_eq_i32(rm.log[0].container_id as i32, 0);
+    try assert_eq_i32(rm.log[0].fault_class as i32, RECOVERY_FAULT_CLASS_SEGV as i32);
+    try assert_eq_i32(rm.log[0].fault_code as i32, 1);
+    try assert_eq_i32(rm.log[0].fault_signal as i32, 11);
+}
+
+test "recovery_record_crash_defaults_to_unknown_fault_class" {
+    var rm: RecoveryManager = RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 };
+    recovery_init(&rm);
+
+    recovery_record_crash(&rm, 0, 100, 7u32);
+
+    try assert_eq_i32(rm.log_count as i32, 1);
+    try assert_eq_i32(rm.log[0].fault_class as i32, RECOVERY_FAULT_CLASS_UNKNOWN as i32);
+    try assert_eq_i32(rm.log[0].fault_code as i32, 7);
+    try assert_eq_i32(rm.log[0].fault_signal as i32, 0);
+}
+
 test "recovery_fuse_after_3_crashes" {
     var rm: RecoveryManager = RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 };
     recovery_init(&rm);

@@ -16,6 +16,7 @@ use libc.PROT_WRITE;
 use libc.PROT_EXEC;
 use libc.MAP_PRIVATE;
 use libc.MAP_ANONYMOUS;
+use std;
 use std.crypto.sha256;
 use std.testing.assert_eq_i32;
 
@@ -35,6 +36,12 @@ fn stack_probe_in_range() i32 {
 }
 
 const stack_probe_keep: &void = &stack_probe_in_range as &void;
+
+fn x86_trampoline_target_returns_seven() i32 {
+    return 7;
+}
+
+const x86_trampoline_target_keep: &void = &x86_trampoline_target_returns_seven as &void;
 
 fn w32(buf: &[byte], off: usize, val: u32) void {
     buf.ptr[off] = (val & 255u32) as byte;
@@ -326,6 +333,11 @@ fn make_kernel() SimKernel {
         loaded_image_valid: [],
         loaded_image_base_vpn: [],
         loaded_image_page_count: [],
+        loaded_result_kind: [],
+        loaded_exit_code: [],
+        loaded_fault_class: [],
+        loaded_fault_code: [],
+        loaded_fault_signal: [],
     };
 }
 
@@ -412,7 +424,13 @@ test "sim_container_crash_restart" {
     const t1: u32 = try sim_tick(&k, &crash_result);
     try assert_eq_i32(t1 as i32, 0);
     try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_FAULT as i32);
+    try assert_eq_i32(k.loaded_fault_class[0] as i32, SIM_FAULT_CLASS_UNKNOWN as i32);
     try assert_eq_i32(k.loaded_fault_code[0] as i32, 1);
+    try assert_eq_i32(k.loaded_fault_signal[0] as i32, 0);
+    try assert_eq_i32(k.recovery.log_count as i32, 1);
+    try assert_eq_i32(k.recovery.log[0].fault_class as i32, RECOVERY_FAULT_CLASS_UNKNOWN as i32);
+    try assert_eq_i32(k.recovery.log[0].fault_code as i32, 1);
+    try assert_eq_i32(k.recovery.log[0].fault_signal as i32, 0);
 
     const t2: u32 = try sim_tick(&k, &yield_result);
     try assert_eq_i32(t2 as i32, 0);
@@ -558,7 +576,9 @@ test "sim_load_image_x86_call_gate_executes_mapped_payload" {
     try assert_eq_i32(is_empty, 1);
     try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_EXIT as i32);
     try assert_eq_i32(k.loaded_exit_code[0], 0);
+    try assert_eq_i32(k.loaded_fault_class[0] as i32, SIM_FAULT_CLASS_NONE as i32);
     try assert_eq_i32(k.loaded_fault_code[0] as i32, 0);
+    try assert_eq_i32(k.loaded_fault_signal[0] as i32, 0);
 
     _ = sys_munmap(backing_raw as *void, backing_size) catch {};
 }
@@ -589,7 +609,9 @@ test "sim_load_image_x86_call_gate_records_nonzero_exit_code" {
     try assert_eq_i32(is_empty, 1);
     try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_EXIT as i32);
     try assert_eq_i32(k.loaded_exit_code[0], 7);
+    try assert_eq_i32(k.loaded_fault_class[0] as i32, SIM_FAULT_CLASS_NONE as i32);
     try assert_eq_i32(k.loaded_fault_code[0] as i32, 0);
+    try assert_eq_i32(k.loaded_fault_signal[0] as i32, 0);
 
     _ = sys_munmap(backing_raw as *void, backing_size) catch {};
 }
@@ -651,4 +673,21 @@ test "call_gate_stack_helper_switches_to_private_stack" {
     try assert_eq_i32(switched_ret, 1);
 
     _ = sys_munmap(raw_stack as *void, stack_size) catch {};
+}
+
+std.cfg(std.target_arch == .ta_x86_64, {
+test "x86_call_gate_trampoline_invokes_target" {
+    const trampoline_ptr: &byte = try sim_make_x86_64_call_gate_trampoline(x86_trampoline_target_keep);
+    const ret: i32 = uya_call0_i32(trampoline_ptr as &void);
+    try assert_eq_i32(ret, 7);
+    try sim_free_x86_64_call_gate_trampoline(trampoline_ptr);
+}
+}, {})
+
+test "sim_fault_class_from_signal_maps_known_signals" {
+    try assert_eq_i32(sim_fault_class_from_signal(11) as i32, SIM_FAULT_CLASS_SEGV as i32);
+    try assert_eq_i32(sim_fault_class_from_signal(4) as i32, SIM_FAULT_CLASS_ILL as i32);
+    try assert_eq_i32(sim_fault_class_from_signal(7) as i32, SIM_FAULT_CLASS_BUS as i32);
+    try assert_eq_i32(sim_fault_class_from_signal(6) as i32, SIM_FAULT_CLASS_ABORT as i32);
+    try assert_eq_i32(sim_fault_class_from_signal(31) as i32, SIM_FAULT_CLASS_UNKNOWN as i32);
 }

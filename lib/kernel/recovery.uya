@@ -12,13 +12,21 @@ export const CRASH_WINDOW_SEC: i64 = 60;
 export const CRASH_FUSE_THRESHOLD: u32 = 3;
 export const HEALTH_PROBE_MS: u32 = 100;
 export const MAX_CRASH_LOG: u32 = 16;
+export const RECOVERY_FAULT_CLASS_NONE: u32 = 0u32;
+export const RECOVERY_FAULT_CLASS_SEGV: u32 = 1u32;
+export const RECOVERY_FAULT_CLASS_ILL: u32 = 2u32;
+export const RECOVERY_FAULT_CLASS_BUS: u32 = 3u32;
+export const RECOVERY_FAULT_CLASS_ABORT: u32 = 4u32;
+export const RECOVERY_FAULT_CLASS_UNKNOWN: u32 = 255u32;
 
 // ── Crash Log Entry ──
 
 export struct CrashLogEntry {
     timestamp: i64,
     container_id: u32,
+    fault_class: u32,
     fault_code: u32,
+    fault_signal: u32,
     pc: u32,
     sp: u32,
     restart_count: u32,
@@ -141,11 +149,23 @@ export fn recovery_init(r: &RecoveryManager) void {
         r.states[i].total_restarts = 0;
         i = i + 1;
     }
+    i = 0u32;
+    while i < @len(r.log) {
+        r.log[i].timestamp = 0i64;
+        r.log[i].container_id = 0u32;
+        r.log[i].fault_class = RECOVERY_FAULT_CLASS_NONE;
+        r.log[i].fault_code = 0u32;
+        r.log[i].fault_signal = 0u32;
+        r.log[i].pc = 0u32;
+        r.log[i].sp = 0u32;
+        r.log[i].restart_count = 0u32;
+        i = i + 1u32;
+    }
 }
 
 // ── Record a crash ──
 
-export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_code: u32) void {
+export fn recovery_record_fault(r: &RecoveryManager, cid: u32, now: i64, fault_class: u32, fault_code: u32, fault_signal: u32) void {
     if cid < MAX_CONTAINERS {
         const state: &ContainerRecovery = recovery_state_ptr(r, cid);
         if state == null {
@@ -169,7 +189,9 @@ export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_c
         if log_entry != null {
             log_entry.timestamp = now;
             log_entry.container_id = cid;
+            log_entry.fault_class = fault_class;
             log_entry.fault_code = fault_code;
+            log_entry.fault_signal = fault_signal;
             log_entry.pc = 0;
             log_entry.sp = 0;
             log_entry.restart_count = restarts;
@@ -179,6 +201,10 @@ export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_c
             r.log_count = r.log_count + 1;
         }
     }
+}
+
+export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_code: u32) void {
+    recovery_record_fault(r, cid, now, RECOVERY_FAULT_CLASS_UNKNOWN, fault_code, 0u32);
 }
 
 // ── Should this container auto-restart? ──

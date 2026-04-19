@@ -204,7 +204,9 @@
   - [x] `stack_size_hint` 已在 sim 中保留高地址栈页
   - [x] 真实 microapp 构建产物已默认写入 `stack_size_hint`
   - [x] x86_64 call-gate 真执行已切到容器私有栈页
-- [ ] 建立 call-gate 页面或 trampoline
+- [~] 建立 call-gate 页面或 trampoline
+  - [x] 已新增最小 x86_64 trampoline helper，并有内核级单测覆盖
+  - [ ] 其余架构 / 真正的 per-profile trampoline 仍待补齐
 
 ### 7.3 真执行
 
@@ -218,7 +220,10 @@
   - [x] 当前已覆盖 `yield`
   - [x] `linux_x86_64_hardvm` 已透传非零 `main()` exit code
   - [x] `linux_x86_64_hardvm` 已覆盖 fault/error 路径的可观测信号退出状态
-  - [ ] 崩溃/故障到统一错误模型仍待继续细化
+  - [~] 崩溃/故障到统一错误模型仍待继续细化
+    - [x] x86_64 hosted 路径已统一到 `fault_class / fault_code / fault_signal`
+    - [x] sim/recovery 路径已把 structured fault 写入 crash log
+    - [ ] 其他后端 / bridge 仍待接入同一结果模型
 
 验收标准：
 
@@ -318,6 +323,7 @@
 - [~] 增加 crash/recovery / update 回归
   - [x] 已新增 `make microapp-recovery-check` 入口
   - [x] 当前已覆盖 `test_kernel_update.uya` 与 `test_kernel_sim.uya`
+  - [x] crash log 已回归 `fault_class / fault_code / fault_signal`
 - [x] 发布迁移指南
 
 验收标准：
@@ -328,6 +334,7 @@
   - [x] `.uapp v1/v2` 兼容回归已具备独立入口 `make microapp-compat-check`
   - [x] 当前已补充 `migration_guide.md` 收敛旧路径 -> 新路径迁移说明
   - [x] `microapp_source_template.md` / `source_to_uapp_pipeline.md` 已切到 `profile-first + portable source` 心智
+  - [x] `README.md` / `update_recovery.md` 已补齐 structured fault 与 recovery log 现状说明
   - [ ] 其余平台与发布文档仍待继续对齐
 
 ---

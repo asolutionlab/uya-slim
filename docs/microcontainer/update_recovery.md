@@ -90,19 +90,29 @@
 
 - 时间戳
 - container_id
+- fault_class
 - version
 - fault_code
+- fault_signal
 - pc
 - sp
 - backtrace_hash
 - restart_count
 - last_syscall
 
+当前仓库内的最小实现约定：
+
+- `fault_class` 用于表达稳定的故障类别，例如 `segv / ill / bus / abort / unknown`
+- `fault_code` 用于表达当前后端记录下来的故障码；在 hosted x86_64 路径里，当前与 `fault_class` 采用同一套最小编号
+- `fault_signal` 用于保留宿主侧可观测到的原始信号编号；若当前后端没有信号语义，则记为 `0`
+- 旧的仅 `fault_code` 记录接口仍可兼容调用，但会默认落成 `fault_class=unknown, fault_signal=0`
+
 ### 5.2 存储策略
 
 - 使用固定大小环形日志区。
 - 按页写入并附带 CRC。
 - 日志满后覆盖最旧记录。
+- 当前 `sim/recovery` 路径已经把 structured fault 写入 crash log，便于后续对齐更多 bridge/backend。
 
 ### 5.3 Flash 寿命约束
 

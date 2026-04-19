@@ -26,11 +26,6 @@ use libc.PROT_EXEC;
 export const MICROAPP_HOSTED_MAX_IMAGE_SIZE: usize = 2097152;  // 2 MiB
 export const MICROAPP_HOSTED_BACKING_SIZE: usize = 131072;     // 2 pages
 export const MICROAPP_HOSTED_DEFAULT_PRIORITY: u32 = 16u32;
-export const MICROAPP_HOSTED_FAULT_UNKNOWN: i32 = 255;
-export const MICROAPP_HOSTED_FAULT_SEGV: i32 = 1;
-export const MICROAPP_HOSTED_FAULT_ILL: i32 = 2;
-export const MICROAPP_HOSTED_FAULT_BUS: i32 = 3;
-export const MICROAPP_HOSTED_FAULT_ABORT: i32 = 4;
 
 fn microapp_hosted_prot_from_pte(pte: u32) i32 {
     var prot: i32 = 0;
@@ -104,45 +99,31 @@ fn microapp_hosted_system_status_signal(wstatus: i32) i32 {
     return sig;
 }
 
-fn microapp_hosted_fault_class_code(signal_code: i32) i32 {
-    if signal_code == 11 {
-        return MICROAPP_HOSTED_FAULT_SEGV;
-    }
-    if signal_code == 4 {
-        return MICROAPP_HOSTED_FAULT_ILL;
-    }
-    if signal_code == 7 {
-        return MICROAPP_HOSTED_FAULT_BUS;
-    }
-    if signal_code == 6 {
-        return MICROAPP_HOSTED_FAULT_ABORT;
-    }
-    return MICROAPP_HOSTED_FAULT_UNKNOWN;
-}
-
-fn microapp_hosted_fault_class_name(signal_code: i32) &byte {
-    if signal_code == 11 {
-        return "segv" as &byte;
-    }
-    if signal_code == 4 {
-        return "ill" as &byte;
-    }
-    if signal_code == 7 {
-        return "bus" as &byte;
-    }
-    if signal_code == 6 {
-        return "abort" as &byte;
-    }
-    return "unknown" as &byte;
-}
-
-fn microapp_hosted_report_payload_result(exit_code: i32, signal_code: i32) void {
+fn microapp_hosted_store_wait_status(kernel: &SimKernel, cid: u32, wstatus: i32) !void {
+    const signal_code: i32 = microapp_hosted_system_status_signal(wstatus);
     if signal_code != 0 {
-        const fault_class_code: i32 = microapp_hosted_fault_class_code(signal_code);
-        const fault_class_name: &byte = microapp_hosted_fault_class_name(signal_code);
-        @println("[microapp loader] payload result=fault class=${fault_class_name} code=${fault_class_code} signal=${signal_code}");
+        const fault_class: u32 = sim_fault_class_from_signal(signal_code);
+        try sim_store_loaded_fault_result(kernel, cid, fault_class, fault_class, signal_code as u32);
         return;
     }
+    const exit_code: i32 = microapp_hosted_exit_code_from_system_status(wstatus);
+    try sim_store_loaded_exit_result(kernel, cid, exit_code);
+}
+
+fn microapp_hosted_report_payload_result(kernel: &SimKernel, cid: u32) void {
+    if cid >= 8u32 {
+        @println("[microapp loader] invalid cid for payload result");
+        return;
+    }
+    if kernel.loaded_result_kind[cid] == SIM_LOADED_RESULT_FAULT {
+        const fault_class: u32 = kernel.loaded_fault_class[cid];
+        const fault_code: u32 = kernel.loaded_fault_code[cid];
+        const fault_signal: u32 = kernel.loaded_fault_signal[cid];
+        const fault_class_name: &byte = sim_fault_class_name(fault_class);
+        @println("[microapp loader] payload result=fault class=${fault_class_name} code=${fault_code} signal=${fault_signal}");
+        return;
+    }
+    const exit_code: i32 = kernel.loaded_exit_code[cid];
     if exit_code != 0 {
         @println("[microapp loader] payload result=exit code=${exit_code}");
         return;
@@ -275,14 +256,19 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
         const payload_status: i32 = microapp_hosted_run_mapped_payload(&kernel);
         const payload_exit: i32 = microapp_hosted_exit_code_from_system_status(payload_status);
         const payload_signal: i32 = microapp_hosted_system_status_signal(payload_status);
+        microapp_hosted_store_wait_status(&kernel, 0u32, payload_status) catch {
+            @println("[microapp loader] failed to store mapped payload result");
+            return 4;
+        };
         @println("[microapp loader] tick completed");
         @println("[microapp loader] executed mapped payload");
-        microapp_hosted_report_payload_result(payload_exit, payload_signal);
+        microapp_hosted_report_payload_result(&kernel, 0u32);
         if payload_exit != 0 {
             if payload_signal != 0 {
-                const fault_class_code: i32 = microapp_hosted_fault_class_code(payload_signal);
-                const fault_class_name: &byte = microapp_hosted_fault_class_name(payload_signal);
-                @println("[microapp loader] payload fault class=${fault_class_name} code=${fault_class_code} signal=${payload_signal}");
+                const fault_class: u32 = kernel.loaded_fault_class[0];
+                const fault_code: u32 = kernel.loaded_fault_code[0];
+                const fault_class_name: &byte = sim_fault_class_name(fault_class);
+                @println("[microapp loader] payload fault class=${fault_class_name} code=${fault_code} signal=${payload_signal}");
             } else {
                 @println("[microapp loader] payload exited non-zero");
             }
@@ -303,12 +289,17 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
         const payload_status: i32 = microapp_hosted_run_payload_exe(native_payload_exe_path);
         const payload_exit: i32 = microapp_hosted_exit_code_from_system_status(payload_status);
         const payload_signal: i32 = microapp_hosted_system_status_signal(payload_status);
-        microapp_hosted_report_payload_result(payload_exit, payload_signal);
+        microapp_hosted_store_wait_status(&kernel, 0u32, payload_status) catch {
+            @println("[microapp loader] failed to store native payload result");
+            return 4;
+        };
+        microapp_hosted_report_payload_result(&kernel, 0u32);
         if payload_exit != 0 {
             if payload_signal != 0 {
-                const fault_class_code: i32 = microapp_hosted_fault_class_code(payload_signal);
-                const fault_class_name: &byte = microapp_hosted_fault_class_name(payload_signal);
-                @println("[microapp loader] payload fault class=${fault_class_name} code=${fault_class_code} signal=${payload_signal}");
+                const fault_class: u32 = kernel.loaded_fault_class[0];
+                const fault_code: u32 = kernel.loaded_fault_code[0];
+                const fault_class_name: &byte = sim_fault_class_name(fault_class);
+                @println("[microapp loader] payload fault class=${fault_class_name} code=${fault_code} signal=${payload_signal}");
             } else {
                 @println("[microapp loader] payload exited non-zero");
             }

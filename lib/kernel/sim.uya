@@ -15,6 +15,14 @@ use kernel.recovery;
 use kernel.scheduler;
 use kernel.syscall;
 use kernel.update;
+use std;
+use libc.sys_mmap;
+use libc.sys_munmap;
+use libc.PROT_READ;
+use libc.PROT_WRITE;
+use libc.PROT_EXEC;
+use libc.MAP_PRIVATE;
+use libc.MAP_ANONYMOUS;
 
 extern fn uya_call0_i32(fn_ptr: &void) i32;
 extern fn uya_call0_i32_stack(fn_ptr: &void, stack_top: &void) i32;
@@ -22,6 +30,13 @@ extern fn uya_call0_i32_stack(fn_ptr: &void, stack_top: &void) i32;
 export const SIM_LOADED_RESULT_NONE: u32 = 0u32;
 export const SIM_LOADED_RESULT_EXIT: u32 = 1u32;
 export const SIM_LOADED_RESULT_FAULT: u32 = 2u32;
+export const SIM_FAULT_CLASS_NONE: u32 = 0u32;
+export const SIM_FAULT_CLASS_SEGV: u32 = 1u32;
+export const SIM_FAULT_CLASS_ILL: u32 = 2u32;
+export const SIM_FAULT_CLASS_BUS: u32 = 3u32;
+export const SIM_FAULT_CLASS_ABORT: u32 = 4u32;
+export const SIM_FAULT_CLASS_UNKNOWN: u32 = 255u32;
+export const SIM_CALL_GATE_TRAMPOLINE_SIZE: usize = 4096usize;
 
 // ── Container entry function type ──
 // fn(ctx: &SimContainerCtx) i32
@@ -52,7 +67,9 @@ export struct SimKernel {
     loaded_image_page_count: [u32: 8],
     loaded_result_kind: [u32: 8],
     loaded_exit_code: [i32: 8],
+    loaded_fault_class: [u32: 8],
     loaded_fault_code: [u32: 8],
+    loaded_fault_signal: [u32: 8],
     // Callback table: callers register fn pointers here
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
@@ -72,7 +89,9 @@ export fn sim_kernel_make() SimKernel {
         loaded_image_page_count: [],
         loaded_result_kind: [],
         loaded_exit_code: [],
+        loaded_fault_class: [],
         loaded_fault_code: [],
+        loaded_fault_signal: [],
     };
 }
 
@@ -110,7 +129,9 @@ export fn sim_kernel_init(k: &SimKernel) void {
         k.loaded_image_page_count[i] = 0u32;
         k.loaded_result_kind[i] = SIM_LOADED_RESULT_NONE;
         k.loaded_exit_code[i] = 0;
+        k.loaded_fault_class[i] = SIM_FAULT_CLASS_NONE;
         k.loaded_fault_code[i] = 0u32;
+        k.loaded_fault_signal[i] = 0u32;
         i = i + 1;
     }
 }
@@ -203,6 +224,17 @@ fn sim_loaded_exit_code_ref(k: &SimKernel, slot: u32) &i32 {
     return &k.loaded_exit_code[7];
 }
 
+fn sim_loaded_fault_class_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_fault_class[0]; }
+    if slot == 1u32 { return &k.loaded_fault_class[1]; }
+    if slot == 2u32 { return &k.loaded_fault_class[2]; }
+    if slot == 3u32 { return &k.loaded_fault_class[3]; }
+    if slot == 4u32 { return &k.loaded_fault_class[4]; }
+    if slot == 5u32 { return &k.loaded_fault_class[5]; }
+    if slot == 6u32 { return &k.loaded_fault_class[6]; }
+    return &k.loaded_fault_class[7];
+}
+
 fn sim_loaded_fault_code_ref(k: &SimKernel, slot: u32) &u32 {
     if slot == 0u32 { return &k.loaded_fault_code[0]; }
     if slot == 1u32 { return &k.loaded_fault_code[1]; }
@@ -212,6 +244,17 @@ fn sim_loaded_fault_code_ref(k: &SimKernel, slot: u32) &u32 {
     if slot == 5u32 { return &k.loaded_fault_code[5]; }
     if slot == 6u32 { return &k.loaded_fault_code[6]; }
     return &k.loaded_fault_code[7];
+}
+
+fn sim_loaded_fault_signal_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_fault_signal[0]; }
+    if slot == 1u32 { return &k.loaded_fault_signal[1]; }
+    if slot == 2u32 { return &k.loaded_fault_signal[2]; }
+    if slot == 3u32 { return &k.loaded_fault_signal[3]; }
+    if slot == 4u32 { return &k.loaded_fault_signal[4]; }
+    if slot == 5u32 { return &k.loaded_fault_signal[5]; }
+    if slot == 6u32 { return &k.loaded_fault_signal[6]; }
+    return &k.loaded_fault_signal[7];
 }
 
 fn sim_entry_fn_ref(k: &SimKernel, slot: u32) &i32 {
@@ -248,6 +291,74 @@ fn sim_range_overlaps(range_start: u32, range_len: u32, page_start: u32, page_en
         return 0;
     }
     return 1;
+}
+
+export fn sim_fault_class_from_signal(signal_code: i32) u32 {
+    if signal_code == 11 {
+        return SIM_FAULT_CLASS_SEGV;
+    }
+    if signal_code == 4 {
+        return SIM_FAULT_CLASS_ILL;
+    }
+    if signal_code == 7 {
+        return SIM_FAULT_CLASS_BUS;
+    }
+    if signal_code == 6 {
+        return SIM_FAULT_CLASS_ABORT;
+    }
+    return SIM_FAULT_CLASS_UNKNOWN;
+}
+
+export fn sim_fault_class_name(fault_class: u32) &byte {
+    if fault_class == SIM_FAULT_CLASS_NONE {
+        return "none" as &byte;
+    }
+    if fault_class == SIM_FAULT_CLASS_SEGV {
+        return "segv" as &byte;
+    }
+    if fault_class == SIM_FAULT_CLASS_ILL {
+        return "ill" as &byte;
+    }
+    if fault_class == SIM_FAULT_CLASS_BUS {
+        return "bus" as &byte;
+    }
+    if fault_class == SIM_FAULT_CLASS_ABORT {
+        return "abort" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
+export fn sim_reset_loaded_result(k: &SimKernel, cid: u32) !void {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_NONE;
+    sim_loaded_exit_code_ref(k, cid)[0] = 0;
+    sim_loaded_fault_class_ref(k, cid)[0] = SIM_FAULT_CLASS_NONE;
+    sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+    sim_loaded_fault_signal_ref(k, cid)[0] = 0u32;
+}
+
+export fn sim_store_loaded_exit_result(k: &SimKernel, cid: u32, exit_code: i32) !void {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_EXIT;
+    sim_loaded_exit_code_ref(k, cid)[0] = exit_code;
+    sim_loaded_fault_class_ref(k, cid)[0] = SIM_FAULT_CLASS_NONE;
+    sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+    sim_loaded_fault_signal_ref(k, cid)[0] = 0u32;
+}
+
+export fn sim_store_loaded_fault_result(k: &SimKernel, cid: u32, fault_class: u32, fault_code: u32, fault_signal: u32) !void {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_FAULT;
+    sim_loaded_exit_code_ref(k, cid)[0] = 0;
+    sim_loaded_fault_class_ref(k, cid)[0] = fault_class;
+    sim_loaded_fault_code_ref(k, cid)[0] = fault_code;
+    sim_loaded_fault_signal_ref(k, cid)[0] = fault_signal;
 }
 
 fn sim_loaded_min_va(hdr: &ImageHeader) u32 {
@@ -318,6 +429,64 @@ fn sim_write_u64_le(ptr: &byte, value: u64) void {
     ptr[7] = b7_tmp.value;
 }
 
+fn sim_write_u64_le_at(ptr: &byte, off: usize, value: u64) void {
+    const b0_tmp: !byte = (value & 255u64) as! byte;
+    const b1_tmp: !byte = ((value >> 8) & 255u64) as! byte;
+    const b2_tmp: !byte = ((value >> 16) & 255u64) as! byte;
+    const b3_tmp: !byte = ((value >> 24) & 255u64) as! byte;
+    const b4_tmp: !byte = ((value >> 32) & 255u64) as! byte;
+    const b5_tmp: !byte = ((value >> 40) & 255u64) as! byte;
+    const b6_tmp: !byte = ((value >> 48) & 255u64) as! byte;
+    const b7_tmp: !byte = ((value >> 56) & 255u64) as! byte;
+    ptr[off] = b0_tmp.value;
+    ptr[off + 1usize] = b1_tmp.value;
+    ptr[off + 2usize] = b2_tmp.value;
+    ptr[off + 3usize] = b3_tmp.value;
+    ptr[off + 4usize] = b4_tmp.value;
+    ptr[off + 5usize] = b5_tmp.value;
+    ptr[off + 6usize] = b6_tmp.value;
+    ptr[off + 7usize] = b7_tmp.value;
+}
+
+export fn sim_make_x86_64_call_gate_trampoline(entry_ptr: &void) !&byte {
+    if entry_ptr == null {
+        return error.InvalidState;
+    }
+    std.cfg(std.target_arch == .ta_x86_64, {
+        const raw: *void = sys_mmap(
+            null as *void,
+            SIM_CALL_GATE_TRAMPOLINE_SIZE,
+            PROT_READ | PROT_WRITE | PROT_EXEC,
+            MAP_PRIVATE | MAP_ANONYMOUS,
+            -1,
+            0
+        ) catch {
+            return error.NoMemory;
+        };
+        const page: &byte = raw as &byte;
+        page[0] = 72 as byte;   // movabs rax, imm64
+        page[1] = 184 as byte;
+        const entry_addr: usize = @usize_from_ptr(entry_ptr);
+        const entry_u64_tmp: !u64 = entry_addr as! u64;
+        sim_write_u64_le_at(page, 2usize, entry_u64_tmp.value);
+        page[10] = 255 as byte; // call rax
+        page[11] = 208 as byte;
+        page[12] = 195 as byte; // ret
+        return page;
+    }, {
+        return error.InvalidState;
+    })
+}
+
+export fn sim_free_x86_64_call_gate_trampoline(trampoline_ptr: &byte) !void {
+    if trampoline_ptr == null {
+        return;
+    }
+    std.cfg(std.target_arch == .ta_x86_64, {
+        _ = try sys_munmap(trampoline_ptr as *void, SIM_CALL_GATE_TRAMPOLINE_SIZE);
+    }, {})
+}
+
 fn sim_apply_x86_64_relative_relocs(k: &SimKernel, cid: u32, hdr: &ImageHeader, image_bytes: &[byte]) !void {
     if k == null || hdr == null {
         return error.InvalidState;
@@ -384,24 +553,20 @@ fn sim_copy_segment(pm: &PhysMem, first_ppn: u32, base_vpn: u32, src: &[byte], d
 
 fn sim_handle_result(k: &SimKernel, cid: u32, result: i32) !void {
     if result == 0 {
-        sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_NONE;
-        sim_loaded_exit_code_ref(k, cid)[0] = 0;
-        sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+        try sim_reset_loaded_result(k, cid);
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
     } else if result > 0 {
         if sim_loaded_result_kind_ref(k, cid)[0] == SIM_LOADED_RESULT_NONE {
-            sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_EXIT;
-            sim_loaded_exit_code_ref(k, cid)[0] = result - 1;
-            sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+            try sim_store_loaded_exit_result(k, cid, result - 1);
         }
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_empty);
     } else {
-        const fault_code: u32 = try ((0 - result) as! u32);
-        sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_FAULT;
-        sim_loaded_exit_code_ref(k, cid)[0] = 0;
-        sim_loaded_fault_code_ref(k, cid)[0] = fault_code;
+        if sim_loaded_result_kind_ref(k, cid)[0] != SIM_LOADED_RESULT_FAULT {
+            const fault_code: u32 = try ((0 - result) as! u32);
+            try sim_store_loaded_fault_result(k, cid, SIM_FAULT_CLASS_UNKNOWN, fault_code, 0u32);
+        }
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_crashed);
-        recovery_record_crash(&k.recovery, cid, k.total_ticks as i64, fault_code);
+        recovery_record_fault(&k.recovery, cid, k.total_ticks as i64, sim_loaded_fault_class_ref(k, cid)[0], sim_loaded_fault_code_ref(k, cid)[0], sim_loaded_fault_signal_ref(k, cid)[0]);
         if recovery_should_restart(&k.recovery, cid) != 0 {
             recovery_mark_restarted(&k.recovery, cid);
             try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
@@ -516,9 +681,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     sim_loaded_valid_ref(k, cid)[0] = 1u32;
     sim_loaded_base_vpn_ref(k, cid)[0] = base_vpn;
     sim_loaded_page_count_ref(k, cid)[0] = pages_needed;
-    sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_NONE;
-    sim_loaded_exit_code_ref(k, cid)[0] = 0;
-    sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+    try sim_reset_loaded_result(k, cid);
     k.host_ctx.heap_base_vpn[cid] = base_vpn + pages_needed;
     k.host_ctx.heap_next_vpn[cid] = base_vpn + pages_needed;
     k.host_ctx.stack_base_vpn[cid] = stack_base_vpn;
@@ -546,19 +709,27 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         }
     } else if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
         const entry_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 1u32, ACCESS_X);
+        var call_ptr: &byte = entry_ptr;
+        var trampoline_ptr: &byte = sim_make_x86_64_call_gate_trampoline(entry_ptr as &void) catch {
+            null as &byte;
+        };
+        if trampoline_ptr != null {
+            call_ptr = trampoline_ptr;
+        }
         var exit_code: i32 = 0;
         if k.host_ctx.stack_page_count[cid] > 0u32 {
             const stack_top_va: u32 = (k.host_ctx.stack_base_vpn[cid] + k.host_ctx.stack_page_count[cid]) * PAGE_SIZE;
             const stack_probe_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, stack_top_va - 16u32, 16u32, ACCESS_W);
             const stack_top_addr: usize = @usize_from_ptr(stack_probe_ptr as &void) + 16usize;
             const stack_top_ptr: &byte = @ptr_from_usize(stack_top_addr) as &byte;
-            exit_code = uya_call0_i32_stack(entry_ptr as &void, stack_top_ptr as &void);
+            exit_code = uya_call0_i32_stack(call_ptr as &void, stack_top_ptr as &void);
         } else {
-            exit_code = uya_call0_i32(entry_ptr as &void);
+            exit_code = uya_call0_i32(call_ptr as &void);
         }
-        sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_EXIT;
-        sim_loaded_exit_code_ref(k, cid)[0] = exit_code;
-        sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+        if trampoline_ptr != null {
+            sim_free_x86_64_call_gate_trampoline(trampoline_ptr) catch {};
+        }
+        try sim_store_loaded_exit_result(k, cid, exit_code);
         return 1;
     }
     if hdr.rodata_size > 0u32 {
