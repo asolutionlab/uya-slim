@@ -40,3 +40,6 @@ jobs:
         TEST_PROFILE: hosted
         SKIP_DARWIN_DEFAULT: "1"
       run: make tests-hosted
+
+    - name: Run microapp hosted smoke
+      run: make microapp-hosted-smoke

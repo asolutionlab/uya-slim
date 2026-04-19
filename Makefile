@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya microapp-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya microapp-check microapp-hosted-smoke microapp-compat-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -290,6 +290,22 @@ microapp-check:
 	@./tests/verify_microapp_suite.sh
 	@echo ""
 	@echo "✓ microapp 验证套件通过"
+
+microapp-hosted-smoke:
+	@echo "=========================================="
+	@echo "运行 microapp hosted smoke 套件"
+	@echo "=========================================="
+	@./tests/verify_microapp_hosted_smoke.sh
+	@echo ""
+	@echo "✓ microapp hosted smoke 套件通过"
+
+microapp-compat-check:
+	@echo "=========================================="
+	@echo "运行 microapp .uapp 兼容回归"
+	@echo "=========================================="
+	@./tests/verify_microapp_uapp_compat.sh
+	@echo ""
+	@echo "✓ microapp .uapp 兼容回归通过"
 
 # 输出标准库为 C 代码（使用自举编译器）
 outlibc: uya
@@ -817,6 +833,8 @@ help:
 	@echo "  make tests-uya     - 快捷方式：测试自举编译器"
 	@echo "  make tests-uya e   - 同上 + 最小输出（-e）"
 	@echo "  make microapp-check - 运行当前 microapp 聚合回归套件"
+	@echo "  make microapp-hosted-smoke - 运行 hosted 平台可用的 microapp smoke 套件"
+	@echo "  make microapp-compat-check - 运行 .uapp v1/v2 兼容回归"
 	@echo "  make outlibc       - 输出标准库为 C 代码（使用自举编译器）"
 	@echo "  make check         - 验证（自举 + 测试），不备份"
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"

@@ -301,10 +301,11 @@
 
 ## 11. 阶段 8：验证与发布
 
-- [ ] 增加 `.uapp v1/v2` 兼容回归
+- [x] 增加 `.uapp v1/v2` 兼容回归
 - [~] 增加 profile 级 CI
   - [x] 已新增 `make microapp-check` 聚合 microapp 回归入口
   - [x] `ubuntu-ci` 已接入 `make microapp-check`
+  - [x] `macos-ci` 已接入 `make microapp-hosted-smoke`
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss` 官方示例真执行回归
   - [ ] 其余 profile 真执行仍待补齐
@@ -316,6 +317,7 @@
 - [~] 文档、示例、CLI、回归测试一致
   - [x] 当前已统一到 `make microapp-check` 聚合入口
   - [x] Ubuntu CI / README / Makefile help / 官方示例 / microapp 回归清单已对齐
+  - [x] `.uapp v1/v2` 兼容回归已具备独立入口 `make microapp-compat-check`
   - [ ] 其余平台与发布文档仍待继续对齐
 
 ---

@@ -51,17 +51,19 @@ verify_profile_compile_to_c "xtensa_baremetal_softvm" "trap" "xtensa"
 
 X86_UAPP="$TMP_DIR/linux_x86_64_hardvm.uapp"
 X86_INSPECT="$TMP_DIR/linux_x86_64_hardvm.inspect.log"
-if ! TARGET_GCC=x86_64-linux-gnu-gcc \
-    "$ROOT_DIR/bin/uya" build --app microapp \
-    --microapp-profile linux_x86_64_hardvm \
-    "$SOURCE" -o "$X86_UAPP" >"$TMP_DIR/linux_x86_64_hardvm.uapp.log" 2>&1; then
-    dump_and_fail "profile matrix x86_64 .uapp 构建失败" "$TMP_DIR/linux_x86_64_hardvm.uapp.log"
-fi
+if command -v x86_64-linux-gnu-gcc >/dev/null 2>&1; then
+    if ! TARGET_GCC=x86_64-linux-gnu-gcc \
+        "$ROOT_DIR/bin/uya" build --app microapp \
+        --microapp-profile linux_x86_64_hardvm \
+        "$SOURCE" -o "$X86_UAPP" >"$TMP_DIR/linux_x86_64_hardvm.uapp.log" 2>&1; then
+        dump_and_fail "profile matrix x86_64 .uapp 构建失败" "$TMP_DIR/linux_x86_64_hardvm.uapp.log"
+    fi
 
-"$ROOT_DIR/bin/uya" inspect-image "$X86_UAPP" >"$X86_INSPECT" 2>&1
-grep -q '^profile=linux_x86_64_hardvm$' "$X86_INSPECT" \
-    || dump_and_fail "profile matrix x86_64 .uapp inspect 未命中 profile" "$X86_INSPECT"
-grep -q '^bridge=call_gate$' "$X86_INSPECT" \
-    || dump_and_fail "profile matrix x86_64 .uapp inspect 未命中 bridge" "$X86_INSPECT"
+    "$ROOT_DIR/bin/uya" inspect-image "$X86_UAPP" >"$X86_INSPECT" 2>&1
+    grep -q '^profile=linux_x86_64_hardvm$' "$X86_INSPECT" \
+        || dump_and_fail "profile matrix x86_64 .uapp inspect 未命中 profile" "$X86_INSPECT"
+    grep -q '^bridge=call_gate$' "$X86_INSPECT" \
+        || dump_and_fail "profile matrix x86_64 .uapp inspect 未命中 bridge" "$X86_INSPECT"
+fi
 
 echo "microapp profile example matrix ok"
