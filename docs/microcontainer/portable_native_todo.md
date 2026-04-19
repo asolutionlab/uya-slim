@@ -132,6 +132,10 @@
 - [x] 计算 `.bss`
 - [x] 提取 relocation 表
 - [x] 计算 `entry_va`
+- [~] hosted `call-gate` 构建链减少外部 ELF 工具依赖
+  - [x] x86_64 / aarch64 当前已改成编译器内部直接读取中间 ELF 的 section / symbol / rela
+  - [x] x86_64 `build-uapp` 回归已显式验证 `READELF/OBJDUMP/NM/OBJCOPY=false` 仍可构建
+  - [ ] 仍然需要先链接出中间 ELF，本体依赖尚未移除
 
 ### 5.3 PIC / PIE
 
@@ -241,7 +245,8 @@
 - [~] `run --app microapp examples/microapp/microcontainer_hello_source.uya`
   不再依赖 `.text.bin.elf`
   - [x] x86_64 hard-vm 运行时已不再依赖对照 ELF
-  - [ ] 构建期仍依赖 ELF 提取 section/VMA
+  - [x] x86_64 / aarch64 hosted `call-gate` 构建期已不再依赖 `objdump/nm/readelf/objcopy` 提取 section/VMA/reloc
+  - [ ] 构建期仍依赖“先链接出中间 ELF”这一步
 - [x] `hello microapp` 能由 `.uapp` 真执行输出
 - [x] `alloc + yield` 能在 x86_64 mapped payload 路径中执行
 - [x] `time` 能在 x86_64 mapped payload 路径中执行

@@ -10,8 +10,16 @@ rm -f "$UAPP"
 : "${MICROAPP_TARGET_ARCH:=x86_64}"
 export MICROAPP_TARGET_ARCH
 export TARGET_GCC
+export READELF=false
+export OBJDUMP=false
+export NM=false
+export OBJCOPY=false
 
 "$ROOT_DIR/bin/uya" build --app microapp examples/microapp/microcontainer_hello_source.uya -o "$UAPP" >/tmp/verify_microapp_build_uapp.log 2>&1
+
+grep -q "信息：microapp 内部 ELF 提取：" /tmp/verify_microapp_build_uapp.log
+! grep -q "信息：microapp 目标 gcc 导出 .text" /tmp/verify_microapp_build_uapp.log
+! grep -q "信息：microapp 目标 gcc 导出 .rodata" /tmp/verify_microapp_build_uapp.log
 
 python3 - <<'PY'
 from pathlib import Path
