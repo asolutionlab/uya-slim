@@ -206,7 +206,8 @@
   - [x] x86_64 call-gate 真执行已切到容器私有栈页
 - [~] 建立 call-gate 页面或 trampoline
   - [x] 已新增最小 x86_64 trampoline helper，并有内核级单测覆盖
-  - [ ] 其余架构 / 真正的 per-profile trampoline 仍待补齐
+  - [~] 已新增最小 aarch64 trampoline helper，并补了字节级单测
+  - [ ] 其余架构 / 更完整的 per-profile trampoline 仍待补齐
 
 ### 7.3 真执行
 
@@ -246,8 +247,12 @@
 
 ### 8.1 Linux aarch64
 
-- [ ] 实现 `linux_aarch64_hardvm`
-- [ ] 增加 aarch64 trampoline
+- [~] 实现 `linux_aarch64_hardvm`
+  - [x] hosted call-gate 装载级 relocation 已接线
+  - [x] aarch64 call-gate trampoline helper 已落地
+  - [x] 编译器宿主 helper 已补上 arm64 私有栈切换实现
+  - [ ] 真执行与 hosted runtime 回归仍待在 arm64 宿主上接通
+- [x] 增加 aarch64 trampoline
 - [ ] 增加 aarch64 hosted 回归
 
 ### 8.2 macOS arm64

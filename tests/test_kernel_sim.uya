@@ -68,6 +68,14 @@ fn r64(buf: &byte) u64 {
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56);
 }
 
+fn r32(buf: &byte) u32 {
+    const b0: u32 = buf[0] as u32;
+    const b1: u32 = buf[1] as u32;
+    const b2: u32 = buf[2] as u32;
+    const b3: u32 = buf[3] as u32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
 fn build_sim_image(buf: &[byte], ro_len: u32) u32 {
     const total: u32 = IMAGE_HEADER_SIZE + 4u32 + ro_len;
     var i: u32 = 0;
@@ -846,6 +854,28 @@ test "x86_call_gate_trampoline_invokes_target" {
     try sim_free_x86_64_call_gate_trampoline(trampoline_ptr);
 }
 }, {})
+
+test "aarch64_call_gate_trampoline_emits_expected_stub" {
+    const trampoline_ptr: &byte = try sim_make_aarch64_call_gate_trampoline(x86_trampoline_target_keep);
+    const entry_addr: usize = @usize_from_ptr(x86_trampoline_target_keep);
+    const entry_u64_tmp: !u64 = entry_addr as! u64;
+    const entry_u64: u64 = entry_u64_tmp.value;
+    const imm0_tmp: !u32 = (entry_u64 & 65535u64) as! u32;
+    const imm1_tmp: !u32 = ((entry_u64 >> 16) & 65535u64) as! u32;
+    const imm2_tmp: !u32 = ((entry_u64 >> 32) & 65535u64) as! u32;
+    const imm3_tmp: !u32 = ((entry_u64 >> 48) & 65535u64) as! u32;
+    const imm0_bits: u32 = imm0_tmp.value * 32u32;
+    const imm1_bits: u32 = imm1_tmp.value * 32u32;
+    const imm2_bits: u32 = imm2_tmp.value * 32u32;
+    const imm3_bits: u32 = imm3_tmp.value * 32u32;
+    try assert_eq_u64(r32(trampoline_ptr) as u64, (0xD2800010u32 | imm0_bits) as u64);
+    try assert_eq_u64(r32(&trampoline_ptr[4]) as u64, (0xF2A00010u32 | imm1_bits) as u64);
+    try assert_eq_u64(r32(&trampoline_ptr[8]) as u64, (0xF2C00010u32 | imm2_bits) as u64);
+    try assert_eq_u64(r32(&trampoline_ptr[12]) as u64, (0xF2E00010u32 | imm3_bits) as u64);
+    try assert_eq_u64(r32(&trampoline_ptr[16]) as u64, 0xD63F0200u32 as u64);
+    try assert_eq_u64(r32(&trampoline_ptr[20]) as u64, 0xD65F03C0u32 as u64);
+    try sim_free_aarch64_call_gate_trampoline(trampoline_ptr);
+}
 
 test "sim_fault_class_from_signal_maps_known_signals" {
     try assert_eq_i32(sim_fault_class_from_signal(11) as i32, SIM_FAULT_CLASS_SEGV as i32);

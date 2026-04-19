@@ -70,7 +70,14 @@ v6 += source_path
 v6 += code
 v6 += rodata
 v6 += data
-v6 += relocs
+if reloc_len > 0:
+    code_va_v6 = 176
+    rodata_va_v6 = code_va_v6 + code_len
+    data_va_v6 = rodata_va_v6 + rodata_len
+    v6 += data_va_v6.to_bytes(4, "little")
+    v6 += rodata_va_v6.to_bytes(4, "little")
+else:
+    v6 += relocs
 out_v6.write_bytes(v6)
 
 header_size = 96
