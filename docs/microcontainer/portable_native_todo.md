@@ -217,6 +217,7 @@
 - [~] 执行后能正确返回 yield / exit / error
   - [x] 当前已覆盖 `yield`
   - [x] `linux_x86_64_hardvm` 已透传非零 `main()` exit code
+  - [x] `linux_x86_64_hardvm` 已覆盖 fault/error 路径的可观测信号退出状态
   - [ ] 崩溃/故障到统一错误模型仍待继续细化
 
 验收标准：
@@ -312,7 +313,7 @@
   - [x] `ubuntu-ci` 已接入 `make microapp-check`
   - [x] `macos-ci` 已接入 `make microapp-hosted-smoke`
 - [~] 增加真执行回归
-  - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code` 真执行回归
+  - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
   - [ ] 其余 profile 真执行仍待补齐
 - [~] 增加 crash/recovery / update 回归
   - [x] 已新增 `make microapp-recovery-check` 入口

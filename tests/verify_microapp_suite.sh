@@ -25,6 +25,7 @@ SCRIPTS=(
     "tests/verify_microapp_bss_runtime.sh"
     "tests/verify_microapp_reloc_runtime.sh"
     "tests/verify_microapp_exit_code_runtime.sh"
+    "tests/verify_microapp_fault_runtime.sh"
     "tests/verify_microapp_loader_unwired_profile.sh"
     "tests/verify_microapp_recovery_update.sh"
 )
