@@ -41,6 +41,11 @@ jobs:
         SKIP_DARWIN_DEFAULT: "1"
       run: make tests-hosted
 
+    - name: Resolve microapp arm64 toolchain
+      run: |
+        echo "TARGET_GCC=$(xcrun --find clang)" >> "$GITHUB_ENV"
+        echo "OBJCOPY=$(xcrun --find llvm-objcopy)" >> "$GITHUB_ENV"
+
     - name: Run microapp hosted smoke
       run: make microapp-hosted-smoke
 

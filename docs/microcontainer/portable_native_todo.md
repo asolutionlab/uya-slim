@@ -329,6 +329,7 @@
   - [x] `ubuntu-ci` 已接入 `make microapp-check`
   - [~] `macos-ci` 已接入 `make microapp-hosted-smoke`
     - [x] 已追加 arm64-host-gated `make microapp-aarch64-runtime-check`
+    - [x] 已显式固定 `xcrun clang + llvm-objcopy` 作为 arm64 runtime 工具链
     - [ ] 仍待在 macOS arm64 CI 上实际观察一次真执行结果
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归

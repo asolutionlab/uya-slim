@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+HOST_OS="$(uname -s)"
 HOST_ARCH="$(uname -m)"
 
 if [ "$HOST_ARCH" != "aarch64" ] && [ "$HOST_ARCH" != "arm64" ]; then
@@ -41,6 +42,11 @@ pick_first_available() {
 
 TARGET_GCC_BIN="${TARGET_GCC:-}"
 if [ -z "$TARGET_GCC_BIN" ]; then
+    if [ "$HOST_OS" = "Darwin" ] && command -v xcrun >/dev/null 2>&1; then
+        TARGET_GCC_BIN="$(xcrun --find clang 2>/dev/null || true)"
+    fi
+fi
+if [ -z "$TARGET_GCC_BIN" ]; then
     TARGET_GCC_BIN="$(pick_first_available aarch64-linux-gnu-gcc clang gcc cc || true)"
 fi
 
@@ -51,7 +57,12 @@ fi
 
 OBJCOPY_BIN="${OBJCOPY:-}"
 if [ -z "$OBJCOPY_BIN" ]; then
-    OBJCOPY_BIN="$(pick_first_available objcopy llvm-objcopy || true)"
+    if [ "$HOST_OS" = "Darwin" ] && command -v xcrun >/dev/null 2>&1; then
+        OBJCOPY_BIN="$(xcrun --find llvm-objcopy 2>/dev/null || true)"
+    fi
+fi
+if [ -z "$OBJCOPY_BIN" ]; then
+    OBJCOPY_BIN="$(pick_first_available llvm-objcopy gobjcopy objcopy || true)"
 fi
 
 if [ -z "$OBJCOPY_BIN" ]; then
