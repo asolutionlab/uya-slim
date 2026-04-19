@@ -46,6 +46,9 @@ export struct SimKernel {
     loaded_image_valid: [u32: 8],
     loaded_image_base_vpn: [u32: 8],
     loaded_image_page_count: [u32: 8],
+    loaded_result_kind: [u32: 8],
+    loaded_exit_code: [i32: 8],
+    loaded_fault_code: [u32: 8],
     // Callback table: callers register fn pointers here
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
@@ -63,6 +66,9 @@ export fn sim_kernel_make() SimKernel {
         loaded_image_valid: [],
         loaded_image_base_vpn: [],
         loaded_image_page_count: [],
+        loaded_result_kind: [],
+        loaded_exit_code: [],
+        loaded_fault_code: [],
     };
 }
 
@@ -98,6 +104,9 @@ export fn sim_kernel_init(k: &SimKernel) void {
         k.loaded_image_valid[i] = 0u32;
         k.loaded_image_base_vpn[i] = 0u32;
         k.loaded_image_page_count[i] = 0u32;
+        k.loaded_result_kind[i] = 0u32;
+        k.loaded_exit_code[i] = 0;
+        k.loaded_fault_code[i] = 0u32;
         i = i + 1;
     }
 }
@@ -166,6 +175,39 @@ fn sim_loaded_page_count_ref(k: &SimKernel, slot: u32) &u32 {
     if slot == 5u32 { return &k.loaded_image_page_count[5]; }
     if slot == 6u32 { return &k.loaded_image_page_count[6]; }
     return &k.loaded_image_page_count[7];
+}
+
+fn sim_loaded_result_kind_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_result_kind[0]; }
+    if slot == 1u32 { return &k.loaded_result_kind[1]; }
+    if slot == 2u32 { return &k.loaded_result_kind[2]; }
+    if slot == 3u32 { return &k.loaded_result_kind[3]; }
+    if slot == 4u32 { return &k.loaded_result_kind[4]; }
+    if slot == 5u32 { return &k.loaded_result_kind[5]; }
+    if slot == 6u32 { return &k.loaded_result_kind[6]; }
+    return &k.loaded_result_kind[7];
+}
+
+fn sim_loaded_exit_code_ref(k: &SimKernel, slot: u32) &i32 {
+    if slot == 0u32 { return &k.loaded_exit_code[0]; }
+    if slot == 1u32 { return &k.loaded_exit_code[1]; }
+    if slot == 2u32 { return &k.loaded_exit_code[2]; }
+    if slot == 3u32 { return &k.loaded_exit_code[3]; }
+    if slot == 4u32 { return &k.loaded_exit_code[4]; }
+    if slot == 5u32 { return &k.loaded_exit_code[5]; }
+    if slot == 6u32 { return &k.loaded_exit_code[6]; }
+    return &k.loaded_exit_code[7];
+}
+
+fn sim_loaded_fault_code_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_fault_code[0]; }
+    if slot == 1u32 { return &k.loaded_fault_code[1]; }
+    if slot == 2u32 { return &k.loaded_fault_code[2]; }
+    if slot == 3u32 { return &k.loaded_fault_code[3]; }
+    if slot == 4u32 { return &k.loaded_fault_code[4]; }
+    if slot == 5u32 { return &k.loaded_fault_code[5]; }
+    if slot == 6u32 { return &k.loaded_fault_code[6]; }
+    return &k.loaded_fault_code[7];
 }
 
 fn sim_entry_fn_ref(k: &SimKernel, slot: u32) &i32 {
@@ -338,11 +380,22 @@ fn sim_copy_segment(pm: &PhysMem, first_ppn: u32, base_vpn: u32, src: &[byte], d
 
 fn sim_handle_result(k: &SimKernel, cid: u32, result: i32) !void {
     if result == 0 {
+        sim_loaded_result_kind_ref(k, cid)[0] = 0u32;
+        sim_loaded_exit_code_ref(k, cid)[0] = 0;
+        sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
     } else if result > 0 {
+        if sim_loaded_result_kind_ref(k, cid)[0] == 0u32 {
+            sim_loaded_result_kind_ref(k, cid)[0] = 1u32;
+            sim_loaded_exit_code_ref(k, cid)[0] = result - 1;
+            sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+        }
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_empty);
     } else {
         const fault_code: u32 = try ((0 - result) as! u32);
+        sim_loaded_result_kind_ref(k, cid)[0] = 2u32;
+        sim_loaded_exit_code_ref(k, cid)[0] = 0;
+        sim_loaded_fault_code_ref(k, cid)[0] = fault_code;
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_crashed);
         recovery_record_crash(&k.recovery, cid, k.total_ticks as i64, fault_code);
         if recovery_should_restart(&k.recovery, cid) != 0 {
@@ -459,6 +512,9 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     sim_loaded_valid_ref(k, cid)[0] = 1u32;
     sim_loaded_base_vpn_ref(k, cid)[0] = base_vpn;
     sim_loaded_page_count_ref(k, cid)[0] = pages_needed;
+    sim_loaded_result_kind_ref(k, cid)[0] = 0u32;
+    sim_loaded_exit_code_ref(k, cid)[0] = 0;
+    sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
     k.host_ctx.heap_base_vpn[cid] = base_vpn + pages_needed;
     k.host_ctx.heap_next_vpn[cid] = base_vpn + pages_needed;
     k.host_ctx.stack_base_vpn[cid] = stack_base_vpn;
@@ -496,10 +552,10 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         } else {
             exit_code = uya_call0_i32(entry_ptr as &void);
         }
-        if exit_code == 0 {
-            return 1;
-        }
-        return 0 - exit_code;
+        sim_loaded_result_kind_ref(k, cid)[0] = 1u32;
+        sim_loaded_exit_code_ref(k, cid)[0] = exit_code;
+        sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+        return 1;
     }
     if hdr.rodata_size > 0u32 {
         const rodata_off: u32 = hdr.rodata_va;

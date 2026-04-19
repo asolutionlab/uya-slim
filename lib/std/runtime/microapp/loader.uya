@@ -174,6 +174,10 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
     const loaded_hdr: ImageHeader = kernel.loaded_image_headers[0];
     if loaded_hdr.target_arch == ImageTargetArch.ita_x86_64 && loaded_hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
         @println("[microapp loader] executed mapped payload");
+        if kernel.loaded_result_kind[0] == 1u32 && kernel.loaded_exit_code[0] != 0 {
+            @println("[microapp loader] payload exited non-zero");
+            return kernel.loaded_exit_code[0];
+        }
     } else if native_payload_exe_path != null {
         @println("[microapp loader] launching native payload");
         const payload_status: i32 = microapp_hosted_run_payload_exe(native_payload_exe_path);
