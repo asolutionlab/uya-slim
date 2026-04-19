@@ -100,7 +100,9 @@
 验收标准：
 
 - [x] v1 / v2 `.pobj` 打包入口兼容读取
-- [ ] v1 `.uapp` / v2 `.uapp` 双版本读取与显式 inspect/verify CLI 仍待补齐
+- [~] v1 `.uapp` / v2 `.uapp` 双版本读取与显式 inspect/verify CLI
+  - [x] 已新增 `inspect-image` CLI，可直接查看 `.pobj/.uapp` 头信息
+  - [ ] 仍缺单独的 `verify-image` / 更完整的版本覆盖
 
 ---
 

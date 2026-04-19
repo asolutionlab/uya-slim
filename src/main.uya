@@ -48,6 +48,7 @@ enum CommandType {
     COMMAND_RUN,     // uya run - 编译并运行
     COMMAND_TEST,    // uya test - 编译测试并运行
     COMMAND_PACK_IMAGE, // uya pack-image - 将 .pobj 打包为 .uapp
+    COMMAND_INSPECT_IMAGE, // uya inspect-image - 打印 .pobj/.uapp 头信息
     COMMAND_OUTLIBC,  // uya --outlibc - 生成独立 libc
     COMMAND_FMT       // uya fmt - 格式化代码
 }
@@ -308,6 +309,35 @@ fn microapp_target_default_bridge_kind_raw(target_arch_raw: u32) u32 {
         return MICROAPP_BRIDGE_TRAP_RAW;
     }
     return MICROAPP_BRIDGE_UNKNOWN_RAW;
+}
+
+fn microapp_profile_name(profile_id: u32) &byte {
+    if profile_id == MICROAPP_PROFILE_LINUX_X86_64_HARDVM_RAW {
+        return "linux_x86_64_hardvm" as &byte;
+    }
+    if profile_id == MICROAPP_PROFILE_LINUX_AARCH64_HARDVM_RAW {
+        return "linux_aarch64_hardvm" as &byte;
+    }
+    if profile_id == MICROAPP_PROFILE_MACOS_ARM64_HARDVM_RAW {
+        return "macos_arm64_hardvm" as &byte;
+    }
+    if profile_id == MICROAPP_PROFILE_RV32_BAREMETAL_SOFTVM_RAW {
+        return "rv32_baremetal_softvm" as &byte;
+    }
+    if profile_id == MICROAPP_PROFILE_XTENSA_BAREMETAL_SOFTVM_RAW {
+        return "xtensa_baremetal_softvm" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
+fn microapp_bridge_kind_name(bridge_kind_raw: u32) &byte {
+    if bridge_kind_raw == MICROAPP_BRIDGE_TRAP_RAW {
+        return "trap" as &byte;
+    }
+    if bridge_kind_raw == MICROAPP_BRIDGE_CALL_GATE_RAW {
+        return "call_gate" as &byte;
+    }
+    return "unknown" as &byte;
 }
 
 fn microapp_target_profile_from_arch_raw(target_arch_raw: u32) MicroAppTargetProfile {
@@ -1003,6 +1033,138 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
     return 0;
 }
 
+fn inspect_microapp_pobj(path: &byte) i32 {
+    const pobj_len: i32 = read_file_content(path, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+    if pobj_len < POBJ_HEADER_SIZE_V1 as i32 {
+        fprintf(libc.stderr, "错误: .pobj 太小或无法读取: %s\n" as *byte, path as *byte);
+        return 1;
+    }
+    const file_ptr: &byte = &file_buffer[0] as &byte;
+    if read_u32_le_at(file_ptr, 0usize) != POBJ_MAGIC {
+        fprintf(libc.stderr, "错误: 不是有效的 .pobj 文件: %s\n" as *byte, path as *byte);
+        return 1;
+    }
+    const version: u16 = read_u16_le_at(file_ptr, 4usize);
+    if version != 5u16 && version != 6u16 && version != POBJ_VERSION {
+        fprintf(libc.stderr, "错误: 不支持的 .pobj 版本 %u\n" as *byte, version as u32);
+        return 1;
+    }
+    const target_arch_raw: u32 = read_u32_le_at(file_ptr, 8usize);
+    const build_mode_raw: u32 = read_u32_le_at(file_ptr, 12usize);
+    const required_caps: u32 = read_u32_le_at(file_ptr, 16usize);
+    const entry_offset: u32 = read_u32_le_at(file_ptr, 20usize);
+    const source_path_len: u32 = read_u32_le_at(file_ptr, 24usize);
+    const code_len: u32 = read_u32_le_at(file_ptr, 28usize);
+    const rodata_len: u32 = read_u32_le_at(file_ptr, 32usize);
+    const reloc_count: u32 = read_u32_le_at(file_ptr, 36usize);
+    var profile_id: u32 = microapp_target_profile_from_arch_raw(target_arch_raw).profile_id;
+    var image_flags: u32 = 0u32;
+    var bridge_kind_raw: u32 = microapp_target_profile_from_arch_raw(target_arch_raw).bridge_kind_raw;
+    var bss_size: u32 = 0u32;
+    var stack_size_hint: u32 = 0u32;
+    var data_len: u32 = 0u32;
+    var reloc_len: u32 = 0u32;
+    var entry_va: u32 = IMAGE_HEADER_SIZE + entry_offset;
+    var code_va: u32 = IMAGE_HEADER_SIZE;
+    var rodata_va: u32 = code_va + code_len;
+    var data_va: u32 = rodata_va + rodata_len;
+    if version >= 6u16 {
+        profile_id = read_u32_le_at(file_ptr, 40usize);
+        image_flags = read_u32_le_at(file_ptr, 44usize);
+        bridge_kind_raw = read_u32_le_at(file_ptr, 48usize);
+        bss_size = read_u32_le_at(file_ptr, 52usize);
+        stack_size_hint = read_u32_le_at(file_ptr, 56usize);
+        data_len = read_u32_le_at(file_ptr, 60usize);
+        reloc_len = read_u32_le_at(file_ptr, 64usize);
+    }
+    if version >= POBJ_VERSION {
+        entry_va = read_u32_le_at(file_ptr, 68usize);
+        code_va = read_u32_le_at(file_ptr, 72usize);
+        rodata_va = read_u32_le_at(file_ptr, 76usize);
+        data_va = read_u32_le_at(file_ptr, 80usize);
+    }
+    fprintf(libc.stdout, "kind=pobj\n" as *byte);
+    fprintf(libc.stdout, "path=%s\n" as *byte, path as *byte);
+    fprintf(libc.stdout, "version=%u\n" as *byte, version as u32);
+    fprintf(libc.stdout, "target_arch=%s\n" as *byte, microapp_target_arch_name(target_arch_raw) as *byte);
+    fprintf(libc.stdout, "profile=%s\n" as *byte, microapp_profile_name(profile_id) as *byte);
+    fprintf(libc.stdout, "bridge=%s\n" as *byte, microapp_bridge_kind_name(bridge_kind_raw) as *byte);
+    fprintf(libc.stdout, "build_mode=%u\n" as *byte, build_mode_raw);
+    fprintf(libc.stdout, "required_caps=%u\n" as *byte, required_caps);
+    fprintf(libc.stdout, "flags=%u\n" as *byte, image_flags);
+    fprintf(libc.stdout, "source_path_len=%u\n" as *byte, source_path_len);
+    fprintf(libc.stdout, "code_size=%u\n" as *byte, code_len);
+    fprintf(libc.stdout, "rodata_size=%u\n" as *byte, rodata_len);
+    fprintf(libc.stdout, "data_size=%u\n" as *byte, data_len);
+    fprintf(libc.stdout, "bss_size=%u\n" as *byte, bss_size);
+    fprintf(libc.stdout, "stack_size_hint=%u\n" as *byte, stack_size_hint);
+    fprintf(libc.stdout, "reloc_count=%u\n" as *byte, reloc_count);
+    fprintf(libc.stdout, "reloc_size=%u\n" as *byte, reloc_len);
+    fprintf(libc.stdout, "entry_offset=%u\n" as *byte, entry_offset);
+    fprintf(libc.stdout, "entry_va=%u\n" as *byte, entry_va);
+    fprintf(libc.stdout, "code_va=%u\n" as *byte, code_va);
+    fprintf(libc.stdout, "rodata_va=%u\n" as *byte, rodata_va);
+    fprintf(libc.stdout, "data_va=%u\n" as *byte, data_va);
+    return 0;
+}
+
+fn microapp_image_arch_name(arch: ImageTargetArch) &byte {
+    return microapp_target_arch_name(image_target_arch_to_byte(arch) as u32);
+}
+
+fn microapp_image_bridge_name(kind: ImageBridgeKind) &byte {
+    return microapp_bridge_kind_name(image_bridge_kind_to_byte(kind) as u32);
+}
+
+fn inspect_microapp_uapp(path: &byte) i32 {
+    const image_len: i32 = read_file_content(path, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+    if image_len < IMAGE_HEADER_SIZE_V1 as i32 {
+        fprintf(libc.stderr, "错误: .uapp 太小或无法读取: %s\n" as *byte, path as *byte);
+        return 1;
+    }
+    const image_ptr: &byte = &file_buffer[0] as &byte;
+    const image_bytes: &[byte] = image_ptr[0: image_len as usize];
+    const hdr_result: !ImageHeader = image_validate(image_bytes);
+    const hdr: ImageHeader = hdr_result catch {
+        fprintf(libc.stderr, "错误: .uapp 校验失败: %s\n" as *byte, path as *byte);
+        return 1;
+    };
+    fprintf(libc.stdout, "kind=uapp\n" as *byte);
+    fprintf(libc.stdout, "path=%s\n" as *byte, path as *byte);
+    fprintf(libc.stdout, "validated=yes\n" as *byte);
+    fprintf(libc.stdout, "format_version=%u\n" as *byte, hdr.format_version as u32);
+    fprintf(libc.stdout, "target_arch=%s\n" as *byte, microapp_image_arch_name(hdr.target_arch) as *byte);
+    fprintf(libc.stdout, "profile=%s\n" as *byte, microapp_profile_name(hdr.profile_id) as *byte);
+    fprintf(libc.stdout, "bridge=%s\n" as *byte, microapp_image_bridge_name(hdr.bridge_kind) as *byte);
+    fprintf(libc.stdout, "image_size=%u\n" as *byte, hdr.image_size);
+    fprintf(libc.stdout, "code_size=%u\n" as *byte, hdr.code_size);
+    fprintf(libc.stdout, "rodata_size=%u\n" as *byte, hdr.rodata_size);
+    fprintf(libc.stdout, "data_size=%u\n" as *byte, hdr.data_size);
+    fprintf(libc.stdout, "bss_size=%u\n" as *byte, hdr.bss_size);
+    fprintf(libc.stdout, "stack_size_hint=%u\n" as *byte, hdr.stack_size_hint);
+    fprintf(libc.stdout, "reloc_count=%u\n" as *byte, hdr.reloc_count);
+    fprintf(libc.stdout, "entry_offset=%u\n" as *byte, hdr.entry_offset);
+    fprintf(libc.stdout, "entry_va=%u\n" as *byte, hdr.entry_va);
+    fprintf(libc.stdout, "code_offset=%u\n" as *byte, hdr.code_offset);
+    fprintf(libc.stdout, "rodata_offset=%u\n" as *byte, hdr.rodata_offset);
+    fprintf(libc.stdout, "data_offset=%u\n" as *byte, hdr.data_offset);
+    fprintf(libc.stdout, "code_va=%u\n" as *byte, hdr.code_va);
+    fprintf(libc.stdout, "rodata_va=%u\n" as *byte, hdr.rodata_va);
+    fprintf(libc.stdout, "data_va=%u\n" as *byte, hdr.data_va);
+    return 0;
+}
+
+fn inspect_microapp_image(path: &byte) i32 {
+    if is_pobj_output(path) != 0 {
+        return inspect_microapp_pobj(path);
+    }
+    if is_uapp_output(path) != 0 {
+        return inspect_microapp_uapp(path);
+    }
+    fprintf(libc.stderr, "错误: inspect-image 仅支持 .pobj 或 .uapp: %s\n" as *byte, path as *byte);
+    return 1;
+}
+
 // 全局缓冲区（替代 C 的 static 数组，零初始化）
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
@@ -1365,12 +1527,14 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件或中间产物\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build --app microapp <文件> -o <xxx.pobj|xxx.uapp>  输出 microapp 载荷对象或镜像\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s pack-image <xxx.pobj> -o <xxx.uapp>  将 microapp 载荷对象打包为 .uapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s inspect-image <xxx.pobj|xxx.uapp>  打印 microapp 头信息\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行（子进程栈：--stack-size 或默认 65536 KB）\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n示例:\n" as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s pack-image hello.pobj -o hello.uapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s inspect-image hello.uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run main.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
@@ -2856,6 +3020,9 @@ fn parse_args(
         } else if strcmp(first_arg, "pack-image" as *byte) == 0 {
             command[0] = CommandType.COMMAND_PACK_IMAGE;
             start_idx = 2;
+        } else if strcmp(first_arg, "inspect-image" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_INSPECT_IMAGE;
+            start_idx = 2;
         } else if strcmp(first_arg, "fmt" as *byte) == 0 {
             command[0] = CommandType.COMMAND_FMT;
             start_idx = 2;
@@ -4132,6 +4299,19 @@ export fn main() i32 {
         }
         const result: i32 = generate_libc(outlibc_path as &byte);
         return result;
+    }
+
+    if command == CommandType.COMMAND_INSPECT_IMAGE {
+        if input_file_count != 1 {
+            fprintf(libc.stderr, "错误: inspect-image 只接受一个输入文件\n" as *byte);
+            return 1;
+        }
+        const input_path: *byte = get_argv(input_file_indices[0]);
+        if input_path == null {
+            fprintf(libc.stderr, "错误: 无法获取 inspect-image 输入路径\n" as *byte);
+            return 1;
+        }
+        return inspect_microapp_image(input_path as &byte);
     }
 
     if command == CommandType.COMMAND_PACK_IMAGE {
