@@ -4,8 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_DIR="$ROOT_DIR/tests"
 BUILD_DIR="$TEST_DIR/build"
-SRC="$TEST_DIR/microapp_mode_gate.uya"
-OUT_C="$BUILD_DIR/microapp_mode_gate.c"
+TMP_DIR="$(mktemp -d /tmp/verify_microapp_mode_gate.XXXXXX)"
+SRC="$TMP_DIR/microapp_mode_gate.uya"
+OUT_C="$TMP_DIR/microapp_mode_gate.c"
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 mkdir -p "$BUILD_DIR"
 

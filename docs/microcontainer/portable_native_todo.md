@@ -283,6 +283,7 @@
 - [~] 审计现有 microapp 示例里宿主耦合 API
   - [x] 已区分 portable source 与 hosted build/load 工具示例
   - [x] 当前 portable source 样例已纳入无 `libc/std.time` 依赖回归
+  - [x] 当前 portable source 官方示例已纳入 codegen bridge 回归
 - [~] 为不允许的宿主 API 增加明确诊断
   - [x] 用户 microapp 直接 `use/call libc/*` / `std.time` 现在会在编译期报 `E4004`
   - [x] 已增加专门的 host API 诊断回归覆盖
@@ -301,8 +302,12 @@
 ## 11. 阶段 8：验证与发布
 
 - [ ] 增加 `.uapp v1/v2` 兼容回归
-- [ ] 增加 profile 级 CI
-- [ ] 增加真执行回归
+- [~] 增加 profile 级 CI
+  - [x] 已新增 `make microapp-check` 聚合 microapp 回归入口
+  - [x] `ubuntu-ci` 已接入 `make microapp-check`
+- [~] 增加真执行回归
+  - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss` 官方示例真执行回归
+  - [ ] 其余 profile 真执行仍待补齐
 - [ ] 增加 crash/recovery / update 回归
 - [ ] 发布迁移指南
 
