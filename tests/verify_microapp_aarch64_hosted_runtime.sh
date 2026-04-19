@@ -28,16 +28,39 @@ dump_log_and_fail() {
     exit 1
 }
 
+pick_first_available() {
+    local cmd
+    for cmd in "$@"; do
+        if [ -n "$cmd" ] && command -v "$cmd" >/dev/null 2>&1; then
+            printf '%s\n' "$cmd"
+            return 0
+        fi
+    done
+    return 1
+}
+
 TARGET_GCC_BIN="${TARGET_GCC:-}"
 if [ -z "$TARGET_GCC_BIN" ]; then
-    if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-        TARGET_GCC_BIN="aarch64-linux-gnu-gcc"
-    else
-        TARGET_GCC_BIN="gcc"
-    fi
+    TARGET_GCC_BIN="$(pick_first_available aarch64-linux-gnu-gcc clang gcc cc || true)"
+fi
+
+if [ -z "$TARGET_GCC_BIN" ]; then
+    echo "microapp aarch64 hosted runtime skipped (missing compiler)"
+    exit 0
+fi
+
+OBJCOPY_BIN="${OBJCOPY:-}"
+if [ -z "$OBJCOPY_BIN" ]; then
+    OBJCOPY_BIN="$(pick_first_available objcopy llvm-objcopy || true)"
+fi
+
+if [ -z "$OBJCOPY_BIN" ]; then
+    echo "microapp aarch64 hosted runtime skipped (missing objcopy)"
+    exit 0
 fi
 
 export TARGET_GCC="$TARGET_GCC_BIN"
+export OBJCOPY="$OBJCOPY_BIN"
 
 "$ROOT_DIR/bin/uya" run --app microapp --microapp-profile linux_aarch64_hardvm \
     examples/microapp/microcontainer_hello_source.uya >"$RUN_LOG" 2>&1

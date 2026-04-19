@@ -44,7 +44,7 @@
 - 当前 x86_64 真执行回归还额外覆盖了 relocation 和非零 exit code 透传
 - 当前 hosted `call-gate` 装载路径已经把最小 `RELATIVE relocation` 应用扩到 `x86_64 + aarch64`
 - 当前还额外补上了最小 `aarch64 call-gate trampoline` helper；在 arm64 宿主上，compiler helper 也已支持切到私有栈后再调用 payload
-- 仓库里现在还带有一个 arm64-host-gated 的 `linux_aarch64_hardvm` runtime 脚本；非 arm64 宿主会自动跳过
+- 仓库里现在还带有一个 arm64-host-gated 的 `linux_aarch64_hardvm` runtime 脚本；非 arm64 宿主，或缺少必要编译/objcopy 工具时，会自动跳过
 - 当前 x86_64 真执行回归也已经覆盖 fault/error 路径（通过子进程隔离把崩溃收口为可观测信号退出状态）
 - 当前统一 fault 结果模型已经在 x86_64 hosted loader 与 sim/recovery 链路落地，统一输出/记录 `fault_class / fault_code / fault_signal`
 - trap bridge 路径当前仍是“validated-only” 过渡态，但已经有显式 `payload result=validated bridge=trap target=...` 结果面

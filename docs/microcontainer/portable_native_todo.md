@@ -254,7 +254,7 @@
   - [~] hosted runtime 回归已补 host-gated 脚本，真执行仍待在 arm64 宿主上确认
 - [x] 增加 aarch64 trampoline
 - [~] 增加 aarch64 hosted 回归
-  - [x] 已新增 arm64-host-gated runtime 脚本
+  - [x] 已新增 arm64-host-gated runtime 脚本，并带工具链前置探测
   - [ ] 仍待在 arm64 CI / 宿主上实际执行
 
 ### 8.2 macOS arm64
