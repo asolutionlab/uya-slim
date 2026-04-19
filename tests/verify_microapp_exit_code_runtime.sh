@@ -37,6 +37,7 @@ if [ "$run_status" -ne 7 ]; then
     dump_log_and_fail "microapp run 路径退出码异常: $run_status" "$RUN_LOG"
 fi
 grep -a -q "\[microapp loader\] executed mapped payload" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未命中 mapped payload 执行分支" "$RUN_LOG"
+grep -a -q "\[microapp loader\] payload result=exit code=7" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未输出统一 exit result" "$RUN_LOG"
 grep -a -q "\[microapp loader\] payload exited non-zero" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未透传非零退出码" "$RUN_LOG"
 if grep -a -q "\[microapp loader\] launching native payload" "$RUN_LOG"; then
     dump_log_and_fail "microapp run 路径意外回退到了 native payload ELF" "$RUN_LOG"
@@ -51,6 +52,7 @@ if [ "$loader_status" -ne 7 ]; then
     dump_log_and_fail "loader-only 路径退出码异常: $loader_status" "$LOADER_LOG"
 fi
 grep -a -q "\[microapp loader\] executed mapped payload" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未命中 mapped payload 执行分支" "$LOADER_LOG"
+grep -a -q "\[microapp loader\] payload result=exit code=7" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未输出统一 exit result" "$LOADER_LOG"
 grep -a -q "\[microapp loader\] payload exited non-zero" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未透传非零退出码" "$LOADER_LOG"
 if grep -a -q "\[microapp loader\] launching native payload" "$LOADER_LOG"; then
     dump_log_and_fail "loader-only 路径意外回退到了 native payload ELF" "$LOADER_LOG"

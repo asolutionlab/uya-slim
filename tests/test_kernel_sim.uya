@@ -266,6 +266,53 @@ fn build_sim_x86_exit_image(buf: &[byte]) u32 {
     return total;
 }
 
+fn build_sim_x86_exit_code_image(buf: &[byte], code: u32) u32 {
+    const total: u32 = IMAGE_HEADER_SIZE + 8u32;
+    var i: u32 = 0u32;
+    while i < total {
+        buf.ptr[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+    w32(buf, 0, IMAGE_MAGIC);
+    w16(buf, 4, 2);
+    w16(buf, 6, 1);
+    w32(buf, 8, total);
+    w32(buf, 12, 0u32);
+    w32(buf, 16, 8u32);
+    w32(buf, 20, 0u32);
+    w32(buf, 24, 0u32);
+    w32(buf, 96, 0u32);
+    w32(buf, 100, 0u32);
+    w32(buf, 104, 0u32);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 8u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 8u32);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 8u32);
+    w32(buf, 124, 1u32);
+    w32(buf, 128, 0u32);
+    w32(buf, 60, 0u32);
+    buf.ptr[64] = BUILD_MODE_CONTAINER;
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_x86_64);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_call_gate);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 8u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 8u32);
+    buf.ptr[IMAGE_HEADER_SIZE as usize] = 184 as byte;              // mov eax, imm32
+    w32(buf, IMAGE_HEADER_SIZE as usize + 1usize, code);
+    buf.ptr[(IMAGE_HEADER_SIZE + 5u32) as usize] = 195 as byte;     // ret
+    buf.ptr[(IMAGE_HEADER_SIZE + 6u32) as usize] = 144 as byte;     // nop
+    buf.ptr[(IMAGE_HEADER_SIZE + 7u32) as usize] = 144 as byte;     // nop
+    var digest: [byte: 32] = [];
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
+    i = 0u32;
+    while i < 32u32 {
+        buf.ptr[(28u32 + i) as usize] = digest[i as usize];
+        i = i + 1u32;
+    }
+    return total;
+}
+
 fn make_kernel() SimKernel {
     return SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
@@ -364,6 +411,8 @@ test "sim_container_crash_restart" {
 
     const t1: u32 = try sim_tick(&k, &crash_result);
     try assert_eq_i32(t1 as i32, 0);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_FAULT as i32);
+    try assert_eq_i32(k.loaded_fault_code[0] as i32, 1);
 
     const t2: u32 = try sim_tick(&k, &yield_result);
     try assert_eq_i32(t2 as i32, 0);
@@ -507,6 +556,40 @@ test "sim_load_image_x86_call_gate_executes_mapped_payload" {
     var is_empty: i32 = 0;
     if st == ContainerState.cs_empty { is_empty = 1; }
     try assert_eq_i32(is_empty, 1);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_EXIT as i32);
+    try assert_eq_i32(k.loaded_exit_code[0], 0);
+    try assert_eq_i32(k.loaded_fault_code[0] as i32, 0);
+
+    _ = sys_munmap(backing_raw as *void, backing_size) catch {};
+}
+
+test "sim_load_image_x86_call_gate_records_nonzero_exit_code" {
+    const backing_size: usize = 65536;
+    const backing_raw: &void = try sys_mmap(
+        null as &void,
+        backing_size,
+        PROT_READ | PROT_WRITE | PROT_EXEC,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    k.host_ctx.pm.base = backing_raw as &byte;
+    k.host_ctx.pm.size = backing_size as u32;
+
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_x86_exit_code_image(img[0: 256], 7u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+    const cid: u32 = try sim_tick_loaded(&k);
+    try assert_eq_i32(cid as i32, 0);
+    const st: ContainerState = try scheduler_get_slot_state(&k.sched, 0u32);
+    var is_empty: i32 = 0;
+    if st == ContainerState.cs_empty { is_empty = 1; }
+    try assert_eq_i32(is_empty, 1);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_EXIT as i32);
+    try assert_eq_i32(k.loaded_exit_code[0], 7);
+    try assert_eq_i32(k.loaded_fault_code[0] as i32, 0);
 
     _ = sys_munmap(backing_raw as *void, backing_size) catch {};
 }

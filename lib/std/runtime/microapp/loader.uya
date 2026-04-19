@@ -99,6 +99,18 @@ fn microapp_hosted_system_status_signal(wstatus: i32) i32 {
     return sig;
 }
 
+fn microapp_hosted_report_payload_result(exit_code: i32, signal_code: i32) void {
+    if signal_code != 0 {
+        @println("[microapp loader] payload result=fault signal=${signal_code}");
+        return;
+    }
+    if exit_code != 0 {
+        @println("[microapp loader] payload result=exit code=${exit_code}");
+        return;
+    }
+    @println("[microapp loader] payload result=ok");
+}
+
 fn microapp_hosted_resolve_uapp_path(argc: i32, argv: & &byte, default_uapp_path: &byte) &byte {
     if argc > 1 && argv != null {
         const arg_path: *byte = argv[1];
@@ -156,10 +168,10 @@ fn microapp_hosted_run_mapped_payload(kernel: &SimKernel) i32 {
             @println("[microapp loader] unexpected cid");
             _exit(5);
         }
-        if kernel.loaded_result_kind[0] == 1u32 {
+        if kernel.loaded_result_kind[0] == SIM_LOADED_RESULT_EXIT {
             _exit(kernel.loaded_exit_code[0]);
         }
-        if kernel.loaded_result_kind[0] == 2u32 {
+        if kernel.loaded_result_kind[0] == SIM_LOADED_RESULT_FAULT {
             _exit(128 + kernel.loaded_fault_code[0] as i32);
         }
         _exit(0);
@@ -226,6 +238,7 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
         const payload_signal: i32 = microapp_hosted_system_status_signal(payload_status);
         @println("[microapp loader] tick completed");
         @println("[microapp loader] executed mapped payload");
+        microapp_hosted_report_payload_result(payload_exit, payload_signal);
         if payload_exit != 0 {
             if payload_signal != 0 {
                 @println("[microapp loader] payload fault signal=${payload_signal}");
@@ -249,6 +262,7 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
         const payload_status: i32 = microapp_hosted_run_payload_exe(native_payload_exe_path);
         const payload_exit: i32 = microapp_hosted_exit_code_from_system_status(payload_status);
         const payload_signal: i32 = microapp_hosted_system_status_signal(payload_status);
+        microapp_hosted_report_payload_result(payload_exit, payload_signal);
         if payload_exit != 0 {
             if payload_signal != 0 {
                 @println("[microapp loader] payload fault signal=${payload_signal}");
