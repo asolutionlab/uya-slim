@@ -179,6 +179,7 @@ const MICROAPP_BRIDGE_UNKNOWN_RAW: u32 = 0u32;
 const MICROAPP_BRIDGE_TRAP_RAW: u32 = 1u32;
 const MICROAPP_BRIDGE_CALL_GATE_RAW: u32 = 2u32;
 const MICROAPP_VADDR_BASE: u32 = 65536u32;
+const MICROAPP_DEFAULT_STACK_HINT_BYTES: u32 = 65536u32;
 
 struct MicroAppTargetProfile {
     profile_id: u32,
@@ -350,6 +351,13 @@ fn microapp_target_default_bridge_kind_raw(target_arch_raw: u32) u32 {
         return MICROAPP_BRIDGE_TRAP_RAW;
     }
     return MICROAPP_BRIDGE_UNKNOWN_RAW;
+}
+
+fn microapp_profile_default_stack_hint(profile: &MicroAppTargetProfile) u32 {
+    if profile != null && profile.bridge_kind_raw == MICROAPP_BRIDGE_CALL_GATE_RAW {
+        return MICROAPP_DEFAULT_STACK_HINT_BYTES;
+    }
+    return 0u32;
 }
 
 fn microapp_profile_name(profile_id: u32) &byte {
@@ -776,7 +784,7 @@ fn write_microapp_payload_obj(
     const profile_id: u32 = profile.profile_id;
     const image_flags: u32 = 0u32;
     const bridge_kind_raw: u32 = profile.bridge_kind_raw;
-    const stack_size_hint: u32 = 0u32;
+    const stack_size_hint: u32 = microapp_profile_default_stack_hint(&profile);
     var entry_va: u32 = 0u32;
     var code_va: u32 = 0u32;
     var rodata_va: u32 = 0u32;
@@ -5079,6 +5087,25 @@ fn generate_libc(output_dir: &byte) i32 {
     fprintf(header_file, "static int32_t uya_call0_i32(void *fn) {\n" as *byte);
     fprintf(header_file, "    typedef int32_t (*uya_fn0_i32)(void);\n" as *byte);
     fprintf(header_file, "    return ((uya_fn0_i32)fn)();\n" as *byte);
+    fprintf(header_file, "}\n" as *byte);
+    fprintf(header_file, "static int32_t uya_call0_i32_stack(void *fn, void *stack_top) {\n" as *byte);
+    fprintf(header_file, "    typedef int32_t (*uya_fn0_i32)(void);\n" as *byte);
+    fprintf(header_file, "#if defined(__x86_64__) || defined(_M_X64)\n" as *byte);
+    fprintf(header_file, "    uintptr_t top = ((uintptr_t)stack_top) & ~(uintptr_t)0xFUL;\n" as *byte);
+    fprintf(header_file, "    int32_t ret;\n" as *byte);
+    fprintf(header_file, "    __asm__ volatile(\n" as *byte);
+    fprintf(header_file, "        \"mov %%rsp, %%rbx\\n\\t\"\n" as *byte);
+    fprintf(header_file, "        \"mov %1, %%rsp\\n\\t\"\n" as *byte);
+    fprintf(header_file, "        \"call *%2\\n\\t\"\n" as *byte);
+    fprintf(header_file, "        \"mov %%rbx, %%rsp\\n\\t\"\n" as *byte);
+    fprintf(header_file, "        : \"=a\"(ret)\n" as *byte);
+    fprintf(header_file, "        : \"r\"((void *)top), \"r\"(fn)\n" as *byte);
+    fprintf(header_file, "        : \"rbx\", \"rcx\", \"rdx\", \"rsi\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"memory\", \"cc\");\n" as *byte);
+    fprintf(header_file, "    return ret;\n" as *byte);
+    fprintf(header_file, "#else\n" as *byte);
+    fprintf(header_file, "    (void)stack_top;\n" as *byte);
+    fprintf(header_file, "    return ((uya_fn0_i32)fn)();\n" as *byte);
+    fprintf(header_file, "#endif\n" as *byte);
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "static int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte);
     fprintf(header_file, "    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte);

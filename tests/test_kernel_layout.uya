@@ -40,6 +40,8 @@ test "syscall_numbers_match_abi_doc" {
     try assert_eq_i32(SYS_ALLOC as i32, 2);
     try assert_eq_i32(SYS_IO as i32, 3);
     try assert_eq_i32(SYS_YIELD as i32, 4);
+    try assert_eq_i32(SYS_TIME as i32, 5);
     try assert_eq_i32(syscall_num_is_known(SYS_YIELD), 1);
+    try assert_eq_i32(syscall_num_is_known(SYS_TIME), 1);
     try assert_eq_i32(syscall_num_is_known(99), 0);
 }

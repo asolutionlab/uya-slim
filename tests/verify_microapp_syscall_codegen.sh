@@ -96,4 +96,19 @@ if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_TIME,' "$STD_TIME_OUT"; then
     exit 1
 fi
 
+for path in "$MICRO_OUT" "$STD_MICRO_OUT" "$STD_ALLOC_YIELD_OUT" "$STD_TIME_OUT"; do
+    if grep -F -q 'posix_memalign(' "$path"; then
+        echo "✗ microapp 生成代码不应直接依赖宿主 posix_memalign: $path"
+        exit 1
+    fi
+    if grep -F -q 'sched_yield(' "$path"; then
+        echo "✗ microapp 生成代码不应直接依赖宿主 sched_yield: $path"
+        exit 1
+    fi
+    if grep -F -q 'gettimeofday(' "$path"; then
+        echo "✗ microapp 生成代码不应直接依赖宿主 gettimeofday: $path"
+        exit 1
+    fi
+done
+
 echo "microapp syscall redirection ok"

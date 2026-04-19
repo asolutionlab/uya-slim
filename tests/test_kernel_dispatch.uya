@@ -14,6 +14,10 @@ fn setup_null_mm_ctx(sch: &Scheduler) KernelHostCtx {
         pm: PhysMem{ base: null, size: 0 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        heap_base_vpn: [],
+        heap_next_vpn: [],
+        stack_base_vpn: [],
+        stack_page_count: [],
         io_allowed_devices: [],
         io_allowed_ops: [],
         io_available_devices: 0,
@@ -190,4 +194,25 @@ test "dispatch_invalid_caller_slot" {
         0u32;
     };
     try assert_eq_i32(bad, 1);
+}
+
+test "dispatch_time_returns_value" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    const now0: u32 = try syscall_dispatch(&ctx, 0, SYS_TIME, 0, 0);
+    const now1: u32 = try syscall_dispatch(&ctx, 0, SYS_TIME, 0, 0);
+    var nonzero: i32 = 0;
+    if now0 != 0u32 {
+        nonzero = 1;
+    }
+    try assert_eq_i32(nonzero, 1);
+    var ordered: i32 = 0;
+    if now1 >= now0 {
+        ordered = 1;
+    }
+    try assert_eq_i32(ordered, 1);
 }

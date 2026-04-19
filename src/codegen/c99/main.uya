@@ -2873,6 +2873,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 同时把前向声明写入 split_protos.h，供跨 TU 调用（如 lib/libc/pthread.uya）
     if codegen.split_protos_out != null {
         fputs("int32_t uya_call0_i32(void *fn);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("int32_t uya_call0_i32_stack(void *fn, void *stack_top);\n" as *byte, codegen.split_protos_out as *void);
         fputs("int32_t uya_thread_call_i32(void *fn, int32_t arg);\n" as *byte, codegen.split_protos_out as *void);
         fputs("uint32_t uya_thread_call_u32(void *fn, uint32_t arg);\n" as *byte, codegen.split_protos_out as *void);
         fputs("size_t uya_thread_call_usize(void *fn, size_t arg);\n" as *byte, codegen.split_protos_out as *void);
@@ -2887,6 +2888,25 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("int32_t uya_call0_i32(void *fn) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int32_t (*uya_fn0_i32)(void);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_fn0_i32)fn)();\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("int32_t uya_call0_i32_stack(void *fn, void *stack_top) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef int32_t (*uya_fn0_i32)(void);\n" as *byte, codegen.emit_stream as *void);
+    fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
+    fputs("    uintptr_t top = ((uintptr_t)stack_top) & ~(uintptr_t)0xFUL;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int32_t ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+    fputs("        \"mov %%rsp, %%rbx\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+    fputs("        \"mov %1, %%rsp\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+    fputs("        \"call *%2\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+    fputs("        \"mov %%rbx, %%rsp\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+    fputs("        : \"=a\"(ret)\n" as *byte, codegen.emit_stream as *void);
+    fputs("        : \"r\"((void *)top), \"r\"(fn)\n" as *byte, codegen.emit_stream as *void);
+    fputs("        : \"rbx\", \"rcx\", \"rdx\", \"rsi\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("#else\n" as *byte, codegen.emit_stream as *void);
+    fputs("    (void)stack_top;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_fn0_i32)fn)();\n" as *byte, codegen.emit_stream as *void);
+    fputs("#endif\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte, codegen.emit_stream as *void);

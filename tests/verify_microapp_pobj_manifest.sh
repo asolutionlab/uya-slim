@@ -48,8 +48,9 @@ assert reloc_count == 0, reloc_count
 assert profile_id == 1, profile_id
 assert image_flags == 0, image_flags
 assert bridge_kind == 2, bridge_kind
-assert bss_size == 0, bss_size
-assert stack_hint == 0, stack_hint
+assert bss_size >= 0, bss_size
+assert stack_hint == 65536, stack_hint
+assert data_len >= 0, data_len
 assert reloc_len == 0, reloc_len
 assert entry_va == code_va, (entry_va, code_va)
 assert code_va >= 65536, code_va

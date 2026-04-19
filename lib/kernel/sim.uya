@@ -17,6 +17,7 @@ use kernel.syscall;
 use kernel.update;
 
 extern fn uya_call0_i32(fn_ptr: &void) i32;
+extern fn uya_call0_i32_stack(fn_ptr: &void, stack_top: &void) i32;
 
 // ── Container entry function type ──
 // fn(ctx: &SimContainerCtx) i32
@@ -52,7 +53,7 @@ export struct SimKernel {
 export fn sim_kernel_make() SimKernel {
     return SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], heap_base_vpn: [], heap_next_vpn: [], stack_base_vpn: [], stack_page_count: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -320,6 +321,18 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     const base_vpn: u32 = min_va / PAGE_SIZE;
     const end_vpn: u32 = (max_end - 1u32) / PAGE_SIZE;
     const pages_needed: u32 = end_vpn - base_vpn + 1u32;
+    var stack_pages: u32 = 0u32;
+    var stack_base_vpn: u32 = 0u32;
+    if hdr.stack_size_hint > 0u32 {
+        stack_pages = (hdr.stack_size_hint + PAGE_SIZE - 1u32) / PAGE_SIZE;
+        if stack_pages == 0u32 || stack_pages >= PAGE_TABLE_ENTRIES {
+            return error.NoMemory;
+        }
+        stack_base_vpn = PAGE_TABLE_ENTRIES - stack_pages;
+        if stack_base_vpn <= base_vpn + pages_needed {
+            return error.NoMemory;
+        }
+    }
     var first_ppn: u32 = 0u32;
     var page_idx: u32 = 0u32;
     while page_idx < pages_needed {
@@ -343,6 +356,22 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         try pt_map(pt, base_vpn + page_idx, first_ppn + page_idx, flags);
         page_idx = page_idx + 1u32;
     }
+    var stack_first_ppn: u32 = 0u32;
+    page_idx = 0u32;
+    while page_idx < stack_pages {
+        const ppn: u32 = try page_alloc(&k.host_ctx.pool);
+        if page_idx == 0u32 {
+            stack_first_ppn = ppn;
+        }
+        const base: &byte = try physmem_ptr(&k.host_ctx.pm, ppn, 0u32);
+        var off: u32 = 0u32;
+        while off < PAGE_SIZE {
+            base[off] = 0 as byte;
+            off = off + 1u32;
+        }
+        try pt_map(pt, stack_base_vpn + page_idx, ppn, PTE_R | PTE_W | PTE_U);
+        page_idx = page_idx + 1u32;
+    }
     const code_slice: &[byte] = image_bytes[hdr.code_offset as usize: hdr.code_size as usize];
     try sim_copy_segment(&k.host_ctx.pm, first_ppn, base_vpn, code_slice, hdr.code_va);
     if hdr.rodata_size > 0u32 {
@@ -362,6 +391,10 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     sim_loaded_valid_ref(k, cid)[0] = 1u32;
     sim_loaded_base_vpn_ref(k, cid)[0] = base_vpn;
     sim_loaded_page_count_ref(k, cid)[0] = pages_needed;
+    k.host_ctx.heap_base_vpn[cid] = base_vpn + pages_needed;
+    k.host_ctx.heap_next_vpn[cid] = base_vpn + pages_needed;
+    k.host_ctx.stack_base_vpn[cid] = stack_base_vpn;
+    k.host_ctx.stack_page_count[cid] = stack_pages;
     sim_entry_fn_ref(k, cid)[0] = -1;
     try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
     try scheduler_set_priority(&k.sched, cid, priority);
@@ -385,7 +418,16 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         }
     } else if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
         const entry_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 1u32, ACCESS_X);
-        const exit_code: i32 = uya_call0_i32(entry_ptr as &void);
+        var exit_code: i32 = 0;
+        if k.host_ctx.stack_page_count[cid] > 0u32 {
+            const stack_top_va: u32 = (k.host_ctx.stack_base_vpn[cid] + k.host_ctx.stack_page_count[cid]) * PAGE_SIZE;
+            const stack_probe_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, stack_top_va - 16u32, 16u32, ACCESS_W);
+            const stack_top_addr: usize = @usize_from_ptr(stack_probe_ptr as &void) + 16usize;
+            const stack_top_ptr: &byte = @ptr_from_usize(stack_top_addr) as &byte;
+            exit_code = uya_call0_i32_stack(entry_ptr as &void, stack_top_ptr as &void);
+        } else {
+            exit_code = uya_call0_i32(entry_ptr as &void);
+        }
         if exit_code == 0 {
             return 1;
         }

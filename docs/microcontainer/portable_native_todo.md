@@ -103,7 +103,7 @@
 - [~] v1 `.uapp` / v2 `.uapp` 双版本读取与显式 inspect/verify CLI
   - [x] 已新增 `inspect-image` CLI，可直接查看 `.pobj/.uapp` 头信息
   - [x] 已新增 `verify-image` CLI，可直接校验 `.pobj/.uapp`
-  - [ ] 仍缺更完整的版本覆盖
+  - [x] 已补齐 `v1 .uapp / v2 .uapp / v5-v8 .pobj` CLI 回归覆盖
 
 ---
 
@@ -174,7 +174,10 @@
   - [x] `std.microapp.io` wrapper
   - [x] `std.microapp.mem` / `std.microapp.task` wrapper
   - [x] `std.microapp.time` wrapper
-- [ ] payload 中不再出现 `write_stdout_bytes` / `posix_memalign` / `sched_yield` 这类宿主 helper 符号耦合
+- [x] kernel/runtime 侧 syscall ABI 已补齐 `SYS_TIME`
+- [~] payload 中不再出现 `write_stdout_bytes` / `posix_memalign` / `sched_yield` 这类宿主 helper 符号耦合
+  - [x] 当前 codegen 回归已覆盖 `posix_memalign / sched_yield / gettimeofday` 不直接出现在 microapp payload 里
+  - [ ] 仍未切到真正 runtime call-gate / trap bridge
 
 ---
 
@@ -196,7 +199,11 @@
 - [~] 用 `mmap/mprotect` 建立 `RX/R/RW` 映射
   - [x] hosted loader 已分配可执行 backing，并由页表保留 `RX/R/RW` 语义
   - [x] x86_64 hosted loader 已按页表权限对宿主页执行 `mprotect`
-- [ ] 建立 stack / heap 初始区域
+- [~] 建立 stack / heap 初始区域
+  - [x] `SYS_ALLOC` 已从镜像末尾之后的 heap 区顺序分配
+  - [x] `stack_size_hint` 已在 sim 中保留高地址栈页
+  - [x] 真实 microapp 构建产物已默认写入 `stack_size_hint`
+  - [x] x86_64 call-gate 真执行已切到容器私有栈页
 - [ ] 建立 call-gate 页面或 trampoline
 
 ### 7.3 真执行

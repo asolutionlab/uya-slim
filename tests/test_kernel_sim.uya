@@ -19,6 +19,23 @@ use libc.MAP_ANONYMOUS;
 use std.crypto.sha256;
 use std.testing.assert_eq_i32;
 
+extern fn uya_call0_i32(fn_ptr: &void) i32;
+extern fn uya_call0_i32_stack(fn_ptr: &void, stack_top: &void) i32;
+
+var g_stack_probe_base: usize = 0usize;
+var g_stack_probe_end: usize = 0usize;
+
+fn stack_probe_in_range() i32 {
+    var local: byte = 0 as byte;
+    const local_addr: usize = @usize_from_ptr(&local as &void);
+    if local_addr >= g_stack_probe_base && local_addr < g_stack_probe_end {
+        return 1;
+    }
+    return 0;
+}
+
+const stack_probe_keep: &void = &stack_probe_in_range as &void;
+
 fn w32(buf: &[byte], off: usize, val: u32) void {
     buf.ptr[off] = (val & 255u32) as byte;
     buf.ptr[off + 1] = ((val >> 8) & 255u32) as byte;
@@ -160,6 +177,49 @@ fn build_sim_image_with_bss(buf: &[byte], ro_len: u32, bss_len: u32) u32 {
     return total;
 }
 
+fn build_sim_image_with_stack(buf: &[byte], ro_len: u32, stack_hint: u32) u32 {
+    const total: u32 = IMAGE_HEADER_SIZE + 4u32 + ro_len;
+    var i: u32 = 0u32;
+    while i < total {
+        buf.ptr[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+    w32(buf, 0, IMAGE_MAGIC);
+    w16(buf, 4, 2);
+    w16(buf, 6, 1);
+    w32(buf, 8, total);
+    w32(buf, 12, 0u32);
+    w32(buf, 16, 4u32);
+    w32(buf, 20, ro_len);
+    w32(buf, 24, 0u32);
+    w32(buf, 96, 0u32);
+    w32(buf, 100, 0u32);
+    w32(buf, 104, stack_hint);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 124, 0u32);
+    w32(buf, 128, 0u32);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 60, 0u32);
+    buf.ptr[64] = BUILD_MODE_CONTAINER;
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_trap);
+    w32(buf, IMAGE_HEADER_SIZE as usize, 115u32);
+    var digest: [byte: 32] = [];
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
+    i = 0u32;
+    while i < 32u32 {
+        buf.ptr[(28u32 + i) as usize] = digest[i as usize];
+        i = i + 1u32;
+    }
+    return total;
+}
+
 fn build_sim_x86_exit_image(buf: &[byte]) u32 {
     const total: u32 = IMAGE_HEADER_SIZE + 4u32;
     var i: u32 = 0u32;
@@ -209,7 +269,7 @@ fn build_sim_x86_exit_image(buf: &[byte]) u32 {
 fn make_kernel() SimKernel {
     return SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], heap_base_vpn: [], heap_next_vpn: [], stack_base_vpn: [], stack_page_count: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -403,6 +463,8 @@ test "sim_load_image_data_page_sets_writable_bit" {
     try assert_eq_i32(has_w, 1);
     try assert_eq_i32(k.loaded_image_base_vpn[0] as i32, 0);
     try assert_eq_i32(k.loaded_image_page_count[0] as i32, 1);
+    try assert_eq_i32(k.host_ctx.heap_base_vpn[0] as i32, 1);
+    try assert_eq_i32(k.host_ctx.heap_next_vpn[0] as i32, 1);
 }
 
 test "sim_load_image_bss_page_is_zero_and_writable" {
@@ -447,4 +509,63 @@ test "sim_load_image_x86_call_gate_executes_mapped_payload" {
     try assert_eq_i32(is_empty, 1);
 
     _ = sys_munmap(backing_raw as *void, backing_size) catch {};
+}
+
+test "sim_load_image_alloc_starts_after_loaded_pages" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536 * 4] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536 * 4;
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_image(img[0: 256], 4u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+
+    const heap_va: u32 = try sim_syscall(&k, 0u32, SYS_ALLOC, 1024u32, 0u32);
+    try assert_eq_i32(heap_va as i32, 65536);
+    try assert_eq_i32(k.host_ctx.heap_next_vpn[0] as i32, 2);
+}
+
+test "sim_load_image_stack_pages_mapped_at_top" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536 * 4] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536 * 4;
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_image_with_stack(img[0: 256], 0u32, 4096u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+
+    try assert_eq_i32(k.host_ctx.stack_base_vpn[0] as i32, 127);
+    try assert_eq_i32(k.host_ctx.stack_page_count[0] as i32, 1);
+    const stack_ptr: &byte = try mmu_translate_ptr(&k.host_ctx.pts[0], &k.host_ctx.pm, 127u32 * 65536u32, 1u32, ACCESS_W);
+    try assert_eq_i32(stack_ptr[0] as i32, 0);
+
+    const heap_va: u32 = try sim_syscall(&k, 0u32, SYS_ALLOC, 1u32, 0u32);
+    try assert_eq_i32(heap_va as i32, 65536);
+}
+
+test "call_gate_stack_helper_switches_to_private_stack" {
+    const stack_size: usize = 65536;
+    const raw_stack: &void = try sys_mmap(
+        null as &void,
+        stack_size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+    const stack_base: usize = @usize_from_ptr(raw_stack);
+    g_stack_probe_base = stack_base;
+    g_stack_probe_end = stack_base + stack_size;
+
+    const normal_ret: i32 = uya_call0_i32(stack_probe_keep as &void);
+    try assert_eq_i32(normal_ret, 0);
+
+    const stack_top_addr: usize = stack_base + stack_size;
+    const stack_top_ptr: &byte = @ptr_from_usize(stack_top_addr) as &byte;
+    const switched_ret: i32 = uya_call0_i32_stack(stack_probe_keep as &void, stack_top_ptr as &void);
+    try assert_eq_i32(switched_ret, 1);
+
+    _ = sys_munmap(raw_stack as *void, stack_size) catch {};
 }
