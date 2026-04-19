@@ -1180,6 +1180,10 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
         checker_report_error(checker, node, "libc 模块是扁平化的，请使用 'use libc.xxx;' 而不是 'use libc.stdio.xxx;'" as *byte);
         return 0;
     }
+
+    if checker_microapp_forbid_host_api_import(checker, node, module_name, item_name) != 0 {
+        return 0;
+    }
     
     // 查找或创建模块（如果模块不存在，先创建它）
     // 这样可以处理 main 模块等可能还没有导出项的模块

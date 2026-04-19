@@ -277,8 +277,13 @@
 - [~] 用 `std.microapp.*` 重写当前示例
   - [x] `examples/microapp/microcontainer_hello_source.uya`
   - [ ] 其余示例仍待迁移
-- [ ] 审计现有 microapp 示例里宿主耦合 API
-- [ ] 为不允许的宿主 API 增加明确诊断
+- [~] 审计现有 microapp 示例里宿主耦合 API
+  - [x] 已区分 portable source 与 hosted build/load 工具示例
+  - [x] 当前 portable source 样例已纳入无 `libc/std.time` 依赖回归
+- [~] 为不允许的宿主 API 增加明确诊断
+  - [x] 用户 microapp 直接 `use/call libc/*` / `std.time` 现在会在编译期报 `E4004`
+  - [x] 已增加专门的 host API 诊断回归覆盖
+  - [ ] 其余 hosted helper / bridge 误用仍待继续审计
 - [ ] 为“一次编写、多个 profile 编译”增加示例矩阵
 
 验收标准：

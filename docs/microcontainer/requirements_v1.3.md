@@ -117,6 +117,7 @@
 - 禁止 `@asm`，违规则报 `E4001`
 - 禁止 `extern`，违规则报 `E4002`
 - 禁止物理地址字面量访问设备寄存器区，违规则报 `E4003`
+- 禁止直接导入或调用宿主 `libc/std.time` API，违规则报 `E4004`
 - 指针解引用自动注入 `uya_mmu_translate`
 - 数组访问自动注入边界检查
 
@@ -412,6 +413,7 @@
 | E4001 | microapp 模式禁止 `@asm`（用户代码） |
 | E4002 | microapp 模式禁止 `extern fn/var`（用户代码） |
 | E4003 | microapp 模式禁止整数字面量→指针转换 |
+| E4004 | microapp 模式禁止直接导入或调用宿主 `libc/std.time` API |
 | `lib/kernel/` 模块发现 | `kernel.xxx` 自动解析为 `lib/kernel/xxx.uya` |
 | `@len` 安全证明传播 | if 块内嵌套数组访问的约束传播修复 |
 

@@ -33,6 +33,9 @@
 - 当前 `.uapp` 可以由 `build --app microapp ... -o xxx.uapp` 直接生成，也可以先产 `.pobj` 再用 `pack-image` 打包；宿主示例仍保留用于对照和调试
 - 示例 loader 现在可通过命令行参数接收任意 `.uapp` 路径，默认仍回退到示例镜像
 - 热更新槽容量与示例 loader 读取缓冲已经拆成两个独立上限，便于后续分别调优
+- `examples/microapp/microcontainer_hello_source.uya` 是当前推荐的可移植 microapp 源码样例
+- `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
+- 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`
 - 默认 profile 推导优先级是：`--microapp-profile` > `MICROAPP_TARGET_PROFILE` > `MICROAPP_TARGET_ARCH(+TARGET_OS)` > `TARGET_OS/TARGET_ARCH` > `HOST_OS/HOST_ARCH` > `linux_x86_64_hardvm`
 - `MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；若未覆盖，则走当前 profile 自带的默认 gcc

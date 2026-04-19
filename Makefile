@@ -590,6 +590,22 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 portable microapp 源码审计..."
+	@./tests/verify_microapp_portable_sources.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ portable microapp 源码审计失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 microapp host API 诊断..."
+	@./tests/verify_microapp_host_api_diagnostics.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp host API 诊断验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 microapp verify-image..."
 	@./tests/verify_microapp_verify_cli.sh; \
 	VERIFY_EXIT=$$?; \
