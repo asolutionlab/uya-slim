@@ -30,6 +30,7 @@ extern fn uya_call0_i32_stack(fn_ptr: &void, stack_top: &void) i32;
 export const SIM_LOADED_RESULT_NONE: u32 = 0u32;
 export const SIM_LOADED_RESULT_EXIT: u32 = 1u32;
 export const SIM_LOADED_RESULT_FAULT: u32 = 2u32;
+export const SIM_LOADED_RESULT_VALIDATED: u32 = 3u32;
 export const SIM_FAULT_CLASS_NONE: u32 = 0u32;
 export const SIM_FAULT_CLASS_SEGV: u32 = 1u32;
 export const SIM_FAULT_CLASS_ILL: u32 = 2u32;
@@ -345,6 +346,17 @@ export fn sim_store_loaded_exit_result(k: &SimKernel, cid: u32, exit_code: i32) 
     }
     sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_EXIT;
     sim_loaded_exit_code_ref(k, cid)[0] = exit_code;
+    sim_loaded_fault_class_ref(k, cid)[0] = SIM_FAULT_CLASS_NONE;
+    sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
+    sim_loaded_fault_signal_ref(k, cid)[0] = 0u32;
+}
+
+export fn sim_store_loaded_validated_result(k: &SimKernel, cid: u32) !void {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    sim_loaded_result_kind_ref(k, cid)[0] = SIM_LOADED_RESULT_VALIDATED;
+    sim_loaded_exit_code_ref(k, cid)[0] = 0;
     sim_loaded_fault_class_ref(k, cid)[0] = SIM_FAULT_CLASS_NONE;
     sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
     sim_loaded_fault_signal_ref(k, cid)[0] = 0u32;
@@ -703,9 +715,11 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
     const pt: &PageTable = sim_pt_ref(k, cid);
     const insn_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, code_off, 4u32, ACCESS_X);
     const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
-    if hdr.target_arch == ImageTargetArch.ita_rv32 {
-        if insn != 115u32 {
-            return error.ImgInsnDenied;
+    if hdr.bridge_kind == ImageBridgeKind.ibk_trap {
+        if hdr.target_arch == ImageTargetArch.ita_rv32 {
+            if insn != 115u32 {
+                return error.ImgInsnDenied;
+            }
         }
     } else if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
         const entry_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 1u32, ACCESS_X);
@@ -747,6 +761,9 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
             rodata_cur = rodata_cur + check_size;
             rodata_rem = rodata_rem - check_size;
         }
+    }
+    if hdr.bridge_kind == ImageBridgeKind.ibk_trap {
+        try sim_store_loaded_validated_result(k, cid);
     }
     return 1;
 }

@@ -212,7 +212,9 @@
 
 - [~] 把 `sim_exec_loaded()` 从“校验入口”升级为“跳转入口执行”
   - [x] `linux_x86_64_hardvm + ibk_call_gate` 已跳转执行 mapped payload
-  - [ ] trap bridge / 其他架构仍停留在校验或过渡态
+  - [~] trap bridge / 其他架构仍停留在校验或过渡态
+    - [x] trap bridge 路径已显式写入 `validated` 结果面，不再隐式折叠为 `exit 0`
+    - [ ] 其他架构仍待补齐真正执行路径
 - [~] 入口调用前应用 relocation
   - [x] `linux_x86_64_hardvm` 已在入口前应用最小 `RELATIVE` relocation
   - [ ] 其余架构 / relocation 类型仍待继续规范化与接线
@@ -319,6 +321,7 @@
   - [x] `macos-ci` 已接入 `make microapp-hosted-smoke`
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
+  - [x] trap bridge 已补充 `validated` 结果面 smoke
   - [ ] 其余 profile 真执行仍待补齐
 - [~] 增加 crash/recovery / update 回归
   - [x] 已新增 `make microapp-recovery-check` 入口

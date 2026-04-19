@@ -27,6 +27,32 @@ export const MICROAPP_HOSTED_MAX_IMAGE_SIZE: usize = 2097152;  // 2 MiB
 export const MICROAPP_HOSTED_BACKING_SIZE: usize = 131072;     // 2 pages
 export const MICROAPP_HOSTED_DEFAULT_PRIORITY: u32 = 16u32;
 
+fn microapp_hosted_target_arch_name(target_arch: ImageTargetArch) &byte {
+    if target_arch == ImageTargetArch.ita_rv32 {
+        return "rv32" as &byte;
+    }
+    if target_arch == ImageTargetArch.ita_x86_64 {
+        return "x86_64" as &byte;
+    }
+    if target_arch == ImageTargetArch.ita_aarch64 {
+        return "aarch64" as &byte;
+    }
+    if target_arch == ImageTargetArch.ita_xtensa {
+        return "xtensa" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
+fn microapp_hosted_bridge_name(bridge_kind: ImageBridgeKind) &byte {
+    if bridge_kind == ImageBridgeKind.ibk_trap {
+        return "trap" as &byte;
+    }
+    if bridge_kind == ImageBridgeKind.ibk_call_gate {
+        return "call_gate" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
 fn microapp_hosted_prot_from_pte(pte: u32) i32 {
     var prot: i32 = 0;
     if (pte & PTE_R) != 0u32 {
@@ -113,6 +139,17 @@ fn microapp_hosted_store_wait_status(kernel: &SimKernel, cid: u32, wstatus: i32)
 fn microapp_hosted_report_payload_result(kernel: &SimKernel, cid: u32) void {
     if cid >= 8u32 {
         @println("[microapp loader] invalid cid for payload result");
+        return;
+    }
+    if kernel.loaded_result_kind[cid] == SIM_LOADED_RESULT_VALIDATED {
+        var target_arch_name: &byte = "unknown" as &byte;
+        var bridge_name: &byte = "unknown" as &byte;
+        if kernel.loaded_image_valid[cid] != 0u32 {
+            const hdr: ImageHeader = kernel.loaded_image_headers[cid];
+            target_arch_name = microapp_hosted_target_arch_name(hdr.target_arch);
+            bridge_name = microapp_hosted_bridge_name(hdr.bridge_kind);
+        }
+        @println("[microapp loader] payload result=validated bridge=${bridge_name} target=${target_arch_name}");
         return;
     }
     if kernel.loaded_result_kind[cid] == SIM_LOADED_RESULT_FAULT {
@@ -316,22 +353,14 @@ export fn microapp_hosted_loader_run(argc: i32, argv: & &byte, default_uapp_path
             @println("[microapp loader] unexpected cid");
             return 5;
         }
-        var target_arch_name: &byte = "unknown" as &byte;
-        if loaded_hdr.target_arch == ImageTargetArch.ita_rv32 {
-            target_arch_name = "rv32" as &byte;
-        } else if loaded_hdr.target_arch == ImageTargetArch.ita_x86_64 {
-            target_arch_name = "x86_64" as &byte;
-        } else if loaded_hdr.target_arch == ImageTargetArch.ita_aarch64 {
-            target_arch_name = "aarch64" as &byte;
-        } else if loaded_hdr.target_arch == ImageTargetArch.ita_xtensa {
-            target_arch_name = "xtensa" as &byte;
+        if kernel.loaded_result_kind[0] == SIM_LOADED_RESULT_VALIDATED {
+            microapp_hosted_report_payload_result(&kernel, 0u32);
+            @println("[microapp loader] trap bridge validated without native execution");
+            @println("[microapp loader] done");
+            return 0;
         }
-        var bridge_name: &byte = "unknown" as &byte;
-        if loaded_hdr.bridge_kind == ImageBridgeKind.ibk_trap {
-            bridge_name = "trap" as &byte;
-        } else if loaded_hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
-            bridge_name = "call_gate" as &byte;
-        }
+        const target_arch_name: &byte = microapp_hosted_target_arch_name(loaded_hdr.target_arch);
+        const bridge_name: &byte = microapp_hosted_bridge_name(loaded_hdr.bridge_kind);
         @println("[microapp loader] no execution path for target_arch=${target_arch_name} bridge=${bridge_name}");
         @println("[microapp loader] pass native payload path as argv[2] or add mapped execution support for this profile");
         return 6;

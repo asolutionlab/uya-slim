@@ -492,6 +492,11 @@ test "sim_load_image_then_exit" {
     var is_empty: i32 = 0;
     if st == ContainerState.cs_empty { is_empty = 1; }
     try assert_eq_i32(is_empty, 1);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_VALIDATED as i32);
+    try assert_eq_i32(k.loaded_exit_code[0], 0);
+    try assert_eq_i32(k.loaded_fault_class[0] as i32, SIM_FAULT_CLASS_NONE as i32);
+    try assert_eq_i32(k.loaded_fault_code[0] as i32, 0);
+    try assert_eq_i32(k.loaded_fault_signal[0] as i32, 0);
 }
 
 test "sim_load_image_print_rodata_sets_accessed_bit" {
@@ -505,6 +510,8 @@ test "sim_load_image_print_rodata_sets_accessed_bit" {
     try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
     const cid: u32 = try sim_tick_loaded(&k);
     try assert_eq_i32(cid as i32, 0);
+    try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_VALIDATED as i32);
+    try assert_eq_i32(k.loaded_exit_code[0], 0);
 
     var has_a: i32 = 0;
     if (k.host_ctx.pts[0].entries[0] & PTE_A) != 0 {
