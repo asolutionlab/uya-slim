@@ -6,22 +6,13 @@ use kernel.syscall;
 use libc.memcpy;
 
 export fn main() i32 {
-    var kernel: SimKernel = SimKernel{
-        sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
-        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
-        entry_fns: [],
-        container_ctxs: [],
-        total_ticks: 0,
-        loaded_image_headers: [],
-        loaded_image_ppn: [],
-        loaded_image_valid: [],
-    };
+    var kernel: SimKernel = sim_kernel_make();
     sim_kernel_init(&kernel);
 
     var backing: [byte: 131072] = [];
-    kernel.host_ctx.pm.base = &backing[0];
-    kernel.host_ctx.pm.size = 131072;
+    sim_kernel_attach_physmem(&kernel, backing[0: 131072]) catch {
+        return 1;
+    };
 
     const text_len: usize = 14;
     var text: [byte: 16] = "Hello, World!\n";

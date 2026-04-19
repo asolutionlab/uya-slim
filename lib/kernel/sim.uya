@@ -45,6 +45,31 @@ export struct SimKernel {
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
 
+export fn sim_kernel_make() SimKernel {
+    return SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+        loaded_image_headers: [],
+        loaded_image_ppn: [],
+        loaded_image_valid: [],
+    };
+}
+
+export fn sim_kernel_attach_physmem(k: &SimKernel, backing: &[byte]) !void {
+    if k == null {
+        return error.InvalidState;
+    }
+    if backing.ptr == null || backing.len == 0 {
+        return error.InvalidSize;
+    }
+    k.host_ctx.pm.base = backing.ptr;
+    k.host_ctx.pm.size = backing.len as u32;
+}
+
 // ── Init ──
 
 export fn sim_kernel_init(k: &SimKernel) void {
