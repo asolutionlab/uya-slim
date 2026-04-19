@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -74,12 +74,101 @@ all: help
 c e:
 	@:
 
+# 从本机 seed 构建（macOS 不回退 Linux seed）
+# macOS 主入口 seed 为 backup/uya-hosted-macos.c；backup/uya-hosted-macos-arm64.c 与
+# backup/uya-hosted-macos-x86_64.c 永久保留作对照。zig 交叉产物仅作辅助参考，
+# 不作为 macOS 主线 seed 的可信依据。
+from-c-native:
+	@echo "=========================================="
+	@echo "从本机 C99 seed 构建编译器 (from-c-native)"
+	@echo "=========================================="
+	@mkdir -p bin
+	@bash -c 'set -e; \
+		SEED_PATH=""; \
+		SEED_DESC=""; \
+		if [ "$(HOST_OS)" = "macos" ]; then \
+			HOSTED_SEED_UNIFIED="backup/uya-hosted-macos.c"; \
+			HOSTED_SEED_ARCH="backup/uya-hosted-macos-$(HOST_ARCH).c"; \
+			if [ -f "$$HOSTED_SEED_UNIFIED" ]; then \
+				SEED_PATH="$$HOSTED_SEED_UNIFIED"; \
+				SEED_DESC="macOS hosted 通用备份 $$HOSTED_SEED_UNIFIED"; \
+			elif [ -f "$$HOSTED_SEED_ARCH" ]; then \
+				SEED_PATH="$$HOSTED_SEED_ARCH"; \
+				SEED_DESC="macOS hosted 本机备份 $$HOSTED_SEED_ARCH"; \
+			fi; \
+		else \
+			HOSTED_SEED="backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c"; \
+			NOSTDLIB_SEED="backup/uya-$(HOST_OS)-$(HOST_ARCH).c"; \
+			if [ -f "$$HOSTED_SEED" ]; then \
+				SEED_PATH="$$HOSTED_SEED"; \
+				SEED_DESC="host/arch hosted 备份 $$HOSTED_SEED"; \
+			elif [ -f "$$NOSTDLIB_SEED" ]; then \
+				SEED_PATH="$$NOSTDLIB_SEED"; \
+				SEED_DESC="host/arch nostdlib 备份 $$NOSTDLIB_SEED"; \
+			fi; \
+		fi; \
+		if [ ! -f bin/uya.c ]; then \
+			if [ -z "$$SEED_PATH" ]; then \
+				echo "错误: 当前平台缺少本机 seed。"; \
+				if [ "$(HOST_OS)" = "macos" ]; then \
+					echo "macOS 仅接受 backup/uya-hosted-macos.c 或 backup/uya-hosted-macos-$(HOST_ARCH).c，不会回退到 Linux seed。"; \
+				else \
+					echo "请先准备 host/arch seed。"; \
+				fi; \
+				exit 1; \
+			fi; \
+			echo "bin/uya.c 不存在，使用 $$SEED_DESC ..."; \
+			cp "$$SEED_PATH" bin/uya.c; \
+		elif [ -n "$$SEED_PATH" ] && [ "$$SEED_PATH" -nt bin/uya.c ]; then \
+			echo "检测到 $$SEED_DESC 更新，刷新过期的 bin/uya.c ..."; \
+			cp "$$SEED_PATH" bin/uya.c; \
+		fi'
+	@echo "编译 bin/uya.c ..."
+	@echo "CFLAGS: $(CFLAGS)"
+	@echo "HOST_OS=$(HOST_OS) HOST_ARCH=$(HOST_ARCH)"
+	@echo "TOOLCHAIN=$(TOOLCHAIN)"
+	@echo "CC_DRIVER=$(CC_DRIVER)"
+	@HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" \
+		CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" \
+		CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
+		bash -c 'set -e; ulimit -s 32768 2>/dev/null || true; \
+		EXTRA_HOST_SOURCES=""; \
+		if [ "$$HOST_OS" = "macos" ] && [ -f "src/host/macos_stat_shim.c" ]; then EXTRA_HOST_SOURCES="src/host/macos_stat_shim.c"; fi; \
+		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
+			&& [ "$$HOST_OS" = "macos" ]; then \
+			echo "错误: 检测到 Linux nostdlib seed，macOS 本机构建拒绝继续。"; \
+			echo "请提供 backup/uya-hosted-macos.c 或 backup/uya-hosted-macos-$$HOST_ARCH.c，或先在 macOS 本机生成 hosted seed。"; \
+			exit 1; \
+		fi; \
+		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
+			&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
+			echo "备份 C 含 nostdlib _start，使用 crti.o + uya.o + crtn.o 链接（避免与 Scrt1 _start 冲突）..."; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -fno-stack-protector -c bin/uya.c -o bin/.from_c.o; \
+			CRTI=$$($$CC_DRIVER $$CC_TARGET_FLAGS -print-file-name=crti.o); \
+			CRTN=$$($$CC_DRIVER $$CC_TARGET_FLAGS -print-file-name=crtn.o); \
+			if [ ! -f "$$CRTI" ] || [ "$$CRTI" = "crti.o" ] || [ ! -f "$$CRTN" ] || [ "$$CRTN" = "crtn.o" ]; then \
+				echo "错误: 当前工具链无法解析 crti.o/crtn.o，无法用 from-c-native 链接 nostdlib 版 uya.c"; exit 1; \
+			fi; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -fno-stack-protector -no-pie -nostdlib -static \
+				-o bin/uya "$$CRTI" bin/.from_c.o "$$CRTN" $$LDFLAGS; \
+			rm -f bin/.from_c.o; \
+		else \
+			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS bin/uya.c $$EXTRA_HOST_SOURCES -o bin/uya -lm $$LDFLAGS; \
+		fi'
+	@echo ""
+	@echo "✓ 编译器构建完成: bin/uya"
+	@ls -la bin/uya
+
 # 从 bin/uya.c 构建（零依赖）
 from-c:
 	@echo "=========================================="
 	@echo "从 C99 代码构建编译器 (from-c)"
 	@echo "=========================================="
 	@mkdir -p bin
+	@if [ "$(HOST_OS)" = "macos" ]; then \
+		echo "提示: macOS 主线请使用 'make from-c-native'，避免回退到旧的通用 seed 选择逻辑。"; \
+		exit 1; \
+	fi
 	@bash -c 'set -e; \
 		HOSTED_SEED="backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c"; \
 		NOSTDLIB_SEED="backup/uya-$(HOST_OS)-$(HOST_ARCH).c"; \
@@ -121,7 +210,7 @@ from-c:
 		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
 			&& [ "$$HOST_OS" = "macos" ]; then \
 			echo "错误: backup/uya.c 为 Linux nostdlib（含 x86_64 Linux _start），无法在 macOS 上 make from-c。"; \
-			echo "请使用 '\''make backup-hosted-seed'\'' 生成本地 hosted 备份，或参见 docs/macos_hosted_smoke.md"; \
+			echo "请使用 '\''make from-c-native'\'' 或准备本机 macOS hosted seed。"; \
 			exit 1; \
 		fi; \
 		if grep -qE "^[[:space:]]*__attribute__\\(\\(naked\\)\\)[[:space:]]+void[[:space:]]+_start\\(void\\)" bin/uya.c 2>/dev/null \
@@ -150,7 +239,11 @@ uya:
 	@echo "=========================================="
 	@if [ ! -f bin/uya ]; then \
 		echo "bin/uya 不存在，从备份构建..."; \
-		$(MAKE) from-c; \
+		if [ "$(HOST_OS)" = "macos" ]; then \
+			$(MAKE) from-c-native; \
+		else \
+			$(MAKE) from-c; \
+		fi; \
 	fi
 	@echo "使用 bin/uya 编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
@@ -171,13 +264,17 @@ uya-hosted:
 	@echo "=========================================="
 	@if [ ! -f bin/uya ] && [ ! -f bin/uya-hosted ]; then \
 		echo "错误: bin/uya 与 bin/uya-hosted 均不存在。"; \
-		echo "hosted 主线无法使用 Linux nostdlib 的 backup/uya.c 在 macOS 上 from-c。"; \
-		echo "请先准备一个可运行的 hosted 编译器（例如从 Linux 拷贝 bin/uya-hosted），或参考 docs/macos_hosted_smoke.md"; \
-		exit 1; \
+		if [ "$(HOST_OS)" = "macos" ]; then \
+			echo "提示: 当前 hosted 主线默认依赖已有可运行编译器；macOS 先尝试 from-c-native 冷启动。"; \
+			$(MAKE) from-c-native; \
+		else \
+			echo "提示: 当前 hosted 主线默认依赖已有可运行编译器，请先准备 bin/uya 或 bin/uya-hosted。"; \
+			exit 1; \
+		fi; \
 	fi
 	@echo "使用 hosted 编译器编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'set -e; REPO_ROOT="$$(pwd)"; UYA_COMPILER_PATH=""; if [ -f "$$REPO_ROOT/bin/uya-hosted" ]; then UYA_COMPILER_PATH="$$REPO_ROOT/bin/uya-hosted"; else UYA_COMPILER_PATH="$$REPO_ROOT/bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
+	@bash -c 'set -e; REPO_ROOT="$$(pwd)"; UYA_COMPILER_PATH=""; if [ -f "$$REPO_ROOT/bin/uya-hosted" ]; then UYA_COMPILER_PATH="$$REPO_ROOT/bin/uya-hosted"; else UYA_COMPILER_PATH="$$REPO_ROOT/bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" UYA_BOOTSTRAP_PROFILE="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && echo darwin-hosted || echo hosted )" UYA_NATIVE_BOOTSTRAP="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && [ "$(HOST_ARCH)" = "$(TARGET_ARCH)" ] && echo 1 || echo 0 )" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi
@@ -185,6 +282,14 @@ uya-hosted:
 	@echo "✓ 自举编译器构建完成: bin/uya-hosted（hosted）"
 	@echo ""
 	@echo "提示: 运行 'make b-hosted' 验证 hosted 自举"
+
+# 跨平台入口：Linux 走已验证的 nostdlib 主线，其它平台走 hosted 主线
+uya-portable:
+ifeq ($(HOST_OS),linux)
+	@$(MAKE) uya
+else
+	@$(MAKE) uya-hosted
+endif
 
 # 构建自举编译器（标准库版本，用于调试）
 uya-std: uya-hosted
@@ -200,9 +305,13 @@ uya-safety:
 	@echo "=========================================="
 	@if [ ! -f bin/uya ]; then \
 		echo "bin/uya 不存在，从备份构建..."; \
-		$(MAKE) from-c; \
+		if [ "$(HOST_OS)" = "macos" ]; then \
+			$(MAKE) from-c-native; \
+		else \
+			$(MAKE) from-c; \
+		fi; \
 	fi
-	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --safety-proof'
+	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" UYA_BOOTSTRAP_PROFILE="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && echo darwin-hosted || echo hosted )" UYA_NATIVE_BOOTSTRAP="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && [ "$(HOST_ARCH)" = "$(TARGET_ARCH)" ] && echo 1 || echo 0 )" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --safety-proof'
 	@echo ""
 	@echo "✓ 自举编译器（内存安全版）构建完成: bin/uya"
 
@@ -220,9 +329,17 @@ b-hosted: uya-hosted
 	@echo "=========================================="
 	@echo "hosted 自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@bash -c 'REPO_ROOT="$$(pwd)"; ulimit -s 32768 && cd src && UYA_COMPILER="$$REPO_ROOT/bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --safety-proof'
+	@bash -c 'REPO_ROOT="$$(pwd)"; ulimit -s 32768 && cd src && UYA_COMPILER="$$REPO_ROOT/bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" UYA_BOOTSTRAP_PROFILE="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && echo darwin-hosted || echo hosted )" UYA_NATIVE_BOOTSTRAP="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && [ "$(HOST_ARCH)" = "$(TARGET_ARCH)" ] && echo 1 || echo 0 )" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --safety-proof'
 	@echo ""
 	@echo "✓ hosted 自举验证完成"
+
+# 跨平台入口：Linux 走已验证的 nostdlib 自举，其它平台走 hosted 自举
+b-portable:
+ifeq ($(HOST_OS),linux)
+	@$(MAKE) b
+else
+	@$(MAKE) b-hosted
+endif
 
 # 抓取编译器 CompileStats，便于对比 parse/check/codegen/total 耗时
 bench-compile-stats:
@@ -258,10 +375,12 @@ tests-hosted:
 	echo "测试 hosted 编译器 (uya-hosted)"; \
 	echo "=========================================="; \
 	$(MAKE) uya-hosted >/dev/null 2>&1; \
+	BOOTSTRAP_PROFILE=$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && echo darwin-hosted || echo hosted ); \
+	NATIVE_BOOTSTRAP=$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && [ "$(HOST_ARCH)" = "$(TARGET_ARCH)" ] && echo 1 || echo 0 ); \
 	if [ "$$HAS_E" = "yes" ]; then \
-		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_COMPILER="$(PWD)/bin/uya-hosted" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
+		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_COMPILER="$(PWD)/bin/uya-hosted" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" UYA_BOOTSTRAP_PROFILE="$$BOOTSTRAP_PROFILE" UYA_NATIVE_BOOTSTRAP="$$NATIVE_BOOTSTRAP" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 	else \
-		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_COMPILER="$(PWD)/bin/uya-hosted" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
+		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_COMPILER="$(PWD)/bin/uya-hosted" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" UYA_BOOTSTRAP_PROFILE="$$BOOTSTRAP_PROFILE" UYA_NATIVE_BOOTSTRAP="$$NATIVE_BOOTSTRAP" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
 	fi; \
 	TS=$$?; \
 	echo ""; \
@@ -322,6 +441,13 @@ microapp-recovery-check:
 	@./tests/verify_microapp_recovery_update.sh
 	@echo ""
 	@echo "✓ microapp crash/recovery/update 回归通过"
+# 跨平台入口：Linux 走已验证的 nostdlib 测试，其它平台走 hosted 测试
+tests-portable:
+ifeq ($(HOST_OS),linux)
+	@$(MAKE) tests
+else
+	@$(MAKE) tests-hosted
+endif
 
 # 输出标准库为 C 代码（使用自举编译器）
 outlibc: uya
@@ -613,8 +739,22 @@ backup-seed:
 	@$(MAKE) from-c >/dev/null
 	@echo "✓ backup/uya.c、backup/uya-$(HOST_OS)-$(HOST_ARCH).c 与 bin/uya.c 已更新（单文件种子）"
 
+# hosted 单文件 C 本机种子：在当前宿主平台上更新 hosted seed；macOS 同步刷新统一入口 seed
+backup-hosted-seed-native:
+	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新当前宿主 hosted 本机种子 …"
+	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" UYA_BOOTSTRAP_PROFILE="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && echo darwin-hosted || echo hosted )" UYA_NATIVE_BOOTSTRAP="$$( [ "$(HOST_OS)" = "macos" ] && [ "$(TARGET_OS)" = "macos" ] && [ "$(HOST_ARCH)" = "$(TARGET_ARCH)" ] && echo 1 || echo 0 )" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
+	@mkdir -p backup
+	@cp src/build/uya-hosted.c backup/uya-hosted.c
+	@cp src/build/uya-hosted.c backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c
+	@if [ "$(HOST_OS)" = "macos" ]; then \
+		cp src/build/uya-hosted.c backup/uya-hosted-macos.c; \
+		cp src/build/uya-hosted.c backup/uya-hosted-macos-$(HOST_ARCH).c; \
+		echo "✓ backup/uya-hosted-macos.c 与 backup/uya-hosted-macos-$(HOST_ARCH).c 已按本机结果更新"; \
+	fi
+	@echo "✓ backup/uya-hosted.c 与 backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c 已按当前宿主更新"
+
 # hosted 单文件 C 种子：更新通用备份与 host/arch 专用备份（std.cfg 会固化 host/target）
-# 若检测到 zig，则顺带交叉刷新 macOS hosted seeds，避免 Linux 发布后仓库里的 Darwin 种子仍停留在旧快照
+# 若检测到 zig，则可选地交叉刷新 macOS hosted seeds 作为辅助参考；macOS 主线 seed 仍以本机验证/维护为准
 backup-hosted-seed:
 	@echo "单文件 C 编译（UYA_SINGLE_FILE_C=1）以更新 backup/uya-hosted.c 与 host/arch 专用备份 …"
 	@bash -c 'ulimit -s 32768 && cd src && UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --safety-proof'
@@ -622,8 +762,9 @@ backup-hosted-seed:
 	@cp src/build/uya-hosted.c backup/uya-hosted.c
 	@cp src/build/uya-hosted.c backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c
 	@bash -c 'set -e; \
+		UPDATED_UNIFIED=0; \
 		if [ -x "$(ZIG)" ]; then \
-			echo "检测到 zig，交叉更新 macOS hosted 种子 …"; \
+			echo "检测到 zig，可选地交叉刷新 macOS hosted 种子（仅辅助参考）…"; \
 			for ARCH in arm64 x86_64; do \
 				case "$$ARCH" in \
 					arm64) TRIPLE="aarch64-macos-none" ;; \
@@ -643,13 +784,20 @@ backup-hosted-seed:
 					exit $$STATUS; \
 				fi; \
 				cp "src/build/uya-hosted-macos-$$ARCH.c" "backup/uya-hosted-macos-$$ARCH.c"; \
+				if [ "$$ARCH" = "x86_64" ]; then \
+					cp "src/build/uya-hosted-macos-$$ARCH.c" "backup/uya-hosted-macos.c"; \
+					UPDATED_UNIFIED=1; \
+				fi; \
 				if [ "$$STATUS" -ne 0 ]; then \
 					echo "提示: zig 交叉链接 macOS $$ARCH hosted 可执行文件失败，但已保留并更新 C 种子"; \
 				fi; \
 			done; \
-			echo "✓ backup/uya-hosted-macos-arm64.c 与 backup/uya-hosted-macos-x86_64.c 已更新（zig 交叉 hosted 种子）"; \
+			echo "✓ backup/uya-hosted-macos-arm64.c 与 backup/uya-hosted-macos-x86_64.c 已更新（zig 交叉 hosted 种子，仅辅助参考）"; \
 		else \
 			echo "提示: 未找到可执行 zig ($(ZIG))，跳过 macOS hosted 交叉种子"; \
+		fi; \
+		if [ "$$UPDATED_UNIFIED" -eq 1 ]; then \
+			echo "✓ backup/uya-hosted-macos.c 已同步为当前 macOS 统一入口 seed（基于 x86_64 种子；macOS 主线仍以本机验证结果为准）"; \
 		fi'
 	@echo "✓ backup/uya-hosted.c、backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c 与可用的 macOS hosted 种子已更新"
 
@@ -836,15 +984,19 @@ help:
 	@echo ""
 	@echo "可用目标:"
 	@echo "  make from-c        - 从 bin/uya.c 构建（零依赖）"
+	@echo "  make from-c-native - 从本机 seed 构建；macOS 优先使用 backup/uya-hosted-macos.c，其次是 backup/uya-hosted-macos-<arch>.c"
 	@echo "  make uya           - 构建自举编译器（默认 --nostdlib，静态链接）"
 	@echo "  make uya-hosted    - 构建自举编译器（hosted 主线）"
+	@echo "  make uya-portable  - 跨平台入口：Linux 用 uya，其它平台用 uya-hosted"
 	@echo "  make uya-std       - 构建自举编译器（标准库链接，用于调试）"
 	@echo "  make uya-safety    - 构建自举编译器（启用内存安全检查）"
 	@echo "  make b             - 自举验证：编译器编译自身，验证输出一致性"
 	@echo "  make b-hosted      - hosted 自举验证"
+	@echo "  make b-portable    - 跨平台入口：Linux 用 b，其它平台用 b-hosted"
 	@echo "  make bench-compile-stats ARGS='--runs 3' - 抓取 CompileStats 基准数据"
 	@echo "  make tests         - 运行测试套件（并行数默认 CPU 核数，UYA_TEST_JOBS=N 可改；默认不打印每条通过的 ✓）"
 	@echo "  make tests-hosted  - 运行 hosted 主测试集（同上，默认 --hide-pass）"
+	@echo "  make tests-portable - 跨平台入口：Linux 用 tests，其它平台用 tests-hosted"
 	@echo "  make tests e       - 运行所有测试，最小输出（仅失败详情，等同脚本 -e）"
 	@echo "  make tests-uya     - 快捷方式：测试自举编译器"
 	@echo "  make tests-uya e   - 同上 + 最小输出（-e）"
@@ -858,8 +1010,10 @@ help:
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c、backup/uya.c 与 host/arch 专用备份"
-	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c、host/arch 备份；有 zig 时顺带刷新 macOS hosted seeds"
-	@echo "  make backup-all-seed - 全量单文件种子：Linux/host nostdlib + hosted + 可用的 macOS hosted seeds"
+	@echo "  make backup-hosted-seed - hosted 单文件种子，更新 backup/uya-hosted.c、host/arch 备份；有 zig 时可辅助刷新 macOS hosted seeds"
+	@echo "  make backup-hosted-seed-native - 仅按当前宿主更新 hosted 本机种子；macOS 同步刷新 backup/uya-hosted-macos.c"
+	@echo "                           macOS 统一入口 seed 为 backup/uya-hosted-macos.c；backup/uya-hosted-macos-arm64.c 与 -x86_64.c 永久保留作对照"
+	@echo "  make backup-all-seed - 全量单文件种子：Linux/host nostdlib + hosted + 可选的 macOS hosted seeds"
 	@echo "  make back-all-seed - backup-all-seed 的别名"
 	@echo "  make backup-all    - backup + backup-all-seed（提交前完整备份）"
 	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-all-seed 后 -O3 -DNDEBUG 重链 + strip"
@@ -871,9 +1025,9 @@ help:
 	@echo "  make help          - 显示此帮助信息"
 	@echo ""
 	@echo "示例:"
-	@echo "  make from-c                          # 从 C99 代码构建（首次克隆后）"
-	@echo "  make uya && make b && make tests-uya # 完整构建和自举验证"
-	@echo "  make tests                           # 运行所有测试（默认省略通过的 ✓）"
+	@echo "  make from-c-native                    # macOS 本机 seed 冷启动"
+	@echo "  make uya-hosted && make b-hosted      # hosted 自举验证"
+	@echo "  make tests-hosted                     # hosted 主测试集"
 	@echo "  make tests e                         # 运行所有测试，最小输出"
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
 	@echo '  make install PREFIX=$$HOME/.local   # ~/.local/bin/uya + ~/.local/lib/{std,libc,...}'
@@ -883,4 +1037,4 @@ help:
 	@echo "  make install DOCDIR=/path/docs       # 显式文档目录（默认 前缀/docs）"
 	@echo "  make install TESTSDIR=/path/tests    # 显式测试目录（默认 前缀/tests）"
 	@echo ""
-	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；from-c 会优先挑选 backup/uya-hosted-macos-<arch>.c。"
+	@echo "macOS: from-c-native 优先使用 backup/uya-hosted-macos.c；backup/uya-hosted-macos-arm64.c 与 -x86_64.c 永久保留。"

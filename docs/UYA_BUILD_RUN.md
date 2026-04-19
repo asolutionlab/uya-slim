@@ -209,8 +209,6 @@ echo "退出码：$?"  # 输出 42
 ## 文档与阶段进度
 
 - 共享平台基础（Linux 可完成项）：[todo_platform_shared_foundation.md](todo_platform_shared_foundation.md)（已勾选同步）
-- macOS Phase 1：[todo_macos_phase1.md](todo_macos_phase1.md)
-- macOS 冒烟：[macos_hosted_smoke.md](macos_hosted_smoke.md)
 
 ## 相关文件
 
