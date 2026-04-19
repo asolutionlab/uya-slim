@@ -302,7 +302,6 @@ TARGET_OS=macos TARGET_ARCH=arm64 \
 
 但还没有完全做完的部分包括：
 
-- 默认帮助文本与整体心智全面切到 profile-first
 - 多平台 profile 的完整回归矩阵
 - relocation、stack、trampoline 的完整 profile 化
 - 所有 hosted / baremetal profile 的运行时完全对齐
@@ -310,7 +309,7 @@ TARGET_OS=macos TARGET_ARCH=arm64 \
 所以当前可以把它理解成：
 
 - profile 机制已经成型
-- 但仍处于从 “arch-first” 向 “profile-first” 迁移的中间阶段
+- 当前剩下的重点主要是 runtime 覆盖面，而不是 profile-first 心智本身
 
 ---
 

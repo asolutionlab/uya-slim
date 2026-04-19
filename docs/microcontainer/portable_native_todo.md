@@ -321,6 +321,7 @@
   - [x] Ubuntu CI / README / Makefile help / 官方示例 / microapp 回归清单已对齐
   - [x] `.uapp v1/v2` 兼容回归已具备独立入口 `make microapp-compat-check`
   - [x] 当前已补充 `migration_guide.md` 收敛旧路径 -> 新路径迁移说明
+  - [x] `microapp_source_template.md` / `source_to_uapp_pipeline.md` 已切到 `profile-first + portable source` 心智
   - [ ] 其余平台与发布文档仍待继续对齐
 
 ---

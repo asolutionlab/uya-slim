@@ -31,12 +31,20 @@
 - 已实现 `image_validate()` 对 `.uapp` 做完整性、结构、指令策略验证
 - 已具备模拟加载路径 `sim_load_image()`
 - 已有 `examples/microapp/microcontainer_hello.uapp` 可被加载执行
-- 现阶段 `microapp` 的 `code` 由目标 gcc 编译并链接后的 `.text` 提供，目标架构由 `MICROAPP_TARGET_ARCH` 决定，默认是 `x86_64`，`MICROAPP_TARGET_GCC` 优先于 `TARGET_GCC`，可覆盖具体工具链；默认 `MICROAPP_TARGET_CFLAGS` 使用 `-Os -fomit-frame-pointer -ffunction-sections -fdata-sections -flto` 且不含 `-g`，默认 `MICROAPP_TARGET_LDFLAGS` 使用 `-no-pie -Wl,--gc-sections -flto`，以优先控制镜像体积
+- 现阶段 `microapp` 的 `code` 仍由目标 gcc 编译并链接后的 `.text` 提供，但目标选择已经切到 `profile-first`
+- `MICROAPP_TARGET_GCC` 优先于 `TARGET_GCC`，可覆盖具体工具链；默认编译/链接旗标也已按 profile 区分：
+  - `call_gate` profile 默认 `-fpie/-pie`
+  - `trap` profile 默认 `-fno-pie/-no-pie`
 - 默认目标三元组映射当前覆盖 `rv32 / x86_64 / aarch64 / xtensa`，对应的默认 gcc 分别是：
   - `riscv32-unknown-elf-gcc`
   - `x86_64-linux-gnu-gcc`
   - `aarch64-linux-gnu-gcc`
   - `xtensa-unknown-elf-gcc`
+- 当前推荐的 portable source 已经形成官方示例集：
+  - `examples/microapp/microcontainer_hello_source.uya`
+  - `examples/microapp/microcontainer_alloc_yield_source.uya`
+  - `examples/microapp/microcontainer_time_source.uya`
+  - `examples/microapp/microcontainer_bss_source.uya`
 
 当前实现已经打通 `build --app microapp -> target gcc .text -> payload_obj -> .uapp` 这条链路。
 如果后续要继续演进，重点会转向：
@@ -56,11 +64,11 @@
 
 当前仓库里的 `.pobj` 版本已经开始携带源文件路径等 provenance 信息，便于后续追踪输入来源与调试中间产物。
 
-同时，示例 builder 已经从手工拼镜像改成调用 `payload_pack_to_uapp()`：
+同时，宿主侧示例 builder 已经从手工拼镜像改成调用 `payload_pack_to_uapp()`：
 
 - `examples/microapp/microcontainer_hello_build.uya`
 
-示例 loader 也已经改为从命令行读取 `.uapp` 路径并走加载验证链，未传参时默认回退到示例镜像：
+宿主侧示例 loader 也已经改为从命令行读取 `.uapp` 路径并走加载验证链，未传参时默认回退到示例镜像：
 
 - `examples/microapp/microcontainer_hello_load.uya`
 
@@ -74,7 +82,7 @@
 
 1. 开发者编写微应用源码
 2. 编译器以 `app` / `microapp` 语义分析源码
-3. 编译器直接生成 `target_arch` 指定架构的载荷码与元数据
+3. 编译器直接生成目标 profile 指定架构的载荷码与元数据
 4. 打包器把代码段、只读数据段、重定位信息、权限位图等封装为 `.uapp`
 5. 生成的 `.uapp` 可直接通过 `image_validate()` 验证，并进入加载执行链
 
@@ -115,15 +123,15 @@ app.uya / microapp.uya
 
 这里有一个关键约束：
 
-- `payload code` 永远是 `target_arch` 指定的目标码
+- `payload code` 永远是目标 profile 指定 ISA 的目标码
 
 例如：
 
-- `target_arch = x86_64` 时，载荷码就是 `x86_64` 机器码
-- `target_arch = aarch64` 时，载荷码就是 `aarch64` 机器码
-- `target_arch = rv32` 时，载荷码就是 `rv32` 机器码
+- `profile = linux_x86_64_hardvm` 时，载荷码就是 `x86_64` 机器码
+- `profile = linux_aarch64_hardvm` 时，载荷码就是 `aarch64` 机器码
+- `profile = rv32_baremetal_softvm` 时，载荷码就是 `rv32` 机器码
 
-因此开发阶段完全可以把 `target_arch` 设为当前开发机架构，用本机原生执行方式验证微应用逻辑；而部署阶段再把 `target_arch` 切换为目标设备架构。
+因此开发阶段完全可以让 profile 对齐当前开发机平台，用本机原生执行方式验证微应用逻辑；而部署阶段再切换到目标平台对应 profile。
 
 ---
 
@@ -203,7 +211,7 @@ app.uya / microapp.uya
 例如：
 
 - `examples/microapp/microcontainer_hello_build.uya` 编译出来的是宿主工具 native 码
-  - 而 `.uapp` 内部的 `code` 段，才是面向 `target_arch` 的载荷码
+  - 而 `.uapp` 内部的 `code` 段，才是面向目标 profile/ISA 的载荷码
 
 当前仓库的加载与验证主要围绕 `rv32`，但长期设计不应把 `.uapp` 限死为 `rv32`；`target_arch` 应该决定载荷 ISA。
 
@@ -302,7 +310,10 @@ app.uya / microapp.uya
 ### 6.1 最小目标命令
 
 ```bash
-uya build --app microapp examples/microapp/microcontainer_hello.uya -o examples/microapp/microcontainer_hello.uapp
+uya build --app microapp \
+  --microapp-profile linux_x86_64_hardvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o examples/microapp/microcontainer_hello.uapp
 ```
 
 这条命令现在已经可以直接走通，作为最短路径。
@@ -316,13 +327,16 @@ uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 这条目标命令未来可以拆成两步：
 
 ```bash
-uya compile --app microapp examples/microapp/microcontainer_hello.uya -o build/hello.pobj
+uya build --app microapp \
+  --microapp-profile linux_x86_64_hardvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o build/hello.pobj
 uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 ```
 
 其中：
 
-- `compile` 负责前端、microapp 模式检查、目标代码生成、`payload_obj` 输出
+- `build --app microapp -o xxx.pobj` 负责前端、microapp 模式检查、目标代码生成、`payload_obj` 输出
 - `pack-image` 负责封装 `.uapp`
 
 当前仓库里，`build --app microapp` 已经可以直接产出 `.pobj` 或 `.uapp`；宿主打包器示例主要用于对照验证和格式调试。
@@ -334,6 +348,7 @@ uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 ```bash
 uya inspect-image examples/microapp/microcontainer_hello.uapp
 uya verify-image examples/microapp/microcontainer_hello.uapp
+make microapp-compat-check
 ```
 
 这样可以降低镜像格式开发期的排错成本。
@@ -345,6 +360,14 @@ uya run examples/microapp/microcontainer_hello_load.uya -- path/to/your.uapp
 ```
 
 如果不传路径，它会继续默认读取 `examples/microapp/microcontainer_hello.uapp`。
+
+如果你只是想验证当前仓库已经接通的链路，推荐直接用：
+
+```bash
+make microapp-check
+make microapp-hosted-smoke
+make microapp-recovery-check
+```
 
 ---
 
