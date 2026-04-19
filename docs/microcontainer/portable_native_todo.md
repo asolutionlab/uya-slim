@@ -251,9 +251,11 @@
   - [x] hosted call-gate 装载级 relocation 已接线
   - [x] aarch64 call-gate trampoline helper 已落地
   - [x] 编译器宿主 helper 已补上 arm64 私有栈切换实现
-  - [ ] 真执行与 hosted runtime 回归仍待在 arm64 宿主上接通
+  - [~] hosted runtime 回归已补 host-gated 脚本，真执行仍待在 arm64 宿主上确认
 - [x] 增加 aarch64 trampoline
-- [ ] 增加 aarch64 hosted 回归
+- [~] 增加 aarch64 hosted 回归
+  - [x] 已新增 arm64-host-gated runtime 脚本
+  - [ ] 仍待在 arm64 CI / 宿主上实际执行
 
 ### 8.2 macOS arm64
 
@@ -329,6 +331,7 @@
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
   - [x] trap bridge 已补充 `validated` 结果面 smoke
+  - [~] aarch64 hosted runtime 已补 host-gated 回归入口
   - [ ] 其余 profile 真执行仍待补齐
 - [~] 增加 crash/recovery / update 回归
   - [x] 已新增 `make microapp-recovery-check` 入口
