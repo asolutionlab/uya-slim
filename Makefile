@@ -590,11 +590,27 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 microapp profile 示例矩阵..."
+	@./tests/verify_microapp_profile_example_matrix.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp profile 示例矩阵验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 portable microapp 源码审计..."
 	@./tests/verify_microapp_portable_sources.sh; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ portable microapp 源码审计失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 official microapp 示例运行..."
+	@./tests/verify_microapp_example_sources_runtime.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ official microapp 示例运行验证失败"; \
 		exit 1; \
 	fi
 	@echo ""

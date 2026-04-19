@@ -276,7 +276,10 @@
 
 - [~] 用 `std.microapp.*` 重写当前示例
   - [x] `examples/microapp/microcontainer_hello_source.uya`
-  - [ ] 其余示例仍待迁移
+  - [x] `examples/microapp/microcontainer_alloc_yield_source.uya`
+  - [x] `examples/microapp/microcontainer_time_source.uya`
+  - [x] `examples/microapp/microcontainer_bss_source.uya`
+  - [~] `microcontainer_hello_build/load` 仍是宿主侧工具示例，不属于 portable source 子集
 - [~] 审计现有 microapp 示例里宿主耦合 API
   - [x] 已区分 portable source 与 hosted build/load 工具示例
   - [x] 当前 portable source 样例已纳入无 `libc/std.time` 依赖回归
@@ -284,12 +287,14 @@
   - [x] 用户 microapp 直接 `use/call libc/*` / `std.time` 现在会在编译期报 `E4004`
   - [x] 已增加专门的 host API 诊断回归覆盖
   - [ ] 其余 hosted helper / bridge 误用仍待继续审计
-- [ ] 为“一次编写、多个 profile 编译”增加示例矩阵
+- [x] 为“一次编写、多个 profile 编译”增加示例矩阵
 
 验收标准：
 
-- [ ] 官方示例不再依赖宿主特有 helper
-- [ ] 用户能从示例中直接看到“源码级可移植”最佳实践
+- [~] 官方示例不再依赖宿主特有 helper
+  - [x] 当前 portable source 示例集已不依赖宿主 helper
+  - [ ] host-side build/load 工具示例仍保留宿主依赖
+- [x] 用户能从示例中直接看到“源码级多 profile 编译”最佳实践
 
 ---
 

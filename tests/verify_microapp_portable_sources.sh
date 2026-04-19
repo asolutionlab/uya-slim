@@ -21,7 +21,10 @@ dump_and_fail() {
 }
 
 PORTABLE_SOURCES=(
+    "examples/microapp/microcontainer_alloc_yield_source.uya"
+    "examples/microapp/microcontainer_bss_source.uya"
     "examples/microapp/microcontainer_hello_source.uya"
+    "examples/microapp/microcontainer_time_source.uya"
     "tests/fixtures/microapp/test_std_microapp_alloc_yield.uya"
     "tests/fixtures/microapp/test_std_microapp_bss_runtime.uya"
     "tests/fixtures/microapp/test_std_microapp_io_codegen.uya"

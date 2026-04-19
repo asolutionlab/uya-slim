@@ -217,6 +217,53 @@ TARGET_OS=macos TARGET_ARCH=arm64 \
   -o /tmp/hello.uapp
 ```
 
+### 8.1 同一份源码的 Profile 矩阵
+
+当前推荐直接拿同一份 portable source 做 profile 矩阵验证：
+
+- 源码：`examples/microapp/microcontainer_hello_source.uya`
+- 目标 profile：
+  - `linux_x86_64_hardvm`
+  - `linux_aarch64_hardvm`
+  - `macos_arm64_hardvm`
+  - `rv32_baremetal_softvm`
+  - `xtensa_baremetal_softvm`
+
+如果当前机器没有对应交叉 gcc，最稳的做法是先编到 `.c`，验证 profile 选择、bridge 和前端可移植子集都成立：
+
+```bash
+./bin/uya build --app microapp \
+  --microapp-profile linux_x86_64_hardvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello_linux_x86_64.c
+
+./bin/uya build --app microapp \
+  --microapp-profile linux_aarch64_hardvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello_linux_aarch64.c
+
+./bin/uya build --app microapp \
+  --microapp-profile macos_arm64_hardvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello_macos_arm64.c
+
+./bin/uya build --app microapp \
+  --microapp-profile rv32_baremetal_softvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello_rv32.c
+
+./bin/uya build --app microapp \
+  --microapp-profile xtensa_baremetal_softvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello_xtensa.c
+```
+
+当前矩阵可以这样理解：
+
+- compile matrix：5 个 profile 都应能接受同一份源码
+- runtime matrix：当前仓库里已经打通的是 `linux_x86_64_hardvm`
+- 其他 profile 目前仍属于“元数据/前端契约已接通，runtime 仍待补齐”的状态
+
 ---
 
 ## 9. 和 inspect/verify 的关系

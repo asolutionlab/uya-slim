@@ -34,6 +34,11 @@
 - 示例 loader 现在可通过命令行参数接收任意 `.uapp` 路径，默认仍回退到示例镜像
 - 热更新槽容量与示例 loader 读取缓冲已经拆成两个独立上限，便于后续分别调优
 - `examples/microapp/microcontainer_hello_source.uya` 是当前推荐的可移植 microapp 源码样例
+- 当前 portable source 示例集包括：
+  - `examples/microapp/microcontainer_hello_source.uya`
+  - `examples/microapp/microcontainer_alloc_yield_source.uya`
+  - `examples/microapp/microcontainer_time_source.uya`
+  - `examples/microapp/microcontainer_bss_source.uya`
 - `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`
@@ -47,6 +52,7 @@
   - 也可用 `MICROAPP_TARGET_PROFILE`
   - CLI 优先级高于环境变量
   - 详细说明见 [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
+  - 同一份 portable source 的多 profile 编译矩阵也见 [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
 
 默认 profile 三元组映射：
 
