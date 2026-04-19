@@ -46,6 +46,7 @@
 - 当前还额外补上了最小 `aarch64 call-gate trampoline` helper；在 arm64 宿主上，compiler helper 也已支持切到私有栈后再调用 payload
 - 仓库里现在还带有一个 arm64-host-gated 的 `linux_aarch64_hardvm` runtime 脚本；非 arm64 宿主会自动跳过；在 macOS arm64 CI 上会优先用 `xcrun clang + llvm-objcopy`
 - microapp 生成 C 里的 bridge helper 现在已经从过渡的 `uya_microapp_syscall*` 收成 `uya_microapp_bridge_dispatch*`
+- trap bridge 除了 `validated` 结果面之外，现在还补了一条手工 RV32 `.uapp` 的最小真执行链路（`print/yield/exit`）
 - 当前 x86_64 真执行回归也已经覆盖 fault/error 路径（通过子进程隔离把崩溃收口为可观测信号退出状态）
 - 当前统一 fault 结果模型已经在 x86_64 hosted loader 与 sim/recovery 链路落地，统一输出/记录 `fault_class / fault_code / fault_signal`
 - trap bridge 路径当前仍是“validated-only” 过渡态，但已经有显式 `payload result=validated bridge=trap target=...` 结果面

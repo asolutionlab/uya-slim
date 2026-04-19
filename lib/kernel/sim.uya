@@ -39,6 +39,13 @@ export const SIM_FAULT_CLASS_BUS: u32 = 3u32;
 export const SIM_FAULT_CLASS_ABORT: u32 = 4u32;
 export const SIM_FAULT_CLASS_UNKNOWN: u32 = 255u32;
 export const SIM_CALL_GATE_TRAMPOLINE_SIZE: usize = 4096usize;
+const RV32_OPCODE_OP_IMM: u32 = 19u32;
+const RV32_FUNCT3_ADDI: u32 = 0u32;
+const RV32_REG_A0: u32 = 10u32;
+const RV32_REG_A1: u32 = 11u32;
+const RV32_REG_A7: u32 = 17u32;
+const RV32_INSN_ECALL: u32 = 115u32;
+const RV32_INSN_EBREAK: u32 = 1048691u32;
 
 // ── Container entry function type ──
 // fn(ctx: &SimContainerCtx) i32
@@ -72,6 +79,10 @@ export struct SimKernel {
     loaded_fault_class: [u32: 8],
     loaded_fault_code: [u32: 8],
     loaded_fault_signal: [u32: 8],
+    loaded_trap_pc: [u32: 8],
+    loaded_trap_a0: [u32: 8],
+    loaded_trap_a1: [u32: 8],
+    loaded_trap_a7: [u32: 8],
     // Callback table: callers register fn pointers here
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
@@ -94,6 +105,10 @@ export fn sim_kernel_make() SimKernel {
         loaded_fault_class: [],
         loaded_fault_code: [],
         loaded_fault_signal: [],
+        loaded_trap_pc: [],
+        loaded_trap_a0: [],
+        loaded_trap_a1: [],
+        loaded_trap_a7: [],
     };
 }
 
@@ -134,6 +149,10 @@ export fn sim_kernel_init(k: &SimKernel) void {
         k.loaded_fault_class[i] = SIM_FAULT_CLASS_NONE;
         k.loaded_fault_code[i] = 0u32;
         k.loaded_fault_signal[i] = 0u32;
+        k.loaded_trap_pc[i] = 0u32;
+        k.loaded_trap_a0[i] = 0u32;
+        k.loaded_trap_a1[i] = 0u32;
+        k.loaded_trap_a7[i] = 0u32;
         i = i + 1;
     }
 }
@@ -259,6 +278,50 @@ fn sim_loaded_fault_signal_ref(k: &SimKernel, slot: u32) &u32 {
     return &k.loaded_fault_signal[7];
 }
 
+fn sim_loaded_trap_pc_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_trap_pc[0]; }
+    if slot == 1u32 { return &k.loaded_trap_pc[1]; }
+    if slot == 2u32 { return &k.loaded_trap_pc[2]; }
+    if slot == 3u32 { return &k.loaded_trap_pc[3]; }
+    if slot == 4u32 { return &k.loaded_trap_pc[4]; }
+    if slot == 5u32 { return &k.loaded_trap_pc[5]; }
+    if slot == 6u32 { return &k.loaded_trap_pc[6]; }
+    return &k.loaded_trap_pc[7];
+}
+
+fn sim_loaded_trap_a0_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_trap_a0[0]; }
+    if slot == 1u32 { return &k.loaded_trap_a0[1]; }
+    if slot == 2u32 { return &k.loaded_trap_a0[2]; }
+    if slot == 3u32 { return &k.loaded_trap_a0[3]; }
+    if slot == 4u32 { return &k.loaded_trap_a0[4]; }
+    if slot == 5u32 { return &k.loaded_trap_a0[5]; }
+    if slot == 6u32 { return &k.loaded_trap_a0[6]; }
+    return &k.loaded_trap_a0[7];
+}
+
+fn sim_loaded_trap_a1_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_trap_a1[0]; }
+    if slot == 1u32 { return &k.loaded_trap_a1[1]; }
+    if slot == 2u32 { return &k.loaded_trap_a1[2]; }
+    if slot == 3u32 { return &k.loaded_trap_a1[3]; }
+    if slot == 4u32 { return &k.loaded_trap_a1[4]; }
+    if slot == 5u32 { return &k.loaded_trap_a1[5]; }
+    if slot == 6u32 { return &k.loaded_trap_a1[6]; }
+    return &k.loaded_trap_a1[7];
+}
+
+fn sim_loaded_trap_a7_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_trap_a7[0]; }
+    if slot == 1u32 { return &k.loaded_trap_a7[1]; }
+    if slot == 2u32 { return &k.loaded_trap_a7[2]; }
+    if slot == 3u32 { return &k.loaded_trap_a7[3]; }
+    if slot == 4u32 { return &k.loaded_trap_a7[4]; }
+    if slot == 5u32 { return &k.loaded_trap_a7[5]; }
+    if slot == 6u32 { return &k.loaded_trap_a7[6]; }
+    return &k.loaded_trap_a7[7];
+}
+
 fn sim_entry_fn_ref(k: &SimKernel, slot: u32) &i32 {
     if slot == 0u32 { return &k.entry_fns[0]; }
     if slot == 1u32 { return &k.entry_fns[1]; }
@@ -339,6 +402,16 @@ export fn sim_reset_loaded_result(k: &SimKernel, cid: u32) !void {
     sim_loaded_fault_class_ref(k, cid)[0] = SIM_FAULT_CLASS_NONE;
     sim_loaded_fault_code_ref(k, cid)[0] = 0u32;
     sim_loaded_fault_signal_ref(k, cid)[0] = 0u32;
+}
+
+fn sim_reset_loaded_trap_state(k: &SimKernel, cid: u32) !void {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    sim_loaded_trap_pc_ref(k, cid)[0] = 0u32;
+    sim_loaded_trap_a0_ref(k, cid)[0] = 0u32;
+    sim_loaded_trap_a1_ref(k, cid)[0] = 0u32;
+    sim_loaded_trap_a7_ref(k, cid)[0] = 0u32;
 }
 
 export fn sim_store_loaded_exit_result(k: &SimKernel, cid: u32, exit_code: i32) !void {
@@ -760,6 +833,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     sim_loaded_base_vpn_ref(k, cid)[0] = base_vpn;
     sim_loaded_page_count_ref(k, cid)[0] = pages_needed;
     try sim_reset_loaded_result(k, cid);
+    try sim_reset_loaded_trap_state(k, cid);
     k.host_ctx.heap_base_vpn[cid] = base_vpn + pages_needed;
     k.host_ctx.heap_next_vpn[cid] = base_vpn + pages_needed;
     k.host_ctx.stack_base_vpn[cid] = stack_base_vpn;
@@ -767,6 +841,77 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     sim_entry_fn_ref(k, cid)[0] = -1;
     try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
     try scheduler_set_priority(&k.sched, cid, priority);
+}
+
+fn sim_rv32_sign_extend_12(imm12: u32) i32 {
+    if (imm12 & 2048u32) != 0u32 {
+        const neg_tmp: !i32 = (imm12 | 4294963200u32) as! i32;
+        return neg_tmp.value;
+    }
+    const pos_tmp: !i32 = imm12 as! i32;
+    return pos_tmp.value;
+}
+
+fn sim_exec_loaded_rv32_trap(k: &SimKernel, cid: u32, hdr: &ImageHeader) !i32 {
+    if k == null || hdr == null {
+        return error.InvalidState;
+    }
+    var pc: u32 = sim_loaded_trap_pc_ref(k, cid)[0];
+    if pc == 0u32 {
+        pc = hdr.entry_va;
+    }
+    var a0: u32 = sim_loaded_trap_a0_ref(k, cid)[0];
+    var a1: u32 = sim_loaded_trap_a1_ref(k, cid)[0];
+    var a7: u32 = sim_loaded_trap_a7_ref(k, cid)[0];
+    var steps: u32 = 0u32;
+    const code_end: u32 = hdr.code_va + hdr.code_size;
+    while steps < 256u32 {
+        if pc < hdr.code_va || pc + 4u32 > code_end {
+            return error.ImgInsnDenied;
+        }
+        const insn_ptr: &byte = try mmu_translate_ptr(sim_pt_ref(k, cid), &k.host_ctx.pm, pc, 4u32, ACCESS_X);
+        const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
+        const opcode: u32 = insn & 127u32;
+        if opcode == RV32_OPCODE_OP_IMM {
+            const funct3: u32 = (insn >> 12) & 7u32;
+            const rs1: u32 = (insn >> 15) & 31u32;
+            const rd: u32 = (insn >> 7) & 31u32;
+            if funct3 != RV32_FUNCT3_ADDI || rs1 != 0u32 {
+                return error.ImgInsnDenied;
+            }
+            const imm: i32 = sim_rv32_sign_extend_12((insn >> 20) & 4095u32);
+            const imm_tmp: !u32 = imm as! u32;
+            if rd == RV32_REG_A0 {
+                a0 = imm_tmp.value;
+            } else if rd == RV32_REG_A1 {
+                a1 = imm_tmp.value;
+            } else if rd == RV32_REG_A7 {
+                a7 = imm_tmp.value;
+            } else if rd != 0u32 {
+                return error.ImgInsnDenied;
+            }
+            pc = pc + 4u32;
+        } else if insn == RV32_INSN_ECALL {
+            const ret: u32 = try sim_syscall(k, cid, a7, a0, a1);
+            a0 = ret;
+            pc = pc + 4u32;
+            if a7 == SYS_YIELD {
+                sim_loaded_trap_pc_ref(k, cid)[0] = pc;
+                sim_loaded_trap_a0_ref(k, cid)[0] = a0;
+                sim_loaded_trap_a1_ref(k, cid)[0] = a1;
+                sim_loaded_trap_a7_ref(k, cid)[0] = a7;
+                return 0;
+            }
+        } else if insn == RV32_INSN_EBREAK {
+            try sim_store_loaded_exit_result(k, cid, a0 as i32);
+            try sim_reset_loaded_trap_state(k, cid);
+            return 1;
+        } else {
+            return error.ImgInsnDenied;
+        }
+        steps = steps + 1u32;
+    }
+    return error.InvalidState;
 }
 
 export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
@@ -783,6 +928,9 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
     const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
     if hdr.bridge_kind == ImageBridgeKind.ibk_trap {
         if hdr.target_arch == ImageTargetArch.ita_rv32 {
+            if hdr.code_size > 4u32 {
+                return try sim_exec_loaded_rv32_trap(k, cid, &hdr);
+            }
             if insn != 115u32 {
                 return error.ImgInsnDenied;
             }
