@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 SCRIPTS=(
     "tests/verify_microapp_mode_gate.sh"
+    "tests/verify_microapp_mmu_codegen.sh"
     "tests/verify_microapp_loader_generic.sh"
     "tests/verify_microapp_syscall_codegen.sh"
     "tests/verify_microapp_pobj_manifest.sh"

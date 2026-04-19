@@ -313,7 +313,10 @@
 
 验收标准：
 
-- [ ] 文档、示例、CLI、回归测试一致
+- [~] 文档、示例、CLI、回归测试一致
+  - [x] 当前已统一到 `make microapp-check` 聚合入口
+  - [x] Ubuntu CI / README / Makefile help / 官方示例 / microapp 回归清单已对齐
+  - [ ] 其余平台与发布文档仍待继续对齐
 
 ---
 

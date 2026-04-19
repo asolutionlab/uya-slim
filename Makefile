@@ -379,42 +379,16 @@ check: uya
 		exit 1; \
 	fi; \
 		echo ""; \
-		echo "验证 microapp MMU C 包装..."; \
-		if ./tests/verify_microapp_mmu_codegen.sh > /tmp/verify_out.txt 2>&1; then \
-			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-			VERIFY_EXIT=0; \
-	else \
-		cat /tmp/verify_out.txt; \
-		VERIFY_EXIT=1; \
-	fi; \
-		if [ $$VERIFY_EXIT -ne 0 ]; then \
-			echo "✗ microapp MMU C 包装验证失败"; \
-			exit 1; \
-		fi; \
-		echo ""; \
-		echo "验证 microapp run -> SYS_PRINT 输出..."; \
-		if ./tests/verify_microapp_loader_generic.sh > /tmp/verify_out.txt 2>&1; then \
-			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		echo "验证 microapp 聚合套件..."; \
+		if $(MAKE) microapp-check > /tmp/verify_out.txt 2>&1; then \
+			grep -E "✓|==>|ok$$|通过" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 			VERIFY_EXIT=0; \
 		else \
 			cat /tmp/verify_out.txt; \
 			VERIFY_EXIT=1; \
 		fi; \
 		if [ $$VERIFY_EXIT -ne 0 ]; then \
-			echo "✗ microapp run -> SYS_PRINT 输出验证失败"; \
-			exit 1; \
-		fi; \
-		echo ""; \
-		echo "验证 microapp @syscall 重定向..."; \
-		if ./tests/verify_microapp_syscall_codegen.sh > /tmp/verify_out.txt 2>&1; then \
-			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-			VERIFY_EXIT=0; \
-		else \
-			cat /tmp/verify_out.txt; \
-			VERIFY_EXIT=1; \
-		fi; \
-		if [ $$VERIFY_EXIT -ne 0 ]; then \
-			echo "✗ microapp @syscall 重定向验证失败"; \
+			echo "✗ microapp 聚合套件验证失败"; \
 			exit 1; \
 		fi; \
 		echo ""; \
@@ -550,139 +524,11 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
-	@echo "验证 microapp MMU C 包装..."
-	@./tests/verify_microapp_mmu_codegen.sh; \
+	@echo "验证 microapp 聚合套件..."
+	@$(MAKE) microapp-check; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp MMU C 包装验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp run -> SYS_PRINT 输出..."
-	@./tests/verify_microapp_loader_generic.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp run -> SYS_PRINT 输出验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp @syscall 重定向..."
-	@./tests/verify_microapp_syscall_codegen.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp @syscall 重定向验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp inspect-image..."
-	@./tests/verify_microapp_inspect_cli.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp inspect-image 验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp profile CLI..."
-	@./tests/verify_microapp_profile_cli.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp profile CLI 验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp profile 默认推导..."
-	@./tests/verify_microapp_profile_default_resolution.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp profile 默认推导验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp profile 示例矩阵..."
-	@./tests/verify_microapp_profile_example_matrix.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp profile 示例矩阵验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 portable microapp 源码审计..."
-	@./tests/verify_microapp_portable_sources.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ portable microapp 源码审计失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 official microapp 示例运行..."
-	@./tests/verify_microapp_example_sources_runtime.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ official microapp 示例运行验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 official microapp 示例 codegen..."
-	@./tests/verify_microapp_example_codegen.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ official microapp 示例 codegen 验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp host API 诊断..."
-	@./tests/verify_microapp_host_api_diagnostics.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp host API 诊断验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp verify-image..."
-	@./tests/verify_microapp_verify_cli.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp verify-image 验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp alloc/yield 映射执行..."
-	@./tests/verify_microapp_alloc_yield_runtime.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp alloc/yield 映射执行验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp time 映射执行..."
-	@./tests/verify_microapp_time_runtime.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp time 映射执行验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp bss manifest..."
-	@./tests/verify_microapp_bss_manifest.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp bss manifest 验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp bss 映射执行..."
-	@./tests/verify_microapp_bss_runtime.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp bss 映射执行验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 microapp unwired profile 显式失败..."
-	@./tests/verify_microapp_loader_unwired_profile.sh; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp unwired profile 显式失败验证失败"; \
+		echo "✗ microapp 聚合套件验证失败"; \
 		exit 1; \
 	fi
 	@echo ""

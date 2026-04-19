@@ -15,9 +15,9 @@ COMPILE_LOG="$TMP_DIR/compile.log"
 RUN_LOG="$TMP_DIR/run.log"
 
 : "${TARGET_GCC:=x86_64-linux-gnu-gcc}"
-: "${MICROAPP_TARGET_ARCH:=x86_64}"
+: "${MICROAPP_TARGET_PROFILE:=rv32_baremetal_softvm}"
 export TARGET_GCC
-export MICROAPP_TARGET_ARCH
+export MICROAPP_TARGET_PROFILE
 
 "$ROOT_DIR/bin/uya" build --app microapp --no-safety-proof "$SOURCE" -o "$OUT_C" >"$BUILD_LOG" 2>&1
 
