@@ -24,7 +24,7 @@ test "payload_pack_to_uapp_roundtrip" {
         code: code[0: 4],
         rodata: rodata[0: 4],
         data: empty[0: 0],
-        bss_size: 0u32,
+        bss_size: 16u32,
         stack_size_hint: 0u32,
         relocs: empty[0: 0],
         reloc_count: 0u32,
@@ -41,4 +41,5 @@ test "payload_pack_to_uapp_roundtrip" {
     try assert_eq_i32(hdr.code_offset as i32, IMAGE_HEADER_SIZE as i32);
     try assert_eq_i32(hdr.rodata_offset as i32, (IMAGE_HEADER_SIZE + 4u32) as i32);
     try assert_eq_i32(hdr.code_va as i32, IMAGE_HEADER_SIZE as i32);
+    try assert_eq_i32(hdr.bss_size as i32, 16);
 }

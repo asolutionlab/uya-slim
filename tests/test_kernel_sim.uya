@@ -117,6 +117,49 @@ fn build_sim_image_with_data(buf: &[byte], ro_len: u32, data_len: u32) u32 {
     return total;
 }
 
+fn build_sim_image_with_bss(buf: &[byte], ro_len: u32, bss_len: u32) u32 {
+    const total: u32 = IMAGE_HEADER_SIZE + 4u32 + ro_len;
+    var i: u32 = 0u32;
+    while i < total {
+        buf.ptr[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+    w32(buf, 0, IMAGE_MAGIC);
+    w16(buf, 4, 2);
+    w16(buf, 6, 1);
+    w32(buf, 8, total);
+    w32(buf, 12, 0u32);
+    w32(buf, 16, 4u32);
+    w32(buf, 20, ro_len);
+    w32(buf, 24, 0u32);
+    w32(buf, 96, 0u32);
+    w32(buf, 100, bss_len);
+    w32(buf, 104, 0u32);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 124, 0u32);
+    w32(buf, 128, 0u32);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
+    w32(buf, 140, IMAGE_HEADER_SIZE);
+    w32(buf, 144, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 148, IMAGE_HEADER_SIZE + 4u32 + ro_len);
+    w32(buf, 60, 0u32);
+    buf.ptr[64] = BUILD_MODE_CONTAINER;
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_trap);
+    w32(buf, IMAGE_HEADER_SIZE as usize, 115u32);
+    var digest: [byte: 32] = [];
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
+    i = 0u32;
+    while i < 32u32 {
+        buf.ptr[(28u32 + i) as usize] = digest[i as usize];
+        i = i + 1u32;
+    }
+    return total;
+}
+
 fn build_sim_x86_exit_image(buf: &[byte]) u32 {
     const total: u32 = IMAGE_HEADER_SIZE + 4u32;
     var i: u32 = 0u32;
@@ -356,6 +399,22 @@ test "sim_load_image_data_page_sets_writable_bit" {
         has_w = 1;
     }
     try assert_eq_i32(has_w, 1);
+}
+
+test "sim_load_image_bss_page_is_zero_and_writable" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536;
+    var img: [byte: 256] = [];
+    const img_len: u32 = build_sim_image_with_bss(img[0: 256], 4u32, 8u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+
+    const bss_ptr: &byte = try mmu_translate_ptr(&k.host_ctx.pts[0], &k.host_ctx.pm, IMAGE_HEADER_SIZE + 8u32, 8u32, ACCESS_W);
+    try assert_eq_i32(bss_ptr[0] as i32, 0);
+    bss_ptr[0] = 77 as byte;
+    try assert_eq_i32(bss_ptr[0] as i32, 77);
 }
 
 test "sim_load_image_x86_call_gate_executes_mapped_payload" {

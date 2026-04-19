@@ -582,6 +582,22 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 microapp bss manifest..."
+	@./tests/verify_microapp_bss_manifest.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp bss manifest 验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 microapp bss 映射执行..."
+	@./tests/verify_microapp_bss_runtime.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp bss 映射执行验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 SIMD @vector.select C 按需生成..."
 	@./tests/verify_simd_select_c_emit.sh; \
 	VERIFY_EXIT=$$?; \

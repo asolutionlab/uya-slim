@@ -481,7 +481,7 @@ fn microapp_token_equals(line: &byte, token_start: usize, token_end: usize, expe
     return 1;
 }
 
-fn microapp_section_vma_from_report(report: &byte, report_len: usize, section_name: &byte) !u32 {
+fn microapp_section_field_from_report(report: &byte, report_len: usize, section_name: &byte, field_token_index: i32) !u32 {
     var line_start: usize = 0;
     while line_start < report_len {
         var line_end: usize = line_start;
@@ -492,13 +492,13 @@ fn microapp_section_vma_from_report(report: &byte, report_len: usize, section_na
         var tok0_e: usize = 0;
         var tok1_s: usize = 0;
         var tok1_e: usize = 0;
-        var tok3_s: usize = 0;
-        var tok3_e: usize = 0;
+        var field_s: usize = 0;
+        var field_e: usize = 0;
         if microapp_token_bounds(report + line_start, line_end - line_start, 0, &tok0_s, &tok0_e) != 0 &&
            microapp_token_bounds(report + line_start, line_end - line_start, 1, &tok1_s, &tok1_e) != 0 &&
-           microapp_token_bounds(report + line_start, line_end - line_start, 3, &tok3_s, &tok3_e) != 0 {
+           microapp_token_bounds(report + line_start, line_end - line_start, field_token_index, &field_s, &field_e) != 0 {
             if microapp_token_equals(report + line_start, tok1_s, tok1_e, section_name) != 0 {
-                return try microapp_hex_to_u32_span(report + line_start, tok3_s, tok3_e);
+                return try microapp_hex_to_u32_span(report + line_start, field_s, field_e);
             }
         }
         if line_end >= report_len {
@@ -507,6 +507,14 @@ fn microapp_section_vma_from_report(report: &byte, report_len: usize, section_na
         line_start = line_end + 1;
     }
     return error.InvalidState;
+}
+
+fn microapp_section_vma_from_report(report: &byte, report_len: usize, section_name: &byte) !u32 {
+    return try microapp_section_field_from_report(report, report_len, section_name, 3);
+}
+
+fn microapp_section_size_from_report(report: &byte, report_len: usize, section_name: &byte) !u32 {
+    return try microapp_section_field_from_report(report, report_len, section_name, 2);
 }
 
 fn microapp_symbol_vma_from_report(report: &byte, report_len: usize, symbol_name: &byte) !u32 {
@@ -534,7 +542,7 @@ fn microapp_symbol_vma_from_report(report: &byte, report_len: usize, symbol_name
     return error.InvalidState;
 }
 
-fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, data_va: &u32, entry_va: &u32) i32 {
+fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, data_va: &u32, bss_va: &u32, bss_len: &u32, entry_va: &u32) i32 {
     var report_path: [byte: PATH_MAX] = [];
     var sym_path: [byte: PATH_MAX] = [];
     var cmd: [byte: 8192] = [];
@@ -572,6 +580,8 @@ fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, 
     const text_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".text" as &byte) catch { return 1; };
     var rodata_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".rodata" as &byte) catch { text_raw; };
     var data_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".data" as &byte) catch { rodata_raw; };
+    var bss_raw: u32 = microapp_section_vma_from_report(&report_buf[0] as &byte, report_size as usize, ".bss" as &byte) catch { 0u32; };
+    var bss_raw_len: u32 = microapp_section_size_from_report(&report_buf[0] as &byte, report_size as usize, ".bss" as &byte) catch { 0u32; };
     var entry_raw: u32 = microapp_symbol_vma_from_report(&sym_buf[0] as &byte, sym_size as usize, "main_main" as &byte) catch { 0u32; };
     if entry_raw == 0u32 {
         entry_raw = microapp_symbol_vma_from_report(&sym_buf[0] as &byte, sym_size as usize, "main" as &byte) catch { 0u32; };
@@ -586,9 +596,18 @@ fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, 
     if data_raw != 0u32 && data_raw < base_raw {
         base_raw = data_raw;
     }
+    if bss_raw_len > 0u32 && bss_raw < base_raw {
+        base_raw = bss_raw;
+    }
     text_va[0] = MICROAPP_VADDR_BASE + (text_raw - base_raw);
     rodata_va[0] = MICROAPP_VADDR_BASE + (rodata_raw - base_raw);
     data_va[0] = MICROAPP_VADDR_BASE + (data_raw - base_raw);
+    if bss_raw_len > 0u32 {
+        bss_va[0] = MICROAPP_VADDR_BASE + (bss_raw - base_raw);
+    } else {
+        bss_va[0] = 0u32;
+    }
+    bss_len[0] = bss_raw_len;
     entry_va[0] = MICROAPP_VADDR_BASE + (entry_raw - base_raw);
     return 0;
 }
@@ -683,12 +702,14 @@ fn write_microapp_payload_obj(
     const profile_id: u32 = profile.profile_id;
     const image_flags: u32 = 0u32;
     const bridge_kind_raw: u32 = profile.bridge_kind_raw;
-    const bss_size: u32 = 0u32;
     const stack_size_hint: u32 = 0u32;
     var entry_va: u32 = 0u32;
     var code_va: u32 = 0u32;
     var rodata_va: u32 = 0u32;
     var data_va: u32 = 0u32;
+    var bss_va: u32 = 0u32;
+    var bss_len: u32 = 0u32;
+    var bss_size: u32 = 0u32;
     var text_bin_path: [byte: PATH_MAX] = [];
     var rodata_bin_path: [byte: PATH_MAX] = [];
     var data_bin_path: [byte: PATH_MAX] = [];
@@ -716,7 +737,7 @@ fn write_microapp_payload_obj(
         fprintf(libc.stderr, "错误: 无法生成 microapp ELF 路径\n" as *byte);
         return 1;
     }
-    if microapp_extract_elf_vaddrs(&exe_path[0] as &byte, &code_va, &rodata_va, &data_va, &entry_va) != 0 {
+    if microapp_extract_elf_vaddrs(&exe_path[0] as &byte, &code_va, &rodata_va, &data_va, &bss_va, &bss_len, &entry_va) != 0 {
         fprintf(libc.stderr, "错误: 无法提取 microapp ELF 虚拟地址信息\n" as *byte);
         return 1;
     }
@@ -739,6 +760,19 @@ fn write_microapp_payload_obj(
     if data_len_raw >= 0 {
         const data_len_tmp: !u32 = data_len_raw as! u32;
         data_len = data_len_tmp.value;
+    }
+    if bss_len > 0u32 {
+        if data_len == 0u32 {
+            data_va = bss_va;
+            bss_size = bss_len;
+        } else {
+            const data_end_va: u32 = data_va + data_len;
+            if bss_va < data_end_va {
+                fprintf(libc.stderr, "错误: microapp ELF .bss 起始地址早于 .data 结束地址\n" as *byte);
+                return 1;
+            }
+            bss_size = (bss_va - data_end_va) + bss_len;
+        }
     }
     const fp: &FILE = fopen(output_path as *byte, "wb" as *byte);
     if fp == null {

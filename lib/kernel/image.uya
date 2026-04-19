@@ -331,7 +331,7 @@ export fn image_verify_structure(hdr: &ImageHeader, total_len: u32) !void {
     if hdr.rodata_size > 0u32 && hdr.rodata_va < hdr.code_va + hdr.code_size {
         return error.ImgLayoutInvalid;
     }
-    if hdr.data_size > 0u32 && hdr.data_va < hdr.rodata_va + hdr.rodata_size {
+    if (hdr.data_size > 0u32 || hdr.bss_size > 0u32) && hdr.data_va < hdr.rodata_va + hdr.rodata_size {
         return error.ImgLayoutInvalid;
     }
 }

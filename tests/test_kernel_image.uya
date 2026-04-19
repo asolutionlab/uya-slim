@@ -183,6 +183,27 @@ test "image_verify_structure_x86_64_pass" {
     try image_verify_structure(&hdr, IMAGE_HEADER_SIZE + 4u32);
 }
 
+test "image_verify_structure_bss_only_span_pass" {
+    var buf: [byte: 192] = [];
+    build_test_image(buf[0: 192]);
+    w32(buf[0: 192], 100, 16u32); // bss_size
+    w32(buf[0: 192], 148, IMAGE_HEADER_SIZE + 4u32); // data_va doubles as bss base when data_size=0
+    var digest: [byte: 32] = [];
+    var i: usize = 0;
+    while i < 32 {
+        buf[28 + i] = 0;
+        i = i + 1;
+    }
+    sha256_digest(buf[0: IMAGE_HEADER_SIZE as usize + 4usize], digest[0: 32]);
+    i = 0;
+    while i < 32 {
+        buf[28 + i] = digest[i];
+        i = i + 1;
+    }
+    const hdr: ImageHeader = try image_parse_header(buf[0: IMAGE_HEADER_SIZE as usize + 4usize]);
+    try image_verify_structure(&hdr, IMAGE_HEADER_SIZE + 4u32);
+}
+
 // ── Stage 3: RV32 Instruction Policy Tests ──
 
 test "rv32_scan_ecall_allowed" {

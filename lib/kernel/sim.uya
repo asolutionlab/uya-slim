@@ -180,7 +180,7 @@ fn sim_loaded_min_va(hdr: &ImageHeader) u32 {
     if hdr.rodata_size > 0u32 && hdr.rodata_va < min_va {
         min_va = hdr.rodata_va;
     }
-    if hdr.data_size > 0u32 && hdr.data_va < min_va {
+    if (hdr.data_size > 0u32 || hdr.bss_size > 0u32) && hdr.data_va < min_va {
         min_va = hdr.data_va;
     }
     if hdr.entry_va < min_va {
@@ -192,7 +192,7 @@ fn sim_loaded_min_va(hdr: &ImageHeader) u32 {
 fn sim_loaded_max_end(hdr: &ImageHeader) u32 {
     var max_end: u32 = hdr.code_va + hdr.code_size;
     const ro_end: u32 = hdr.rodata_va + hdr.rodata_size;
-    const data_end: u32 = hdr.data_va + hdr.data_size;
+    const data_end: u32 = hdr.data_va + hdr.data_size + hdr.bss_size;
     if ro_end > max_end {
         max_end = ro_end;
     }
@@ -210,7 +210,7 @@ fn sim_page_flags_for_image_range(hdr: &ImageHeader, page_start: u32, page_end: 
     if sim_range_overlaps(hdr.rodata_va, hdr.rodata_size, page_start, page_end) != 0 {
         flags = flags | PTE_R | PTE_U;
     }
-    if sim_range_overlaps(hdr.data_va, hdr.data_size, page_start, page_end) != 0 {
+    if sim_range_overlaps(hdr.data_va, hdr.data_size + hdr.bss_size, page_start, page_end) != 0 {
         flags = flags | PTE_R | PTE_W | PTE_U;
     }
     return flags;

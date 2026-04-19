@@ -106,7 +106,7 @@ export fn payload_validate_layout(p: &PayloadObj) !void {
     if p.rodata.len > 0u32 && rodata_va < code_va + p.code.len as u32 {
         return error.ImgLayoutInvalid;
     }
-    if p.data.len > 0u32 && data_va < rodata_va + p.rodata.len as u32 {
+    if (p.data.len > 0u32 || p.bss_size > 0u32) && data_va < rodata_va + p.rodata.len as u32 {
         return error.ImgLayoutInvalid;
     }
 }

@@ -33,6 +33,7 @@
 - payload 从容器虚拟地址入口真执行
 - `SYS_PRINT / SYS_ALLOC / SYS_YIELD` 可用
   - 当前已有 x86_64 mapped payload 回归覆盖 `print + alloc + yield`
+- `.bss` 能正确以零初始化 RW 区域参与装载和执行
 
 ### M2：Hosted 多平台
 
@@ -123,7 +124,7 @@
 
 - [x] 不再只抽 `.text/.rodata`
 - [x] 提取 `.data`
-- [ ] 计算 `.bss`
+- [x] 计算 `.bss`
 - [ ] 提取 relocation 表
 - [x] 计算 `entry_va`
 
@@ -185,6 +186,7 @@
 
 - [~] 在 [sim.uya](/home/winger/uya/uya/lib/kernel/sim.uya) 新增段级映射状态
   - [x] 已按 `code_va/rodata_va/data_va` 建立段级页权限映射
+  - [x] `.bss` 已作为 `data_va + data_size` 之后的零初始化 RW 区域参与映射
   - [ ] 还没有独立的运行时段元数据表
 - [~] 用 `mmap/mprotect` 建立 `RX/R/RW` 映射
   - [x] hosted loader 已分配可执行 backing，并由页表保留 `RX/R/RW` 语义
@@ -209,6 +211,7 @@
 - [x] `hello microapp` 能由 `.uapp` 真执行输出
 - [x] `alloc + yield` 能在 x86_64 mapped payload 路径中执行
 - [x] `time` 能在 x86_64 mapped payload 路径中执行
+- [x] `bss` 能在 x86_64 mapped payload 路径中正确零初始化并执行
 
 ---
 
