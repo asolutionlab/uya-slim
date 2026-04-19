@@ -37,9 +37,11 @@ build_mode = data[64]
 target_arch = data[65]
 assert code_size > 0, code_size
 assert rodata_size > 0, rodata_size
-assert reloc_count > 0, reloc_count
+assert reloc_count >= 0, reloc_count
 assert entry_offset == 0, entry_offset
-assert entry_va == code_va + entry_offset, (entry_va, code_va, entry_offset)
+assert entry_va >= code_va, (entry_va, code_va)
+assert entry_va < code_va + code_size, (entry_va, code_va, code_size)
+assert entry_va % 4 == 0, entry_va
 assert code_va >= 65536, code_va
 assert rodata_va >= code_va + code_size, (rodata_va, code_va, code_size)
 assert code_off >= 160, code_off

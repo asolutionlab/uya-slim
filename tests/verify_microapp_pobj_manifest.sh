@@ -44,15 +44,17 @@ rodata_va = int.from_bytes(data[76:80], "little")
 data_va = int.from_bytes(data[80:84], "little")
 assert code_len > 0, code_len
 assert rodata_len > 0, rodata_len
-assert reloc_count > 0, reloc_count
+assert reloc_count >= 0, reloc_count
 assert profile_id == 1, profile_id
 assert image_flags == 0, image_flags
 assert bridge_kind == 2, bridge_kind
 assert bss_size >= 0, bss_size
 assert stack_hint == 65536, stack_hint
 assert data_len >= 0, data_len
-assert reloc_len > 0, reloc_len
-assert entry_va == code_va, (entry_va, code_va)
+assert reloc_len == reloc_count * 8, (reloc_len, reloc_count)
+assert entry_va >= code_va, (entry_va, code_va)
+assert entry_va < code_va + code_len, (entry_va, code_va, code_len)
+assert entry_va % 4 == 0, entry_va
 assert code_va >= 65536, code_va
 assert data[84:84 + len(source_path)] == source_path, data[84:84 + len(source_path)]
 code_off = 84 + len(source_path)

@@ -189,14 +189,51 @@ const ELFDATA2LSB_RAW: byte = 1 as byte;
 const ELF64_SECTION_TYPE_SYMTAB_RAW: u32 = 2u32;
 const ELF64_SECTION_TYPE_RELA_RAW: u32 = 4u32;
 const ELF64_SECTION_TYPE_DYNSYM_RAW: u32 = 11u32;
+const ELF64_SECTION_TYPE_PROGBITS_RAW: u32 = 1u32;
+const ELF64_SECTION_TYPE_NOBITS_RAW: u32 = 8u32;
+const ELF64_SECTION_FLAG_WRITE_RAW: u64 = 1u64;
+const ELF64_SECTION_FLAG_ALLOC_RAW: u64 = 2u64;
+const ELF64_SECTION_FLAG_EXEC_RAW: u64 = 4u64;
 const ELF_MACHINE_X86_64_RAW: u16 = 62u16;
 const ELF_MACHINE_AARCH64_RAW: u16 = 183u16;
+const ELF_RELOC_X86_64_PC32_RAW: u32 = 2u32;
+const ELF_RELOC_X86_64_PLT32_RAW: u32 = 4u32;
 const ELF_RELOC_X86_64_64_RAW: u32 = 1u32;
 const ELF_RELOC_X86_64_GLOB_DAT_RAW: u32 = 6u32;
 const ELF_RELOC_X86_64_RELATIVE_RAW: u32 = 8u32;
 const ELF_RELOC_AARCH64_ABS64_RAW: u32 = 257u32;
 const ELF_RELOC_AARCH64_GLOB_DAT_RAW: u32 = 1025u32;
 const ELF_RELOC_AARCH64_RELATIVE_RAW: u32 = 1027u32;
+const ELF64_SECTION_KIND_SKIP_RAW: u32 = 0u32;
+const ELF64_SECTION_KIND_CODE_RAW: u32 = 1u32;
+const ELF64_SECTION_KIND_RODATA_RAW: u32 = 2u32;
+const ELF64_SECTION_KIND_DATA_RAW: u32 = 3u32;
+const ELF64_SECTION_KIND_BSS_RAW: u32 = 4u32;
+const ELF64_MAX_SECTIONS: usize = 256usize;
+var microapp_elf64_section_kind_map: [u32: 256] = [];
+var microapp_elf64_section_off_map: [u32: 256] = [];
+var microapp_elf64_section_va_map: [u32: 256] = [];
+
+fn microapp_elf64_section_kind_at(idx: usize) !u32 {
+    if idx >= @len(microapp_elf64_section_kind_map) {
+        return error.BufRange;
+    }
+    return microapp_elf64_section_kind_map[idx];
+}
+
+fn microapp_elf64_section_off_at(idx: usize) !u32 {
+    if idx >= @len(microapp_elf64_section_off_map) {
+        return error.BufRange;
+    }
+    return microapp_elf64_section_off_map[idx];
+}
+
+fn microapp_elf64_section_va_at(idx: usize) !u32 {
+    if idx >= @len(microapp_elf64_section_va_map) {
+        return error.BufRange;
+    }
+    return microapp_elf64_section_va_map[idx];
+}
 
 struct MicroAppTargetProfile {
     profile_id: u32,
@@ -554,6 +591,9 @@ fn resolve_microapp_target_gcc(profile: &MicroAppTargetProfile, buffer: &byte, b
 }
 
 fn microapp_profile_default_cflags(profile: &MicroAppTargetProfile) &byte {
+    if profile != null && profile.profile_id == MICROAPP_PROFILE_LINUX_X86_64_HARDVM_RAW {
+        return "-std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fpie -ffunction-sections -fdata-sections" as &byte;
+    }
     if profile != null && profile.bridge_kind_raw == MICROAPP_BRIDGE_CALL_GATE_RAW {
         return "-std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fpie -ffunction-sections -fdata-sections -flto=auto" as &byte;
     }
@@ -608,11 +648,25 @@ fn microapp_parse_signed_u32_token(line: &byte, token_start: usize, token_end: u
     return error.InvalidState;
 }
 
+fn microapp_align_u32(value: u32, align: u32) u32 {
+    if align <= 1u32 {
+        return value;
+    }
+    return (value + align - 1u32) & ~(align - 1u32);
+}
+
 fn microapp_target_uses_internal_elf_extraction(target_arch_raw: u32) i32 {
     if target_arch_raw == MICROAPP_TARGET_ARCH_X86_64_RAW {
         return 1;
     }
     if target_arch_raw == MICROAPP_TARGET_ARCH_AARCH64_RAW {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_target_uses_object_elf_extraction(target_arch_raw: u32) i32 {
+    if target_arch_raw == MICROAPP_TARGET_ARCH_X86_64_RAW {
         return 1;
     }
     return 0;
@@ -674,6 +728,31 @@ fn microapp_elf_cstring_equals_at(buf: &byte, buf_len: usize, table_off: usize, 
         return 0;
     }
     return (buf[term_off] == 0 as byte) as i32;
+}
+
+fn microapp_elf_cstring_has_prefix_at(buf: &byte, buf_len: usize, table_off: usize, table_len: usize, str_off: u32, prefix: &byte) i32 {
+    if buf == null || prefix == null {
+        return 0;
+    }
+    const name_off: usize = str_off as usize;
+    if name_off >= table_len {
+        return 0;
+    }
+    var i: usize = 0usize;
+    while prefix[i] != 0 as byte {
+        if name_off + i >= table_len {
+            return 0;
+        }
+        const abs_off: usize = table_off + name_off + i;
+        if abs_off >= buf_len {
+            return 0;
+        }
+        if buf[abs_off] != prefix[i] {
+            return 0;
+        }
+        i = i + 1usize;
+    }
+    return 1;
 }
 
 fn microapp_elf64_symbol_value_by_index(elf: &byte, elf_len: usize, shoff: usize, shentsize: usize, shnum: usize, sym_section_index: u32, sym_index: u32, value_out: &u64) i32 {
@@ -985,6 +1064,433 @@ fn microapp_extract_internal_elf64(exe_path: &byte, target_arch_raw: u32, code_l
         }
         i = i + 1usize;
     }
+    reloc_count[0] = out_count;
+    reloc_len[0] = out_count * 8u32;
+    return 0;
+}
+
+fn microapp_zero_byte_range(buf: &byte, len: u32) void {
+    if buf == null {
+        return;
+    }
+    var i: u32 = 0u32;
+    while i < len {
+        buf[i as usize] = 0 as byte;
+        i = i + 1u32;
+    }
+}
+
+fn microapp_object_elf64_section_kind(elf: &byte, elf_len: usize, shstr_off: usize, shstr_size: usize, sh_name: u32, sh_type: u32, sh_flags: u64) u32 {
+    if (sh_flags & ELF64_SECTION_FLAG_ALLOC_RAW) == 0u64 {
+        return ELF64_SECTION_KIND_SKIP_RAW;
+    }
+    if microapp_elf_cstring_has_prefix_at(elf, elf_len, shstr_off, shstr_size, sh_name, ".text" as &byte) != 0 &&
+       sh_type == ELF64_SECTION_TYPE_PROGBITS_RAW &&
+       (sh_flags & ELF64_SECTION_FLAG_EXEC_RAW) != 0u64 {
+        return ELF64_SECTION_KIND_CODE_RAW;
+    }
+    if microapp_elf_cstring_has_prefix_at(elf, elf_len, shstr_off, shstr_size, sh_name, ".rodata" as &byte) != 0 &&
+       sh_type == ELF64_SECTION_TYPE_PROGBITS_RAW &&
+       (sh_flags & ELF64_SECTION_FLAG_WRITE_RAW) == 0u64 {
+        return ELF64_SECTION_KIND_RODATA_RAW;
+    }
+    if microapp_elf_cstring_has_prefix_at(elf, elf_len, shstr_off, shstr_size, sh_name, ".data" as &byte) != 0 &&
+       sh_type == ELF64_SECTION_TYPE_PROGBITS_RAW &&
+       (sh_flags & ELF64_SECTION_FLAG_WRITE_RAW) != 0u64 {
+        return ELF64_SECTION_KIND_DATA_RAW;
+    }
+    if microapp_elf_cstring_has_prefix_at(elf, elf_len, shstr_off, shstr_size, sh_name, ".bss" as &byte) != 0 &&
+       sh_type == ELF64_SECTION_TYPE_NOBITS_RAW &&
+       (sh_flags & ELF64_SECTION_FLAG_WRITE_RAW) != 0u64 {
+        return ELF64_SECTION_KIND_BSS_RAW;
+    }
+    return ELF64_SECTION_KIND_SKIP_RAW;
+}
+
+fn microapp_object_elf64_symbol_value_by_index(elf: &byte, elf_len: usize, shoff: usize, shentsize: usize, shnum: usize, symtab_index: u32, sym_index: u32, value_out: &u32) i32 {
+    if elf == null || value_out == null {
+        return 1;
+    }
+    if symtab_index as usize >= shnum || symtab_index as usize >= ELF64_MAX_SECTIONS {
+        return 1;
+    }
+    const sh_base: usize = shoff + symtab_index as usize * shentsize;
+    if sh_base + ELF64_SECTION_HEADER_SIZE > elf_len {
+        return 1;
+    }
+    const sh_type: u32 = read_u32_le_at(elf, sh_base + 4usize);
+    if sh_type != ELF64_SECTION_TYPE_SYMTAB_RAW && sh_type != ELF64_SECTION_TYPE_DYNSYM_RAW {
+        return 1;
+    }
+    const sym_off: u64 = read_u64_le_at(elf, sh_base + 24usize);
+    const sym_size: u64 = read_u64_le_at(elf, sh_base + 32usize);
+    const sym_entsize: u64 = read_u64_le_at(elf, sh_base + 56usize);
+    if sym_entsize < ELF64_SYMBOL_SIZE as u64 {
+        return 1;
+    }
+    const rec_off: u64 = sym_off + sym_entsize * sym_index as u64;
+    if rec_off < sym_off || rec_off + ELF64_SYMBOL_SIZE as u64 > sym_off + sym_size {
+        return 1;
+    }
+    if microapp_elf_range_valid(elf_len, rec_off, ELF64_SYMBOL_SIZE as u64) == 0 {
+        return 1;
+    }
+    const st_shndx: u16 = read_u16_le_at(elf, rec_off as usize + 6usize);
+    const st_value_u64: u64 = read_u64_le_at(elf, rec_off as usize + 8usize);
+    if st_shndx == 0u16 {
+        return 1;
+    }
+    if st_shndx == 65521u16 {
+        if st_value_u64 > 4294967295u64 {
+            return 1;
+        }
+        value_out[0] = st_value_u64 as u32;
+        return 0;
+    }
+    if st_shndx as usize >= shnum || st_shndx as usize >= ELF64_MAX_SECTIONS {
+        return 1;
+    }
+    const section_index: usize = st_shndx as usize;
+    if section_index >= @len(microapp_elf64_section_kind_map) {
+        return 1;
+    }
+    var section_kind: u32 = ELF64_SECTION_KIND_SKIP_RAW;
+    var section_va: u32 = 0u32;
+    if section_index < @len(microapp_elf64_section_kind_map) {
+        section_kind = microapp_elf64_section_kind_at(section_index) catch { return 1; };
+        section_va = microapp_elf64_section_va_at(section_index) catch { return 1; };
+    } else {
+        return 1;
+    }
+    if section_kind == ELF64_SECTION_KIND_SKIP_RAW {
+        return 1;
+    }
+    if st_value_u64 > 4294967295u64 {
+        return 1;
+    }
+    value_out[0] = section_va + st_value_u64 as u32;
+    return 0;
+}
+
+fn microapp_object_elf64_find_symbol_value(elf: &byte, elf_len: usize, shoff: usize, shentsize: usize, shnum: usize, symbol_name: &byte, value_out: &u32) i32 {
+    if elf == null || symbol_name == null || value_out == null {
+        return 1;
+    }
+    var i: usize = 0usize;
+    while i < shnum && i < ELF64_MAX_SECTIONS {
+        const sh_base: usize = shoff + i * shentsize;
+        if sh_base + ELF64_SECTION_HEADER_SIZE > elf_len {
+            return 1;
+        }
+        const sh_type: u32 = read_u32_le_at(elf, sh_base + 4usize);
+        if sh_type == ELF64_SECTION_TYPE_SYMTAB_RAW || sh_type == ELF64_SECTION_TYPE_DYNSYM_RAW {
+            const sym_off: u64 = read_u64_le_at(elf, sh_base + 24usize);
+            const sym_size: u64 = read_u64_le_at(elf, sh_base + 32usize);
+            const str_index: u32 = read_u32_le_at(elf, sh_base + 40usize);
+            const sym_entsize: u64 = read_u64_le_at(elf, sh_base + 56usize);
+            if str_index as usize >= shnum || sym_entsize < ELF64_SYMBOL_SIZE as u64 || microapp_elf_range_valid(elf_len, sym_off, sym_size) == 0 {
+                i = i + 1usize;
+                continue;
+            }
+            const str_sh_base: usize = shoff + str_index as usize * shentsize;
+            if str_sh_base + ELF64_SECTION_HEADER_SIZE > elf_len {
+                i = i + 1usize;
+                continue;
+            }
+            const str_off: u64 = read_u64_le_at(elf, str_sh_base + 24usize);
+            const str_size: u64 = read_u64_le_at(elf, str_sh_base + 32usize);
+            if microapp_elf_range_valid(elf_len, str_off, str_size) == 0 {
+                i = i + 1usize;
+                continue;
+            }
+            var sym_pos: u64 = 0u64;
+            var sym_index: u32 = 0u32;
+            while sym_pos + ELF64_SYMBOL_SIZE as u64 <= sym_size {
+                const rec_off: u64 = sym_off + sym_pos;
+                const st_name: u32 = read_u32_le_at(elf, rec_off as usize);
+                if microapp_elf_cstring_equals_at(elf, elf_len, str_off as usize, str_size as usize, st_name, symbol_name) != 0 {
+                    return microapp_object_elf64_symbol_value_by_index(elf, elf_len, shoff, shentsize, shnum, i as u32, sym_index, value_out);
+                }
+                sym_pos = sym_pos + sym_entsize;
+                sym_index = sym_index + 1u32;
+            }
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}
+
+fn microapp_extract_object_elf64(obj_path: &byte, target_arch_raw: u32, code_len: &u32, rodata_len: &u32, data_len: &u32, text_va: &u32, rodata_va: &u32, data_va: &u32, bss_va: &u32, bss_len: &u32, entry_va: &u32, base_raw_out: &u32, text_raw_out: &u32, rodata_raw_out: &u32, data_raw_out: &u32, bss_raw_out: &u32, reloc_count: &u32, reloc_len: &u32) i32 {
+    if obj_path == null || code_len == null || rodata_len == null || data_len == null ||
+       text_va == null || rodata_va == null || data_va == null || bss_va == null ||
+       bss_len == null || entry_va == null || reloc_count == null || reloc_len == null {
+        return 1;
+    }
+    if target_arch_raw != MICROAPP_TARGET_ARCH_X86_64_RAW {
+        return 1;
+    }
+    const elf_size: i32 = read_file_content(obj_path, &microapp_pack_output_buffer[0] as &byte, @len(microapp_pack_output_buffer));
+    if elf_size < 0 {
+        return 1;
+    }
+    const elf_size_usize: usize = elf_size as usize;
+    if elf_size_usize < ELF64_HEADER_SIZE {
+        return 1;
+    }
+    const elf: &byte = &microapp_pack_output_buffer[0] as &byte;
+    if elf[0] != 127 as byte || elf[1] != 69 as byte || elf[2] != 76 as byte || elf[3] != 70 as byte {
+        return 1;
+    }
+    if elf[4] != ELFCLASS64_RAW || elf[5] != ELFDATA2LSB_RAW {
+        return 1;
+    }
+    if read_u16_le_at(elf, 16usize) != 1u16 {
+        return 1;
+    }
+    if read_u16_le_at(elf, 18usize) != ELF_MACHINE_X86_64_RAW {
+        return 1;
+    }
+    const shoff_u64: u64 = read_u64_le_at(elf, 40usize);
+    const shentsize: usize = read_u16_le_at(elf, 58usize) as usize;
+    const shnum: usize = read_u16_le_at(elf, 60usize) as usize;
+    const shstrndx: usize = read_u16_le_at(elf, 62usize) as usize;
+    if shnum == 0usize || shnum > ELF64_MAX_SECTIONS || shstrndx >= shnum || shentsize < ELF64_SECTION_HEADER_SIZE {
+        return 1;
+    }
+    const shoff: usize = shoff_u64 as usize;
+    if shoff + shentsize * shnum > elf_size_usize {
+        return 1;
+    }
+    const shstr_base: usize = shoff + shstrndx * shentsize;
+    if shstr_base + ELF64_SECTION_HEADER_SIZE > elf_size_usize {
+        return 1;
+    }
+    const shstr_off_u64: u64 = read_u64_le_at(elf, shstr_base + 24usize);
+    const shstr_size_u64: u64 = read_u64_le_at(elf, shstr_base + 32usize);
+    if microapp_elf_range_valid(elf_size_usize, shstr_off_u64, shstr_size_u64) == 0 {
+        return 1;
+    }
+    const shstr_off: usize = shstr_off_u64 as usize;
+    const shstr_size: usize = shstr_size_u64 as usize;
+
+    var code_total: u32 = 0u32;
+    var rodata_total: u32 = 0u32;
+    var data_total: u32 = 0u32;
+    var bss_total: u32 = 0u32;
+    var code_seg_align: u32 = 1u32;
+    var rodata_seg_align: u32 = 1u32;
+    var data_seg_align: u32 = 1u32;
+    var bss_seg_align: u32 = 1u32;
+    var i: usize = 0usize;
+    while i < shnum {
+        microapp_elf64_section_kind_map[i] = ELF64_SECTION_KIND_SKIP_RAW;
+        microapp_elf64_section_off_map[i] = 0u32;
+        microapp_elf64_section_va_map[i] = 0u32;
+        i = i + 1usize;
+    }
+    i = 0usize;
+    while i < shnum {
+        const sh_base: usize = shoff + i * shentsize;
+        const sh_name: u32 = read_u32_le_at(elf, sh_base);
+        const sh_type: u32 = read_u32_le_at(elf, sh_base + 4usize);
+        const sh_flags: u64 = read_u64_le_at(elf, sh_base + 8usize);
+        const sh_size_u64: u64 = read_u64_le_at(elf, sh_base + 32usize);
+        const sh_align_u64: u64 = read_u64_le_at(elf, sh_base + 48usize);
+        if sh_size_u64 > 4294967295u64 || sh_align_u64 > 4294967295u64 {
+            return 1;
+        }
+        const kind: u32 = microapp_object_elf64_section_kind(elf, elf_size_usize, shstr_off, shstr_size, sh_name, sh_type, sh_flags);
+        microapp_elf64_section_kind_map[i] = kind;
+        if kind != ELF64_SECTION_KIND_SKIP_RAW {
+            var align_u32: u32 = sh_align_u64 as u32;
+            if align_u32 == 0u32 {
+                align_u32 = 1u32;
+            }
+            if align_u32 < 4u32 {
+                align_u32 = 4u32;
+            }
+            const sec_size: u32 = sh_size_u64 as u32;
+            if kind == ELF64_SECTION_KIND_CODE_RAW {
+                const sec_off: u32 = microapp_align_u32(code_total, align_u32);
+                microapp_elf64_section_off_map[i] = sec_off;
+                code_total = sec_off + sec_size;
+                if align_u32 > code_seg_align {
+                    code_seg_align = align_u32;
+                }
+            } else if kind == ELF64_SECTION_KIND_RODATA_RAW {
+                const sec_off: u32 = microapp_align_u32(rodata_total, align_u32);
+                microapp_elf64_section_off_map[i] = sec_off;
+                rodata_total = sec_off + sec_size;
+                if align_u32 > rodata_seg_align {
+                    rodata_seg_align = align_u32;
+                }
+            } else if kind == ELF64_SECTION_KIND_DATA_RAW {
+                const sec_off: u32 = microapp_align_u32(data_total, align_u32);
+                microapp_elf64_section_off_map[i] = sec_off;
+                data_total = sec_off + sec_size;
+                if align_u32 > data_seg_align {
+                    data_seg_align = align_u32;
+                }
+            } else if kind == ELF64_SECTION_KIND_BSS_RAW {
+                const sec_off: u32 = microapp_align_u32(bss_total, align_u32);
+                microapp_elf64_section_off_map[i] = sec_off;
+                bss_total = sec_off + sec_size;
+                if align_u32 > bss_seg_align {
+                    bss_seg_align = align_u32;
+                }
+            }
+        }
+        i = i + 1usize;
+    }
+    if code_total == 0u32 {
+        return 1;
+    }
+    const code_base_va: u32 = microapp_align_u32(MICROAPP_VADDR_BASE, code_seg_align);
+    const rodata_base_va: u32 = microapp_align_u32(code_base_va + code_total, rodata_seg_align);
+    const data_base_va: u32 = microapp_align_u32(rodata_base_va + rodata_total, data_seg_align);
+    const bss_base_va: u32 = microapp_align_u32(data_base_va + data_total, bss_seg_align);
+    microapp_zero_byte_range(&file_buffer[0] as &byte, code_total);
+    microapp_zero_byte_range(&microapp_rodata_buffer[0] as &byte, rodata_total);
+    microapp_zero_byte_range(&microapp_data_buffer[0] as &byte, data_total);
+    i = 0usize;
+    while i < shnum {
+        const kind: u32 = microapp_elf64_section_kind_map[i];
+        const sec_off: u32 = microapp_elf64_section_off_map[i];
+        const sh_base: usize = shoff + i * shentsize;
+        const sh_type: u32 = read_u32_le_at(elf, sh_base + 4usize);
+        const sh_offset_u64: u64 = read_u64_le_at(elf, sh_base + 24usize);
+        const sh_size_u64: u64 = read_u64_le_at(elf, sh_base + 32usize);
+        if kind == ELF64_SECTION_KIND_CODE_RAW {
+            microapp_elf64_section_va_map[i] = code_base_va + sec_off;
+            if sh_type == ELF64_SECTION_TYPE_PROGBITS_RAW && sh_size_u64 > 0u64 {
+                if microapp_elf_range_valid(elf_size_usize, sh_offset_u64, sh_size_u64) == 0 {
+                    return 1;
+                }
+                memcpy((&file_buffer[sec_off as usize]) as *void, (elf + sh_offset_u64 as usize) as *void, sh_size_u64 as usize);
+            }
+        } else if kind == ELF64_SECTION_KIND_RODATA_RAW {
+            microapp_elf64_section_va_map[i] = rodata_base_va + sec_off;
+            if sh_type == ELF64_SECTION_TYPE_PROGBITS_RAW && sh_size_u64 > 0u64 {
+                if microapp_elf_range_valid(elf_size_usize, sh_offset_u64, sh_size_u64) == 0 {
+                    return 1;
+                }
+                memcpy((&microapp_rodata_buffer[sec_off as usize]) as *void, (elf + sh_offset_u64 as usize) as *void, sh_size_u64 as usize);
+            }
+        } else if kind == ELF64_SECTION_KIND_DATA_RAW {
+            microapp_elf64_section_va_map[i] = data_base_va + sec_off;
+            if sh_type == ELF64_SECTION_TYPE_PROGBITS_RAW && sh_size_u64 > 0u64 {
+                if microapp_elf_range_valid(elf_size_usize, sh_offset_u64, sh_size_u64) == 0 {
+                    return 1;
+                }
+                memcpy((&microapp_data_buffer[sec_off as usize]) as *void, (elf + sh_offset_u64 as usize) as *void, sh_size_u64 as usize);
+            }
+        } else if kind == ELF64_SECTION_KIND_BSS_RAW {
+            microapp_elf64_section_va_map[i] = bss_base_va + sec_off;
+        }
+        i = i + 1usize;
+    }
+
+    var entry_value: u32 = 0u32;
+    if microapp_object_elf64_find_symbol_value(elf, elf_size_usize, shoff, shentsize, shnum, "main_main" as &byte, &entry_value) != 0 {
+        if microapp_object_elf64_find_symbol_value(elf, elf_size_usize, shoff, shentsize, shnum, "main" as &byte, &entry_value) != 0 {
+            return 1;
+        }
+    }
+
+    var out_count: u32 = 0u32;
+    i = 0usize;
+    while i < shnum {
+        const sh_base: usize = shoff + i * shentsize;
+        const sh_type: u32 = read_u32_le_at(elf, sh_base + 4usize);
+        if sh_type == ELF64_SECTION_TYPE_RELA_RAW {
+            const target_section_index: u32 = read_u32_le_at(elf, sh_base + 44usize);
+            if target_section_index as usize >= shnum || target_section_index as usize >= ELF64_MAX_SECTIONS {
+                return 1;
+            }
+            const target_section_slot: usize = target_section_index as usize;
+            if target_section_slot >= @len(microapp_elf64_section_kind_map) {
+                return 1;
+            }
+            var target_kind: u32 = ELF64_SECTION_KIND_SKIP_RAW;
+            if target_section_slot < @len(microapp_elf64_section_kind_map) {
+                target_kind = microapp_elf64_section_kind_at(target_section_slot) catch { return 1; };
+            } else {
+                return 1;
+            }
+            if target_kind == ELF64_SECTION_KIND_SKIP_RAW {
+                i = i + 1usize;
+                continue;
+            }
+            const symtab_index: u32 = read_u32_le_at(elf, sh_base + 40usize);
+            const rela_off_u64: u64 = read_u64_le_at(elf, sh_base + 24usize);
+            const rela_size_u64: u64 = read_u64_le_at(elf, sh_base + 32usize);
+            const rela_entsize_u64: u64 = read_u64_le_at(elf, sh_base + 56usize);
+            if microapp_elf_range_valid(elf_size_usize, rela_off_u64, rela_size_u64) == 0 || rela_entsize_u64 < ELF64_RELA_SIZE as u64 {
+                return 1;
+            }
+            var rela_pos: u64 = 0u64;
+            while rela_pos + ELF64_RELA_SIZE as u64 <= rela_size_u64 {
+                const rec_off: u64 = rela_off_u64 + rela_pos;
+                const target_sec_off_u32: u32 = read_u64_le_at(elf, rec_off as usize) as u32;
+                const info_u64: u64 = read_u64_le_at(elf, rec_off as usize + 8usize);
+                const addend_u64: u64 = read_u64_le_at(elf, rec_off as usize + 16usize);
+                const reloc_type: u32 = (info_u64 & 4294967295u64) as u32;
+                const sym_index: u32 = ((info_u64 >> 32) & 4294967295u64) as u32;
+                const target_section_va: u32 = microapp_elf64_section_va_at(target_section_slot) catch { return 1; };
+                const target_va_abs: u32 = target_section_va + target_sec_off_u32;
+                var sym_value_u32: u32 = 0u32;
+                if microapp_object_elf64_symbol_value_by_index(elf, elf_size_usize, shoff, shentsize, shnum, symtab_index, sym_index, &sym_value_u32) != 0 {
+                    return 1;
+                }
+                if target_kind == ELF64_SECTION_KIND_CODE_RAW &&
+                   (reloc_type == ELF_RELOC_X86_64_PC32_RAW || reloc_type == ELF_RELOC_X86_64_PLT32_RAW) {
+                    const target_section_off: u32 = microapp_elf64_section_off_at(target_section_slot) catch { return 1; };
+                    const patch_off: usize = target_section_off as usize + target_sec_off_u32 as usize;
+                    if patch_off + 4usize > code_total as usize {
+                        return 1;
+                    }
+                    const disp_u64: u64 = sym_value_u32 as u64 + addend_u64 - target_va_abs as u64;
+                    write_u32_le_at(&file_buffer[0] as &byte, patch_off, disp_u64 as u32);
+                } else if (target_kind == ELF64_SECTION_KIND_DATA_RAW || target_kind == ELF64_SECTION_KIND_BSS_RAW) &&
+                          (reloc_type == ELF_RELOC_X86_64_64_RAW || reloc_type == ELF_RELOC_X86_64_GLOB_DAT_RAW) {
+                    const value_u64: u64 = sym_value_u32 as u64 + addend_u64;
+                    if value_u64 > 4294967295u64 {
+                        return 1;
+                    }
+                    const out_off: usize = out_count as usize * 8usize;
+                    if out_off + 8usize > FILE_BUFFER_SIZE as usize {
+                        return 1;
+                    }
+                    write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off, target_va_abs);
+                    write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off + 4usize, value_u64 as u32);
+                    out_count = out_count + 1u32;
+                } else {
+                    return 1;
+                }
+                rela_pos = rela_pos + rela_entsize_u64;
+            }
+        }
+        i = i + 1usize;
+    }
+
+    code_len[0] = code_total;
+    rodata_len[0] = rodata_total;
+    data_len[0] = data_total;
+    text_va[0] = code_base_va;
+    rodata_va[0] = rodata_base_va;
+    data_va[0] = data_base_va;
+    if bss_total > 0u32 {
+        bss_va[0] = bss_base_va;
+    } else {
+        bss_va[0] = 0u32;
+    }
+    bss_len[0] = bss_total;
+    entry_va[0] = entry_value;
+    if base_raw_out != null { base_raw_out[0] = MICROAPP_VADDR_BASE; }
+    if text_raw_out != null { text_raw_out[0] = code_base_va; }
+    if rodata_raw_out != null { rodata_raw_out[0] = rodata_base_va; }
+    if data_raw_out != null { data_raw_out[0] = data_base_va; }
+    if bss_raw_out != null { bss_raw_out[0] = bss_va[0]; }
     reloc_count[0] = out_count;
     reloc_len[0] = out_count * 8u32;
     return 0;
@@ -1429,6 +1935,11 @@ fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_pa
         return 1;
     }
 
+    if microapp_target_uses_object_elf_extraction(target_arch_raw) != 0 {
+        fprintf(libc.stderr, "信息：microapp 目标 gcc 对象产物：%s\n" as *byte, &obj_path[0] as *byte);
+        return 0;
+    }
+
     const link_flags: &byte = get_env_or_default("MICROAPP_TARGET_LDFLAGS" as *byte, microapp_profile_default_ldflags(&profile) as *byte);
     const link_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s %s %s -o %s" as *byte, gcc as *byte, link_flags as *byte, &obj_path[0] as *byte, &exe_path[0] as *byte);
     if link_len <= 0 || link_len >= 8192 {
@@ -1527,6 +2038,12 @@ fn write_microapp_payload_obj(
     if build_microapp_text_from_c(c_file, &text_bin_path[0] as &byte, &rodata_bin_path[0] as &byte, &data_bin_path[0] as &byte, target_arch_raw) != 0 {
         return 1;
     }
+    var obj_path: [byte: PATH_MAX] = [];
+    const obj_len_path: i32 = snprintf(&obj_path[0] as *byte, PATH_MAX, "%s.obj" as *byte, &text_bin_path[0] as *byte);
+    if obj_len_path <= 0 || obj_len_path >= PATH_MAX {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 对象文件路径\n" as *byte);
+        return 1;
+    }
     var exe_path: [byte: PATH_MAX] = [];
     const exe_len_path: i32 = snprintf(&exe_path[0] as *byte, PATH_MAX, "%s.text.bin.elf" as *byte, output_path as *byte);
     if exe_len_path <= 0 || exe_len_path >= PATH_MAX {
@@ -1536,7 +2053,14 @@ fn write_microapp_payload_obj(
     var code_len: u32 = 0u32;
     var rodata_len: u32 = 0u32;
     var data_len: u32 = 0u32;
-    if microapp_target_uses_internal_elf_extraction(target_arch_raw) != 0 {
+    if microapp_target_uses_object_elf_extraction(target_arch_raw) != 0 {
+        if microapp_extract_object_elf64(&obj_path[0] as &byte, target_arch_raw, &code_len, &rodata_len, &data_len, &code_va, &rodata_va, &data_va, &bss_va, &bss_len, &entry_va, &base_raw, &text_raw, &rodata_raw, &data_raw, &bss_raw, &reloc_count, &reloc_len) != 0 {
+            fprintf(libc.stderr, "错误: 无法从 microapp 对象文件提取段与 relocation 信息\n" as *byte);
+            return 1;
+        }
+        fprintf(libc.stderr, "信息：microapp 对象提取 code=%u rodata=%u data=%u bss=%u entry_va=0x%x reloc_count=%u\n" as *byte,
+            code_len, rodata_len, data_len, bss_len, entry_va, reloc_count);
+    } else if microapp_target_uses_internal_elf_extraction(target_arch_raw) != 0 {
         if microapp_extract_internal_elf64(&exe_path[0] as &byte, target_arch_raw, &code_len, &rodata_len, &data_len, &code_va, &rodata_va, &data_va, &bss_va, &bss_len, &entry_va, &base_raw, &text_raw, &rodata_raw, &data_raw, &bss_raw, &reloc_count, &reloc_len) != 0 {
             fprintf(libc.stderr, "错误: 无法内部提取 microapp ELF 段与 relocation 信息\n" as *byte);
             return 1;

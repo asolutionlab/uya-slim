@@ -17,7 +17,8 @@ export OBJCOPY=false
 
 "$ROOT_DIR/bin/uya" build --app microapp examples/microapp/microcontainer_hello_source.uya -o "$UAPP" >/tmp/verify_microapp_build_uapp.log 2>&1
 
-grep -q "信息：microapp 内部 ELF 提取：" /tmp/verify_microapp_build_uapp.log
+grep -q "信息：microapp 目标 gcc 对象产物：" /tmp/verify_microapp_build_uapp.log
+! grep -q "信息：microapp 目标 gcc 链接：" /tmp/verify_microapp_build_uapp.log
 ! grep -q "信息：microapp 目标 gcc 导出 .text" /tmp/verify_microapp_build_uapp.log
 ! grep -q "信息：microapp 目标 gcc 导出 .rodata" /tmp/verify_microapp_build_uapp.log
 
@@ -45,12 +46,14 @@ build_mode = data[64]
 target_arch = data[65]
 assert code_size > 0, code_size
 assert rodata_size > 0, rodata_size
-assert reloc_count > 0, reloc_count
+assert reloc_count >= 0, reloc_count
 assert data_size >= 0, data_size
 assert bss_size >= 0, bss_size
 assert stack_hint == 65536, stack_hint
 assert entry_offset == 0, entry_offset
-assert entry_va == code_va + entry_offset, (entry_va, code_va, entry_offset)
+assert entry_va >= code_va, (entry_va, code_va)
+assert entry_va < code_va + code_size, (entry_va, code_va, code_size)
+assert entry_va % 4 == 0, entry_va
 assert code_va >= 65536, code_va
 assert rodata_va >= code_va + code_size, (rodata_va, code_va, code_size)
 assert code_off >= 160, code_off
