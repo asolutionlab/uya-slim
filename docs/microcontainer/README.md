@@ -18,6 +18,7 @@
 - [benchmark_plan.md](../../docs/microcontainer/benchmark_plan.md)
 - [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
 - [microapp_source_template.md](../../docs/microcontainer/microapp_source_template.md)
+- [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
 - [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
 - [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)
 
@@ -33,6 +34,11 @@
 - 示例 loader 现在可通过命令行参数接收任意 `.uapp` 路径，默认仍回退到示例镜像
 - 热更新槽容量与示例 loader 读取缓冲已经拆成两个独立上限，便于后续分别调优
 - 当前 microapp 路径里，`payload code` 默认由 `MICROAPP_TARGET_ARCH` 决定目标架构；`MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；`MICROAPP_TARGET_CFLAGS` 默认是 `-std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fno-pie -ffunction-sections -fdata-sections -flto`，不含 `-g`；`MICROAPP_TARGET_LDFLAGS` 默认是 `-no-pie -Wl,--gc-sections -flto`；默认 gcc 是 `x86_64-linux-gnu-gcc`
+- 当前 `microapp` 目标选择已逐步从 `arch-first` 迁移到 `profile-first`：
+  - 可用 `--microapp-profile <name>` 显式指定
+  - 也可用 `MICROAPP_TARGET_PROFILE`
+  - CLI 优先级高于环境变量
+  - 详细说明见 [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
 
 默认目标三元组映射：
 
@@ -54,5 +60,6 @@
 5. [native_mock_semantics.md](../../docs/microcontainer/native_mock_semantics.md)
 6. [image_validation.md](../../docs/microcontainer/image_validation.md)
 7. [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
-8. [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
-9. [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)
+8. [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
+9. [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
+10. [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)

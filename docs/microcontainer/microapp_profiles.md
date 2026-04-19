@@ -1,0 +1,265 @@
+# MicroApp Profile 说明
+
+本文档专门解释 `microapp profile` 是什么、为什么需要它、当前有哪些 profile，以及编译器如何选择它。
+
+---
+
+## 1. 什么是 Profile
+
+这里的 `profile` 可以理解成：
+
+- 一个微程序目标运行环境模板
+
+它不是“程序自己的业务配置”，而是：
+
+- 这个 `microapp` 要面向哪类目标环境构建
+
+一句话说：
+
+- `profile = 目标运行环境的完整身份`
+
+---
+
+## 2. 为什么不只用 Arch
+
+`arch` 只回答一个问题：
+
+- 目标 CPU/ISA 是什么
+
+例如：
+
+- `x86_64`
+- `aarch64`
+- `rv32`
+- `xtensa`
+
+但微程序真正需要决定的不只有 ISA，还包括：
+
+- 运行模型是 `hard-vm` 还是 `soft-vm`
+- bridge 走 `call_gate` 还是 `trap`
+- 默认 toolchain / triple 是什么
+- 默认编译/链接参数是什么
+- 镜像里写入哪个 `profile_id`
+
+所以：
+
+- `arch` 是 profile 的一部分
+- `profile` 比 `arch` 更完整
+
+---
+
+## 3. Profile 里包含什么
+
+当前实现里的一个 `MicroAppTargetProfile` 至少包含这些关键信息：
+
+- `profile_id`
+- `arch_raw`
+- `bridge_kind_raw`
+- `name`
+- `triple`
+- `default_gcc`
+
+这些信息会影响：
+
+- `.pobj/.uapp` 里写入的 profile 元数据
+- 目标 gcc / triple 的默认选择
+- `hard-vm` / `soft-vm` 的路径选择
+- `call_gate` / `trap` 的运行时路径选择
+- 默认编译/链接旗标
+
+---
+
+## 4. 当前支持的 Profile
+
+当前代码里已经支持这些名字：
+
+- `linux_x86_64_hardvm`
+- `linux_aarch64_hardvm`
+- `macos_arm64_hardvm`
+- `rv32_baremetal_softvm`
+- `xtensa_baremetal_softvm`
+
+它们的大致含义是：
+
+- `linux_x86_64_hardvm`
+  - Linux
+  - x86_64
+  - `hard-vm`
+  - 默认 bridge 是 `call_gate`
+
+- `linux_aarch64_hardvm`
+  - Linux
+  - AArch64
+  - `hard-vm`
+  - 默认 bridge 是 `call_gate`
+
+- `macos_arm64_hardvm`
+  - macOS
+  - arm64 / aarch64
+  - `hard-vm`
+  - 默认 bridge 是 `call_gate`
+
+- `rv32_baremetal_softvm`
+  - RV32 裸机
+  - `soft-vm`
+  - 默认 bridge 是 `trap`
+
+- `xtensa_baremetal_softvm`
+  - Xtensa 裸机
+  - `soft-vm`
+  - 默认 bridge 是 `trap`
+
+---
+
+## 5. Hard-VM 和 Soft-VM
+
+这里的 profile 名字里会出现：
+
+- `hardvm`
+- `softvm`
+
+它们的含义是：
+
+- `hard-vm`
+  - 运行时依赖真实页映射能力
+  - payload 会被装载到容器虚拟地址空间
+  - 典型宿主路径是 `mmap + mprotect + call_gate`
+
+- `soft-vm`
+  - 不依赖真实硬件 MMU
+  - 统一的虚拟地址语义主要靠软件模型实现
+  - 更适合裸机 / trap 路线
+
+所以 profile 不只是“编到哪种 ISA”，还是“按哪种虚拟内存后端语义运行”。
+
+---
+
+## 6. Bridge 是什么
+
+当前 profile 还会隐含一个默认 bridge：
+
+- `call_gate`
+- `trap`
+
+含义是：
+
+- `call_gate`
+  - payload 更接近 hosted/native 入口跳转
+  - 典型用于 `x86_64/aarch64 hard-vm`
+
+- `trap`
+  - payload 更接近裸机/软中断/受控 syscall 路线
+  - 典型用于 `rv32/xtensa soft-vm`
+
+所以：
+
+- `profile` 会顺带决定默认 bridge
+
+---
+
+## 7. 编译器如何选择 Profile
+
+当前选择优先级是：
+
+1. `--microapp-profile <name>`
+2. `MICROAPP_TARGET_PROFILE`
+3. `MICROAPP_TARGET_ARCH`
+4. `TARGET_ARCH`
+5. 默认回退
+
+也就是说：
+
+- CLI 显式指定优先级最高
+- 环境变量次之
+- 如果没有 profile，就退回到 arch 推导默认 profile
+
+例如：
+
+- `x86_64` 会默认推到 `linux_x86_64_hardvm`
+- `aarch64` 会默认推到 `linux_aarch64_hardvm`
+- `rv32` 会默认推到 `rv32_baremetal_softvm`
+
+---
+
+## 8. 当前推荐用法
+
+推荐优先用 CLI，而不是只依赖环境变量：
+
+```bash
+./bin/uya build --app microapp \
+  --microapp-profile linux_x86_64_hardvm \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello.uapp
+```
+
+也支持环境变量：
+
+```bash
+MICROAPP_TARGET_PROFILE=linux_x86_64_hardvm \
+./bin/uya build --app microapp \
+  examples/microapp/microcontainer_hello_source.uya \
+  -o /tmp/hello.uapp
+```
+
+如果两者同时存在：
+
+- `--microapp-profile` 优先
+
+---
+
+## 9. 和 inspect/verify 的关系
+
+当前可以通过下面两个命令查看/校验 profile 相关信息：
+
+```bash
+./bin/uya inspect-image hello.pobj
+./bin/uya inspect-image hello.uapp
+./bin/uya verify-image hello.pobj
+./bin/uya verify-image hello.uapp
+```
+
+其中会直接显示：
+
+- `target_arch`
+- `profile`
+- `bridge`
+
+这有助于确认：
+
+- CLI / 环境变量是否按预期生效
+- 最终镜像是否真的落在目标 profile 上
+
+---
+
+## 10. 当前边界
+
+目前 profile 体系已经能驱动：
+
+- x86_64 hard-vm
+- aarch64 hard-vm
+- rv32 soft-vm
+- xtensa soft-vm
+- macOS arm64 hard-vm 元数据路径
+
+但还没有完全做完的部分包括：
+
+- 默认帮助文本与整体心智全面切到 profile-first
+- 多平台 profile 的完整回归矩阵
+- relocation、stack、trampoline 的完整 profile 化
+- 所有 hosted / baremetal profile 的运行时完全对齐
+
+所以当前可以把它理解成：
+
+- profile 机制已经成型
+- 但仍处于从 “arch-first” 向 “profile-first” 迁移的中间阶段
+
+---
+
+## 11. 和相关文档的关系
+
+如果你想继续往下看，建议顺序是：
+
+1. `docs/microcontainer/microapp_profiles.md`
+2. `docs/microcontainer/source_to_uapp_pipeline.md`
+3. `docs/microcontainer/portable_native_design.md`
+4. `docs/microcontainer/portable_native_todo.md`

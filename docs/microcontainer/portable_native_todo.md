@@ -115,7 +115,9 @@
 - [~] 将当前 `MICROAPP_TARGET_ARCH` 扩展为 profile 驱动
   - [x] 新增 `MICROAPP_TARGET_PROFILE`
   - [x] `.pobj` / `.uapp` 已携带 `profile_id`
-  - [ ] CLI / 文档 / 默认行为还未完全切到 profile-first 心智
+  - [~] CLI / 文档 / 默认行为还未完全切到 profile-first 心智
+    - [x] 已新增 `--microapp-profile` CLI 覆盖
+    - [ ] 默认行为与帮助文本仍未完全切到 profile-first
 - [~] 建立首批 profile 常量/映射：
   - [x] `linux_x86_64_hardvm`
   - [x] `linux_aarch64_hardvm`
