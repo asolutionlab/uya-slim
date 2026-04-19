@@ -3816,7 +3816,7 @@ export fn main() i32 {
         if pack_result != 0 {
             return pack_result;
         }
-        const loader_source_path: &byte = "examples/microapp/microcontainer_hello_load.uya" as *byte;
+        const loader_source_path: &byte = "lib/std/runtime/microapp/loader_main.uya" as *byte;
         var microapp_exe_path: [byte: PATH_MAX] = [];
         const microapp_exe_len: i32 = snprintf(&microapp_exe_path[0] as *byte, PATH_MAX, "%s.text.bin.elf" as *byte, &microapp_pobj_path[0] as *byte);
         if microapp_exe_len <= 0 || microapp_exe_len >= PATH_MAX {
