@@ -43,17 +43,20 @@ source_path_len = int.from_bytes(src[24:28], "little")
 code_len = int.from_bytes(src[28:32], "little")
 rodata_len = int.from_bytes(src[32:36], "little")
 data_len = int.from_bytes(src[60:64], "little")
+reloc_len = int.from_bytes(src[64:68], "little")
 payload = src[84:]
 source_path = payload[:source_path_len]
 code = payload[source_path_len:source_path_len + code_len]
 rodata = payload[source_path_len + code_len:source_path_len + code_len + rodata_len]
 data = payload[source_path_len + code_len + rodata_len:source_path_len + code_len + rodata_len + data_len]
+relocs = payload[source_path_len + code_len + rodata_len + data_len:source_path_len + code_len + rodata_len + data_len + reloc_len]
 
 v5 = bytearray()
 v5 += b"POBJ"
 v5 += (5).to_bytes(2, "little")
 v5 += src[6:8]
-v5 += src[8:40]
+v5 += src[8:36]
+v5 += (0).to_bytes(4, "little")
 v5 += source_path
 v5 += code
 v5 += rodata
@@ -67,6 +70,7 @@ v6 += source_path
 v6 += code
 v6 += rodata
 v6 += data
+v6 += relocs
 out_v6.write_bytes(v6)
 
 header_size = 96
@@ -102,19 +106,23 @@ grep -q '^kind=pobj$' "$POBJ_LOG"
 grep -q '^verified=yes$' "$POBJ_LOG"
 grep -q '^version=8$' "$POBJ_LOG"
 grep -q '^target_arch=x86_64$' "$POBJ_LOG"
+grep -Eq '^reloc_count=[1-9][0-9]*$' "$POBJ_LOG"
 
 grep -q '^kind=uapp$' "$UAPP_LOG"
 grep -q '^verified=yes$' "$UAPP_LOG"
 grep -q '^format_version=2$' "$UAPP_LOG"
 grep -q '^target_arch=x86_64$' "$UAPP_LOG"
+grep -Eq '^reloc_count=[1-9][0-9]*$' "$UAPP_LOG"
 
 grep -q '^kind=pobj$' "$POBJ_V5_LOG"
 grep -q '^verified=yes$' "$POBJ_V5_LOG"
 grep -q '^version=5$' "$POBJ_V5_LOG"
+grep -q '^reloc_count=0$' "$POBJ_V5_LOG"
 
 grep -q '^kind=pobj$' "$POBJ_V6_LOG"
 grep -q '^verified=yes$' "$POBJ_V6_LOG"
 grep -q '^version=6$' "$POBJ_V6_LOG"
+grep -Eq '^reloc_count=[1-9][0-9]*$' "$POBJ_V6_LOG"
 
 grep -q '^kind=uapp$' "$UAPP_V1_LOG"
 grep -q '^verified=yes$' "$UAPP_V1_LOG"

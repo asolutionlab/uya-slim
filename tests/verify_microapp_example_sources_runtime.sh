@@ -56,5 +56,6 @@ verify_example "examples/microapp/microcontainer_hello_source.uya" "hello microa
 verify_example "examples/microapp/microcontainer_alloc_yield_source.uya" "alloc yield ok"
 verify_example "examples/microapp/microcontainer_time_source.uya" "time ok"
 verify_example "examples/microapp/microcontainer_bss_source.uya" "bss ok"
+verify_example "examples/microapp/microcontainer_reloc_source.uya" "reloc ok"
 
 echo "microapp example sources runtime ok"

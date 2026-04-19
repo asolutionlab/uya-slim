@@ -336,6 +336,36 @@ export fn image_verify_structure(hdr: &ImageHeader, total_len: u32) !void {
     }
 }
 
+export fn image_verify_relocations(data: &[byte], hdr: &ImageHeader) !void {
+    if hdr == null || hdr.reloc_count == 0u32 {
+        return;
+    }
+    if hdr.target_arch != ImageTargetArch.ita_x86_64 || hdr.bridge_kind != ImageBridgeKind.ibk_call_gate {
+        return;
+    }
+    if hdr.format_version < 2u16 {
+        return;
+    }
+    const reloc_start: usize = hdr.reloc_offset as usize;
+    const reloc_len: usize = hdr.reloc_count as usize * 8usize;
+    if reloc_start + reloc_len > data.len {
+        return error.ImgRelocInvalid;
+    }
+    const max_va: u32 = hdr.data_va + hdr.data_size + hdr.bss_size;
+    var i: usize = 0;
+    while i < reloc_len {
+        const target_va: u32 = read_u32_le(data, reloc_start + i);
+        const value_va: u32 = read_u32_le(data, reloc_start + i + 4usize);
+        if target_va < hdr.data_va || target_va + 8u32 > max_va {
+            return error.ImgRelocInvalid;
+        }
+        if value_va < hdr.code_va || value_va >= max_va {
+            return error.ImgRelocInvalid;
+        }
+        i = i + 8usize;
+    }
+}
+
 // ── Stage 3: Instruction Policy ──
 
 export fn image_verify_instructions(data: &[byte], hdr: &ImageHeader) !void {
@@ -355,6 +385,7 @@ export fn image_validate(data: &[byte]) !ImageHeader {
     try image_verify_integrity(data);
     var hdr: ImageHeader = try image_parse_header(data);
     try image_verify_structure(&hdr, data.len as u32);
+    try image_verify_relocations(data, &hdr);
     try image_verify_instructions(data, &hdr);
     return hdr;
 }

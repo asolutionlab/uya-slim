@@ -23,6 +23,7 @@ assert data[4:6] == (2).to_bytes(2, "little"), data[4:6]
 assert data[6:8] == (1).to_bytes(2, "little"), data[6:8]
 code_size = int.from_bytes(data[16:20], "little")
 rodata_size = int.from_bytes(data[20:24], "little")
+reloc_count = int.from_bytes(data[24:28], "little")
 data_size = int.from_bytes(data[96:100], "little")
 bss_size = int.from_bytes(data[100:104], "little")
 stack_hint = int.from_bytes(data[104:108], "little")
@@ -36,6 +37,7 @@ build_mode = data[64]
 target_arch = data[65]
 assert code_size > 0, code_size
 assert rodata_size > 0, rodata_size
+assert reloc_count > 0, reloc_count
 assert data_size >= 0, data_size
 assert bss_size >= 0, bss_size
 assert stack_hint == 65536, stack_hint

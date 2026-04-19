@@ -8,19 +8,22 @@ HELLO_SOURCE="$ROOT_DIR/examples/microapp/microcontainer_hello_source.uya"
 ALLOC_YIELD_SOURCE="$ROOT_DIR/examples/microapp/microcontainer_alloc_yield_source.uya"
 TIME_SOURCE="$ROOT_DIR/examples/microapp/microcontainer_time_source.uya"
 BSS_SOURCE="$ROOT_DIR/examples/microapp/microcontainer_bss_source.uya"
+RELOC_SOURCE="$ROOT_DIR/examples/microapp/microcontainer_reloc_source.uya"
 
 HELLO_OUT="$BUILD_DIR/microcontainer_hello_source_codegen_microapp.c"
 ALLOC_YIELD_OUT="$BUILD_DIR/microcontainer_alloc_yield_source_codegen_microapp.c"
 TIME_OUT="$BUILD_DIR/microcontainer_time_source_codegen_microapp.c"
 BSS_OUT="$BUILD_DIR/microcontainer_bss_source_codegen_microapp.c"
+RELOC_OUT="$BUILD_DIR/microcontainer_reloc_source_codegen_microapp.c"
 
 HELLO_LOG="/tmp/verify_microapp_example_codegen_hello.log"
 ALLOC_YIELD_LOG="/tmp/verify_microapp_example_codegen_alloc_yield.log"
 TIME_LOG="/tmp/verify_microapp_example_codegen_time.log"
 BSS_LOG="/tmp/verify_microapp_example_codegen_bss.log"
+RELOC_LOG="/tmp/verify_microapp_example_codegen_reloc.log"
 
 mkdir -p "$BUILD_DIR"
-rm -f "$HELLO_OUT" "$ALLOC_YIELD_OUT" "$TIME_OUT" "$BSS_OUT"
+rm -f "$HELLO_OUT" "$ALLOC_YIELD_OUT" "$TIME_OUT" "$BSS_OUT" "$RELOC_OUT"
 
 : "${TARGET_GCC:=x86_64-linux-gnu-gcc}"
 : "${MICROAPP_TARGET_ARCH:=x86_64}"
@@ -31,12 +34,14 @@ export MICROAPP_TARGET_ARCH
 "$ROOT_DIR/bin/uya" build --app microapp --no-safety-proof "$ALLOC_YIELD_SOURCE" -o "$ALLOC_YIELD_OUT" >"$ALLOC_YIELD_LOG" 2>&1
 "$ROOT_DIR/bin/uya" build --app microapp --no-safety-proof "$TIME_SOURCE" -o "$TIME_OUT" >"$TIME_LOG" 2>&1
 "$ROOT_DIR/bin/uya" build --app microapp --no-safety-proof "$BSS_SOURCE" -o "$BSS_OUT" >"$BSS_LOG" 2>&1
+"$ROOT_DIR/bin/uya" build --app microapp --no-safety-proof "$RELOC_SOURCE" -o "$RELOC_OUT" >"$RELOC_LOG" 2>&1
 
 for pair in \
     "$HELLO_OUT:$HELLO_LOG:hello" \
     "$ALLOC_YIELD_OUT:$ALLOC_YIELD_LOG:alloc_yield" \
     "$TIME_OUT:$TIME_LOG:time" \
-    "$BSS_OUT:$BSS_LOG:bss"
+    "$BSS_OUT:$BSS_LOG:bss" \
+    "$RELOC_OUT:$RELOC_LOG:reloc"
 do
     IFS=":" read -r out log name <<EOF
 $pair
@@ -80,7 +85,12 @@ if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$BSS_OUT"; then
     exit 1
 fi
 
-for path in "$HELLO_OUT" "$ALLOC_YIELD_OUT" "$TIME_OUT" "$BSS_OUT"; do
+if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$RELOC_OUT"; then
+    echo "✗ reloc 官方示例未通过 MICROAPP_SYS_PRINT 走 microapp syscall shim"
+    exit 1
+fi
+
+for path in "$HELLO_OUT" "$ALLOC_YIELD_OUT" "$TIME_OUT" "$BSS_OUT" "$RELOC_OUT"; do
     if grep -F -q 'posix_memalign(' "$path"; then
         echo "✗ official microapp 示例生成代码不应直接依赖宿主 posix_memalign: $path"
         exit 1

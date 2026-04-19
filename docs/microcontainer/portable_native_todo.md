@@ -130,7 +130,7 @@
 - [x] 不再只抽 `.text/.rodata`
 - [x] 提取 `.data`
 - [x] 计算 `.bss`
-- [ ] 提取 relocation 表
+- [x] 提取 relocation 表
 - [x] 计算 `entry_va`
 
 ### 5.3 PIC / PIE
@@ -140,9 +140,8 @@
 
 验收标准：
 
-- [~] 编译器能产出包含段与 relocation 信息的 `.pobj/.uapp v2`
-  - [x] 已能产出包含 `data/profile/bridge/flags` 的 v2 `.pobj/.uapp`
-  - [ ] relocation 仍未落地
+- [x] 编译器能产出包含段与 relocation 信息的 `.pobj/.uapp v2`
+  - [x] 已能产出包含 `data/profile/bridge/flags/reloc` 的 v2 `.pobj/.uapp`
 
 ---
 
@@ -212,7 +211,9 @@
 - [~] 把 `sim_exec_loaded()` 从“校验入口”升级为“跳转入口执行”
   - [x] `linux_x86_64_hardvm + ibk_call_gate` 已跳转执行 mapped payload
   - [ ] trap bridge / 其他架构仍停留在校验或过渡态
-- [ ] 入口调用前应用 relocation
+- [~] 入口调用前应用 relocation
+  - [x] `linux_x86_64_hardvm` 已在入口前应用最小 `RELATIVE` relocation
+  - [ ] 其余架构 / relocation 类型仍待继续规范化与接线
 - [ ] 执行后能正确返回 yield / exit / error
 
 验收标准：
@@ -279,6 +280,7 @@
   - [x] `examples/microapp/microcontainer_alloc_yield_source.uya`
   - [x] `examples/microapp/microcontainer_time_source.uya`
   - [x] `examples/microapp/microcontainer_bss_source.uya`
+  - [x] `examples/microapp/microcontainer_reloc_source.uya`
   - [~] `microcontainer_hello_build/load` 仍是宿主侧工具示例，不属于 portable source 子集
 - [~] 审计现有 microapp 示例里宿主耦合 API
   - [x] 已区分 portable source 与 hosted build/load 工具示例
@@ -307,7 +309,7 @@
   - [x] `ubuntu-ci` 已接入 `make microapp-check`
   - [x] `macos-ci` 已接入 `make microapp-hosted-smoke`
 - [~] 增加真执行回归
-  - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss` 官方示例真执行回归
+  - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc` 官方示例真执行回归
   - [ ] 其余 profile 真执行仍待补齐
 - [~] 增加 crash/recovery / update 回归
   - [x] 已新增 `make microapp-recovery-check` 入口

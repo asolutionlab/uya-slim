@@ -40,6 +40,7 @@
   - `examples/microapp/microcontainer_alloc_yield_source.uya`
   - `examples/microapp/microcontainer_time_source.uya`
   - `examples/microapp/microcontainer_bss_source.uya`
+  - `examples/microapp/microcontainer_reloc_source.uya`
 - `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`

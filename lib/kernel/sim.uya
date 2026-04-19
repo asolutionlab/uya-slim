@@ -245,6 +245,71 @@ fn sim_page_flags_for_image_range(hdr: &ImageHeader, page_start: u32, page_end: 
     return flags;
 }
 
+fn sim_read_u32_le(buf: &[byte], off: usize) u32 {
+    const b0: u32 = buf.ptr[off] as u32;
+    const b1: u32 = buf.ptr[off + 1usize] as u32;
+    const b2: u32 = buf.ptr[off + 2usize] as u32;
+    const b3: u32 = buf.ptr[off + 3usize] as u32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+fn sim_write_u64_le(ptr: &byte, value: u64) void {
+    const b0_tmp: !byte = (value & 255u64) as! byte;
+    const b1_tmp: !byte = ((value >> 8) & 255u64) as! byte;
+    const b2_tmp: !byte = ((value >> 16) & 255u64) as! byte;
+    const b3_tmp: !byte = ((value >> 24) & 255u64) as! byte;
+    const b4_tmp: !byte = ((value >> 32) & 255u64) as! byte;
+    const b5_tmp: !byte = ((value >> 40) & 255u64) as! byte;
+    const b6_tmp: !byte = ((value >> 48) & 255u64) as! byte;
+    const b7_tmp: !byte = ((value >> 56) & 255u64) as! byte;
+    ptr[0] = b0_tmp.value;
+    ptr[1] = b1_tmp.value;
+    ptr[2] = b2_tmp.value;
+    ptr[3] = b3_tmp.value;
+    ptr[4] = b4_tmp.value;
+    ptr[5] = b5_tmp.value;
+    ptr[6] = b6_tmp.value;
+    ptr[7] = b7_tmp.value;
+}
+
+fn sim_apply_x86_64_relative_relocs(k: &SimKernel, cid: u32, hdr: &ImageHeader, image_bytes: &[byte]) !void {
+    if k == null || hdr == null {
+        return error.InvalidState;
+    }
+    if hdr.reloc_count == 0u32 {
+        return;
+    }
+    if hdr.reloc_offset > image_bytes.len as u32 {
+        return error.ImgRelocInvalid;
+    }
+    const reloc_bytes: &[byte] = image_bytes[hdr.reloc_offset as usize: image_bytes.len];
+    const expected_len: u32 = hdr.reloc_count * 8u32;
+    if reloc_bytes.len < expected_len as usize {
+        return error.ImgRelocInvalid;
+    }
+    const min_va: u32 = sim_loaded_min_va(hdr);
+    const max_va: u32 = sim_loaded_max_end(hdr);
+    const pt: &PageTable = sim_pt_ref(k, cid);
+    var i: u32 = 0u32;
+    while i < hdr.reloc_count {
+        const off: usize = i as usize * 8usize;
+        const target_va: u32 = sim_read_u32_le(reloc_bytes, off);
+        const value_va: u32 = sim_read_u32_le(reloc_bytes, off + 4usize);
+        if target_va < hdr.data_va || target_va + 8u32 > hdr.data_va + hdr.data_size + hdr.bss_size {
+            return error.ImgRelocInvalid;
+        }
+        if value_va < min_va || value_va >= max_va {
+            return error.ImgRelocInvalid;
+        }
+        const target_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, target_va, 8u32, ACCESS_W);
+        const value_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, value_va, 1u32, ACCESS_R);
+        const value_host_addr: usize = @usize_from_ptr(value_ptr as &void);
+        const value_host_addr_tmp: !u64 = value_host_addr as! u64;
+        sim_write_u64_le(target_ptr, value_host_addr_tmp.value);
+        i = i + 1u32;
+    }
+}
+
 fn sim_zero_mapped_pages(pm: &PhysMem, first_ppn: u32, page_count: u32) !void {
     var page_idx: u32 = 0u32;
     while page_idx < page_count {
@@ -381,6 +446,9 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     if hdr.data_size > 0u32 {
         const data_slice: &[byte] = image_bytes[hdr.data_offset as usize: hdr.data_size as usize];
         try sim_copy_segment(&k.host_ctx.pm, first_ppn, base_vpn, data_slice, hdr.data_va);
+    }
+    if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
+        try sim_apply_x86_64_relative_relocs(k, cid, &hdr, image_bytes);
     }
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。

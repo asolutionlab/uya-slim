@@ -668,7 +668,206 @@ fn microapp_symbol_vma_from_report(report: &byte, report_len: usize, symbol_name
     return error.InvalidState;
 }
 
-fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, data_va: &u32, bss_va: &u32, bss_len: &u32, entry_va: &u32) i32 {
+fn microapp_reloc_count_from_report(report: &byte, report_len: usize) u32 {
+    var total: u32 = 0u32;
+    var i: usize = 0;
+    while i + 10usize < report_len {
+        if report[i] == 32 as byte && report[i + 1usize] == 99 as byte &&
+           report[i + 2usize] == 111 as byte && report[i + 3usize] == 110 as byte &&
+           report[i + 4usize] == 116 as byte && report[i + 5usize] == 97 as byte &&
+           report[i + 6usize] == 105 as byte && report[i + 7usize] == 110 as byte &&
+           report[i + 8usize] == 115 as byte && report[i + 9usize] == 32 as byte {
+            var j: usize = i + 10usize;
+            var value: u32 = 0u32;
+            var saw_digit: i32 = 0;
+            while j < report_len && report[j] >= 48 as byte && report[j] <= 57 as byte {
+                saw_digit = 1;
+                value = value * 10u32 + (report[j] - 48 as byte) as u32;
+                j = j + 1usize;
+            }
+            if saw_digit != 0 {
+                total = total + value;
+            }
+        }
+        i = i + 1usize;
+    }
+    return total;
+}
+
+fn microapp_append_shell_token(cmd: &byte, cmd_cap: i32, cmd_len: &i32, token: &byte) i32 {
+    if cmd == null || cmd_len == null || token == null {
+        return -1;
+    }
+    const token_len: usize = strlen(token as *byte);
+    if cmd_len[0] + token_len as i32 + 1 >= cmd_cap {
+        return -1;
+    }
+    cmd[cmd_len[0] as usize] = 32 as byte;
+    cmd_len[0] = cmd_len[0] + 1;
+    memcpy(cmd + cmd_len[0] as usize, token as *void, token_len);
+    cmd_len[0] = cmd_len[0] + token_len as i32;
+    cmd[cmd_len[0] as usize] = 0 as byte;
+    return 0;
+}
+
+fn microapp_append_reloc_sections_from_report(report: &byte, report_len: usize, cmd: &byte, cmd_cap: i32, cmd_len: &i32) i32 {
+    if report == null || cmd == null || cmd_len == null {
+        return 0;
+    }
+    var count: i32 = 0;
+    var line_start: usize = 0;
+    while line_start < report_len {
+        var line_end: usize = line_start;
+        while line_end < report_len && report[line_end] != 10 as byte {
+            line_end = line_end + 1usize;
+        }
+        var line_pos: usize = line_start;
+        var matched: i32 = 0;
+        const prefix: &byte = "Relocation section '" as &byte;
+        const prefix_len: usize = strlen(prefix as *byte);
+        if line_end - line_start > prefix_len {
+            matched = 1;
+            var k: usize = 0;
+            while k < prefix_len {
+                if report[line_pos + k] != prefix[k] {
+                    matched = 0;
+                    break;
+                }
+                k = k + 1usize;
+            }
+        }
+        if matched != 0 {
+            var sec_start: usize = line_start + prefix_len;
+            var sec_end: usize = sec_start;
+            while sec_end < line_end && report[sec_end] != 39 as byte {
+                sec_end = sec_end + 1usize;
+            }
+            if sec_end > sec_start {
+                var token: [byte: 160] = [];
+                const prefix2: &byte = "--only-section=" as &byte;
+                const prefix2_len: usize = strlen(prefix2 as *byte);
+                if prefix2_len + (sec_end - sec_start) < @len(token) {
+                    const sec_ptr: &byte = report + sec_start;
+                    memcpy(&token[0] as *void, prefix2 as *void, prefix2_len);
+                    memcpy(&token[prefix2_len] as *void, sec_ptr as *void, sec_end - sec_start);
+                    token[prefix2_len + (sec_end - sec_start)] = 0 as byte;
+                    if microapp_append_shell_token(cmd, cmd_cap, cmd_len, &token[0] as &byte) != 0 {
+                        return -1;
+                    }
+                    count = count + 1;
+                }
+            }
+        }
+        if line_end >= report_len {
+            break;
+        }
+        line_start = line_end + 1usize;
+    }
+    return count;
+}
+
+fn microapp_raw_va_maps_into_image(raw_va: u32, text_raw: u32, code_len: u32, rodata_raw: u32, rodata_len: u32, data_raw: u32, data_len: u32, bss_raw: u32, bss_len: u32) i32 {
+    if raw_va >= text_raw && raw_va < text_raw + code_len {
+        return 1;
+    }
+    if rodata_len > 0u32 && raw_va >= rodata_raw && raw_va < rodata_raw + rodata_len {
+        return 1;
+    }
+    if data_len > 0u32 && raw_va >= data_raw && raw_va < data_raw + data_len {
+        return 1;
+    }
+    if bss_len > 0u32 && raw_va >= bss_raw && raw_va < bss_raw + bss_len {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_raw_va_in_writable_image_range(raw_va: u32, data_raw: u32, data_len: u32, bss_raw: u32, bss_len: u32) i32 {
+    if data_len > 0u32 && raw_va >= data_raw && raw_va < data_raw + data_len {
+        return 1;
+    }
+    if bss_len > 0u32 && raw_va >= bss_raw && raw_va < bss_raw + bss_len {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_extract_elf_relocations(exe_path: &byte, target_arch_raw: u32, base_raw: u32, text_raw: u32, code_len: u32, rodata_raw: u32, rodata_len: u32, data_raw: u32, data_len: u32, bss_raw: u32, bss_len: u32, reloc_count: &u32, reloc_len: &u32) i32 {
+    if reloc_count == null || reloc_len == null {
+        return 1;
+    }
+    reloc_count[0] = 0u32;
+    reloc_len[0] = 0u32;
+    if target_arch_raw != MICROAPP_TARGET_ARCH_X86_64_RAW {
+        return 0;
+    }
+
+    var report_path: [byte: PATH_MAX] = [];
+    var cmd: [byte: 8192] = [];
+    const report_len: i32 = snprintf(&report_path[0] as *byte, PATH_MAX, "%s.relocs.txt" as *byte, exe_path as *byte);
+    if report_len <= 0 || report_len >= PATH_MAX {
+        return 1;
+    }
+
+    const readelf_env: &byte = get_env_or_default("READELF" as *byte, "readelf" as *byte);
+    var cmd_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -r %s > %s" as *byte, readelf_env as *byte, exe_path as *byte, &report_path[0] as *byte);
+    if cmd_len <= 0 || cmd_len >= 8192 {
+        return 1;
+    }
+    if system(&cmd[0] as *byte) != 0 {
+        return 1;
+    }
+
+    var report_buf: [byte: FILE_BUFFER_SIZE] = [];
+    const report_size: i32 = read_file_content(&report_path[0] as &byte, &report_buf[0], FILE_BUFFER_SIZE as usize);
+    if report_size < 0 {
+        return 1;
+    }
+    var line_start: usize = 0;
+    var out_count: u32 = 0u32;
+    while line_start < report_size as usize {
+        var line_end: usize = line_start;
+        while line_end < report_size as usize && report_buf[line_end] != 10 as byte {
+            line_end = line_end + 1usize;
+        }
+        const line_ptr: &byte = &report_buf[line_start] as &byte;
+        var tok0_s: usize = 0;
+        var tok0_e: usize = 0;
+        var tok2_s: usize = 0;
+        var tok2_e: usize = 0;
+        var tok3_s: usize = 0;
+        var tok3_e: usize = 0;
+        if microapp_token_bounds(line_ptr, line_end - line_start, 0, &tok0_s, &tok0_e) != 0 &&
+           microapp_token_bounds(line_ptr, line_end - line_start, 2, &tok2_s, &tok2_e) != 0 &&
+           microapp_token_bounds(line_ptr, line_end - line_start, 3, &tok3_s, &tok3_e) != 0 {
+            if microapp_token_equals(line_ptr, tok2_s, tok2_e, "R_X86_64_RELATIVE" as &byte) != 0 {
+                const target_raw: u32 = microapp_hex_to_u32_span(line_ptr, tok0_s, tok0_e) catch { 0u32; };
+                const addend_raw: u32 = microapp_hex_to_u32_span(line_ptr, tok3_s, tok3_e) catch { 0u32; };
+                if microapp_raw_va_in_writable_image_range(target_raw, data_raw, data_len, bss_raw, bss_len) != 0 &&
+                   microapp_raw_va_maps_into_image(addend_raw, text_raw, code_len, rodata_raw, rodata_len, data_raw, data_len, bss_raw, bss_len) != 0 {
+                    const target_va: u32 = MICROAPP_VADDR_BASE + (target_raw - base_raw);
+                    const value_va: u32 = MICROAPP_VADDR_BASE + (addend_raw - base_raw);
+                    const out_off: usize = out_count as usize * 8usize;
+                    if out_off + 8usize > FILE_BUFFER_SIZE as usize {
+                        return 1;
+                    }
+                    write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off, target_va);
+                    write_u32_le_at(&microapp_reloc_buffer[0] as &byte, out_off + 4usize, value_va);
+                    out_count = out_count + 1u32;
+                }
+            }
+        }
+        if line_end >= report_size as usize {
+            break;
+        }
+        line_start = line_end + 1usize;
+    }
+    reloc_count[0] = out_count;
+    reloc_len[0] = out_count * 8u32;
+    return 0;
+}
+
+fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, data_va: &u32, bss_va: &u32, bss_len: &u32, entry_va: &u32, base_raw_out: &u32, text_raw_out: &u32, rodata_raw_out: &u32, data_raw_out: &u32, bss_raw_out: &u32) i32 {
     var report_path: [byte: PATH_MAX] = [];
     var sym_path: [byte: PATH_MAX] = [];
     var cmd: [byte: 8192] = [];
@@ -735,6 +934,11 @@ fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, 
     }
     bss_len[0] = bss_raw_len;
     entry_va[0] = MICROAPP_VADDR_BASE + (entry_raw - base_raw);
+    if base_raw_out != null { base_raw_out[0] = base_raw; }
+    if text_raw_out != null { text_raw_out[0] = text_raw; }
+    if rodata_raw_out != null { rodata_raw_out[0] = rodata_raw; }
+    if data_raw_out != null { data_raw_out[0] = data_raw; }
+    if bss_raw_out != null { bss_raw_out[0] = bss_raw; }
     return 0;
 }
 
@@ -840,6 +1044,13 @@ fn write_microapp_payload_obj(
     var bss_va: u32 = 0u32;
     var bss_len: u32 = 0u32;
     var bss_size: u32 = 0u32;
+    var base_raw: u32 = 0u32;
+    var text_raw: u32 = 0u32;
+    var rodata_raw: u32 = 0u32;
+    var data_raw: u32 = 0u32;
+    var bss_raw: u32 = 0u32;
+    var reloc_count: u32 = 0u32;
+    var reloc_len: u32 = 0u32;
     var text_bin_path: [byte: PATH_MAX] = [];
     var rodata_bin_path: [byte: PATH_MAX] = [];
     var data_bin_path: [byte: PATH_MAX] = [];
@@ -867,7 +1078,7 @@ fn write_microapp_payload_obj(
         fprintf(libc.stderr, "错误: 无法生成 microapp ELF 路径\n" as *byte);
         return 1;
     }
-    if microapp_extract_elf_vaddrs(&exe_path[0] as &byte, &code_va, &rodata_va, &data_va, &bss_va, &bss_len, &entry_va) != 0 {
+    if microapp_extract_elf_vaddrs(&exe_path[0] as &byte, &code_va, &rodata_va, &data_va, &bss_va, &bss_len, &entry_va, &base_raw, &text_raw, &rodata_raw, &data_raw, &bss_raw) != 0 {
         fprintf(libc.stderr, "错误: 无法提取 microapp ELF 虚拟地址信息\n" as *byte);
         return 1;
     }
@@ -891,6 +1102,10 @@ fn write_microapp_payload_obj(
         const data_len_tmp: !u32 = data_len_raw as! u32;
         data_len = data_len_tmp.value;
     }
+    if microapp_extract_elf_relocations(&exe_path[0] as &byte, target_arch_raw, base_raw, text_raw, code_len, rodata_raw, rodata_len, data_raw, data_len, bss_raw, bss_len, &reloc_count, &reloc_len) != 0 {
+        fprintf(libc.stderr, "错误: 无法提取 microapp ELF relocation 信息\n" as *byte);
+        return 1;
+    }
     if bss_len > 0u32 {
         if data_len == 0u32 {
             data_va = bss_va;
@@ -913,8 +1128,6 @@ fn write_microapp_payload_obj(
     const magic: u32 = 0x4A424F50;  // "POBJ"
     const version: u16 = POBJ_VERSION;
     const flags: u16 = 0;
-    const reloc_count: u32 = 0u32;
-    const reloc_len: u32 = 0u32;
     const required_caps: u32 = 0u32;
     const entry_offset: u32 = 0u32;
     const build_mode_raw: u32 = POBJ_BUILD_MODE_MICROAPP;
@@ -946,6 +1159,9 @@ fn write_microapp_payload_obj(
     _ = fwrite(&microapp_rodata_buffer[0] as *void, 1 as usize, rodata_len as usize, fp);
     if data_len > 0u32 {
         _ = fwrite(&microapp_data_buffer[0] as *void, 1 as usize, data_len as usize, fp);
+    }
+    if reloc_len > 0u32 {
+        _ = fwrite(&microapp_reloc_buffer[0] as *void, 1 as usize, reloc_len as usize, fp);
     }
     fclose(fp);
     return 0;
@@ -1282,6 +1498,9 @@ fn verify_microapp_uapp(path: &byte) i32 {
     fprintf(libc.stdout, "verified=yes\n" as *byte);
     fprintf(libc.stdout, "format_version=%u\n" as *byte, hdr.format_version as u32);
     fprintf(libc.stdout, "target_arch=%s\n" as *byte, microapp_image_arch_name(hdr.target_arch) as *byte);
+    fprintf(libc.stdout, "profile=%s\n" as *byte, microapp_profile_name(hdr.profile_id) as *byte);
+    fprintf(libc.stdout, "bridge=%s\n" as *byte, microapp_image_bridge_name(hdr.bridge_kind) as *byte);
+    fprintf(libc.stdout, "reloc_count=%u\n" as *byte, hdr.reloc_count);
     return 0;
 }
 
@@ -1430,6 +1649,10 @@ fn verify_microapp_pobj(path: &byte) i32 {
     fprintf(libc.stdout, "verified=yes\n" as *byte);
     fprintf(libc.stdout, "version=%u\n" as *byte, version as u32);
     fprintf(libc.stdout, "target_arch=%s\n" as *byte, microapp_target_arch_name(target_arch_raw) as *byte);
+    fprintf(libc.stdout, "profile=%s\n" as *byte, microapp_profile_name(profile_id) as *byte);
+    fprintf(libc.stdout, "bridge=%s\n" as *byte, microapp_bridge_kind_name(bridge_kind_raw) as *byte);
+    fprintf(libc.stdout, "reloc_count=%u\n" as *byte, reloc_count);
+    fprintf(libc.stdout, "reloc_size=%u\n" as *byte, reloc_len);
     return 0;
 }
 
@@ -1449,6 +1672,7 @@ var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
 var microapp_rodata_buffer: [byte: FILE_BUFFER_SIZE] = [];
 var microapp_data_buffer: [byte: FILE_BUFFER_SIZE] = [];
+var microapp_reloc_buffer: [byte: FILE_BUFFER_SIZE] = [];
 var microapp_pack_output_buffer: [byte: FILE_BUFFER_SIZE + 512] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
 // v2.0: 动态增长，初始 16MB

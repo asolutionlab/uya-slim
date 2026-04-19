@@ -23,6 +23,7 @@ SCRIPTS=(
     "tests/verify_microapp_time_runtime.sh"
     "tests/verify_microapp_bss_manifest.sh"
     "tests/verify_microapp_bss_runtime.sh"
+    "tests/verify_microapp_reloc_runtime.sh"
     "tests/verify_microapp_loader_unwired_profile.sh"
     "tests/verify_microapp_recovery_update.sh"
 )

@@ -260,6 +260,7 @@ app.uya / microapp.uya
 - 写入 `target_arch`
 
 这一步当前已经有了第一版实现：`payload_pack_to_uapp()`。
+当前 `build --app microapp` 生成的 `.pobj/.uapp v2` 也已经开始携带非零 `reloc_count / reloc table`，便于后续 runtime 真正应用 relocation。
 
 长期目标应该是：
 

@@ -26,6 +26,7 @@ assert data[4:6] == (2).to_bytes(2, "little"), data[4:6]
 assert data[6:8] == (1).to_bytes(2, "little"), data[6:8]
 code_size = int.from_bytes(data[16:20], "little")
 rodata_size = int.from_bytes(data[20:24], "little")
+reloc_count = int.from_bytes(data[24:28], "little")
 entry_offset = int.from_bytes(data[12:16], "little")
 entry_va = int.from_bytes(data[136:140], "little")
 code_va = int.from_bytes(data[140:144], "little")
@@ -36,6 +37,7 @@ build_mode = data[64]
 target_arch = data[65]
 assert code_size > 0, code_size
 assert rodata_size > 0, rodata_size
+assert reloc_count > 0, reloc_count
 assert entry_offset == 0, entry_offset
 assert entry_va == code_va + entry_offset, (entry_va, code_va, entry_offset)
 assert code_va >= 65536, code_va
