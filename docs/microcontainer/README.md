@@ -17,6 +17,7 @@
 - [platform_impl.md](../../docs/microcontainer/platform_impl.md)
 - [benchmark_plan.md](../../docs/microcontainer/benchmark_plan.md)
 - [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
+- [migration_guide.md](../../docs/microcontainer/migration_guide.md)
 - [microapp_source_template.md](../../docs/microcontainer/microapp_source_template.md)
 - [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
 - [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
@@ -45,6 +46,7 @@
 - 推荐本地用 `make microapp-check` 运行当前 microapp 回归集
 - 在 hosted 平台上做轻量 smoke test 时，可用 `make microapp-hosted-smoke`
 - 若只想检查 `.uapp v1/v2` 兼容链路，可用 `make microapp-compat-check`
+- 若只想检查 crash/recovery/update 链路，可用 `make microapp-recovery-check`
 - 默认 profile 推导优先级是：`--microapp-profile` > `MICROAPP_TARGET_PROFILE` > `MICROAPP_TARGET_ARCH(+TARGET_OS)` > `TARGET_OS/TARGET_ARCH` > `HOST_OS/HOST_ARCH` > `linux_x86_64_hardvm`
 - `MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；若未覆盖，则走当前 profile 自带的默认 gcc
 - `MICROAPP_TARGET_CFLAGS` / `MICROAPP_TARGET_LDFLAGS` 现在也是按 profile 给默认值：
@@ -79,5 +81,6 @@
 6. [image_validation.md](../../docs/microcontainer/image_validation.md)
 7. [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
 8. [microapp_profiles.md](../../docs/microcontainer/microapp_profiles.md)
-9. [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
-10. [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)
+9. [migration_guide.md](../../docs/microcontainer/migration_guide.md)
+10. [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
+11. [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)

@@ -309,8 +309,10 @@
 - [~] 增加真执行回归
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss` 官方示例真执行回归
   - [ ] 其余 profile 真执行仍待补齐
-- [ ] 增加 crash/recovery / update 回归
-- [ ] 发布迁移指南
+- [~] 增加 crash/recovery / update 回归
+  - [x] 已新增 `make microapp-recovery-check` 入口
+  - [x] 当前已覆盖 `test_kernel_update.uya` 与 `test_kernel_sim.uya`
+- [x] 发布迁移指南
 
 验收标准：
 
@@ -318,6 +320,7 @@
   - [x] 当前已统一到 `make microapp-check` 聚合入口
   - [x] Ubuntu CI / README / Makefile help / 官方示例 / microapp 回归清单已对齐
   - [x] `.uapp v1/v2` 兼容回归已具备独立入口 `make microapp-compat-check`
+  - [x] 当前已补充 `migration_guide.md` 收敛旧路径 -> 新路径迁移说明
   - [ ] 其余平台与发布文档仍待继续对齐
 
 ---

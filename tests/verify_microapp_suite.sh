@@ -24,6 +24,7 @@ SCRIPTS=(
     "tests/verify_microapp_bss_manifest.sh"
     "tests/verify_microapp_bss_runtime.sh"
     "tests/verify_microapp_loader_unwired_profile.sh"
+    "tests/verify_microapp_recovery_update.sh"
 )
 
 for rel in "${SCRIPTS[@]}"; do
