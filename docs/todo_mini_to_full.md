@@ -1677,7 +1677,7 @@ lib/
 
 **详细设计内容**（包括系统调用层、跨平台方案、条件编译、核心库实现、--outlibc 功能等）请参见：[`docs/std_c_design.md`](./docs/std_c_design.md)
 
-**macOS 迁移详细待办**：见 [todo_macos_migration.md](todo_macos_migration.md)；构建链细化见 [todo_macos_phase1.md](todo_macos_phase1.md)；宿主平台抽象细化见 [todo_macos_phase2.md](todo_macos_phase2.md)；`@syscall/syscall/osal/runtime` 细化见 [todo_macos_phase3.md](todo_macos_phase3.md)；hosted 自举与主测试基线细化见 [todo_macos_phase4.md](todo_macos_phase4.md)；`pthread` Darwin 路线细化见 [todo_macos_phase5.md](todo_macos_phase5.md)；`--nostdlib` Darwin 路线细化见 [todo_macos_phase6.md](todo_macos_phase6.md)；`std.async` / `kqueue` 细化见 [todo_macos_phase7.md](todo_macos_phase7.md)；跨平台验收与文档收口见 [todo_macos_phase8.md](todo_macos_phase8.md)。
+**跨平台迁移详细待办**：见 [todo_multiplatform_migration.md](todo_multiplatform_migration.md)；共享平台基础见 [todo_platform_shared_foundation.md](todo_platform_shared_foundation.md)。
 
 ### 19.1 v0.3.0 实施计划（标准库基础设施）
 
@@ -2723,15 +2723,7 @@ interface IReadWriter {
 #### 3. 跨平台支持（v0.5.x）⭐⭐
 
 - 多平台共享基础（工具链/host/target/codegen 宏；**Linux 可完成项已同步** [todo_platform_shared_foundation.md](todo_platform_shared_foundation.md)）
-- macOS 支持（hosted 构建、自举、`@syscall`、`syscall/osal`、`pthread`、`--nostdlib`、`std.async`/`kqueue`），详见 [todo_macos_migration.md](todo_macos_migration.md)
-- macOS 构建链平台化（Phase 1），详见 [todo_macos_phase1.md](todo_macos_phase1.md)
-- macOS 宿主平台抽象（Phase 2），详见 [todo_macos_phase2.md](todo_macos_phase2.md)
-- macOS `@syscall` / `syscall` / `osal` / runtime（Phase 3），详见 [todo_macos_phase3.md](todo_macos_phase3.md)
-- macOS hosted 自举与主测试基线（Phase 4），详见 [todo_macos_phase4.md](todo_macos_phase4.md)
-- macOS `pthread` 与同步原语（Phase 5），详见 [todo_macos_phase5.md](todo_macos_phase5.md)
-- macOS `--nostdlib` Darwin 路线（Phase 6），详见 [todo_macos_phase6.md](todo_macos_phase6.md)
-- macOS `std.async` / `kqueue`（Phase 7），详见 [todo_macos_phase7.md](todo_macos_phase7.md)
-- macOS 跨平台验收与文档收口（Phase 8），详见 [todo_macos_phase8.md](todo_macos_phase8.md)
+- Darwin/macOS 支持（hosted 构建、自举、`@syscall`、`syscall/osal`、`pthread`、`--nostdlib`、`std.async`/`kqueue`），纳入 [todo_multiplatform_migration.md](todo_multiplatform_migration.md)
 - Windows 支持（IOCP、Win32 API）
 - ARM64 支持
 - RISC-V 支持（裸机）
@@ -2856,7 +2848,7 @@ interface IReadWriter {
 - 🎯 macOS / Windows 支持
 - 🎯 ARM64 / RISC-V 支持
 - 🎯 标准库：net + fs + time
-- 详细实施任务见 [todo_macos_migration.md](todo_macos_migration.md)
+- 详细实施任务见 [todo_multiplatform_migration.md](todo_multiplatform_migration.md)
 
 ### v0.6.0（目标：2026 Q4+）- 低层能力里程碑
 - 🎯 SIMD 语言内建：`@vector(T, N)` / `@mask(N)`

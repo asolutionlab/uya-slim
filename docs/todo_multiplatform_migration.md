@@ -58,7 +58,7 @@
 
 ### 2. Darwin 原生全平台线
 
-总文档见 [todo_macos_migration.md](todo_macos_migration.md)。
+Darwin 线已纳入本文档的跨平台迁移总规划。
 
 Darwin 线保留现有 Phase 1-8 的拆分，但它现在是建立在“共享平台基础”之上的**第一条完整原生平台线**，而不是总迁移文档本身。
 
@@ -164,7 +164,7 @@ flowchart TD
 
 - 总蓝图：`todo_multiplatform_migration.md`
 - 共享平台基础：`todo_platform_shared_foundation.md`
-- Darwin：`todo_macos_migration.md`
+- Darwin：本文档内的 Darwin 原生全平台线
 - Windows：`todo_windows_migration.md`
 - 交叉编译：`todo_cross_compile.md`
 

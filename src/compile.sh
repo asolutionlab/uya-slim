@@ -20,6 +20,8 @@ fi
 CC_TARGET_FLAGS="${CC_TARGET_FLAGS:-}"
 RUNTIME_MODE="${RUNTIME_MODE:-hosted}"
 LINK_MODE="${LINK_MODE:-default}"
+UYA_BOOTSTRAP_PROFILE="${UYA_BOOTSTRAP_PROFILE:-}"
+UYA_NATIVE_BOOTSTRAP="${UYA_NATIVE_BOOTSTRAP:-}"
 
 normalize_os() {
     case "$1" in
@@ -371,6 +373,28 @@ else
     RUNTIME_MODE="hosted"
 fi
 
+if [ -z "$UYA_BOOTSTRAP_PROFILE" ]; then
+    if [ "$RUNTIME_MODE" = "nostdlib" ] && [ "$TARGET_OS" = "linux" ] && [ "$TARGET_ARCH" = "x86_64" ]; then
+        UYA_BOOTSTRAP_PROFILE="linux-nostdlib"
+    elif [ "$RUNTIME_MODE" = "hosted" ] && [ "$TARGET_OS" = "macos" ]; then
+        UYA_BOOTSTRAP_PROFILE="darwin-hosted"
+    elif [ "$RUNTIME_MODE" = "hosted" ] && [ "$TARGET_OS" = "windows" ]; then
+        UYA_BOOTSTRAP_PROFILE="windows-hosted"
+    elif [ "$RUNTIME_MODE" = "hosted" ]; then
+        UYA_BOOTSTRAP_PROFILE="hosted"
+    else
+        UYA_BOOTSTRAP_PROFILE="generic"
+    fi
+fi
+
+if [ -z "$UYA_NATIVE_BOOTSTRAP" ]; then
+    if [ "$UYA_BOOTSTRAP_PROFILE" = "darwin-hosted" ] && [ "$HOST_OS" = "macos" ] && [ "$TARGET_OS" = "macos" ] && [ "$HOST_ARCH" = "$TARGET_ARCH" ]; then
+        UYA_NATIVE_BOOTSTRAP="1"
+    else
+        UYA_NATIVE_BOOTSTRAP="0"
+    fi
+fi
+
 # --nostdlib 选项需要生成可执行文件
 if [ "$USE_NOSTDLIB" = true ] && [ "$GENERATE_EXEC" != true ]; then
     echo -e "${RED}错误: --nostdlib 需要同时使用 -e 或 --exec 选项${NC}"
@@ -383,6 +407,8 @@ if [ "$VERBOSE" = true ]; then
     echo "  HOST_OS=$HOST_OS HOST_ARCH=$HOST_ARCH"
     echo "  TARGET_OS=$TARGET_OS TARGET_ARCH=$TARGET_ARCH TARGET_TRIPLE=$TARGET_TRIPLE"
     echo "  RUNTIME_MODE=$RUNTIME_MODE LINK_MODE=$LINK_MODE"
+    echo "  UYA_BOOTSTRAP_PROFILE=$UYA_BOOTSTRAP_PROFILE"
+    echo "  UYA_NATIVE_BOOTSTRAP=$UYA_NATIVE_BOOTSTRAP"
     echo "  TOOLCHAIN=$TOOLCHAIN"
     echo "  ZIG=$ZIG"
     echo "  CC=$CC"
@@ -393,9 +419,21 @@ fi
 # 检查编译器是否存在，如果不存在则从备份恢复
 if [ ! -f "$COMPILER" ]; then
     echo -e "${YELLOW}编译器 '$COMPILER' 不存在，尝试从备份恢复...${NC}"
-    if [ -f "$REPO_ROOT/backup/uya.c" ]; then
+    BACKUP_COMPILER_C="$REPO_ROOT/backup/uya.c"
+    if [ "$TARGET_OS" = "macos" ]; then
+        if [ -f "$REPO_ROOT/backup/uya-hosted-macos.c" ]; then
+            BACKUP_COMPILER_C="$REPO_ROOT/backup/uya-hosted-macos.c"
+        elif [ -f "$REPO_ROOT/backup/uya-hosted-macos-$TARGET_ARCH.c" ]; then
+            BACKUP_COMPILER_C="$REPO_ROOT/backup/uya-hosted-macos-$TARGET_ARCH.c"
+        else
+            echo -e "${RED}错误: 编译器 '$COMPILER' 不存在，且未找到 macOS 本机 seed${NC}"
+            echo "请先运行 'make from-c-native' 构建编译器"
+            exit 1
+        fi
+    fi
+    if [ -f "$BACKUP_COMPILER_C" ]; then
         mkdir -p "$REPO_ROOT/bin"
-        cp "$REPO_ROOT/backup/uya.c" "$REPO_ROOT/bin/uya.c"
+        cp "$BACKUP_COMPILER_C" "$REPO_ROOT/bin/uya.c"
         if [ -f "$REPO_ROOT/bin/uya.c" ]; then
             echo "编译 bin/uya.c ..."
             echo "CFLAGS: $CFLAGS"
@@ -411,8 +449,12 @@ if [ ! -f "$COMPILER" ]; then
             exit 1
         fi
     else
-        echo -e "${RED}错误: 编译器 '$COMPILER' 和备份 'backup/uya.c' 都不存在${NC}"
-        echo "请先运行 'make from-c' 构建编译器"
+        echo -e "${RED}错误: 编译器 '$COMPILER' 和备份种子都不存在${NC}"
+        if [ "$TARGET_OS" = "macos" ]; then
+            echo "请先运行 'make from-c-native' 构建编译器"
+        else
+            echo "请先运行 'make from-c' 构建编译器"
+        fi
         exit 1
     fi
 fi
@@ -842,8 +884,13 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -fno-stack-protector -no-pie -nostdlib -static -o "$EXECUTABLE_FILE" "$CRTI" "$UYA_O" "$CRTN" "${LDFLAGS_ARR[@]}")
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
+                    # Darwin / hosted 主线：使用系统 libc 与默认链接路径，不走 Linux 的 -nostdlib -static
                     # 注意：不使用 -static，避免 errno TLS 冲突
-                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$OUTPUT_FILE" -o "$EXECUTABLE_FILE" "${LDFLAGS_ARR[@]}")
+                    EXTRA_HOST_SOURCES=()
+                    if [ "$HOST_OS" = "macos" ] && [ "$TARGET_OS" = "macos" ] && [ "$RUNTIME_MODE" = "hosted" ] && [ -f "$REPO_ROOT/src/host/macos_stat_shim.c" ]; then
+                        EXTRA_HOST_SOURCES+=("$REPO_ROOT/src/host/macos_stat_shim.c")
+                    fi
+                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$OUTPUT_FILE" "${EXTRA_HOST_SOURCES[@]}" -o "$EXECUTABLE_FILE" "${LDFLAGS_ARR[@]}")
                 fi
 
                 LINK_CMD_DESC="$(quote_cmd "${LINK_CMD[@]}")"
@@ -922,6 +969,10 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             case "${UYA_BOOTSTRAP_COMPARE_BIN:-}" in
                 1|true|yes|YES) BOOTSTRAP_BIN_COMPARE=true ;;
             esac
+            if [ "$UYA_BOOTSTRAP_PROFILE" = "darwin-hosted" ] && [ "$MULTI_FILE_C" != "1" ] && [ -z "${UYA_SPLIT_C_DIR:-}" ]; then
+                # Darwin 主线默认优先比较 C 输出，避免依赖 GNU/ELF 风格的二进制规范化工具链。
+                BOOTSTRAP_BIN_COMPARE=false
+            fi
             if [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; then
                 BOOTSTRAP_BIN_COMPARE=true
             fi
@@ -935,6 +986,9 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 echo "自举对比：用自举编译器编译自身，对比可执行文件（cmp）"
             else
                 echo "自举对比：用自举编译器编译自身，对比 C 输出（diff）"
+                if [ "$UYA_BOOTSTRAP_PROFILE" = "darwin-hosted" ]; then
+                    echo "Darwin hosted（单文件自举）：默认优先使用 C 输出对比，避免依赖 GNU/ELF 风格的二进制规范化。"
+                fi
             fi
             echo "=========================================="
             BOOTSTRAP_C="$BUILD_DIR/compiler_bootstrap.c"
