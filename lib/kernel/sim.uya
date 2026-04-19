@@ -43,6 +43,8 @@ export struct SimKernel {
     loaded_image_headers: [ImageHeader: 8],
     loaded_image_ppn: [u32: 8],
     loaded_image_valid: [u32: 8],
+    loaded_image_base_vpn: [u32: 8],
+    loaded_image_page_count: [u32: 8],
     // Callback table: callers register fn pointers here
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
@@ -58,6 +60,8 @@ export fn sim_kernel_make() SimKernel {
         loaded_image_headers: [],
         loaded_image_ppn: [],
         loaded_image_valid: [],
+        loaded_image_base_vpn: [],
+        loaded_image_page_count: [],
     };
 }
 
@@ -91,6 +95,8 @@ export fn sim_kernel_init(k: &SimKernel) void {
         k.container_ctxs[i].kernel = k;
         k.loaded_image_ppn[i] = 0u32;
         k.loaded_image_valid[i] = 0u32;
+        k.loaded_image_base_vpn[i] = 0u32;
+        k.loaded_image_page_count[i] = 0u32;
         i = i + 1;
     }
 }
@@ -137,6 +143,28 @@ fn sim_loaded_valid_ref(k: &SimKernel, slot: u32) &u32 {
     if slot == 5u32 { return &k.loaded_image_valid[5]; }
     if slot == 6u32 { return &k.loaded_image_valid[6]; }
     return &k.loaded_image_valid[7];
+}
+
+fn sim_loaded_base_vpn_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_image_base_vpn[0]; }
+    if slot == 1u32 { return &k.loaded_image_base_vpn[1]; }
+    if slot == 2u32 { return &k.loaded_image_base_vpn[2]; }
+    if slot == 3u32 { return &k.loaded_image_base_vpn[3]; }
+    if slot == 4u32 { return &k.loaded_image_base_vpn[4]; }
+    if slot == 5u32 { return &k.loaded_image_base_vpn[5]; }
+    if slot == 6u32 { return &k.loaded_image_base_vpn[6]; }
+    return &k.loaded_image_base_vpn[7];
+}
+
+fn sim_loaded_page_count_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_image_page_count[0]; }
+    if slot == 1u32 { return &k.loaded_image_page_count[1]; }
+    if slot == 2u32 { return &k.loaded_image_page_count[2]; }
+    if slot == 3u32 { return &k.loaded_image_page_count[3]; }
+    if slot == 4u32 { return &k.loaded_image_page_count[4]; }
+    if slot == 5u32 { return &k.loaded_image_page_count[5]; }
+    if slot == 6u32 { return &k.loaded_image_page_count[6]; }
+    return &k.loaded_image_page_count[7];
 }
 
 fn sim_entry_fn_ref(k: &SimKernel, slot: u32) &i32 {
@@ -332,6 +360,8 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     sim_loaded_header_ref(k, cid)[0] = hdr;
     sim_loaded_ppn_ref(k, cid)[0] = first_ppn;
     sim_loaded_valid_ref(k, cid)[0] = 1u32;
+    sim_loaded_base_vpn_ref(k, cid)[0] = base_vpn;
+    sim_loaded_page_count_ref(k, cid)[0] = pages_needed;
     sim_entry_fn_ref(k, cid)[0] = -1;
     try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
     try scheduler_set_priority(&k.sched, cid, priority);

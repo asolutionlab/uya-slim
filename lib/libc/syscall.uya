@@ -31,6 +31,7 @@ std.cfg(std.target_os == .tos_macos, {
     export const SYS_lseek: i64 = 199;
     export const SYS_mmap: i64 = 197;
     export const SYS_munmap: i64 = 73;
+    export const SYS_mprotect: i64 = 74;
     export const SYS_brk: i64 = 0;
     export const SYS_ioctl: i64 = 54;
     export const SYS_access: i64 = 33;
@@ -112,6 +113,7 @@ std.cfg(std.target_os == .tos_linux, {
         export const SYS_lseek: i64 = 8;
         export const SYS_mmap: i64 = 9;
         export const SYS_munmap: i64 = 11;
+        export const SYS_mprotect: i64 = 10;
         export const SYS_brk: i64 = 12;
         export const SYS_ioctl: i64 = 16;
         export const SYS_access: i64 = 21;
@@ -192,6 +194,7 @@ std.cfg(std.target_os == .tos_linux, {
             export const SYS_lseek: i64 = 19;
             export const SYS_mmap: i64 = 192;
             export const SYS_munmap: i64 = 91;
+            export const SYS_mprotect: i64 = 125;
             export const SYS_brk: i64 = 45;
             export const SYS_ioctl: i64 = 54;
             export const SYS_access: i64 = 33;
@@ -272,6 +275,7 @@ std.cfg(std.target_os == .tos_linux, {
                 export const SYS_lseek: i64 = 62;
                 export const SYS_mmap: i64 = 222;
                 export const SYS_munmap: i64 = 215;
+                export const SYS_mprotect: i64 = 226;
                 export const SYS_brk: i64 = 214;
                 export const SYS_ioctl: i64 = 29;
                 export const SYS_access: i64 = 48;
@@ -352,6 +356,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_lseek: i64 = 62;
                     export const SYS_mmap: i64 = 222;
                     export const SYS_munmap: i64 = 215;
+                    export const SYS_mprotect: i64 = 226;
                     export const SYS_brk: i64 = 214;
                     export const SYS_ioctl: i64 = 29;
                     export const SYS_access: i64 = 48;
@@ -431,6 +436,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_lseek: i64 = 8;
                     export const SYS_mmap: i64 = 9;
                     export const SYS_munmap: i64 = 11;
+                    export const SYS_mprotect: i64 = 10;
                     export const SYS_brk: i64 = 12;
                     export const SYS_ioctl: i64 = 16;
                     export const SYS_access: i64 = 21;
@@ -513,6 +519,7 @@ std.cfg(std.target_os == .tos_linux, {
     export const SYS_lseek: i64 = 8;
     export const SYS_mmap: i64 = 9;
     export const SYS_munmap: i64 = 11;
+    export const SYS_mprotect: i64 = 10;
     export const SYS_brk: i64 = 12;
     export const SYS_ioctl: i64 = 16;
     export const SYS_access: i64 = 21;
@@ -984,6 +991,11 @@ export extern "libc" fn sys_mmap(addr: *void, length: usize, prot: i32, flags: i
 // sys_munmap - 解除内存映射
 export extern "libc" fn sys_munmap(addr: *void, length: usize) !i32 {
     return @syscall(SYS_munmap, addr as i64, length as i64) as! i32;
+}
+
+// sys_mprotect - 调整内存映射权限
+export extern "libc" fn sys_mprotect(addr: *void, length: usize, prot: i32) !i32 {
+    return @syscall(SYS_mprotect, addr as i64, length as i64, prot as i64) as! i32;
 }
 
 // sys_stat - 获取文件状态（AArch64/RISC-V：newfstatat）

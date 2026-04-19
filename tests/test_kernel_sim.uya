@@ -217,6 +217,8 @@ fn make_kernel() SimKernel {
         loaded_image_headers: [],
         loaded_image_ppn: [],
         loaded_image_valid: [],
+        loaded_image_base_vpn: [],
+        loaded_image_page_count: [],
     };
 }
 
@@ -399,6 +401,8 @@ test "sim_load_image_data_page_sets_writable_bit" {
         has_w = 1;
     }
     try assert_eq_i32(has_w, 1);
+    try assert_eq_i32(k.loaded_image_base_vpn[0] as i32, 0);
+    try assert_eq_i32(k.loaded_image_page_count[0] as i32, 1);
 }
 
 test "sim_load_image_bss_page_is_zero_and_writable" {
