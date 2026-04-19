@@ -25,7 +25,7 @@ use libc.PROT_WRITE;
 use libc.PROT_EXEC;
 
 export const MICROAPP_HOSTED_MAX_IMAGE_SIZE: usize = 2097152;  // 2 MiB
-export const MICROAPP_HOSTED_BACKING_SIZE: usize = 131072;     // 2 pages
+export const MICROAPP_HOSTED_BACKING_SIZE: usize = 524288;     // 8 pages
 export const MICROAPP_HOSTED_DEFAULT_PRIORITY: u32 = 16u32;
 
 fn microapp_hosted_target_arch_name(target_arch: ImageTargetArch) &byte {

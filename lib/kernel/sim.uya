@@ -18,6 +18,8 @@ use kernel.update;
 use std;
 use libc.sys_mmap;
 use libc.sys_munmap;
+use libc.write;
+use libc.STDOUT_FILENO;
 use libc.PROT_READ;
 use libc.PROT_WRITE;
 use libc.PROT_EXEC;
@@ -39,6 +41,9 @@ export const SIM_FAULT_CLASS_BUS: u32 = 3u32;
 export const SIM_FAULT_CLASS_ABORT: u32 = 4u32;
 export const SIM_FAULT_CLASS_UNKNOWN: u32 = 255u32;
 export const SIM_CALL_GATE_TRAMPOLINE_SIZE: usize = 4096usize;
+export const SIM_MICROAPP_BRIDGE_ABI_MAGIC: u32 = 0x55414249u32;
+export const SIM_MICROAPP_BRIDGE_ABI_VERSION: u32 = 1u32;
+const SIM_MICROAPP_BRIDGE_DISPATCH2_OFFSET: usize = 8usize;
 const RV32_OPCODE_OP_IMM: u32 = 19u32;
 const RV32_FUNCT3_ADDI: u32 = 0u32;
 const RV32_REG_A0: u32 = 10u32;
@@ -86,6 +91,10 @@ export struct SimKernel {
     // Callback table: callers register fn pointers here
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
+
+var g_sim_bridge_kernel: &SimKernel = null;
+var g_sim_bridge_cid: u32 = 0u32;
+var g_sim_bridge_active: u32 = 0u32;
 
 export fn sim_kernel_make() SimKernel {
     return SimKernel{
@@ -393,6 +402,109 @@ export fn sim_fault_class_name(fault_class: u32) &byte {
     return "unknown" as &byte;
 }
 
+export fn sim_bind_bridge_dispatch(k: &SimKernel, cid: u32) !void {
+    if k == null || cid >= 8u32 {
+        return error.InvalidState;
+    }
+    g_sim_bridge_kernel = k;
+    g_sim_bridge_cid = cid;
+    g_sim_bridge_active = 1u32;
+}
+
+export fn sim_unbind_bridge_dispatch() void {
+    g_sim_bridge_kernel = null;
+    g_sim_bridge_cid = 0u32;
+    g_sim_bridge_active = 0u32;
+}
+
+export fn sim_microapp_bridge_dispatch2(nr: i64, a1: i64, a2: i64) i64 {
+    if g_sim_bridge_active == 0u32 || g_sim_bridge_kernel == null {
+        return -1i64;
+    }
+    const bridge_kernel: &SimKernel = g_sim_bridge_kernel;
+    if nr < 0i64 {
+        return -1i64;
+    }
+    const nr_tmp: !u32 = nr as! u32;
+    if nr_tmp.error_id != 0u32 {
+        return -1i64;
+    }
+    if nr_tmp.value == SYS_PRINT {
+        if a1 < 0i64 || a2 < 0i64 {
+            return -1i64;
+        }
+        const len_tmp: !u32 = a2 as! u32;
+        if len_tmp.error_id != 0u32 {
+            return -1i64;
+        }
+        if len_tmp.value > SYSCALL_PRINT_MAX {
+            return -1i64;
+        }
+        if len_tmp.value == 0u32 {
+            return 0i64;
+        }
+        const ptr_addr_tmp: !usize = a1 as! usize;
+        if ptr_addr_tmp.error_id != 0u32 {
+            return -1i64;
+        }
+        const pm_base: usize = @usize_from_ptr(bridge_kernel.host_ctx.pm.base as &void);
+        const pm_end: usize = pm_base + bridge_kernel.host_ctx.pm.size as usize;
+        const ptr_end: usize = ptr_addr_tmp.value + len_tmp.value as usize;
+        if ptr_addr_tmp.value < pm_base || ptr_end > pm_end {
+            return -1i64;
+        }
+        const ptr: &byte = @ptr_from_usize(ptr_addr_tmp.value) as &byte;
+        const written: i64 = write(STDOUT_FILENO, ptr, len_tmp.value as usize);
+        if written < 0i64 {
+            return -1i64;
+        }
+        return written;
+    }
+    if nr_tmp.value == SYS_ALLOC {
+        if a1 < 0i64 || a2 < 0i64 {
+            return -1i64;
+        }
+        const size_tmp: !u32 = a1 as! u32;
+        const flags_tmp: !u32 = a2 as! u32;
+        if size_tmp.error_id != 0u32 || flags_tmp.error_id != 0u32 {
+            return -1i64;
+        }
+        const ret_va: !u32 = sim_syscall(g_sim_bridge_kernel, g_sim_bridge_cid, nr_tmp.value, size_tmp.value, flags_tmp.value);
+        if ret_va.error_id != 0u32 {
+            return -1i64;
+        }
+        const host_ptr: &byte = mmu_translate_ptr(sim_pt_ref(bridge_kernel, g_sim_bridge_cid), &bridge_kernel.host_ctx.pm, ret_va.value, 1u32, ACCESS_W) catch {
+            return -1i64;
+        };
+        const host_addr_tmp: !i64 = @usize_from_ptr(host_ptr as &void) as! i64;
+        if host_addr_tmp.error_id != 0u32 {
+            return -1i64;
+        }
+        return host_addr_tmp.value;
+    }
+    if a1 < 0i64 || a2 < 0i64 {
+        return -1i64;
+    }
+    const a1_tmp: !u32 = a1 as! u32;
+    const a2_tmp: !u32 = a2 as! u32;
+    if a1_tmp.error_id != 0u32 || a2_tmp.error_id != 0u32 {
+        return -1i64;
+    }
+    const ret: !u32 = sim_syscall(bridge_kernel, g_sim_bridge_cid, nr_tmp.value, a1_tmp.value, a2_tmp.value);
+    if ret.error_id != 0u32 {
+        const err_tmp: !i64 = ret.error_id as! i64;
+        if err_tmp.error_id != 0u32 {
+            return -1i64;
+        }
+        return 0i64 - err_tmp.value;
+    }
+    const value_tmp: !i64 = ret.value as! i64;
+    if value_tmp.error_id != 0u32 {
+        return -1i64;
+    }
+    return value_tmp.value;
+}
+
 export fn sim_reset_loaded_result(k: &SimKernel, cid: u32) !void {
     if cid >= 8u32 {
         return error.InvalidState;
@@ -504,6 +616,14 @@ fn sim_read_u32_le(buf: &[byte], off: usize) u32 {
     const b1: u32 = buf.ptr[off + 1usize] as u32;
     const b2: u32 = buf.ptr[off + 2usize] as u32;
     const b3: u32 = buf.ptr[off + 3usize] as u32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+fn sim_read_u32_le_ptr(ptr: &byte) u32 {
+    const b0: u32 = ptr[0] as u32;
+    const b1: u32 = ptr[1] as u32;
+    const b2: u32 = ptr[2] as u32;
+    const b3: u32 = ptr[3] as u32;
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
 }
 
@@ -675,6 +795,30 @@ fn sim_apply_hosted_call_gate_relative_relocs(k: &SimKernel, cid: u32, hdr: &Ima
     }
 }
 
+fn sim_patch_hosted_call_gate_bridge_dispatch(k: &SimKernel, cid: u32, hdr: &ImageHeader) !void {
+    if k == null || hdr == null || hdr.bridge_kind != ImageBridgeKind.ibk_call_gate {
+        return;
+    }
+    if hdr.data_size < 16u32 {
+        return;
+    }
+    const pt: &PageTable = sim_pt_ref(k, cid);
+    const dispatch_addr: usize = @usize_from_ptr(&sim_microapp_bridge_dispatch2 as &void);
+    const dispatch_u64_tmp: !u64 = dispatch_addr as! u64;
+    var cur_va: u32 = hdr.data_va;
+    const end_va: u32 = hdr.data_va + hdr.data_size;
+    while cur_va + 16u32 <= end_va {
+        const slot_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, cur_va, 16u32, ACCESS_W);
+        if sim_read_u32_le_ptr(slot_ptr) == SIM_MICROAPP_BRIDGE_ABI_MAGIC &&
+           sim_read_u32_le_ptr(&slot_ptr[4]) == SIM_MICROAPP_BRIDGE_ABI_VERSION {
+            sim_write_u64_le_at(slot_ptr, SIM_MICROAPP_BRIDGE_DISPATCH2_OFFSET, dispatch_u64_tmp.value);
+            return;
+        }
+        cur_va = cur_va + 4u32;
+    }
+    return;
+}
+
 fn sim_zero_mapped_pages(pm: &PhysMem, first_ppn: u32, page_count: u32) !void {
     var page_idx: u32 = 0u32;
     while page_idx < page_count {
@@ -822,6 +966,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     if hdr.bridge_kind == ImageBridgeKind.ibk_call_gate &&
         (hdr.target_arch == ImageTargetArch.ita_x86_64 || hdr.target_arch == ImageTargetArch.ita_aarch64) {
         try sim_apply_hosted_call_gate_relative_relocs(k, cid, &hdr, image_bytes);
+        try sim_patch_hosted_call_gate_bridge_dispatch(k, cid, &hdr);
     }
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
@@ -945,6 +1090,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
             call_ptr = trampoline_ptr;
         }
         var exit_code: i32 = 0;
+        try sim_bind_bridge_dispatch(k, cid);
         if k.host_ctx.stack_page_count[cid] > 0u32 {
             const stack_top_va: u32 = (k.host_ctx.stack_base_vpn[cid] + k.host_ctx.stack_page_count[cid]) * PAGE_SIZE;
             const stack_probe_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, stack_top_va - 16u32, 16u32, ACCESS_W);
@@ -954,6 +1100,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         } else {
             exit_code = uya_call0_i32(call_ptr as &void);
         }
+        sim_unbind_bridge_dispatch();
         if trampoline_ptr != null {
             sim_free_x86_64_call_gate_trampoline(trampoline_ptr) catch {};
         }
@@ -970,6 +1117,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
                 call_ptr = trampoline_ptr;
             }
             var exit_code: i32 = 0;
+            try sim_bind_bridge_dispatch(k, cid);
             if k.host_ctx.stack_page_count[cid] > 0u32 {
                 const stack_top_va: u32 = (k.host_ctx.stack_base_vpn[cid] + k.host_ctx.stack_page_count[cid]) * PAGE_SIZE;
                 const stack_probe_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, stack_top_va - 16u32, 16u32, ACCESS_W);
@@ -979,6 +1127,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
             } else {
                 exit_code = uya_call0_i32(call_ptr as &void);
             }
+            sim_unbind_bridge_dispatch();
             if trampoline_ptr != null {
                 sim_free_aarch64_call_gate_trampoline(trampoline_ptr) catch {};
             }

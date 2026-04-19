@@ -91,6 +91,14 @@ if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$RELOC_OUT"; t
 fi
 
 for path in "$HELLO_OUT" "$ALLOC_YIELD_OUT" "$TIME_OUT" "$BSS_OUT" "$RELOC_OUT"; do
+    if grep -F -q 'UYA_HOST_SYS_write' "$path"; then
+        echo "✗ official microapp 示例生成代码不应直接内嵌宿主 SYS_write shim: $path"
+        exit 1
+    fi
+    if grep -F -q 'UYA_HOST_SYS_mmap' "$path"; then
+        echo "✗ official microapp 示例生成代码不应直接内嵌宿主 SYS_mmap shim: $path"
+        exit 1
+    fi
     if grep -F -q 'posix_memalign(' "$path"; then
         echo "✗ official microapp 示例生成代码不应直接依赖宿主 posix_memalign: $path"
         exit 1
