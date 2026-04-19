@@ -18,6 +18,8 @@
 - [benchmark_plan.md](../../docs/microcontainer/benchmark_plan.md)
 - [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
 - [microapp_source_template.md](../../docs/microcontainer/microapp_source_template.md)
+- [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
+- [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)
 
 ---
 
@@ -52,3 +54,5 @@
 5. [native_mock_semantics.md](../../docs/microcontainer/native_mock_semantics.md)
 6. [image_validation.md](../../docs/microcontainer/image_validation.md)
 7. [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
+8. [portable_native_design.md](../../docs/microcontainer/portable_native_design.md)
+9. [portable_native_todo.md](../../docs/microcontainer/portable_native_todo.md)
