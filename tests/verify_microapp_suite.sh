@@ -8,6 +8,7 @@ SCRIPTS=(
     "tests/verify_microapp_mmu_codegen.sh"
     "tests/verify_microapp_loader_generic.sh"
     "tests/verify_microapp_syscall_codegen.sh"
+    "tests/verify_microapp_image_contracts.sh"
     "tests/verify_microapp_pobj_manifest.sh"
     "tests/verify_microapp_pack_image.sh"
     "tests/verify_microapp_build_uapp.sh"

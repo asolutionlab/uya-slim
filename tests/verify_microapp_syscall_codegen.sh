@@ -61,7 +61,7 @@ if [ ! -f "$STD_TIME_OUT" ]; then
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(1,' "$MICRO_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(1,' "$MICRO_OUT"; then
     echo "✗ microapp 生成代码中缺少用户侧 microapp syscall 调用"
     exit 1
 fi
@@ -71,27 +71,27 @@ if ! grep -q 'uya_syscall2(1,' "$APP_OUT"; then
     exit 1
 fi
 
-if grep -q 'uya_microapp_syscall2(1,' "$APP_OUT"; then
+if grep -q 'uya_microapp_bridge_dispatch2(1,' "$APP_OUT"; then
     echo "✗ app 生成代码不应使用 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$STD_MICRO_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$STD_MICRO_OUT"; then
     echo "✗ std.microapp.io 内部 syscall 没有走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_ALLOC,' "$STD_ALLOC_YIELD_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_ALLOC,' "$STD_ALLOC_YIELD_OUT"; then
     echo "✗ std.microapp.mem 内部 syscall 没有走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_YIELD,' "$STD_ALLOC_YIELD_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_YIELD,' "$STD_ALLOC_YIELD_OUT"; then
     echo "✗ std.microapp.task 内部 syscall 没有走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_TIME,' "$STD_TIME_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_TIME,' "$STD_TIME_OUT"; then
     echo "✗ std.microapp.time 内部 syscall 没有走 microapp syscall shim"
     exit 1
 fi

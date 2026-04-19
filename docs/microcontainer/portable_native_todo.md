@@ -136,7 +136,10 @@
 ### 5.3 PIC / PIE
 
 - [x] `hard-vm` profile 默认使用 PIC/PIE 友好参数
-- [ ] `soft-vm` profile 保留现有插桩路径但统一镜像输出契约
+- [~] `soft-vm` profile 保留现有插桩路径但统一镜像输出契约
+  - [x] `PayloadObj -> .uapp v2` 的 payload/image 契约已补 call-gate/trap 共用单测
+  - [x] profile matrix 已能在有工具链时检查 soft-vm `.uapp` inspect 契约
+  - [ ] 仍待补更完整的 hard-vm / soft-vm 运行语义对齐
 
 验收标准：
 
@@ -151,7 +154,8 @@
 
 - [~] 收敛 [main.uya](/home/winger/uya/uya/src/codegen/c99/main.uya) 中现有 `uya_microapp_syscall*` helper
   - [x] `lib/std/microapp/*` 内部 `@syscall` 已强制走 microapp bridge
-  - [ ] helper 仍是过渡形态，尚未升级为最终 runtime bridge ABI
+  - [x] 生成 C 已改成正式 `uya_microapp_bridge_dispatch*` ABI 命名
+  - [ ] helper 行为仍是过渡形态，尚未升级为最终 runtime bridge ABI
 - [~] 把宿主 helper 符号依赖升级为正式 bridge ABI
   - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
   - [ ] 仍未切到真正 runtime call-gate / trap bridge

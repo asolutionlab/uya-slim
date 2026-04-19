@@ -53,39 +53,39 @@ EOF
     fi
 done
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$HELLO_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$HELLO_OUT"; then
     echo "✗ hello 官方示例未通过 MICROAPP_SYS_PRINT 走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_ALLOC,' "$ALLOC_YIELD_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_ALLOC,' "$ALLOC_YIELD_OUT"; then
     echo "✗ alloc/yield 官方示例未通过 MICROAPP_SYS_ALLOC 走 microapp syscall shim"
     exit 1
 fi
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_YIELD,' "$ALLOC_YIELD_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_YIELD,' "$ALLOC_YIELD_OUT"; then
     echo "✗ alloc/yield 官方示例未通过 MICROAPP_SYS_YIELD 走 microapp syscall shim"
     exit 1
 fi
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$ALLOC_YIELD_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$ALLOC_YIELD_OUT"; then
     echo "✗ alloc/yield 官方示例未通过 MICROAPP_SYS_PRINT 走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_TIME,' "$TIME_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_TIME,' "$TIME_OUT"; then
     echo "✗ time 官方示例未通过 MICROAPP_SYS_TIME 走 microapp syscall shim"
     exit 1
 fi
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$TIME_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$TIME_OUT"; then
     echo "✗ time 官方示例未通过 MICROAPP_SYS_PRINT 走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$BSS_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$BSS_OUT"; then
     echo "✗ bss 官方示例未通过 MICROAPP_SYS_PRINT 走 microapp syscall shim"
     exit 1
 fi
 
-if ! grep -q 'uya_microapp_syscall2(MICROAPP_SYS_PRINT,' "$RELOC_OUT"; then
+if ! grep -q 'uya_microapp_bridge_dispatch2(MICROAPP_SYS_PRINT,' "$RELOC_OUT"; then
     echo "✗ reloc 官方示例未通过 MICROAPP_SYS_PRINT 走 microapp syscall shim"
     exit 1
 fi

@@ -21,6 +21,17 @@ dump_and_fail() {
     exit 1
 }
 
+pick_first_available() {
+    local cmd
+    for cmd in "$@"; do
+        if [ -n "$cmd" ] && command -v "$cmd" >/dev/null 2>&1; then
+            printf '%s\n' "$cmd"
+            return 0
+        fi
+    done
+    return 1
+}
+
 verify_profile_compile_to_c() {
     local profile="$1"
     local expected_bridge="$2"
@@ -41,6 +52,30 @@ verify_profile_compile_to_c() {
         || dump_and_fail "profile matrix 未命中 profile/bridge 诊断: $profile" "$log"
     grep -q "目标架构=${expected_arch}" "$log" \
         || dump_and_fail "profile matrix 未命中目标架构诊断: $profile" "$log"
+}
+
+verify_profile_uapp_contract() {
+    local profile="$1"
+    local gcc_bin="$2"
+    local expected_bridge="$3"
+    local expected_arch="$4"
+    local uapp="$TMP_DIR/${profile}.uapp"
+    local log="$TMP_DIR/${profile}.uapp.log"
+    local inspect="$TMP_DIR/${profile}.inspect.log"
+
+    if ! TARGET_GCC="$gcc_bin" "$ROOT_DIR/bin/uya" build --app microapp \
+        --microapp-profile "$profile" \
+        "$SOURCE" -o "$uapp" >"$log" 2>&1; then
+        dump_and_fail "profile matrix ${profile} .uapp 构建失败" "$log"
+    fi
+
+    "$ROOT_DIR/bin/uya" inspect-image "$uapp" >"$inspect" 2>&1
+    grep -q "^profile=${profile}$" "$inspect" \
+        || dump_and_fail "profile matrix ${profile} .uapp inspect 未命中 profile" "$inspect"
+    grep -q "^bridge=${expected_bridge}$" "$inspect" \
+        || dump_and_fail "profile matrix ${profile} .uapp inspect 未命中 bridge" "$inspect"
+    grep -q "^target_arch=${expected_arch}$" "$inspect" \
+        || dump_and_fail "profile matrix ${profile} .uapp inspect 未命中 target_arch" "$inspect"
 }
 
 verify_profile_compile_to_c "linux_x86_64_hardvm" "call_gate" "x86_64"
@@ -64,6 +99,21 @@ if command -v x86_64-linux-gnu-gcc >/dev/null 2>&1; then
         || dump_and_fail "profile matrix x86_64 .uapp inspect 未命中 profile" "$X86_INSPECT"
     grep -q '^bridge=call_gate$' "$X86_INSPECT" \
         || dump_and_fail "profile matrix x86_64 .uapp inspect 未命中 bridge" "$X86_INSPECT"
+fi
+
+AARCH64_GCC="$(pick_first_available aarch64-linux-gnu-gcc || true)"
+if [ -n "$AARCH64_GCC" ]; then
+    verify_profile_uapp_contract "linux_aarch64_hardvm" "$AARCH64_GCC" "call_gate" "aarch64"
+fi
+
+RV32_GCC="$(pick_first_available riscv32-unknown-elf-gcc riscv64-unknown-elf-gcc || true)"
+if [ -n "$RV32_GCC" ]; then
+    verify_profile_uapp_contract "rv32_baremetal_softvm" "$RV32_GCC" "trap" "rv32"
+fi
+
+XTENSA_GCC="$(pick_first_available xtensa-unknown-elf-gcc xtensa-esp32-elf-gcc || true)"
+if [ -n "$XTENSA_GCC" ]; then
+    verify_profile_uapp_contract "xtensa_baremetal_softvm" "$XTENSA_GCC" "trap" "xtensa"
 fi
 
 echo "microapp profile example matrix ok"

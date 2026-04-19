@@ -29,7 +29,7 @@ fn emit_microapp_syscall_helpers(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.emit_stream == null {
         return;
     }
-    fputs("// microapp syscall host shim（microcontainer ABI：SYS_PRINT/SYS_ALLOC/SYS_IO/SYS_YIELD）\n" as *byte, codegen.emit_stream as *void);
+    fputs("// microapp bridge dispatch shim（portable bridge ABI：SYS_PRINT/SYS_ALLOC/SYS_IO/SYS_YIELD/SYS_TIME）\n" as *byte, codegen.emit_stream as *void);
     fputs("static inline long uya_syscall0(long nr);\n" as *byte, codegen.emit_stream as *void);
     fputs("static inline long uya_syscall2(long nr, long a1, long a2);\n" as *byte, codegen.emit_stream as *void);
     fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3);\n" as *byte, codegen.emit_stream as *void);
@@ -51,8 +51,9 @@ fn emit_microapp_syscall_helpers(codegen: &C99CodeGenerator) void {
     fputs("enum { UYA_HOST_MAP_PRIVATE = 0x0002, UYA_HOST_MAP_ANONYMOUS = 0x0020 };\n" as *byte, codegen.emit_stream as *void);
     fputs("#endif\n" as *byte, codegen.emit_stream as *void);
     fputs("enum { UYA_HOST_PROT_READ = 0x1, UYA_HOST_PROT_WRITE = 0x2 };\n" as *byte, codegen.emit_stream as *void);
+    fputs("enum { UYA_MICROAPP_BRIDGE_ABI_VERSION = 1U };\n" as *byte, codegen.emit_stream as *void);
     fputs("enum { UYA_MICROAPP_SYS_PRINT = 1U, UYA_MICROAPP_SYS_ALLOC = 2U, UYA_MICROAPP_SYS_IO = 3U, UYA_MICROAPP_SYS_YIELD = 4U, UYA_MICROAPP_SYS_TIME = 5U };\n" as *byte, codegen.emit_stream as *void);
-    fputs("static inline long uya_microapp_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("static inline long uya_microapp_bridge_dispatch2(long nr, long a1, long a2) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    switch ((unsigned long)nr) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    case UYA_MICROAPP_SYS_PRINT:\n" as *byte, codegen.emit_stream as *void);
     fputs("        if (a2 == 0) { return 0; }\n" as *byte, codegen.emit_stream as *void);
@@ -82,8 +83,8 @@ fn emit_microapp_syscall_helpers(codegen: &C99CodeGenerator) void {
     fputs("        return -1;\n" as *byte, codegen.emit_stream as *void);
     fputs("    }\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n\n" as *byte, codegen.emit_stream as *void);
-    fputs("static inline long uya_microapp_syscall1(long nr, long a1) { return uya_microapp_syscall2(nr, a1, 0); }\n" as *byte, codegen.emit_stream as *void);
-    fputs("static inline long uya_microapp_syscall0(long nr) { return uya_microapp_syscall2(nr, 0, 0); }\n\n" as *byte, codegen.emit_stream as *void);
+    fputs("static inline long uya_microapp_bridge_dispatch1(long nr, long a1) { return uya_microapp_bridge_dispatch2(nr, a1, 0); }\n" as *byte, codegen.emit_stream as *void);
+    fputs("static inline long uya_microapp_bridge_dispatch0(long nr) { return uya_microapp_bridge_dispatch2(nr, 0, 0); }\n\n" as *byte, codegen.emit_stream as *void);
 }
 
 fn emit_microapp_mmu_helpers(codegen: &C99CodeGenerator) void {
