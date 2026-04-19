@@ -542,11 +542,11 @@ export extern "libc" fn strftime(s: &byte, maxsize: usize, format: &const byte, 
                 }
             } else if spec == 98 {  // %b - 月份名称缩写
                 if timeptr.tm_mon >= 0 && timeptr.tm_mon < 12 {
-                    _strftime_write(s, maxsize, &pos, _MON_ABBREV[timeptr.tm_mon as usize]);
+                    _strftime_write(s, maxsize, &pos, _time_mon_abbrev_from(_MON_ABBREV, timeptr.tm_mon));
                 }
             } else if spec == 66 {  // %B - 月份名称全称
                 if timeptr.tm_mon >= 0 && timeptr.tm_mon < 12 {
-                    _strftime_write(s, maxsize, &pos, _MON_FULL[timeptr.tm_mon as usize]);
+                    _strftime_write(s, maxsize, &pos, _time_mon_name_at(_MON_FULL, timeptr.tm_mon));
                 }
             } else if spec == 106 {  // %j - 一年中的第几天
                 var yday: i32 = timeptr.tm_yday + 1;

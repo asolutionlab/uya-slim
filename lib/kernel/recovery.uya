@@ -75,6 +75,61 @@ fn recovery_state_ptr(r: &RecoveryManager, cid: u32) &ContainerRecovery {
     return &r.states[7];
 }
 
+fn recovery_log_ptr(r: &RecoveryManager, idx: u32) &CrashLogEntry {
+    if r == null {
+        return null;
+    }
+    if idx >= MAX_CRASH_LOG {
+        return null;
+    }
+    if idx == 0u32 {
+        return &r.log[0];
+    }
+    if idx == 1u32 {
+        return &r.log[1];
+    }
+    if idx == 2u32 {
+        return &r.log[2];
+    }
+    if idx == 3u32 {
+        return &r.log[3];
+    }
+    if idx == 4u32 {
+        return &r.log[4];
+    }
+    if idx == 5u32 {
+        return &r.log[5];
+    }
+    if idx == 6u32 {
+        return &r.log[6];
+    }
+    if idx == 7u32 {
+        return &r.log[7];
+    }
+    if idx == 8u32 {
+        return &r.log[8];
+    }
+    if idx == 9u32 {
+        return &r.log[9];
+    }
+    if idx == 10u32 {
+        return &r.log[10];
+    }
+    if idx == 11u32 {
+        return &r.log[11];
+    }
+    if idx == 12u32 {
+        return &r.log[12];
+    }
+    if idx == 13u32 {
+        return &r.log[13];
+    }
+    if idx == 14u32 {
+        return &r.log[14];
+    }
+    return &r.log[15];
+}
+
 export fn recovery_init(r: &RecoveryManager) void {
     r.log_head = 0;
     r.log_count = 0;
@@ -110,13 +165,14 @@ export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_c
 
         // Write to crash log (circular)
         const restarts: u32 = state.total_restarts;
-        if r.log_head >= 0 && r.log_head < 16 {
-            r.log[r.log_head].timestamp = now;
-            r.log[r.log_head].container_id = cid;
-            r.log[r.log_head].fault_code = fault_code;
-            r.log[r.log_head].pc = 0;
-            r.log[r.log_head].sp = 0;
-            r.log[r.log_head].restart_count = restarts;
+        const log_entry: &CrashLogEntry = recovery_log_ptr(r, r.log_head);
+        if log_entry != null {
+            log_entry.timestamp = now;
+            log_entry.container_id = cid;
+            log_entry.fault_code = fault_code;
+            log_entry.pc = 0;
+            log_entry.sp = 0;
+            log_entry.restart_count = restarts;
         }
         r.log_head = (r.log_head + 1) % MAX_CRASH_LOG;
         if r.log_count < MAX_CRASH_LOG {

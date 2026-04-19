@@ -598,6 +598,36 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
 
 // 生成函数原型（前向声明）
 // 注意：此函数在 main.uya 中被调用，但由于 function.uya 在 main.uya 之前编译，函数已经可见
+fn c99_should_emit_static_top_level_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    if codegen.split_enabled != 0 {
+        return 0;
+    }
+    if fn_decl.fn_decl_body == null {
+        return 0;
+    }
+    if fn_decl.fn_decl_is_export != 0 || fn_decl.fn_decl_extern_lib_name != null {
+        return 0;
+    }
+    if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) == 0 {
+        return 0;
+    }
+    if fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
+        var di: i32 = 0;
+        while di < codegen.program_node.program_decl_count {
+            const d: &ASTNode = codegen.program_node.program_decls[di];
+            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
+                return 0;
+            }
+            di = di + 1;
+        }
+    }
+    return 1;
+}
+
 fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return;
@@ -693,21 +723,6 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         return;
     }
     
-    // 读取 is_export 标志；若有同名 extern 声明则不能加 static
-    const is_export: i32 = fn_decl.fn_decl_is_export;
-    var has_extern_same: i32 = 0;
-    if is_extern == 0 && fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
-        var di: i32 = 0;
-        while di < codegen.program_node.program_decl_count {
-            const d: &ASTNode = codegen.program_node.program_decls[di];
-            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
-               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
-                has_extern_same = 1;
-                break;
-            }
-            di = di + 1;
-        }
-    }
     // 若程序中已有同名函数定义（如 libc 实现），跳过 extern 声明，避免与 GCC built-in 冲突
     if is_extern != 0 && fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
         var di: i32 = 0;
@@ -740,9 +755,15 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         }
         pi_fwd = pi_fwd + 1;
     }
-    // 顶层 helper 可能在 main_main 之前被调用，单文件 C 统一生成非 static 原型，避免无前向声明时报 implicit declaration。
+    const should_emit_static: i32 = c99_should_emit_static_top_level_function(codegen, fn_decl);
+    // 顶层 helper 可能在定义前被调用；若定义是内部链接，则原型也必须保持 static，避免 single-file C 里出现
+    // “non-static declaration” 与后续 static 定义冲突。
     if is_extern == 0 {
-        fprintf(codegen.emit_stream, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
+        if should_emit_static != 0 {
+            fprintf(codegen.emit_stream, "static __attribute__((used)) %s %s(" as *byte, return_c as *byte, func_name as *byte);
+        } else {
+            fprintf(codegen.emit_stream, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
+        }
     } else {
         fprintf(codegen.emit_stream, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
     }
@@ -942,39 +963,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // 声明循环变量 i（在 if-else 之前声明，确保在所有分支都可见）
     var i: i32 = 0;
     
-    // 检查是否为extern函数（body为NULL表示extern函数）
-    var is_extern: i32 = 0;
-    if body == null && extern_lib_name == null {
-        // 只有当没有 extern_lib_name 时才标记为 is_extern
-        // extern "libc" fn 带函数体时，is_extern 应该为 0
-        is_extern = 1;
-    }
-    
-    // 读取 is_export 标志
-    const is_export: i32 = fn_decl.fn_decl_is_export;
-    // 若程序中存在同名 extern 声明（如 parser 的 extern fn lexer_next_token），定义处不能加 static
-    var has_extern_decl_same_name: i32 = 0;
-    if is_extern == 0 && fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
-        var di: i32 = 0;
-        while di < codegen.program_node.program_decl_count {
-            const d: &ASTNode = codegen.program_node.program_decls[di];
-            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
-               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
-                has_extern_decl_same_name = 1;
-                break;
-            }
-            di = di + 1;
-        }
-    }
-    // extern "libc" fn 带函数体时，不使用 static，不使用模块前缀
-    var is_static: i32 = 0;
-    if is_main == 0 && is_extern == 0 && is_export == 0 && has_extern_decl_same_name == 0 && extern_lib_name == null {
-        is_static = 1;
-    }
-    // 多文件 C（split）：定义与前置原型均不加 static，避免与非 static 原型冲突（与 gen_function_prototype 一致）
-    if codegen.split_enabled != 0 {
-        is_static = 0;
-    }
+    const is_static: i32 = c99_should_emit_static_top_level_function(codegen, fn_decl);
 
     // 检查是否为标准 C main 函数（export extern fn main）
     var is_c_main: i32 = 0;

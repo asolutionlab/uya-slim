@@ -755,11 +755,12 @@ release-clean:
 	git archive --format=tar HEAD | tar -xf - -C "$$TMP_DIR"; \
 	echo "在干净快照中执行 make release ..."; \
 	ALLOW_SKIP_NETWORK=1 $(MAKE) -C "$$TMP_DIR" release HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" UYA_TEST_JOBS="$(UYA_TEST_JOBS)"; \
+	ARTIFACT_PATH="bin/uya.release-clean"; \
+	mkdir -p "$$(dirname "$$ARTIFACT_PATH")"; \
+	cp "$$TMP_DIR/bin/uya" "$$ARTIFACT_PATH"; \
 	echo ""; \
 	echo "✓ 干净快照 release 成功"; \
-	echo "产物位置: $$TMP_DIR/bin/uya"; \
-	cp "$$TMP_DIR/bin/uya" bin/uya.release-clean; \
-	echo "已复制到: bin/uya.release-clean"
+	echo "已复制到: $$ARTIFACT_PATH"
 
 # 安装编译器、标准库源码树与 tests/（需系统 install(1)；标准库排除 lib/build）
 # tests 安装会排除常见中间目录与二进制产物（避免将本地测试构建垃圾安装到目标目录）
