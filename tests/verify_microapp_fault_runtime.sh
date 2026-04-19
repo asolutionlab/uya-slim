@@ -36,8 +36,8 @@ set -e
 if [ "$run_status" -ne 139 ]; then
     dump_log_and_fail "microapp run 路径崩溃退出码异常: $run_status" "$RUN_LOG"
 fi
-grep -a -q "\[microapp loader\] payload fault signal=11" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未报告 SIGSEGV fault" "$RUN_LOG"
-grep -a -q "\[microapp loader\] payload result=fault signal=11" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未输出统一 fault result" "$RUN_LOG"
+grep -a -q "\[microapp loader\] payload fault class=segv code=1 signal=11" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未报告 SEGV fault class" "$RUN_LOG"
+grep -a -q "\[microapp loader\] payload result=fault class=segv code=1 signal=11" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未输出统一 fault class result" "$RUN_LOG"
 grep -a -q "\[microapp loader\] image loaded, ticking" "$RUN_LOG" || dump_log_and_fail "microapp run 路径未进入 tick" "$RUN_LOG"
 if grep -a -q "\[microapp loader\] launching native payload" "$RUN_LOG"; then
     dump_log_and_fail "microapp run 路径意外回退到了 native payload ELF" "$RUN_LOG"
@@ -51,8 +51,8 @@ set -e
 if [ "$loader_status" -ne 139 ]; then
     dump_log_and_fail "loader-only 路径崩溃退出码异常: $loader_status" "$LOADER_LOG"
 fi
-grep -a -q "\[microapp loader\] payload fault signal=11" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未报告 SIGSEGV fault" "$LOADER_LOG"
-grep -a -q "\[microapp loader\] payload result=fault signal=11" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未输出统一 fault result" "$LOADER_LOG"
+grep -a -q "\[microapp loader\] payload fault class=segv code=1 signal=11" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未报告 SEGV fault class" "$LOADER_LOG"
+grep -a -q "\[microapp loader\] payload result=fault class=segv code=1 signal=11" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未输出统一 fault class result" "$LOADER_LOG"
 grep -a -q "\[microapp loader\] image loaded, ticking" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未进入 tick" "$LOADER_LOG"
 if grep -a -q "\[microapp loader\] launching native payload" "$LOADER_LOG"; then
     dump_log_and_fail "loader-only 路径意外回退到了 native payload ELF" "$LOADER_LOG"
