@@ -7,22 +7,32 @@ use std.testing.assert_eq_i32;
 test "payload_pack_to_uapp_roundtrip" {
     var code: [byte: 4] = [115, 0, 0, 0];
     var rodata: [byte: 4] = [65, 66, 67, 0];
-    var out: [byte: 128] = [];
+    var empty: [byte: 1] = [0];
+    var out: [byte: 256] = [];
     const obj: PayloadObj = PayloadObj{
         target_arch: ImageTargetArch.ita_rv32,
+        bridge_kind: ImageBridgeKind.ibk_trap,
         build_mode: BUILD_MODE_CONTAINER,
+        profile_id: 3u32,
         required_caps: 0u32,
+        flags: 0u32,
         entry_offset: 0u32,
         code: code[0: 4],
         rodata: rodata[0: 4],
+        data: empty[0: 0],
+        bss_size: 0u32,
+        stack_size_hint: 0u32,
+        relocs: empty[0: 0],
         reloc_count: 0u32,
     };
 
-    const total: u32 = try payload_pack_to_uapp(&obj, out[0: 128]);
-    try assert_eq_i32(total as i32, 104);
+    const total: u32 = try payload_pack_to_uapp(&obj, out[0: 256]);
+    try assert_eq_i32(total as i32, 168);
 
     const hdr: ImageHeader = try image_validate(out[0: total as usize]);
     try assert_eq_i32(hdr.code_size as i32, 4);
     try assert_eq_i32(hdr.rodata_size as i32, 4);
     try assert_eq_i32(hdr.entry_offset as i32, 0);
+    try assert_eq_i32(hdr.code_offset as i32, IMAGE_HEADER_SIZE as i32);
+    try assert_eq_i32(hdr.rodata_offset as i32, (IMAGE_HEADER_SIZE + 4u32) as i32);
 }

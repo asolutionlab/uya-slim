@@ -22,20 +22,26 @@ pobj = Path("/tmp/microcontainer_hello.pobj").read_bytes()
 data = Path("/tmp/microcontainer_hello_from_pobj.uapp").read_bytes()
 assert len(data) >= 100, len(data)
 assert data[:4] == b"\x00AYU", data[:4]
-assert data[4:6] == (1).to_bytes(2, "little"), data[4:6]
+assert data[4:6] == (2).to_bytes(2, "little"), data[4:6]
 assert data[6:8] == (1).to_bytes(2, "little"), data[6:8]
 code_size = int.from_bytes(data[16:20], "little")
 rodata_size = int.from_bytes(data[20:24], "little")
 entry_offset = int.from_bytes(data[12:16], "little")
+entry_va = int.from_bytes(data[136:140], "little")
+code_off = int.from_bytes(data[108:112], "little")
+rodata_off = int.from_bytes(data[112:116], "little")
 build_mode = data[64]
 target_arch = data[65]
 assert code_size > 0, code_size
 assert rodata_size > 0, rodata_size
 assert entry_offset == 0, entry_offset
+assert entry_va == code_off + entry_offset, (entry_va, code_off, entry_offset)
+assert code_off >= 160, code_off
+assert rodata_off == code_off + code_size, (rodata_off, code_off, code_size)
 assert build_mode == 1, build_mode
 assert target_arch == 2, target_arch
-assert data[96:96 + code_size] == pobj[40 + len(source_path):40 + len(source_path) + code_size]
-assert b"hello microapp" in data[96 + code_size:96 + code_size + rodata_size]
+assert data[code_off:code_off + code_size] == pobj[72 + len(source_path):72 + len(source_path) + code_size]
+assert b"hello microapp" in data[rodata_off:rodata_off + rodata_size]
 PY
 
 echo "microapp pack-image ok"

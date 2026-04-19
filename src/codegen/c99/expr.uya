@@ -477,6 +477,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if codegen.container_mode != 0 {
             if expr.filename == null {
                 use_microapp_syscall = 1;
+            } else if strstr(expr.filename as *byte, "/lib/std/microapp/" as *byte) != null ||
+                      strncmp(expr.filename as *byte, "lib/std/microapp/" as *byte, 17) == 0 {
+                use_microapp_syscall = 1;
             } else if strstr(expr.filename as *byte, "/lib/" as *byte) == null &&
                       strncmp(expr.filename as *byte, "lib/" as *byte, 4) != 0 {
                 use_microapp_syscall = 1;
@@ -7098,8 +7101,14 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // 这修复了 get_c_type_of_expr 对某些函数调用返回 int32_t 的问题
         if operand_is_err_union == 0 && operand != null && operand.type == ASTNodeType.AST_CALL_EXPR {
             const callee: &ASTNode = operand.call_expr_callee;
+            var callee_name: &byte = null;
             if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null {
-                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+                callee_name = callee.identifier_name;
+            } else if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_field_name != null {
+                callee_name = callee.member_access_field_name;
+            }
+            if callee_name != null {
+                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee_name);
                 if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_return_type != null {
                     const fn_return_type: &ASTNode = fn_decl.fn_decl_return_type;
                     const fn_return_c: &byte = c99_type_to_c(codegen, fn_return_type);
@@ -7208,8 +7217,14 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         } else if operand != null && operand.type == ASTNodeType.AST_CALL_EXPR {
             // 操作数是函数调用，尝试从函数声明获取返回类型
             const callee: &ASTNode = operand.call_expr_callee;
+            var callee_name2: &byte = null;
             if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null {
-                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+                callee_name2 = callee.identifier_name;
+            } else if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_field_name != null {
+                callee_name2 = callee.member_access_field_name;
+            }
+            if callee_name2 != null {
+                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee_name2);
                 if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_return_type != null {
                     union_c = c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
                     const payload_node: &ASTNode = fn_decl.fn_decl_return_type.type_error_union_payload_type;

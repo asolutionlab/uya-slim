@@ -6,16 +6,18 @@
 //   source -> microapp checks -> target_arch codegen -> payload_obj -> .uapp
 
 use std.runtime.entry;
-use libc.write_stdout_bytes;
-use libc.fflush;
-use libc.stdout;
+use std.microapp.io.write_stdout_bytes;
 
 export fn main() i32 {
-    // 先用 host API 打印，保证 payload 直跑路径先通。
-    write_stdout_bytes("hello microapp\n", 15);
-    write_stdout_bytes("hello microapp1\n", 16);
-    write_stdout_bytes("hello microapp2\n", 16);
-    _ = fflush(stdout);
+    _ = write_stdout_bytes("hello microapp\n", 15) catch {
+        return 1;
+    };
+    _ = write_stdout_bytes("hello microapp1\n", 16) catch {
+        return 1;
+    };
+    _ = write_stdout_bytes("hello microapp2\n", 16) catch {
+        return 1;
+    };
     var a:u8 = 1u8;
     var b:&u8 = &a;
     *b = 2u8;

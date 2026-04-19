@@ -9,17 +9,25 @@ use libc.fclose;
 export fn main() i32 {
     const code: [byte: 4] = [115, 0, 0, 0];
     const rodata: [byte: 14] = [72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33, 10];
+    const empty: [byte: 1] = [0];
     const obj: PayloadObj = PayloadObj{
         target_arch: ImageTargetArch.ita_rv32,
+        bridge_kind: ImageBridgeKind.ibk_trap,
         build_mode: BUILD_MODE_CONTAINER,
+        profile_id: 3u32,
         required_caps: 0u32,
+        flags: 0u32,
         entry_offset: 0u32,
         code: code[0: 4],
         rodata: rodata[0: 14],
+        data: empty[0: 0],
+        bss_size: 0u32,
+        stack_size_hint: 0u32,
+        relocs: empty[0: 0],
         reloc_count: 0u32,
     };
-    var img: [byte: 128] = [];
-    const image_len: u32 = payload_pack_to_uapp(&obj, img[0: 128]) catch {
+    var img: [byte: 256] = [];
+    const image_len: u32 = payload_pack_to_uapp(&obj, img[0: 256]) catch {
         return 1;
     };
 

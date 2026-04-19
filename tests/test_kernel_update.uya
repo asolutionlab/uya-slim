@@ -22,34 +22,46 @@ fn w16(buf: &[byte], off: usize, val: u16) void {
 }
 
 fn build_image(buf: &[byte], code_byte: byte) void {
+    const total: u32 = IMAGE_HEADER_SIZE + 4u32;
     var i: usize = 0;
-    while i < 100 && i < buf.len {
+    while i < total as usize && i < buf.len {
         buf.ptr[i] = 0;
         i = i + 1;
     }
     w32(buf, 0, IMAGE_MAGIC);
-    w16(buf, 4, 1);
+    w16(buf, 4, 2);
     w16(buf, 6, 1);
-    w32(buf, 8, 100);
+    w32(buf, 8, total);
     w32(buf, 12, 0);
     w32(buf, 16, 4);
     w32(buf, 20, 0);
     w32(buf, 24, 0);
+    w32(buf, 96, 0);
+    w32(buf, 100, 0);
+    w32(buf, 104, 0);
+    w32(buf, 108, IMAGE_HEADER_SIZE);
+    w32(buf, 112, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 116, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 120, IMAGE_HEADER_SIZE + 4u32);
+    w32(buf, 124, 0);
+    w32(buf, 128, 0);
     buf.ptr[64] = 1;  // build_mode=container
     buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
+    buf.ptr[132] = image_bridge_kind_to_byte(ImageBridgeKind.ibk_trap);
+    w32(buf, 136, IMAGE_HEADER_SIZE);
     w32(buf, 60, 0);
     // Code: ecall with a distinguishing byte at offset 97
-    w32(buf, 96, 115);  // ecall
-    buf.ptr[97] = code_byte;  // marker (still ecall since byte1 is don't-care for ecall)
+    w32(buf, IMAGE_HEADER_SIZE as usize, 115);  // ecall
+    buf.ptr[IMAGE_HEADER_SIZE as usize + 1usize] = code_byte;  // marker (still ecall since byte1 is don't-care for ecall)
 
     // Actually ecall is exactly 0x00000073, byte[1]=code_byte breaks it.
     // Use full ecall and put marker in padding area or rodata.
     // Simpler: just use ecall (115,0,0,0) for all images, differentiate by generation.
-    buf.ptr[97] = 0;
+    buf.ptr[IMAGE_HEADER_SIZE as usize + 1usize] = 0;
 
     // SHA-256
     var digest: [byte: 32] = [];
-    sha256_digest(buf, digest[0: 32]);
+    sha256_digest(buf[0: total as usize], digest[0: 32]);
     i = 0;
     while i < 32 {
         buf.ptr[28 + i] = digest[i];
@@ -73,11 +85,11 @@ test "update_stage_and_commit" {
     dualslot_init(&ds);
 
     // Build image
-    var img: [byte: 100] = [];
-    build_image(img[0: 100], 0);
+    var img: [byte: 192] = [];
+    build_image(img[0: 192], 0);
 
     // Stage: writes to slot 1 (non-active)
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     try assert_eq_i32(ds.slots[1].meta.state as i32, SLOT_UPDATING as i32);
 
     // Commit: switches active to slot 1
@@ -92,16 +104,16 @@ test "update_second_update_switches_back" {
     var ds: DualSlot = DualSlot{ slots: [], active: 0, next_generation: 0 };
     dualslot_init(&ds);
 
-    var img: [byte: 100] = [];
-    build_image(img[0: 100], 0);
+    var img: [byte: 192] = [];
+    build_image(img[0: 192], 0);
 
     // First update: slot 0 → slot 1
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     try update_commit(&ds);
     try assert_eq_i32(ds.active as i32, 1);
 
     // Second update: slot 1 → slot 0
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     try update_commit(&ds);
     try assert_eq_i32(ds.active as i32, 0);
     try assert_eq_i32(ds.slots[0].meta.generation as i32, 2);
@@ -111,16 +123,16 @@ test "update_rollback" {
     var ds: DualSlot = DualSlot{ slots: [], active: 0, next_generation: 0 };
     dualslot_init(&ds);
 
-    var img: [byte: 100] = [];
-    build_image(img[0: 100], 0);
+    var img: [byte: 192] = [];
+    build_image(img[0: 192], 0);
 
     // First commit to slot 1
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     try update_commit(&ds);
     try assert_eq_i32(ds.active as i32, 1);
 
     // Stage new update to slot 0, then rollback
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     update_rollback(&ds);
     // Slot 0 should be INVALID, active still 1
     try assert_eq_i32(ds.slots[0].meta.state as i32, SLOT_INVALID as i32);
@@ -131,13 +143,13 @@ test "boot_select_highest_generation" {
     var ds: DualSlot = DualSlot{ slots: [], active: 0, next_generation: 0 };
     dualslot_init(&ds);
 
-    var img: [byte: 100] = [];
-    build_image(img[0: 100], 0);
+    var img: [byte: 192] = [];
+    build_image(img[0: 192], 0);
 
     // Two updates: gen 1 in slot 1, gen 2 in slot 0
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     try update_commit(&ds);
-    try update_stage(&ds, img[0: 100]);
+    try update_stage(&ds, img[0: IMAGE_HEADER_SIZE as usize + 4usize]);
     try update_commit(&ds);
 
     // Simulate boot: should pick slot 0 (gen 2 > gen 1)

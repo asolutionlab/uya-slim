@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUN_LOG="/tmp/verify_microapp_loader_generic_run.log"
 LOADER_LOG="/tmp/verify_microapp_loader_generic_loader.log"
+LOADER_UAPP="/tmp/verify_microapp_loader_generic.uapp"
 
 : "${TARGET_GCC:=x86_64-linux-gnu-gcc}"
 : "${MICROAPP_TARGET_ARCH:=x86_64}"
@@ -26,7 +27,9 @@ dump_log_and_fail() {
 grep -a -q "hello microapp" "$RUN_LOG" || dump_log_and_fail "microapp payload 未输出 hello microapp" "$RUN_LOG"
 grep -a -q "\[microapp loader\] done" "$RUN_LOG" || dump_log_and_fail "microapp loader 未输出 done" "$RUN_LOG"
 
-"$ROOT_DIR/bin/uya" run examples/microapp/microcontainer_hello_load.uya -- examples/microapp/microcontainer_hello.uapp >"$LOADER_LOG" 2>&1
+rm -f "$LOADER_UAPP"
+"$ROOT_DIR/bin/uya" build --app microapp examples/microapp/microcontainer_hello_source.uya -o "$LOADER_UAPP" >/tmp/verify_microapp_loader_generic_build.log 2>&1
+"$ROOT_DIR/bin/uya" run examples/microapp/microcontainer_hello_load.uya -- "$LOADER_UAPP" >"$LOADER_LOG" 2>&1
 
 grep -a -q "\[microapp loader\] done" "$LOADER_LOG" || dump_log_and_fail "loader-only 路径未输出 done" "$LOADER_LOG"
 if grep -a -q "hello microapp" "$LOADER_LOG"; then

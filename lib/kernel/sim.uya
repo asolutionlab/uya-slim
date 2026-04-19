@@ -233,7 +233,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     }
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
-        _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, IMAGE_HEADER_SIZE + hdr.entry_offset, 4u32, ACCESS_R);
+        _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 4u32, ACCESS_R);
     }
     sim_loaded_header_ref(k, cid)[0] = hdr;
     sim_loaded_ppn_ref(k, cid)[0] = first_ppn;
@@ -251,7 +251,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         return error.InvalidState;
     }
     const hdr: ImageHeader = sim_loaded_header_ref(k, cid)[0];
-    const code_off: u32 = IMAGE_HEADER_SIZE + hdr.entry_offset;
+    const code_off: u32 = hdr.entry_va;
     const loaded_ppn: u32 = sim_loaded_ppn_ref(k, cid)[0];
     const insn_ptr: &byte = try physmem_ptr(&k.host_ctx.pm, loaded_ppn, code_off);
     const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
@@ -261,7 +261,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         }
     }
     if hdr.rodata_size > 0u32 {
-        const rodata_off: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
+        const rodata_off: u32 = hdr.rodata_offset;
         // rodata 可能跨页；逐页验证映射存在，而不是一次性翻译整个范围。
         var rodata_rem: u32 = hdr.rodata_size;
         var rodata_cur: u32 = rodata_off;

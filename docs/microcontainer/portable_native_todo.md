@@ -68,34 +68,36 @@
 
 ### 4.1 `PayloadObj`
 
-- [ ] 为 [payload.uya](/home/winger/uya/uya/lib/kernel/payload.uya) 新增：
+- [x] 为 [payload.uya](/home/winger/uya/uya/lib/kernel/payload.uya) 新增：
   - `profile_id`
-  - `entry_va`
   - `data`
   - `bss_size`
   - `stack_size_hint`
   - `relocations`
   - `flags`
-- [ ] 保持 v1/v2 打包入口能并存
+- [~] 将 `entry_offset` 升级为正式 `entry_va`
+  - [x] `.pobj v7` / `.uapp v2` 已携带 `entry_va`
+  - [ ] 运行时还未真正以 `entry_va` 完成入口跳转
+- [x] 保持 v1/v2 打包入口能并存
 
 ### 4.2 `ImageHeader`
 
-- [ ] 升级 [image.uya](/home/winger/uya/uya/lib/kernel/image.uya) 支持 v2
-- [ ] 增加段偏移与段大小字段
-- [ ] 增加 relocation 区描述
-- [ ] 增加 profile / bridge 元数据
-- [ ] 增加 `entry_va` 校验
+- [x] 升级 [image.uya](/home/winger/uya/uya/lib/kernel/image.uya) 支持 v2
+- [x] 增加段偏移与段大小字段
+- [x] 增加 relocation 区描述
+- [x] 增加 profile / bridge 元数据
+- [x] 增加 `entry_va` 校验
 
 ### 4.3 打包与校验
 
-- [ ] `pack-image` 支持 v2 生成
-- [ ] `image_validate()` 支持 v2 结构检查
-- [ ] 增加 `.uapp v2` roundtrip 测试
+- [x] `pack-image` 支持 v2 生成
+- [x] `image_validate()` 支持 v2 结构检查
+- [x] 增加 `.uapp v2` roundtrip 测试
 
 验收标准：
 
-- [ ] v1 镜像仍可读
-- [ ] v2 镜像可被 `inspect-image` / `verify-image` 正确识别
+- [x] v1 / v2 `.pobj` 打包入口兼容读取
+- [ ] v1 `.uapp` / v2 `.uapp` 双版本读取与显式 inspect/verify CLI 仍待补齐
 
 ---
 
@@ -103,31 +105,36 @@
 
 ### 5.1 Target Profile
 
-- [ ] 在 [main.uya](/home/winger/uya/uya/src/main.uya) 引入 `MicroAppTargetProfile`
-- [ ] 将当前 `MICROAPP_TARGET_ARCH` 扩展为 profile 驱动
-- [ ] 建立首批 profile：
-  - [ ] `linux_x86_64_hardvm`
-  - [ ] `linux_aarch64_hardvm`
+- [x] 在 [main.uya](/home/winger/uya/uya/src/main.uya) 引入正式 `MicroAppTargetProfile`
+- [~] 将当前 `MICROAPP_TARGET_ARCH` 扩展为 profile 驱动
+  - [x] 新增 `MICROAPP_TARGET_PROFILE`
+  - [x] `.pobj` / `.uapp` 已携带 `profile_id`
+  - [ ] CLI / 文档 / 默认行为还未完全切到 profile-first 心智
+- [~] 建立首批 profile 常量/映射：
+  - [x] `linux_x86_64_hardvm`
+  - [x] `linux_aarch64_hardvm`
   - [ ] `macos_arm64_hardvm`
-  - [ ] `rv32_baremetal_softvm`
-  - [ ] `xtensa_baremetal_softvm`
+  - [x] `rv32_baremetal_softvm`
+  - [x] `xtensa_baremetal_softvm`
 
 ### 5.2 Segment/Reloc 提取
 
-- [ ] 不再只抽 `.text/.rodata`
-- [ ] 提取 `.data`
+- [x] 不再只抽 `.text/.rodata`
+- [x] 提取 `.data`
 - [ ] 计算 `.bss`
 - [ ] 提取 relocation 表
-- [ ] 计算 `entry_va`
+- [x] 计算 `entry_va`
 
 ### 5.3 PIC / PIE
 
-- [ ] `hard-vm` profile 默认使用 PIC/PIE 友好参数
+- [x] `hard-vm` profile 默认使用 PIC/PIE 友好参数
 - [ ] `soft-vm` profile 保留现有插桩路径但统一镜像输出契约
 
 验收标准：
 
-- [ ] 编译器能产出包含段与 relocation 信息的 `.pobj/.uapp v2`
+- [~] 编译器能产出包含段与 relocation 信息的 `.pobj/.uapp v2`
+  - [x] 已能产出包含 `data/profile/bridge/flags` 的 v2 `.pobj/.uapp`
+  - [ ] relocation 仍未落地
 
 ---
 
@@ -135,22 +142,28 @@
 
 ### 6.1 Codegen
 
-- [ ] 收敛 [main.uya](/home/winger/uya/uya/src/codegen/c99/main.uya) 中现有 `uya_microapp_syscall*` helper
-- [ ] 把宿主 helper 符号依赖升级为正式 bridge ABI
+- [~] 收敛 [main.uya](/home/winger/uya/uya/src/codegen/c99/main.uya) 中现有 `uya_microapp_syscall*` helper
+  - [x] `lib/std/microapp/*` 内部 `@syscall` 已强制走 microapp bridge
+  - [ ] helper 仍是过渡形态，尚未升级为最终 runtime bridge ABI
+- [~] 把宿主 helper 符号依赖升级为正式 bridge ABI
+  - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
+  - [ ] 仍未切到真正 runtime call-gate / trap bridge
 - [ ] `microapp` payload 不再直接依赖宿主 libc 普通符号
 
 ### 6.2 Source ABI
 
-- [ ] 定义 `std.microapp.*` 最小 API：
-  - [ ] `std.microapp.io`
-  - [ ] `std.microapp.mem`
-  - [ ] `std.microapp.task`
+- [~] 定义 `std.microapp.*` 最小 API：
+  - [x] `std.microapp.io`
+  - [x] `std.microapp.mem`
+  - [x] `std.microapp.task`
   - [ ] `std.microapp.time`
 - [ ] 审计并限制直接宿主 libc API 使用
 
 验收标准：
 
-- [ ] `@syscall` 与 `std.microapp.*` 都统一走 bridge
+- [~] `@syscall` 与 `std.microapp.*` 都统一走 bridge
+  - [x] 直接 `@syscall`
+  - [x] `std.microapp.io` wrapper
 - [ ] payload 中不再出现 `write_stdout_bytes` / `posix_memalign` / `sched_yield` 这类宿主 helper 符号耦合
 
 ---
@@ -230,7 +243,9 @@
 
 ## 10. 阶段 7：源码可移植子集收敛
 
-- [ ] 用 `std.microapp.*` 重写当前示例
+- [~] 用 `std.microapp.*` 重写当前示例
+  - [x] `examples/microapp/microcontainer_hello_source.uya`
+  - [ ] 其余示例仍待迁移
 - [ ] 审计现有 microapp 示例里宿主耦合 API
 - [ ] 为不允许的宿主 API 增加明确诊断
 - [ ] 为“一次编写、多个 profile 编译”增加示例矩阵
@@ -271,4 +286,3 @@
 - 这是最短路径
 - 也是最容易先交付一个“真的虚拟地址执行”的平台样板
 - 成功后，其他 hosted / soft-vm 平台都可以沿同一框架扩展
-
