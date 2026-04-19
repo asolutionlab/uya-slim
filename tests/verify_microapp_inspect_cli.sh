@@ -59,6 +59,9 @@ bss_size = src[52:56]
 stack_hint = src[56:60]
 data_len = int.from_bytes(src[60:64], "little")
 reloc_len = src[64:68]
+code_va_v8 = int.from_bytes(src[72:76], "little")
+rodata_va_v8 = int.from_bytes(src[76:80], "little")
+data_va_v8 = int.from_bytes(src[80:84], "little")
 
 payload = src[84:]
 source_path = payload[:source_path_len]
@@ -107,7 +110,28 @@ v6 += source_path
 v6 += code
 v6 += rodata
 v6 += data
-v6 += relocs
+if int.from_bytes(reloc_len, "little") > 0:
+    code_va_v6 = 176
+    rodata_va_v6 = code_va_v6 + code_len
+    data_va_v6 = rodata_va_v6 + data_len
+    def map_va(va: int) -> int:
+        if code_va_v8 <= va < code_va_v8 + code_len:
+            return code_va_v6 + (va - code_va_v8)
+        if rodata_va_v8 <= va < rodata_va_v8 + rodata_len:
+            return rodata_va_v6 + (va - rodata_va_v8)
+        if data_va_v8 <= va < data_va_v8 + data_len:
+            return data_va_v6 + (va - data_va_v8)
+        raise ValueError(f"va out of mapped image: {va:#x}")
+    mapped_relocs = bytearray()
+    raw_reloc_len = int.from_bytes(reloc_len, "little")
+    for off in range(0, raw_reloc_len, 8):
+        target_va = int.from_bytes(relocs[off:off + 4], "little")
+        value_va = int.from_bytes(relocs[off + 4:off + 8], "little")
+        mapped_relocs += map_va(target_va).to_bytes(4, "little")
+        mapped_relocs += map_va(value_va).to_bytes(4, "little")
+    v6 += mapped_relocs
+else:
+    v6 += relocs
 out_v6.write_bytes(v6)
 
 header_size = 96
