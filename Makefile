@@ -157,6 +157,7 @@ from-c-native:
 		fi'
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
+	@touch bin/.uya_cold_start
 	@ls -la bin/uya
 
 # 从 bin/uya.c 构建（零依赖）
@@ -230,6 +231,7 @@ from-c:
 		fi'
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
+	@touch bin/.uya_cold_start
 	@ls -la bin/uya
 
 # 构建自举编译器（src），默认使用 --nostdlib（静态链接，零依赖）
@@ -237,17 +239,29 @@ uya:
 	@echo "=========================================="
 	@echo "构建自举编译器 (uya) --nostdlib"
 	@echo "=========================================="
-	@if [ ! -f bin/uya ]; then \
-		echo "bin/uya 不存在，从备份构建..."; \
-		if [ "$(HOST_OS)" = "macos" ]; then \
-			$(MAKE) from-c-native; \
-		else \
-			$(MAKE) from-c; \
+	@bash -c 'set -e; \
+		COLD_START=0; \
+		EXTRA_FLAGS=""; \
+		if [ -n "$$CI" ] || [ -n "$$GITHUB_ACTIONS" ]; then EXTRA_FLAGS="--verbose"; fi; \
+		if [ -f bin/.uya_cold_start ]; then COLD_START=1; fi; \
+		if [ ! -f bin/uya ]; then \
+			COLD_START=1; \
+			echo "bin/uya 不存在，从备份构建..."; \
+			if [ "$(HOST_OS)" = "macos" ]; then \
+				$(MAKE) from-c-native; \
+			else \
+				$(MAKE) from-c; \
+			fi; \
 		fi; \
-	fi
-	@echo "使用 bin/uya 编译 src/ ..."
-	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'set -e; EXTRA_FLAGS=""; if [ -n "$$CI" ] || [ -n "$$GITHUB_ACTIONS" ]; then EXTRA_FLAGS="--verbose"; fi; ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --safety-proof $$EXTRA_FLAGS'
+		echo "使用 bin/uya 编译 src/ ..."; \
+		echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"; \
+		( ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --safety-proof $$EXTRA_FLAGS ); \
+		if [ "$$COLD_START" = "1" ]; then \
+			echo ""; \
+			echo "检测到冷启动 seed，自举后再收敛复编译一轮..."; \
+			( ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --safety-proof $$EXTRA_FLAGS ); \
+			rm -f bin/.uya_cold_start; \
+		fi'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi

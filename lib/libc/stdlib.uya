@@ -937,7 +937,6 @@ export extern "libc" fn stat(path: &const byte, buf: &Stat) i32 {
 
 // readlink - 读取符号链接（C 标准库兼容）
 // 返回：读取的字节数，失败返回 -1
-std.cfg(std.target_os != .tos_macos, {
 export extern "libc" fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
     if path == null || buf == null || bufsiz == 0 {
         return 0 - 1;
@@ -952,7 +951,6 @@ export extern "libc" fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i
     }
     return ret as i32;
 }
-}, {})
 
 fn env_lookup_value(entry: &byte, name: &const byte) &byte {
     if entry == null || name == null || name[0] == 0 { return null; }

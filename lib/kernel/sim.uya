@@ -697,7 +697,7 @@ fn sim_write_u32_le_at(ptr: &byte, off: usize, value: u32) void {
     ptr[off + 3usize] = b3_tmp.value;
 }
 
-export fn sim_make_x86_64_call_gate_trampoline(entry_ptr: &void) !&byte {
+export fn sim_make_x86_64_call_gate_trampoline(entry_ptr: &const void) !&byte {
     if entry_ptr == null {
         return error.InvalidState;
     }
@@ -737,7 +737,7 @@ export fn sim_free_x86_64_call_gate_trampoline(trampoline_ptr: &byte) !void {
     }, {})
 }
 
-export fn sim_make_aarch64_call_gate_trampoline(entry_ptr: &void) !&byte {
+export fn sim_make_aarch64_call_gate_trampoline(entry_ptr: &const void) !&byte {
     if entry_ptr == null {
         return error.InvalidState;
     }
@@ -1106,7 +1106,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
     } else if hdr.target_arch == ImageTargetArch.ita_x86_64 && hdr.bridge_kind == ImageBridgeKind.ibk_call_gate {
         const entry_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 1u32, ACCESS_X);
         var call_ptr: &byte = entry_ptr;
-        var trampoline_ptr: &byte = sim_make_x86_64_call_gate_trampoline(entry_ptr as &void) catch {
+        var trampoline_ptr: &byte = sim_make_x86_64_call_gate_trampoline(entry_ptr as &const void) catch {
             null as &byte;
         };
         if trampoline_ptr != null {
@@ -1133,7 +1133,7 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         std.cfg(std.target_arch == .ta_arm64, {
             const entry_ptr: &byte = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 1u32, ACCESS_X);
             var call_ptr: &byte = entry_ptr;
-            var trampoline_ptr: &byte = sim_make_aarch64_call_gate_trampoline(entry_ptr as &void) catch {
+            var trampoline_ptr: &byte = sim_make_aarch64_call_gate_trampoline(entry_ptr as &const void) catch {
                 null as &byte;
             };
             if trampoline_ptr != null {

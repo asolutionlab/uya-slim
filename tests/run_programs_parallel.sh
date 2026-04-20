@@ -319,6 +319,7 @@ link_generated_test_output() {
     local base_name="$2"
     local output_dir="$3"
     local exe_file="${output_dir}/${base_name}.bin${TARGET_EXE_SUFFIX}"
+    local link_log_file="${output_dir}/${base_name}.linker_output.log"
     local extra_c_file=""
     local bridge_c_file=""
     local link_succeeded=false
@@ -359,8 +360,10 @@ link_generated_test_output() {
     fi
     link_cmd+=("${LDFLAGS_ARR[@]}")
 
-    "${link_cmd[@]}" 2>/dev/null && link_succeeded=true
+    rm -f "$link_log_file"
+    "${link_cmd[@]}" > /dev/null 2> "$link_log_file" && link_succeeded=true
     if [ "$link_succeeded" = true ]; then
+        rm -f "$link_log_file"
         echo "$exe_file"
         return 0
     fi
@@ -438,6 +441,12 @@ run_compiled_test_args() {
     exe_file=$(link_generated_test_output "$output_file" "$base_name" "$output_dir")
     if [ $? -ne 0 ] || [ -z "$exe_file" ] || [ ! -x "$exe_file" ]; then
         echo "FAIL:$base_name:链接失败" > "$result_file"
+        local link_log_file="${output_dir}/${base_name}.linker_output.log"
+        if [ -s "$link_log_file" ]; then
+            echo "----- linker output begin: $base_name -----"
+            cat "$link_log_file"
+            echo "----- linker output end: $base_name -----"
+        fi
         return
     fi
 
@@ -628,6 +637,9 @@ SERIAL_TESTS=(
     test_http1_async_client
     test_http_server
     test_raw_tls
+    # kernel.sim 端到端测试会生成/链接很大的宿主程序；
+    # 在整套 28 线程并行下偶发链接抖动，串行执行可稳定语义且不影响覆盖面。
+    test_kernel_sim
 )
 if [ -n "${SERIAL_TESTS_EXTRA:-}" ]; then
     read -r -a SERIAL_TESTS_EXTRA_ARR <<< "$SERIAL_TESTS_EXTRA"
