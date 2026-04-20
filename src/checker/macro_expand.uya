@@ -1138,6 +1138,16 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.bool_literal_value = node.bool_literal_value;
     } else if node.type == ASTNodeType.AST_STRING {
         copy.string_literal_value = node.string_literal_value;
+    } else if node.type == ASTNodeType.AST_EMBED || node.type == ASTNodeType.AST_EMBED_DIR {
+        copy.embed_path_literal = node.embed_path_literal;
+        copy.embed_resolved_path = node.embed_resolved_path;
+        copy.embed_data = node.embed_data;
+        copy.embed_size = node.embed_size;
+        copy.embed_dir_paths = node.embed_dir_paths;
+        copy.embed_dir_resolved_paths = node.embed_dir_resolved_paths;
+        copy.embed_dir_data = node.embed_dir_data;
+        copy.embed_dir_sizes = node.embed_dir_sizes;
+        copy.embed_dir_entry_count = node.embed_dir_entry_count;
     } else if node.type == ASTNodeType.AST_CHAR {
         copy.char_literal_value = node.char_literal_value;
     } else if node.type == ASTNodeType.AST_INT_LIMIT {
@@ -1656,6 +1666,16 @@ fn deep_copy_ast_simple(node: &ASTNode, arena: &CompilerArena, filename: &byte) 
         copy.bool_literal_value = node.bool_literal_value;
     } else if node.type == ASTNodeType.AST_STRING {
         copy.string_literal_value = node.string_literal_value;
+    } else if node.type == ASTNodeType.AST_EMBED || node.type == ASTNodeType.AST_EMBED_DIR {
+        copy.embed_path_literal = node.embed_path_literal;
+        copy.embed_resolved_path = node.embed_resolved_path;
+        copy.embed_data = node.embed_data;
+        copy.embed_size = node.embed_size;
+        copy.embed_dir_paths = node.embed_dir_paths;
+        copy.embed_dir_resolved_paths = node.embed_dir_resolved_paths;
+        copy.embed_dir_data = node.embed_dir_data;
+        copy.embed_dir_sizes = node.embed_dir_sizes;
+        copy.embed_dir_entry_count = node.embed_dir_entry_count;
     } else if node.type == ASTNodeType.AST_CHAR {
         copy.char_literal_value = node.char_literal_value;
     } else if node.type == ASTNodeType.AST_INT_LIMIT {
@@ -2076,11 +2096,22 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
         copy.cast_expr_expr = deep_copy_ast_substitute_type_params(node.cast_expr_expr, type_params, type_param_count, type_args, type_arg_count, arena, filename);
         copy.cast_expr_target_type = deep_copy_ast_substitute_type_params(node.cast_expr_target_type, type_params, type_param_count, type_args, type_arg_count, arena, filename);
         copy.cast_expr_is_force_cast = node.cast_expr_is_force_cast;
-    } else if node.type == ASTNodeType.AST_NUMBER || node.type == ASTNodeType.AST_FLOAT || node.type == ASTNodeType.AST_BOOL || node.type == ASTNodeType.AST_STRING || node.type == ASTNodeType.AST_CHAR {
+    } else if node.type == ASTNodeType.AST_NUMBER || node.type == ASTNodeType.AST_FLOAT || node.type == ASTNodeType.AST_BOOL || node.type == ASTNodeType.AST_STRING || node.type == ASTNodeType.AST_CHAR || node.type == ASTNodeType.AST_EMBED || node.type == ASTNodeType.AST_EMBED_DIR {
         if node.type == ASTNodeType.AST_NUMBER { copy.number_value = node.number_value; copy.number_value_i64 = node.number_value_i64; }
         else if node.type == ASTNodeType.AST_FLOAT { copy.float_literal_value = node.float_literal_value; }
         else if node.type == ASTNodeType.AST_BOOL { copy.bool_literal_value = node.bool_literal_value; }
         else if node.type == ASTNodeType.AST_STRING { copy.string_literal_value = node.string_literal_value; }
+        else if node.type == ASTNodeType.AST_EMBED || node.type == ASTNodeType.AST_EMBED_DIR {
+            copy.embed_path_literal = node.embed_path_literal;
+            copy.embed_resolved_path = node.embed_resolved_path;
+            copy.embed_data = node.embed_data;
+            copy.embed_size = node.embed_size;
+            copy.embed_dir_paths = node.embed_dir_paths;
+            copy.embed_dir_resolved_paths = node.embed_dir_resolved_paths;
+            copy.embed_dir_data = node.embed_dir_data;
+            copy.embed_dir_sizes = node.embed_dir_sizes;
+            copy.embed_dir_entry_count = node.embed_dir_entry_count;
+        }
         else if node.type == ASTNodeType.AST_CHAR { copy.char_literal_value = node.char_literal_value; }
     } else {
         return deep_copy_ast_simple(node, arena, filename);

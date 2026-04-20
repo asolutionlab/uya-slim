@@ -1005,6 +1005,20 @@ fn format_expr_prec(expr: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize,
         if expr.alignof_expr_is_type != 0 { format_type(expr.alignof_expr_target, out, out_pos, out_cap); }
         else { format_expr_prec(expr.alignof_expr_target, out, out_pos, out_cap, 0); }
         write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if expr.type == ASTNodeType.AST_EMBED || expr.type == ASTNodeType.AST_EMBED_DIR {
+        if expr.type == ASTNodeType.AST_EMBED_DIR {
+            write_str(out, out_pos, out_cap, "@embed_dir(" as &byte);
+        } else {
+            write_str(out, out_pos, out_cap, "@embed(" as &byte);
+        }
+        if expr.embed_path_literal != null {
+            write_byte(out, out_pos, out_cap, '"' as byte);
+            write_escaped_string(out, out_pos, out_cap, expr.embed_path_literal);
+            write_byte(out, out_pos, out_cap, '"' as byte);
+        } else {
+            write_str(out, out_pos, out_cap, "\"\"" as &byte);
+        }
+        write_byte(out, out_pos, out_cap, ')' as byte);
     }
     else {
         write_str(out, out_pos, out_cap, "?" as &byte);

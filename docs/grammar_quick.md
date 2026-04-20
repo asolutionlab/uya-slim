@@ -803,6 +803,26 @@ export mc add(a: expr, b: expr) expr {
 
 **TypeInfo**：`@mc_type(expr)` 返回的结构体，定义见 `lib/std/macro_typeinfo.uya`（含 `name`、`size`、`align`、`kind`、`is_*`、`field_count`、`fields`）；**获取 fields 大小请用 `@len(info.fields)`**。**FieldInfo** 含 `name`、`type_name`（*i8）。用于宏内类型查询与 `for info.fields` 编译期展开。详见 [uya.md](uya.md) §25.4.2、[grammar_formal.md](grammar_formal.md)。
 
+### 资源嵌入内置函数
+
+| 函数 | 说明 | 示例 |
+|------|------|------|
+| `@embed("path")` | 编译期嵌入单个普通文件，返回 `&[const byte]` | `const cert: &[const byte] = @embed("assets/cert.der");` |
+| `@embed_dir("path")` | 编译期递归嵌入目录，返回 `&[const EmbedDirEntry]` | `const assets: &[const EmbedDirEntry] = @embed_dir("assets");` |
+
+```uya
+struct EmbedDirEntry {
+    path: &[const byte],
+    data: &[const byte],
+}
+```
+
+速记：
+- 参数必须是字符串字面量
+- 相对路径相对于当前源文件所在目录解析
+- 条目按相对路径排序
+- 目录中的 symlink / 特殊文件会报错
+
 ### 宏调用与跨模块使用
 
 ```uya

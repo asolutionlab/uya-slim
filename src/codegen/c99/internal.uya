@@ -17,6 +17,8 @@ use libc.atoi;
 
 // 字符串常量表大小
 const C99_MAX_STRING_CONSTANTS: i32 = 4096;
+const C99_MAX_EMBEDDED_CONSTANTS: i32 = 4096;
+const C99_MAX_EMBED_DIR_TABLES: i32 = 512;
 
 // 结构体定义表大小
 const C99_MAX_STRUCT_DEFINITIONS: i32 = 1024;
@@ -68,6 +70,23 @@ const C99_DECL_CACHE_MASK: i32 = 4095;       // mask = SIZE - 1
 struct StringConstant {
     name: &byte,  // 常量名称（如 str0）
     value: &byte  // 字符串值
+}
+
+struct EmbeddedBinaryConstant {
+    name: &byte,
+    resolved_path: &byte,
+    data: &byte,
+    size: i32,
+}
+
+struct EmbeddedDirTableConstant {
+    name: &byte,
+    root_resolved_path: &byte,
+    entry_paths: & & byte,
+    entry_path_consts: & & byte,
+    entry_data_names: & & byte,
+    entry_sizes: &i32,
+    entry_count: i32,
 }
 
 // 结构体定义表项
@@ -130,6 +149,12 @@ struct C99CodeGenerator {
     string_constants: [StringConstant: C99_MAX_STRING_CONSTANTS],
     string_constant_count: i32,
     string_constants_emitted_count: i32,  // 第二步已输出的数量；宏展开等可能后续 add，末尾补输出
+    embedded_constants: [EmbeddedBinaryConstant: C99_MAX_EMBEDDED_CONSTANTS],
+    embedded_constant_count: i32,
+    embedded_constants_emitted_count: i32,
+    embedded_dir_tables: [EmbeddedDirTableConstant: C99_MAX_EMBED_DIR_TABLES],
+    embedded_dir_table_count: i32,
+    embedded_dir_tables_emitted_count: i32,
     // 结构体定义表
     struct_definitions: [StructDefinition: C99_MAX_STRUCT_DEFINITIONS],
     struct_definition_count: i32,

@@ -169,6 +169,26 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode, init_ctx_typ
         } else {
             fputs("\"\"" as *byte, codegen.emit_stream as *void);
         }
+    } else if expr.type == ASTNodeType.AST_EMBED {
+        c99_register_embed_slice_types(codegen, 0);
+        const embed_name: &byte = add_embed_constant(codegen, expr.embed_resolved_path, expr.embed_data, expr.embed_size);
+        fputs("{ .ptr = " as *byte, codegen.emit_stream as *void);
+        if embed_name != null {
+            fprintf(codegen.emit_stream as *void, "(uint8_t *)%s" as *byte, embed_name as *byte);
+        } else {
+            fputs("(uint8_t *)\"\"" as *byte, codegen.emit_stream as *void);
+        }
+        fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d }" as *byte, expr.embed_size);
+    } else if expr.type == ASTNodeType.AST_EMBED_DIR {
+        c99_register_embed_slice_types(codegen, 1);
+        const table_name: &byte = add_embed_dir_table(codegen, expr);
+        fputs("{ .ptr = " as *byte, codegen.emit_stream as *void);
+        if table_name != null {
+            fprintf(codegen.emit_stream as *void, "(struct EmbedDirEntry *)%s" as *byte, table_name as *byte);
+        } else {
+            fputs("(struct EmbedDirEntry *)0" as *byte, codegen.emit_stream as *void);
+        }
+        fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d }" as *byte, expr.embed_dir_entry_count);
     } else {
         // 对于其他表达式类型（数字、布尔值等），使用标准生成方式
         gen_expr(codegen, expr);

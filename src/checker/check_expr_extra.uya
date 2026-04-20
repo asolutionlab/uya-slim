@@ -1978,6 +1978,115 @@ fn checker_prepass_top_level_decls(checker: &TypeChecker, ast: &ASTNode) i32 {
     return 1;
 }
 
+fn checker_make_embed_dir_entry_slice_byte_type(arena: &CompilerArena, filename: &byte) &ASTNode {
+    if arena == null {
+        return null;
+    }
+    const byte_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, arena, filename);
+    if byte_type == null {
+        return null;
+    }
+    byte_type.type_named_name = "byte" as &byte;
+    const slice_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_SLICE, 0, 0, arena, filename);
+    if slice_type == null {
+        return null;
+    }
+    slice_type.type_slice_element_type = byte_type;
+    slice_type.type_slice_element_const = 1;
+    return slice_type;
+}
+
+fn checker_make_embed_dir_entry_decl(checker: &TypeChecker, filename: &byte) &ASTNode {
+    if checker == null || checker.arena == null {
+        return null;
+    }
+    const decl: &ASTNode = ast_new_node(ASTNodeType.AST_STRUCT_DECL, 0, 0, checker.arena, filename);
+    if decl == null {
+        return null;
+    }
+    decl.struct_decl_name = "EmbedDirEntry" as &byte;
+    const fields: & & ASTNode = compiler_arena_alloc(checker.arena, @size_of(&ASTNode) * 2 as usize) as & & ASTNode;
+    if fields == null {
+        return null;
+    }
+
+    const path_field: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, 0, 0, checker.arena, filename);
+    if path_field == null {
+        return null;
+    }
+    path_field.var_decl_name = "path" as &byte;
+    path_field.var_decl_type = checker_make_embed_dir_entry_slice_byte_type(checker.arena, filename);
+    if path_field.var_decl_type == null {
+        return null;
+    }
+
+    const data_field: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, 0, 0, checker.arena, filename);
+    if data_field == null {
+        return null;
+    }
+    data_field.var_decl_name = "data" as &byte;
+    data_field.var_decl_type = checker_make_embed_dir_entry_slice_byte_type(checker.arena, filename);
+    if data_field.var_decl_type == null {
+        return null;
+    }
+
+    fields[0] = path_field;
+    fields[1] = data_field;
+    decl.struct_decl_fields = fields;
+    decl.struct_decl_field_count = 2;
+    decl.struct_decl_is_export = 0;
+    return decl;
+}
+
+fn checker_program_prepend_decl(checker: &TypeChecker, program: &ASTNode, decl: &ASTNode) i32 {
+    if checker == null || program == null || decl == null || program.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    const new_count: i32 = program.program_decl_count + 1;
+    const new_decls: & & ASTNode = compiler_arena_alloc(checker.arena, @size_of(&ASTNode) * (new_count as usize)) as & & ASTNode;
+    if new_decls == null {
+        return 0;
+    }
+    new_decls[0] = decl;
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        new_decls[i + 1] = program.program_decls[i];
+        i = i + 1;
+    }
+    program.program_decls = new_decls;
+    program.program_decl_count = new_count;
+    return 1;
+}
+
+fn checker_ensure_embed_dir_entry_decl(checker: &TypeChecker, program_ptr: &ASTNode) i32 {
+    if checker == null || program_ptr == null || program_ptr.type != ASTNodeType.AST_PROGRAM {
+        return 1;
+    }
+    if checker_program_contains_embed_dir(program_ptr) == 0 {
+        return 1;
+    }
+    const existing: &ASTNode = find_struct_decl_from_program(program_ptr, "EmbedDirEntry" as &byte);
+    if existing != null {
+        return checker_embed_validate_embed_dir_entry_struct(checker, existing);
+    }
+    var filename: &byte = checker.default_filename;
+    if program_ptr.filename != null {
+        filename = program_ptr.filename;
+    }
+    const decl: &ASTNode = checker_make_embed_dir_entry_decl(checker, filename);
+    if decl == null {
+        checker_report_error(checker, program_ptr, "EmbedDirEntry 合成失败" as *byte);
+        return 0;
+    }
+    if checker_program_prepend_decl(checker, program_ptr, decl) == 0 {
+        checker_report_error(checker, program_ptr, "EmbedDirEntry 注入失败" as *byte);
+        return 0;
+    }
+    reset_program_lookup_caches();
+    checker.program_node = program_ptr;
+    return 1;
+}
+
 // 实现两遍检查机制：
 // 第一遍：收集所有函数声明（解决函数循环依赖问题）
 // 第二遍：检查所有声明（包括函数体、结构体、变量等）
@@ -1999,6 +2108,9 @@ fn checker_check(checker: &TypeChecker, ast: &ASTNode) i32 {
     // 宏展开：在类型检查前展开所有宏调用
     var ast_ptr: &ASTNode = ast;
     expand_macros_in_node_simple(checker, &ast_ptr);
+    if checker_ensure_embed_dir_entry_decl(checker, ast_ptr) == 0 {
+        return -1;
+    }
     checker.program_node = ast_ptr;
     reset_program_lookup_caches();
     

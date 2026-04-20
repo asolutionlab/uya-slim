@@ -127,6 +127,8 @@ enum ASTNodeType {
     AST_SRC_LINE,       // @src_line - 源文件行号
     AST_SRC_COL,        // @src_col - 源文件列号
     AST_FUNC_NAME,      // @func_name - 当前函数名
+    AST_EMBED,          // @embed("path") - 编译期嵌入单文件
+    AST_EMBED_DIR,      // @embed_dir("path") - 编译期嵌入目录
     AST_SYSCALL,        // @syscall(nr, arg1, ..., arg6) - 系统调用
     AST_PTR_FROM_USIZE, // @ptr_from_usize(value) - 从 usize 转换为指针
     AST_USIZE_FROM_PTR, // @usize_from_ptr(ptr) - 从指针转换为 usize
@@ -352,6 +354,16 @@ struct ASTNode {
     int_limit_resolved_kind: i32,
     // string_literal
     string_literal_value: &byte,
+    // embed / embed_dir
+    embed_path_literal: &byte,
+    embed_resolved_path: &byte,
+    embed_data: &byte,
+    embed_size: i32,
+    embed_dir_paths: & & byte,
+    embed_dir_resolved_paths: & & byte,
+    embed_dir_data: & & byte,
+    embed_dir_sizes: &i32,
+    embed_dir_entry_count: i32,
     // char_literal（字符字面量，赋给 byte）
     char_literal_value: i32,
     // string_interp（"text${expr}text" 或 "text${expr:spec}text"）
@@ -618,6 +630,15 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &CompilerArena
     node.int_limit_is_max = 0;
     node.int_limit_resolved_kind = 0;
     node.string_literal_value = null;
+    node.embed_path_literal = null;
+    node.embed_resolved_path = null;
+    node.embed_data = null;
+    node.embed_size = 0;
+    node.embed_dir_paths = null;
+    node.embed_dir_resolved_paths = null;
+    node.embed_dir_data = null;
+    node.embed_dir_sizes = null;
+    node.embed_dir_entry_count = 0;
     node.char_literal_value = 0;
     node.string_interp_segments = null;
     node.string_interp_segment_count = 0;

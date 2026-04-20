@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### 内置资源嵌入：`@embed` / `@embed_dir`（2026-04-20）
+
+- **语言 / Checker / C99**：新增 `@embed("path")` 与 `@embed_dir("path")`。`@embed` 返回 `&[const byte]`；`@embed_dir` 返回 `&[const EmbedDirEntry]`，并在 checker 前置阶段合成真实 `EmbedDirEntry` 结构体声明注入 AST。目录递归收集普通文件、相对路径统一 `/`、按字典序排序；对 `&[const T]` 元素成员写入新增拒绝规则。
+- **Codegen**：新增独立二进制常量池与目录表池；单文件 / split-C / 全局初始化路径均支持。资源去重使用绝对规范化路径，因此相对/绝对路径混用会收敛到同一份静态常量。
+- **测试**：新增 `test_embed_builtin.uya`、`verify_embed_split_c.sh`、`verify_embed_empty_dir.sh`、`verify_embed_symlink_rejected.sh`、`verify_embed_type_only.sh`、`verify_embed_dedupe.sh` 以及多条负例用例。
+- **文档**：`embed_design.md`、`todo_embed.md`、`builtin_functions.md`、`uya.md`、`grammar_quick.md`、`compiler_status.md`。
+
 ### 标准库：`std.mem.arena` 实现 `IAllocator`（2026-03-22）
 
 - **标准库**：**`lib/std/mem/arena.uya`** — **`export struct Arena : IAllocator`**；**`dealloc`** 为空操作；**`realloc`** 仅当目标为**当前最后一次 bump 块**时在缓冲区内原地缩/扩，否则 **`AllocInvalidPointer`**；内部字段 **`has_last` / `last_start` / `last_aligned`**（带默认值，现有 **`Arena{ buffer, size, used }`** 初始化方式不变）。
@@ -1474,4 +1481,3 @@ fn deref(ptr: &i32) i32 {
 
 - 所有 0.13 代码保持兼容（语法变更不影响现有代码）
 - 新语法完全可选，可以继续使用原有方式
-

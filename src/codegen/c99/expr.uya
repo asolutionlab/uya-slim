@@ -463,6 +463,26 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         } else {
             fputs("\"\"" as *byte, codegen.emit_stream as *void);
         }
+    } else if expr.type == ASTNodeType.AST_EMBED {
+        c99_register_embed_slice_types(codegen, 0);
+        const embed_name: &byte = add_embed_constant(codegen, expr.embed_resolved_path, expr.embed_data, expr.embed_size);
+        fputs("((struct uya_slice_uint8_t){ .ptr = " as *byte, codegen.emit_stream as *void);
+        if embed_name != null {
+            fprintf(codegen.emit_stream as *void, "(uint8_t *)%s" as *byte, embed_name as *byte);
+        } else {
+            fputs("(uint8_t *)\"\"" as *byte, codegen.emit_stream as *void);
+        }
+        fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d })" as *byte, expr.embed_size);
+    } else if expr.type == ASTNodeType.AST_EMBED_DIR {
+        c99_register_embed_slice_types(codegen, 1);
+        const table_name: &byte = add_embed_dir_table(codegen, expr);
+        fputs("((struct uya_slice_EmbedDirEntry){ .ptr = " as *byte, codegen.emit_stream as *void);
+        if table_name != null {
+            fprintf(codegen.emit_stream as *void, "(struct EmbedDirEntry *)%s" as *byte, table_name as *byte);
+        } else {
+            fputs("(struct EmbedDirEntry *)0" as *byte, codegen.emit_stream as *void);
+        }
+        fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d })" as *byte, expr.embed_dir_entry_count);
     } else if expr.type == ASTNodeType.AST_SYSCALL {
         // @syscall(nr, arg1, ..., arg6) 返回 !i64
         // 生成：({ long _uya_syscall_ret = uya_syscallN(nr, arg1, ...);
@@ -6446,6 +6466,13 @@ fn gen_len_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         if array == null {
             fputs("0" as *byte, codegen.emit_stream as *void);
+            return;
+        }
+        const any_type_c: &byte = get_c_type_of_expr(codegen, array);
+        if any_type_c != null && strstr(any_type_c as *byte, "uya_slice_" as *byte) != null {
+            fputc(40, codegen.emit_stream as *void);
+            gen_expr(codegen, array);
+            fputs(").len" as *byte, codegen.emit_stream as *void);
             return;
         }
         if array.type == ASTNodeType.AST_SLICE_EXPR {

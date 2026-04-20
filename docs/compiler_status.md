@@ -91,10 +91,13 @@
 - [x] `@align_of(T)` - 类型对齐
 - [x] `@len(arr)` - 数组长度
 - [x] `@max(T)` / `@min(T)` - 类型极值
+- [x] `@embed("path")` - 编译期嵌入单文件
+- [x] `@embed_dir("path")` - 编译期递归嵌入目录
 - [x] `@syscall(nr, ...)` - 系统调用
 - [x] `@va_start` / `@va_arg` / `@va_end` / `@va_copy` - 可变参数（va_list 为内置类型）
 - [x] `va_list` 内置类型
 - [x] `@src_name` / `@src_path` / `@src_line` - 源码位置
+- [x] `@src_col` / `@func_name` - 源码位置与函数名
 - [x] `@ptr_from_usize` / `@usize_from_ptr` - 指针转换
 
 ### ✅ 宏系统（已实现）

@@ -48,6 +48,8 @@ fn is_expr_type(node_type: ASTNodeType) i32 {
     if node_type == ASTNodeType.AST_SRC_LINE { return 1; }
     if node_type == ASTNodeType.AST_SRC_COL { return 1; }
     if node_type == ASTNodeType.AST_FUNC_NAME { return 1; }
+    if node_type == ASTNodeType.AST_EMBED { return 1; }
+    if node_type == ASTNodeType.AST_EMBED_DIR { return 1; }
     if node_type == ASTNodeType.AST_SYSCALL { return 1; }
     if node_type == ASTNodeType.AST_PTR_FROM_USIZE { return 1; }
     if node_type == ASTNodeType.AST_USIZE_FROM_PTR { return 1; }

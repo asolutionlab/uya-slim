@@ -463,6 +463,7 @@ fn precollect_codegen_decl(codegen: &C99CodeGenerator, decl: &ASTNode, collect_h
         return;
     }
     collect_string_constants_from_decl(codegen, decl);
+    collect_embed_constants_from_decl(codegen, decl);
     collect_slice_types_from_node(codegen, decl);
 }
 
@@ -2429,6 +2430,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     var i: i32 = 0;
     if codegen.split_mirror == 0 {
         emit_string_constants(codegen);
+        emit_embed_constants(codegen);
         c99_split_begin_body(codegen);
         c99_emit_newline(codegen);
     }
@@ -2808,7 +2810,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     if codegen.split_mirror != 0 {
         emit_string_constants(codegen);
+        emit_embed_constants(codegen);
         c99_split_begin_body(codegen);
+        c99_emit_newline(codegen);
+    }
+    emit_pending_embed_constants(codegen);
+    emit_embed_dir_tables(codegen);
+    emit_pending_embed_dir_tables(codegen);
+    if codegen.embedded_dir_table_count > 0 {
         c99_emit_newline(codegen);
     }
     

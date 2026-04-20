@@ -22,6 +22,8 @@
   - [@src_line](#src_line)
   - [@src_col](#src_col)
   - [@func_name](#func_name)
+  - [@embed](#embed)
+  - [@embed_dir](#embed_dir)
 - [4. 可变参数函数](#4-可变参数函数)
   - [@params](#params)
   - [@va_start](#va_start)
@@ -548,6 +550,86 @@ fn valid_usage() void {
     const local_func: &[i8] = @func_name;  // ✓ 正确
 }
 ```
+
+---
+
+### @embed
+
+**函数签名**：
+```uya
+fn @embed(path: string_literal) &[const byte]
+```
+
+**功能描述**：
+编译期读取单个普通文件，并将其原始字节直接嵌入到最终输出中。
+
+**参数**：
+- `path`：字符串字面量路径；相对路径相对于当前源文件所在目录解析
+
+**返回值**：
+- `&[const byte]` 只读切片
+
+**使用示例**：
+```uya
+const cert: &[const byte] = @embed("assets/cert.der");
+
+fn main() i32 {
+    if @len(cert) == 0 {
+        return 1;
+    }
+    return cert.ptr[0] as i32;
+}
+```
+
+**注意事项**：
+- 参数必须是字符串字面量
+- 内容不追加结尾 `0`
+- 支持二进制零字节
+- 目标必须是普通文件，目录会报错
+
+---
+
+### @embed_dir
+
+**函数签名**：
+```uya
+fn @embed_dir(path: string_literal) &[const EmbedDirEntry]
+```
+
+**功能描述**：
+编译期递归读取目录中的普通文件，返回目录条目切片。
+
+**内建条目结构**：
+```uya
+struct EmbedDirEntry {
+    path: &[const byte],
+    data: &[const byte],
+}
+```
+
+**参数**：
+- `path`：字符串字面量目录路径；相对路径相对于当前源文件所在目录解析
+
+**返回值**：
+- `&[const EmbedDirEntry]` 只读切片
+
+**使用示例**：
+```uya
+const assets: &[const EmbedDirEntry] = @embed_dir("assets");
+
+fn main() i32 {
+    if @len(assets) == 0 {
+        return 1;
+    }
+    return assets.ptr[0].data.ptr[0] as i32;
+}
+```
+
+**注意事项**：
+- 目录递归遍历
+- 条目按相对路径字典序排序
+- `path` 使用 `/` 作为分隔符
+- 目录中的 symlink 和特殊文件会报错
 
 ---
 
@@ -1775,6 +1857,8 @@ const both: @mask(4) = lt & eq;
 | | `@src_line` | ✓ | - | ✅ 已实现 |
 | | `@src_col` | ✓ | - | ✅ 已实现 |
 | | `@func_name` | ✓ | - | ✅ 已实现 |
+| **嵌入资源** | `@embed` | ✓ | - | ✅ 已实现 |
+| | `@embed_dir` | ✓ | - | ✅ 已实现 |
 | **可变参数** | `@params` | - | ✓ | ✅ 已实现 |
 | | `@va_start` | ✓ | - | 📋 规范支持 |
 | | `@va_end` | ✓ | - | 📋 规范支持 |
