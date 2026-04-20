@@ -7890,6 +7890,19 @@ fn c99_try_emit_error_return_value(codegen: &C99CodeGenerator, ret_union_c: &byt
     }
 }
 
+fn c99_try_emit_error_return_stmt(codegen: &C99CodeGenerator, ret_union_c: &byte, kind: i32) void {
+    fputs("; if (_uya_try_tmp.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
+    codegen.indent_level = codegen.indent_level + 1;
+    emit_all_active_scope_cleanup(codegen, 1);
+    c99_emit_indent(codegen);
+    fputs("return " as *byte, codegen.emit_stream as *void);
+    c99_try_emit_error_return_value(codegen, ret_union_c, kind);
+    fputs(";\n" as *byte, codegen.emit_stream as *void);
+    codegen.indent_level = codegen.indent_level - 1;
+    c99_emit_indent(codegen);
+    fputs("}" as *byte, codegen.emit_stream as *void);
+}
+
 // 生成 try 表达式
 fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if codegen != null && expr != null && codegen.async_expr_subst_try_expr != null &&
@@ -8054,12 +8067,10 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 gen_expr(codegen, operand);
                 codegen.expected_block_union_type = saved_expected_block;
                 if ret_is_void != 0 {
-                    fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
-                    c99_try_emit_error_return_value(codegen, ret_union_c, 1);
+                    c99_try_emit_error_return_stmt(codegen, ret_union_c, 1);
                     fputs("; })" as *byte, codegen.emit_stream as *void);
                 } else {
-                    fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
-                    c99_try_emit_error_return_value(codegen, ret_union_c, 0);
+                    c99_try_emit_error_return_stmt(codegen, ret_union_c, 0);
                     fputs("; " as *byte, codegen.emit_stream as *void);
                     if try_payload_ast != null && try_payload_ast.type == ASTNodeType.AST_TYPE_ARRAY && try_payload_ast.type_array_element_type != null &&
                         try_payload_ast.type_array_size_expr != null && try_payload_ast.type_array_size_expr.type == ASTNodeType.AST_NUMBER {
@@ -8096,13 +8107,11 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // 错误传播时需转换为函数返回类型
         if operand_is_void != 0 {
             // 操作数是 !void，没有值可解包
-            fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
-            c99_try_emit_error_return_value(codegen, ret_union_c2, 0);
+            c99_try_emit_error_return_stmt(codegen, ret_union_c2, 0);
             fputs("; })" as *byte, codegen.emit_stream as *void);
         } else {
             // 操作数有值，需要解包。即使函数返回 !void，try 表达式本身也需要返回解包的值
-            fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
-            c99_try_emit_error_return_value(codegen, ret_union_c2, 0);
+            c99_try_emit_error_return_stmt(codegen, ret_union_c2, 0);
             fputs("; _uya_try_tmp.value; })" as *byte, codegen.emit_stream as *void);
         }
 }

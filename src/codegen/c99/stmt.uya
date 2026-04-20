@@ -217,19 +217,17 @@ fn c99_defer_node_at(codegen: &C99CodeGenerator, slot: i32, is_errdefer: i32) &A
     return codegen.defer_stack[slot];
 }
 
-// 在 return/break/continue 前对当前块已声明的变量逆序调用 drop（规范 §12）。
-fn emit_current_block_drops(codegen: &C99CodeGenerator) void {
-    if codegen == null || codegen.current_drop_scope < 0 {
+fn emit_drop_cleanup_at_scope(codegen: &C99CodeGenerator, scope_idx: i32) void {
+    if codegen == null || scope_idx < 0 || scope_idx >= C99_MAX_DEFER_STACK {
         return;
     }
-    const d: i32 = codegen.current_drop_scope;
-    const n: i32 = c99_drop_var_count_at(codegen, d);
+    const n: i32 = c99_drop_var_count_at(codegen, scope_idx);
     if n <= 0 {
         return;
     }
     var i: i32 = n - 1;
     while i >= 0 {
-        const drop_slot: i32 = d * C99_MAX_DROP_VARS_PER_BLOCK + i;
+        const drop_slot: i32 = scope_idx * C99_MAX_DROP_VARS_PER_BLOCK + i;
         const drop_struct_name: &byte = c99_drop_struct_name_at(codegen, drop_slot);
         const drop_c: &byte = get_method_c_name(codegen, drop_struct_name, "drop" as *byte);
         const var_safe: &byte = c99_drop_var_safe_at(codegen, drop_slot);
@@ -239,6 +237,14 @@ fn emit_current_block_drops(codegen: &C99CodeGenerator) void {
         }
         i = i - 1;
     }
+}
+
+// 在 return/break/continue 前对当前块已声明的变量逆序调用 drop（规范 §12）。
+fn emit_current_block_drops(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.current_drop_scope < 0 {
+        return;
+    }
+    emit_drop_cleanup_at_scope(codegen, codegen.current_drop_scope);
 }
 
 // 在块内变量声明逆序上调用 drop（规范 §12：离开作用域时先 defer 再 drop）。
@@ -282,17 +288,14 @@ fn emit_drop_cleanup(codegen: &C99CodeGenerator, stmts: & & ASTNode, stmt_count:
     }
 }
 
-// 在 return/break/continue/块结束前执行当前层的 defer（及可选的 errdefer）。LIFO 顺序。
-// 规范 §9：return 时先计算返回值，再执行 defer，最后返回；defer 不能修改返回值。
-fn emit_defer_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
-    if codegen.defer_stack_depth <= 0 {
+fn emit_defer_cleanup_at_scope(codegen: &C99CodeGenerator, scope_idx: i32, emit_errdefer: i32) void {
+    if codegen == null || scope_idx < 0 || scope_idx >= C99_MAX_DEFER_STACK {
         return;
     }
-    const d: i32 = codegen.defer_stack_depth - 1;
     if emit_errdefer != 0 {
-        var i: i32 = c99_defer_count_at(codegen, d, 1) - 1;
+        var i: i32 = c99_defer_count_at(codegen, scope_idx, 1) - 1;
         while i >= 0 {
-            const defer_slot: i32 = d * C99_MAX_DEFERS_PER_BLOCK + i;
+            const defer_slot: i32 = scope_idx * C99_MAX_DEFERS_PER_BLOCK + i;
             const n: &ASTNode = c99_defer_node_at(codegen, defer_slot, 1);
             if n != null && n.type == ASTNodeType.AST_ERRDEFER_STMT && n.errdefer_stmt_body != null {
                 c99_emit(codegen, "/* errdefer */ " as *byte);
@@ -301,15 +304,40 @@ fn emit_defer_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
             i = i - 1;
         }
     }
-    var i: i32 = c99_defer_count_at(codegen, d, 0) - 1;
+    var i: i32 = c99_defer_count_at(codegen, scope_idx, 0) - 1;
     while i >= 0 {
-        const defer_slot: i32 = d * C99_MAX_DEFERS_PER_BLOCK + i;
+        const defer_slot: i32 = scope_idx * C99_MAX_DEFERS_PER_BLOCK + i;
         const n: &ASTNode = c99_defer_node_at(codegen, defer_slot, 0);
         if n != null && n.type == ASTNodeType.AST_DEFER_STMT && n.defer_stmt_body != null {
             c99_emit(codegen, "/* defer */ " as *byte);
             gen_stmt(codegen, n.defer_stmt_body);
         }
         i = i - 1;
+    }
+}
+
+// 在 return/break/continue/块结束前执行当前层的 defer（及可选的 errdefer）。LIFO 顺序。
+// 规范 §9：return 时先计算返回值，再执行 defer，最后返回；defer 不能修改返回值。
+fn emit_defer_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
+    if codegen.defer_stack_depth <= 0 {
+        return;
+    }
+    emit_defer_cleanup_at_scope(codegen, codegen.defer_stack_depth - 1, emit_errdefer);
+}
+
+fn emit_all_active_scope_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
+    if codegen == null {
+        return;
+    }
+    var scope_idx: i32 = codegen.current_drop_scope;
+    const defer_scope_idx: i32 = codegen.defer_stack_depth - 1;
+    if defer_scope_idx > scope_idx {
+        scope_idx = defer_scope_idx;
+    }
+    while scope_idx >= 0 {
+        emit_defer_cleanup_at_scope(codegen, scope_idx, emit_errdefer);
+        emit_drop_cleanup_at_scope(codegen, scope_idx);
+        scope_idx = scope_idx - 1;
     }
 }
 
@@ -995,21 +1023,6 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         return;
     }
 
-    // return error.X 与 return;（void）：先执行 defer，再返回
-    var need_defer_first: i32 = 0;
-    if expr != null && expr.type == ASTNodeType.AST_ERROR_VALUE {
-        need_defer_first = 1;
-    } else if expr == null && return_type != null && return_type.type == ASTNodeType.AST_TYPE_NAMED {
-        const tn: &byte = return_type.type_named_name;
-        if tn != null && strcmp(tn as *byte, "void" as *byte) == 0 {
-            need_defer_first = 1;
-        }
-    }
-    if need_defer_first != 0 {
-        emit_current_block_drops(codegen);
-        emit_defer_cleanup(codegen, is_error_return);
-    }
-    
     // return error.X：生成错误联合复合字面量
     if expr != null && expr.type == ASTNodeType.AST_ERROR_VALUE && return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
         var id: i32 = c99_get_or_add_error_id(codegen, expr.error_value_name);
@@ -1022,6 +1035,7 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         if payload_node != null && payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null && strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0 {
             payload_void = 1;
         }
+        emit_all_active_scope_cleanup(codegen, 1);
         if payload_void != 0 {
             c99_emit_indent(codegen);
             fprintf(codegen.emit_stream as *void, "return (%s){ .error_id = %dU };\n" as *byte, ret_c as *byte, id);
@@ -1047,7 +1061,7 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             }
         }
         if is_void != 0 {
-            emit_current_block_drops(codegen);
+            emit_all_active_scope_cleanup(codegen, 0);
             c99_emit(codegen, "return;\n" as *byte);
             return;
         }
@@ -1094,9 +1108,8 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     } else {
         gen_return_normal(codegen, expr, return_type, ret_c);
     }
-    emit_current_block_drops(codegen);
-    // 2. 执行 defer（defer 不能修改已计算的返回值）
-    emit_defer_cleanup(codegen, is_error_return);
+    // 2. 执行全部活动作用域的 defer/drop（defer 不能修改已计算的返回值）
+    emit_all_active_scope_cleanup(codegen, 0);
     // 3. 返回临时变量
     c99_emit(codegen, "return _uya_ret;\n" as *byte);
 }
@@ -1887,28 +1900,30 @@ fn gen_block_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if d < C99_MAX_DEFER_STACK {
         codegen.current_drop_scope = d;
         c99_drop_var_count_set(codegen, d, 0);
-        var nd: i32 = 0;
-        var ne: i32 = 0;
-        i = 0;
-        while i < stmt_count && nd < C99_MAX_DEFERS_PER_BLOCK && ne < C99_MAX_DEFERS_PER_BLOCK {
-            const s: &ASTNode = stmts[i];
-            if s.type == ASTNodeType.AST_DEFER_STMT {
-                codegen.defer_stack[d * C99_MAX_DEFERS_PER_BLOCK + nd] = s;
-                nd = nd + 1;
-            } else if s.type == ASTNodeType.AST_ERRDEFER_STMT {
-                codegen.errdefer_stack[d * C99_MAX_DEFERS_PER_BLOCK + ne] = s;
-                ne = ne + 1;
-            }
-            i = i + 1;
-        }
-        c99_defer_count_set(codegen, d, 0, nd);
-        c99_defer_count_set(codegen, d, 1, ne);
+        c99_defer_count_set(codegen, d, 0, 0);
+        c99_defer_count_set(codegen, d, 1, 0);
         codegen.defer_stack_depth = codegen.defer_stack_depth + 1;
     }
     i = 0;
     while i < stmt_count {
         const s: &ASTNode = stmts[i];
-        if s.type != ASTNodeType.AST_DEFER_STMT && s.type != ASTNodeType.AST_ERRDEFER_STMT {
+        if s.type == ASTNodeType.AST_DEFER_STMT {
+            if d < C99_MAX_DEFER_STACK {
+                const nd: i32 = c99_defer_count_at(codegen, d, 0);
+                if nd >= 0 && nd < C99_MAX_DEFERS_PER_BLOCK {
+                    codegen.defer_stack[d * C99_MAX_DEFERS_PER_BLOCK + nd] = s;
+                    c99_defer_count_set(codegen, d, 0, nd + 1);
+                }
+            }
+        } else if s.type == ASTNodeType.AST_ERRDEFER_STMT {
+            if d < C99_MAX_DEFER_STACK {
+                const ne: i32 = c99_defer_count_at(codegen, d, 1);
+                if ne >= 0 && ne < C99_MAX_DEFERS_PER_BLOCK {
+                    codegen.errdefer_stack[d * C99_MAX_DEFERS_PER_BLOCK + ne] = s;
+                    c99_defer_count_set(codegen, d, 1, ne + 1);
+                }
+            }
+        } else {
             gen_stmt(codegen, s);
         }
         i = i + 1;
@@ -2158,7 +2173,14 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                     ret_union_c = c99_type_to_c(codegen, codegen.current_function_return_type);
                                 }
                                 c99_emit_indent(codegen);
-                                fprintf(codegen.emit_stream as *void, "if (_uya_try_arr_tmp.error_id != 0) return (%s){ .error_id = _uya_try_arr_tmp.error_id };\n" as *byte, ret_union_c as *byte);
+                                fprintf(codegen.emit_stream as *void, "if (_uya_try_arr_tmp.error_id != 0) {\n" as *byte);
+                                codegen.indent_level = codegen.indent_level + 1;
+                                emit_all_active_scope_cleanup(codegen, 1);
+                                c99_emit_indent(codegen);
+                                fprintf(codegen.emit_stream as *void, "return (%s){ .error_id = _uya_try_arr_tmp.error_id };\n" as *byte, ret_union_c as *byte);
+                                codegen.indent_level = codegen.indent_level - 1;
+                                c99_emit_indent(codegen);
+                                fputs("}\n" as *byte, codegen.emit_stream as *void);
                                 var ci: i32 = 0;
                                 while ci < n {
                                     c99_emit_indent(codegen);

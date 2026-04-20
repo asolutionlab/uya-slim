@@ -13,8 +13,17 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
         return null;
     }
     
+    // 如果文件本身位于 UYA_ROOT，下方的 std/tls/UYA_ROOT 规则应优先于 project_root。
+    var skip_project_root: i32 = 0;
+    if checker.uya_root_dir != null {
+        const uya_root_len_skip: usize = strlen(checker.uya_root_dir as *byte);
+        if uya_root_len_skip > 0 && strncmp(filename as *byte, checker.uya_root_dir as *byte, uya_root_len_skip) == 0 {
+            skip_project_root = 1;
+        }
+    }
+
     // 如果项目根目录已设置，检查文件是否在项目根目录下
-    if checker.project_root_dir != null {
+    if checker.project_root_dir != null && skip_project_root == 0 {
         const root_len: usize = strlen(checker.project_root_dir as *byte);
         // root_len==0 时 strncmp 恒为相等，会把任意路径误判为「在项目根下」
         if root_len > 0 && strncmp(filename as *byte, checker.project_root_dir as *byte, root_len) == 0 {
@@ -1167,6 +1176,19 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
     if module_name == null {
         checker_report_error(checker, node, "use 语句的模块名无效" as *byte);
         return 0;
+    }
+
+    // `use libc.foo;` 是合法的扁平 libc 导入。若前面的模块探测把它整体识别成模块路径，
+    // 这里回退成 module=`libc`, item=`foo`，仅保留更深层的 `libc.stdio.xxx` 等非法写法报错。
+    if item_name == null && module_name != null && strlen(module_name as *byte) > 5
+        && (module_name[0] as byte) == 108 && (module_name[1] as byte) == 105
+        && (module_name[2] as byte) == 98 && (module_name[3] as byte) == 99
+        && (module_name[4] as byte) == 46 {
+        const flat_item: &byte = &module_name[5];
+        if flat_item[0] != 0 && strchr(flat_item as *byte, 46) == null {
+            item_name = flat_item;
+            module_name = "libc" as &byte;
+        }
     }
     
     // 检测错误的 libc 模块用法（libc.stdio.xxx → 应该使用 libc.xxx）

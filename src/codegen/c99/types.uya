@@ -6788,6 +6788,43 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("#endif /* UYA_HAVE_SIMD_X86_SSE || UYA_HAVE_SIMD_ARM_NEON || scalar */\n" as *byte, codegen.emit_stream as *void);
 }
 
+fn c99_slice_struct_type_from_elem_c(codegen: &C99CodeGenerator, elem_c: &byte) &byte {
+    if codegen == null || elem_c == null {
+        return ("struct uya_slice_int32_t" as *byte) as &byte;
+    }
+    var elem_simple: &byte = elem_c;
+    if strncmp(elem_simple as *byte, "const " as *byte, 6) == 0 {
+        elem_simple = &elem_simple[6];
+    }
+    if strncmp(elem_simple as *byte, "struct " as *byte, 7) == 0 {
+        elem_simple = &elem_simple[7];
+    } else if strncmp(elem_simple as *byte, "enum " as *byte, 5) == 0 {
+        elem_simple = &elem_simple[5];
+    }
+    if strcmp(elem_simple as *byte, "void" as *byte) == 0 {
+        elem_simple = ("uint8_t" as *byte) as &byte;
+    }
+    if strcmp(elem_simple as *byte, "uint8_t" as *byte) == 0 ||
+        strcmp(elem_simple as *byte, "int8_t" as *byte) == 0 ||
+        strcmp(elem_simple as *byte, "char" as *byte) == 0 ||
+        strcmp(elem_simple as *byte, "byte" as *byte) == 0 {
+        return ("struct uya_slice_uint8_t" as *byte) as &byte;
+    }
+    var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+    snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_slice_%s" as *byte, elem_simple as *byte);
+    const safe: &byte = get_safe_c_identifier(codegen, &name_buf[0]);
+    if safe == null {
+        return ("struct uya_slice_int32_t" as *byte) as &byte;
+    }
+    const len: i32 = strlen(safe as *byte) + 9;
+    const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
+    if result == null {
+        return ("struct uya_slice_int32_t" as *byte) as &byte;
+    }
+    snprintf(result as *byte, len, "struct %s" as *byte, safe as *byte);
+    return result;
+}
+
 // 从切片表达式推断切片结构体 C 类型（struct uya_slice_X）
 fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &byte {
     if codegen == null || slice_expr == null || slice_expr.type != ASTNodeType.AST_SLICE_EXPR {
@@ -6824,35 +6861,23 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
         if elem_c == null {
             return ("struct uya_slice_int32_t" as *byte) as &byte;
         }
-        var elem_simple: &byte = elem_c;
-        if strncmp(elem_c as *byte, "struct " as *byte, 7) == 0 {
-            elem_simple = &elem_c[7];
-        } else if strncmp(elem_c as *byte, "enum " as *byte, 5) == 0 {
-            elem_simple = &elem_c[5];
-        }
-        if strncmp(elem_simple as *byte, "const " as *byte, 6) == 0 {
-            elem_simple = &elem_simple[6];
-        }
-        // void* 缓冲区常见于 &[byte]，用 uint8_t 得到 uya_slice_uint8_t，避免 uya_slice_void（无 ptr/len）
-        if strcmp(elem_simple as *byte, "void" as *byte) == 0 {
-            elem_simple = ("uint8_t" as *byte) as &byte;
-        }
-        var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
-        snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_slice_%s" as *byte, elem_simple as *byte);
-        const safe: &byte = get_safe_c_identifier(codegen, &name_buf[0]);
-        if safe == null {
-            return ("struct uya_slice_int32_t" as *byte) as &byte;
-        }
-        const len: i32 = strlen(safe as *byte) + 9;
-        const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
-        if result == null {
-            return ("struct uya_slice_int32_t" as *byte) as &byte;
-        }
-        snprintf(result as *byte, len, "struct %s" as *byte, safe as *byte);
-        return result;
+        return c99_slice_struct_type_from_elem_c(codegen, elem_c);
     }
     // base 为成员访问（如 view.ptr）时，base 类型为指针（如 uint8_t *），取其指向类型作为切片元素类型
     if base.type == ASTNodeType.AST_MEMBER_ACCESS {
+        const base_type_c_array: &byte = get_c_type_of_expr(codegen, base);
+        if base_type_c_array != null {
+            const first_bracket: *byte = strchr(base_type_c_array as *byte, 91);
+            if first_bracket != null {
+                const elem_len: i32 = ptr_diff(first_bracket, base_type_c_array as *byte);
+                if elem_len > 0 && elem_len < STRUCT_NAME_BUF_SIZE {
+                    var elem_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+                    memcpy(&elem_buf[0] as *void, base_type_c_array as *void, elem_len as usize);
+                    elem_buf[elem_len] = 0;
+                    return c99_slice_struct_type_from_elem_c(codegen, &elem_buf[0] as &byte);
+                }
+            }
+        }
         const base_type_c: &byte = get_c_type_of_expr(codegen, base);
         if base_type_c != null {
             const base_len: i32 = strlen(base_type_c as *byte);
@@ -6877,26 +6902,7 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
                             j = j + 1;
                         }
                         temp_buf[j] = 0;
-                        var elem_simple_m: &byte = &temp_buf[0];
-                        if strncmp(&temp_buf[0] as *byte, "struct " as *byte, 7) == 0 {
-                            elem_simple_m = &temp_buf[7];
-                        } else if strncmp(&temp_buf[0] as *byte, "enum " as *byte, 5) == 0 {
-                            elem_simple_m = &temp_buf[5];
-                        }
-                        const elem_dup: &byte = c99_arena_strdup(codegen.arena, elem_simple_m as &byte);
-                        if elem_dup != null {
-                            var name_buf_m: [byte: STRUCT_NAME_BUF_SIZE] = [];
-                            snprintf(&name_buf_m[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_slice_%s" as *byte, elem_dup as *byte);
-                            const safe_m: &byte = get_safe_c_identifier(codegen, &name_buf_m[0]);
-                            if safe_m != null {
-                                const len_m: i32 = strlen(safe_m as *byte) + 9;
-                                const result_m: &byte = compiler_arena_alloc(codegen.arena, len_m) as &byte;
-                                if result_m != null {
-                                    snprintf(result_m as *byte, len_m, "struct %s" as *byte, safe_m as *byte);
-                                    return result_m;
-                                }
-                            }
-                        }
+                        return c99_slice_struct_type_from_elem_c(codegen, &temp_buf[0] as &byte);
                     }
                 }
             }

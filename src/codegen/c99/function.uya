@@ -2918,10 +2918,39 @@ fn emit_async_state0_pre_first_await_local_inits(codegen: &C99CodeGenerator, cut
                         }
                     }
                 } else {
-                    fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
-                        codegen.async_state_var as *byte, ls as *byte);
-                    gen_expr(codegen, ie);
-                    fputs(";\n" as *byte, codegen.emit_stream as *void);
+                    var did_box_local: i32 = 0;
+                    if ltype != null && ltype.type == ASTNodeType.AST_TYPE_NAMED && ltype.type_named_name != null {
+                        const iface_decl: &ASTNode = find_interface_decl_c99(codegen, ltype.type_named_name);
+                        if iface_decl != null {
+                            const struct_name_for_check: &byte = get_expr_concrete_struct_for_interface(codegen, ie, ltype.type_named_name);
+                            if struct_name_for_check != null {
+                                var iface_mono: &byte = ltype.type_named_name;
+                                if ltype.type_named_type_arg_count > 0 && ltype.type_named_type_args != null {
+                                    iface_mono = get_mono_struct_name(codegen, ltype.type_named_name,
+                                        ltype.type_named_type_args, ltype.type_named_type_arg_count);
+                                }
+                                var struct_mono: &byte = struct_name_for_check;
+                                if ie.type == ASTNodeType.AST_STRUCT_INIT &&
+                                    ie.struct_init_type_arg_count > 0 && ie.struct_init_type_args != null {
+                                    struct_mono = get_mono_struct_name(codegen, struct_name_for_check,
+                                        ie.struct_init_type_args, ie.struct_init_type_arg_count);
+                                }
+                                const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
+                                const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
+                                fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
+                                    codegen.async_state_var as *byte, ls as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                                gen_expr(codegen, ie);
+                                fputs(") };\n" as *byte, codegen.emit_stream as *void);
+                                did_box_local = 1;
+                            }
+                        }
+                    }
+                    if did_box_local == 0 {
+                        fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
+                            codegen.async_state_var as *byte, ls as *byte);
+                        gen_expr(codegen, ie);
+                        fputs(";\n" as *byte, codegen.emit_stream as *void);
+                    }
                 }
             }
         }
@@ -2991,10 +3020,39 @@ fn emit_async_pre_return_local_inits(codegen: &C99CodeGenerator) void {
                         continue;
                     }
                 }
-                fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
-                    codegen.async_state_var as *byte, ls as *byte);
-                gen_expr(codegen, ie);
-                fputs(";\n" as *byte, codegen.emit_stream as *void);
+                var did_box_local2: i32 = 0;
+                if ltype != null && ltype.type == ASTNodeType.AST_TYPE_NAMED && ltype.type_named_name != null {
+                    const iface_decl2: &ASTNode = find_interface_decl_c99(codegen, ltype.type_named_name);
+                    if iface_decl2 != null {
+                        const struct_name_for_check2: &byte = get_expr_concrete_struct_for_interface(codegen, ie, ltype.type_named_name);
+                        if struct_name_for_check2 != null {
+                            var iface_mono2: &byte = ltype.type_named_name;
+                            if ltype.type_named_type_arg_count > 0 && ltype.type_named_type_args != null {
+                                iface_mono2 = get_mono_struct_name(codegen, ltype.type_named_name,
+                                    ltype.type_named_type_args, ltype.type_named_type_arg_count);
+                            }
+                            var struct_mono2: &byte = struct_name_for_check2;
+                            if ie.type == ASTNodeType.AST_STRUCT_INIT &&
+                                ie.struct_init_type_arg_count > 0 && ie.struct_init_type_args != null {
+                                struct_mono2 = get_mono_struct_name(codegen, struct_name_for_check2,
+                                    ie.struct_init_type_args, ie.struct_init_type_arg_count);
+                            }
+                            const safe_iface2: &byte = get_safe_c_identifier(codegen, iface_mono2);
+                            const safe_struct2: &byte = get_safe_c_identifier(codegen, struct_mono2);
+                            fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
+                                codegen.async_state_var as *byte, ls as *byte, safe_iface2 as *byte, safe_iface2 as *byte, safe_struct2 as *byte);
+                            gen_expr(codegen, ie);
+                            fputs(") };\n" as *byte, codegen.emit_stream as *void);
+                            did_box_local2 = 1;
+                        }
+                    }
+                }
+                if did_box_local2 == 0 {
+                    fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
+                        codegen.async_state_var as *byte, ls as *byte);
+                    gen_expr(codegen, ie);
+                    fputs(";\n" as *byte, codegen.emit_stream as *void);
+                }
             }
         }
         li = li + 1;

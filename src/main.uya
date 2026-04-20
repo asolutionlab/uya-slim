@@ -4966,15 +4966,11 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
         }
     }
     const jobs_env: &byte = get_env_or_default("UYA_GCC_JOBS" as *byte, "4" as *byte);
-    _ = setenv("UYA_OUT" as *byte, output_exe, 1);
-    _ = setenv("CC" as *byte, cc_make, 1);
-    _ = setenv("CFLAGS" as *byte, cflags, 1);
-    _ = setenv("LDFLAGS" as *byte, ld_use, 1);
     // 嵌套 make 时清除 GNU make jobserver 变量，避免在「外层 make -j」下子 make 与父 make 争用令牌而卡死
     var cmd: [byte: 8192] = [];
     const cmd_len: i32 = snprintf(&cmd[0] as *byte, 8192,
-        "env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C \"%s\" -j%s" as *byte,
-        split_dir as *byte, jobs_env as *byte);
+        "env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS UYA_OUT=\"%s\" CC=\"%s\" CFLAGS=\"%s\" LDFLAGS=\"%s\" make -C \"%s\" -j%s" as *byte,
+        output_exe as *byte, cc_make as *byte, cflags as *byte, ld_use as *byte, split_dir as *byte, jobs_env as *byte);
     if cmd_len <= 0 || cmd_len >= 8192 {
         fprintf(libc.stderr, "错误：构建 make 链接命令失败\n" as *byte);
         return 1;
