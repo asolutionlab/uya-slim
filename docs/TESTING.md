@@ -73,7 +73,7 @@ gcc -std=c99 /tmp/test.c -o /tmp/test -lm
 | 泛型 | `test_generic*.uya` | ~10 |
 | 切片 | `test_slice*.uya` | ~15 |
 | 指针 | `test_pointer*.uya` | ~20 |
-| 标准库 | `test_std_*.uya` | ~20 |
+| 标准库 | `test_std_*.uya`, `test_crypto_*.uya` | ~24 |
 | libc | `test_ctype.uya`, `test_stdio.uya` 等 | ~10 |
 | 其他 | 其他 | ~143 |
 

@@ -83,6 +83,7 @@
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
 | 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD（**优先 `@vector`/`@mask`**，可选 Phase 5 `@asm`）、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
 | 38.1 | **新标准库 HTTP（std.http）** | [~] `lib/std/http/`：`types` / `parse` / `router` / `server`（阻塞、Keep-alive）；路线图与测试要求见 [todo_http.md](todo_http.md)、[readme.md](../readme.md) §标准库 HTTP |
+| 38.2 | **新标准库 Crypto（std.crypto）** | [x] `lib/std/crypto/`：`sha256_digest`、`hmac_sha256`、`md5_digest`、`crc32_compute`；测试 `test_crypto_sha256.uya` / `test_crypto_hmac_sha256.uya` / `test_crypto_md5.uya` / `test_crypto_crc32.uya` |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
 | 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
@@ -1126,7 +1127,7 @@ test "函数调用测试" {
 | **宏系统** | `test_macro*.uya` (20+ 个) | mc 宏、@mc_eval、插值 |
 | **错误处理** | `test_error*.uya`, `test_errdefer*.uya`, `test_defer*.uya` | !T、defer、errdefer |
 | **内存安全** | `test_bounds*.uya`, `test_null*.uya`, `test_move*.uya` | 边界检查、空指针、移动语义 |
-| **标准库** | `test_std_*.uya`, `test_syscall*.uya`, `test_unistd.uya` | std.string, std.mem, std.io |
+| **标准库** | `test_std_*.uya`, `test_crypto_*.uya`, `test_syscall*.uya`, `test_unistd.uya` | std.string, std.mem, std.io, std.crypto |
 | **原子类型** | `test_atomic*.uya` | atomic T |
 | **可变参数** | `test_varargs*.uya`, `test_va_builtin.uya` | ...、@params |
 | **字符串插值** | `test_string_interp*.uya` | ${} 语法 |
@@ -1921,6 +1922,7 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 | `std.syscall` | ✅ | 系统调用封装（Linux x86-64） |
 | `std.string` | ✅ | 字符串操作 |
 | `std.mem` | ✅ | 内存操作 |
+| `std.crypto` | ✅ | 摘要 / MAC / 校验（SHA-256、HMAC-SHA256、MD5、CRC32） |
 | `std.io.file` | ✅ | 文件 I/O |
 | `libc.*` | ✅ | C 兼容层（string, stdio, stdlib, unistd） |
 | `--outlibc` | ✅ | 生成独立 libc |

@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### 标准库：`std.crypto.md5` / `std.crypto.crc32`（2026-04-21）
+
+- **标准库**：新增 **`lib/std/crypto/md5.uya`** 与 **`lib/std/crypto/crc32.uya`**。接口分别为 **`md5_digest(data, digest_out)`** 与 **`crc32_compute(data)`**；MD5 为 RFC 1321 一次性摘要实现，CRC-32 使用 IEEE/ZIP 反射多项式 **`0xEDB88320`**。
+- **内核复用**：`lib/kernel/update.uya` 的元数据 CRC32 计算切换为复用 **`std.crypto.crc32`**，避免重复维护同一算法实现。
+- **测试**：新增 **`tests/test_crypto_md5.uya`** 与 **`tests/test_crypto_crc32.uya`**。
+
 ### 内置资源嵌入：`@embed` / `@embed_dir`（2026-04-20）
 
 - **语言 / Checker / C99**：新增 `@embed("path")` 与 `@embed_dir("path")`。`@embed` 返回 `&[const byte]`；`@embed_dir` 返回 `&[const EmbedDirEntry]`，并在 checker 前置阶段合成真实 `EmbedDirEntry` 结构体声明注入 AST。目录递归收集普通文件、相对路径统一 `/`、按字典序排序；对 `&[const T]` 元素成员写入新增拒绝规则。

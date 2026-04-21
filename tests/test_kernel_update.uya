@@ -6,6 +6,7 @@ use kernel.update;
 use kernel.recovery;
 use std.testing.assert_eq_i32;
 use std.crypto.sha256;
+use std.crypto.crc32.crc32_compute;
 
 // ── Helper: build valid test image (same as test_kernel_image) ──
 

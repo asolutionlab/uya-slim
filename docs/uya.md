@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.46（完整版 · 2026-04-17）
+# Uya 语言规范 0.49.47（完整版 · 2026-04-21）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,12 @@
 ---
 
 ## 规范变更
+
+### 0.49.47（2026-04-21）
+
+- **标准库 `std.crypto`**：新增 `lib/std/crypto/md5.uya` 与 `lib/std/crypto/crc32.uya`。接口分别为 `md5_digest(data, digest_out)` 与 `crc32_compute(data)`；MD5 为 RFC 1321 一次性摘要实现，CRC-32 使用 IEEE/ZIP 反射多项式 `0xEDB88320`。
+- **内核复用**：`lib/kernel/update.uya` 的元数据 CRC32 计算改为直接复用 `std.crypto.crc32`，避免同一算法在标准库和内核层重复维护。
+- **测试**：新增 `tests/test_crypto_md5.uya` 与 `tests/test_crypto_crc32.uya`，并保留 `tests/test_kernel_update.uya` 对 CRC32 集成路径的回归覆盖。
 
 ### 0.49.46（2026-04-17）
 
@@ -4622,6 +4628,19 @@ fn caller() void {
 | `@asm` | `@asm { ... }` | 内联汇编块 |
 | `@vector` | `@vector(T, N)` / `@vector.splat(x)` / `@vector.load(ptr)` / `@vector.store(ptr,v)` / `@vector.select(m,a,b)` / `@vector.any(m)` / `@vector.all(m)` | SIMD 向量类型构造器与阶段 4 辅助内建 |
 | `@mask` | `@mask(N)` | SIMD 掩码类型构造器 |
+
+**常用标准库模块（当前实现摘录）**：
+
+| 模块 | 入口 / 接口 | 说明 |
+|------|-------------|------|
+| `std.string` | `strlen` / `strcmp` / `strstr` 等 | 纯 Uya 字符串与字节串工具 |
+| `std.mem` | `memcpy` / `memset` / `memmove` / `memcmp` 等 | 纯 Uya 内存操作 |
+| `std.encoding.base64` | Base64 / Base64URL 编解码 | 文本协议、JWT 等场景 |
+| `std.http` | `types` / `parse` / `router` / `server` / `jwt` | 阻塞式 HTTP 与 JWT 辅助 |
+| `std.crypto.sha256` | `sha256_digest(data, digest_out)` | SHA-256 一次性摘要，输出 32 字节 |
+| `std.crypto.hmac_sha256` | `hmac_sha256(key, msg, mac_out)` | HMAC-SHA256，一次性 MAC，输出 32 字节 |
+| `std.crypto.md5` | `md5_digest(data, digest_out)` | MD5 一次性摘要，输出 16 字节 |
+| `std.crypto.crc32` | `crc32_compute(data) -> u32` | CRC-32（IEEE / ZIP）校验和 |
 
 **命名惯例**：
 - 单一概念：`@len`, `@max`, `@min`（短形式）
