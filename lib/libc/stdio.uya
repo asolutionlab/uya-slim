@@ -452,6 +452,11 @@ export extern "libc" fn fopen(filename: &const byte, mode: &const byte) &FILE {
         // 查找空闲槽位（fd <= 0 表示未使用）
         if fopen_fd_storage[j].fd <= 0 {
             fopen_fd_storage[j].fd = fd as i64;
+            fopen_fd_storage[j].buf_pos = 0;
+            fopen_fd_storage[j].buf_len = 0;
+            // 普通文件默认应使用全缓冲；编译器代码生成依赖这一点，
+            // 以避免病态的超小 write() 输出。
+            fopen_fd_storage[j].buf_mode = 2;
             return &fopen_fd_storage[j];
         }
         j = j + 1;
@@ -1779,12 +1784,8 @@ export extern "libc" fn fputc(c: i32, stream: &FILE) i32 {
     }
     
     var ch: byte = c as byte;
-    const result: !isize = sys_write(fd as i32, &ch, 1);
-    const bytes_written: isize = result catch {
-        return 0 - 1;  // EOF
-    };
-    
-    if bytes_written == 1 as isize {
+    const bytes_written: i64 = write_to_buffer(stream, &ch, 1);
+    if bytes_written == 1 {
         return c;
     }
     

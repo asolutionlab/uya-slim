@@ -19,6 +19,13 @@
 - **内核复用**：`lib/kernel/update.uya` 的元数据 CRC32 计算切换为复用 **`std.crypto.crc32`**，避免重复维护同一算法实现。
 - **测试**：新增 **`tests/test_crypto_md5.uya`** 与 **`tests/test_crypto_crc32.uya`**。
 
+### Hosted C backend：异步重型单文件程序在代码生成阶段出现病态 tiny-write 卡顿（2026-04-21）
+
+- **已知问题 / Hosted C backend**：当同一单文件程序重构为**单线程 async/event-loop** 设计（移除 `fork` worker、更多 `@async_fn` 任务、用户态单线程调度循环）后，前端 **parse / type check / optimize** 可正常完成，但在打印 `=== 代码生成阶段 ===` 与 `模块名: .../main.uya` 后，编译器可能长时间占满一个 CPU 核，看起来像“hang”。
+- **定位结论**：这不是空转死锁。`strace` 显示编译器仍在主动生成 `uya_common.c`，但输出方式极度低效：在一次 **20s** 捕获窗口内，对同一输出 fd 发起 **1,194,005** 次 `write(2)`，总写入 **4,810,865** 字节，平均每次仅约 **4.03** 字节；其中 **1,018,642** 次为 **4B** 写入，**84,465** 次为 **1B** 写入，典型尾迹为重复输出缩进 `"    "`、`"if ("`、`" != "`、`"0"`、`") {\n"` 等极小片段。
+- **影响判断**：前端已接受程序并完成优化，剩余工作仅为 C 发射；对约 **4.8 MiB** 的生成 C 持续进行百万级 tiny writes，表明问题更可能位于 hosted C backend 的**发射缓冲 / writer 策略**，而非用户程序语义错误。
+- **后续修复方向**：为 C emitter 引入**按行 / 按块 / 按文件**的大缓冲输出；避免通过独立 `write("    ", 4)` 反复发射缩进；在大文件输出阶段加入进度日志，区分“慢代码生成”和真实卡死；补充 async-heavy、大单文件场景的回归 / 基准测试。
+
 ### 内置资源嵌入：`@embed` / `@embed_dir`（2026-04-20）
 
 - **语言 / Checker / C99**：新增 `@embed("path")` 与 `@embed_dir("path")`。`@embed` 返回 `&[const byte]`；`@embed_dir` 返回 `&[const EmbedDirEntry]`，并在 checker 前置阶段合成真实 `EmbedDirEntry` 结构体声明注入 AST。目录递归收集普通文件、相对路径统一 `/`、按字典序排序；对 `&[const T]` 元素成员写入新增拒绝规则。
