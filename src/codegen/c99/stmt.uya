@@ -632,12 +632,8 @@ fn gen_break_stmt(codegen: &C99CodeGenerator) void {
     emit_defer_cleanup(codegen, 0);
     if codegen != null && codegen.async_state_var != null && codegen.async_poll_ret_c != null {
         if codegen.async_control_while != null {
-            const br: i32 = emit_async_after_stmt(codegen, codegen.async_control_while);
-            if br != 0 {
-                fprintf(codegen.emit_stream as *void, "        %s->state = %d;\n" as *byte,
-                    codegen.async_state_var as *byte, codegen.async_collect_count + 1);
-            }
-            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            fprintf(codegen.emit_stream as *void, "        goto _uya_async_while_exit_%zu;\n" as *byte,
+                c99_async_while_label_id(codegen.async_control_while));
             return;
         }
         if codegen.async_control_for != null {
@@ -659,8 +655,8 @@ fn gen_continue_stmt(codegen: &C99CodeGenerator) void {
     emit_defer_cleanup(codegen, 0);
     if codegen != null && codegen.async_state_var != null && codegen.async_poll_ret_c != null {
         if codegen.async_control_while != null {
-            emit_async_while_loopback_or_exit(codegen, codegen.async_control_while);
-            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            fprintf(codegen.emit_stream as *void, "        goto _uya_async_while_head_%zu;\n" as *byte,
+                c99_async_while_label_id(codegen.async_control_while));
             return;
         }
         if codegen.async_control_for != null {

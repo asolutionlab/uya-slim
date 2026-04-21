@@ -3632,11 +3632,38 @@ fn emit_async_continue_in_parent(codegen: &C99CodeGenerator, child_block: &ASTNo
     if c99_find_parent_of_block(child_block, codegen.async_fn_body, &parent_blk[0], &stmt_idx[0]) == 0 {
         return 1;
     }
+    if parent_blk[0] != null && parent_blk[0].block_stmts != null &&
+        stmt_idx[0] >= 0 && stmt_idx[0] < parent_blk[0].block_stmt_count {
+        const parent_stmt: &ASTNode = parent_blk[0].block_stmts[stmt_idx[0]];
+        if parent_stmt != null &&
+            parent_stmt.type == ASTNodeType.AST_IF_STMT &&
+            c99_stmt_tree_has_await(parent_stmt) != 0 {
+            fprintf(codegen.emit_stream as *void, "        goto _uya_async_if_exit_%zu;\n" as *byte,
+                @usize_from_ptr(parent_stmt as &void));
+            return 0;
+        }
+    }
     const r: i32 = emit_async_segment(codegen, parent_blk[0], stmt_idx[0] + 1, parent_blk[0].block_stmt_count);
     if r != 0 &&
         parent_blk[0] != null &&
         @usize_from_ptr(parent_blk[0] as &void) != @usize_from_ptr(codegen.async_fn_body as &void) {
         return emit_async_continue_in_parent(codegen, parent_blk[0]);
+    }
+    return r;
+}
+
+// 从当前 block 的指定区间继续发射；若该 block 已到尾且它本身是嵌套 block，
+// 则沿父级继续，直到真正到达 async 函数体末尾。
+// 返回: 0 = 已发射状态转移, 1 = 到达函数末尾
+fn emit_async_continue_after_range(codegen: &C99CodeGenerator, block: &ASTNode, from_si: i32, to_si: i32) i32 {
+    if codegen == null || block == null {
+        return 1;
+    }
+    const r: i32 = emit_async_segment(codegen, block, from_si, to_si);
+    if r != 0 &&
+        codegen.async_fn_body != null &&
+        @usize_from_ptr(block as &void) != @usize_from_ptr(codegen.async_fn_body as &void) {
+        return emit_async_continue_in_parent(codegen, block);
     }
     return r;
 }
@@ -3655,34 +3682,25 @@ fn emit_async_segment_with_control(codegen: &C99CodeGenerator, block: &ASTNode, 
     return r;
 }
 
+fn c99_async_while_label_id(while_stmt: &ASTNode) usize {
+    if while_stmt == null {
+        return 0 as usize;
+    }
+    return @usize_from_ptr(while_stmt as &void);
+}
+
+fn c99_async_if_label_id(if_stmt: &ASTNode) usize {
+    if if_stmt == null {
+        return 0 as usize;
+    }
+    return @usize_from_ptr(if_stmt as &void);
+}
+
 // while 循环退出后回跳或继续
 fn emit_async_while_loopback_or_exit(codegen: &C99CodeGenerator, ew: &ASTNode) void {
     if codegen == null || ew == null || ew.type != ASTNodeType.AST_WHILE_STMT { return; }
-    const wcond: &ASTNode = ew.while_stmt_condition;
-    const wbody: &ASTNode = ew.while_stmt_body;
-    if wbody == null { return; }
-    var is_while_true: i32 = 0;
-    if wcond != null && wcond.type == ASTNodeType.AST_BOOL && wcond.bool_literal_value != 0 {
-        is_while_true = 1;
-    }
-    if is_while_true != 0 {
-        // while true：无条件回跳进循环体（必须 return Pending 让出控制）
-        emit_async_segment_with_control(codegen, wbody, 0, wbody.block_stmt_count, ew, null);
-        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
-    } else {
-        fputs("        if (" as *byte, codegen.emit_stream as *void);
-        gen_expr(codegen, wcond);
-        fputs(") {\n" as *byte, codegen.emit_stream as *void);
-        // 回跳：arm + return Pending
-        emit_async_segment_with_control(codegen, wbody, 0, wbody.block_stmt_count, ew, null);
-        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
-        fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
-        const r: i32 = emit_async_after_stmt(codegen, ew);
-        if r != 0 {
-            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
-        }
-        fputs("        }\n" as *byte, codegen.emit_stream as *void);
-    }
+    const label_id: usize = c99_async_while_label_id(ew);
+    fprintf(codegen.emit_stream as *void, "        goto _uya_async_while_head_%zu;\n" as *byte, label_id);
 }
 
 // while(含 await) 变换：条件检查 + 进入循环体 + 不成立时 fallthrough
@@ -3691,12 +3709,14 @@ fn emit_async_while_with_await(codegen: &C99CodeGenerator, while_stmt: &ASTNode,
     const wcond: &ASTNode = while_stmt.while_stmt_condition;
     const wbody: &ASTNode = while_stmt.while_stmt_body;
     if wbody == null { return; }
+    const label_id: usize = c99_async_while_label_id(while_stmt);
     var is_while_true: i32 = 0;
     if wcond != null && wcond.type == ASTNodeType.AST_BOOL && wcond.bool_literal_value != 0 {
         is_while_true = 1;
     }
+    fprintf(codegen.emit_stream as *void, "_uya_async_while_head_%zu:\n" as *byte, label_id);
     if is_while_true != 0 {
-        // while true：直接进入循环体
+        // while true：进入一轮循环体后让出控制；后续回跳由 continuation goto head 完成。
         emit_async_segment_with_control(codegen, wbody, 0, wbody.block_stmt_count, while_stmt, null);
         fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
     } else {
@@ -3705,13 +3725,13 @@ fn emit_async_while_with_await(codegen: &C99CodeGenerator, while_stmt: &ASTNode,
         fputs(") {\n" as *byte, codegen.emit_stream as *void);
         emit_async_segment_with_control(codegen, wbody, 0, wbody.block_stmt_count, while_stmt, null);
         fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
-        fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
-        const r: i32 = emit_async_segment(codegen, parent_block, while_si + 1, parent_to_si);
-        if r != 0 {
-            // while 后无更多代码 — 跳到终态
-            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
-        }
         fputs("        }\n" as *byte, codegen.emit_stream as *void);
+    }
+    fprintf(codegen.emit_stream as *void, "_uya_async_while_exit_%zu:\n" as *byte, label_id);
+    const r: i32 = emit_async_continue_after_range(codegen, parent_block, while_si + 1, parent_to_si);
+    if r != 0 {
+        // while 后无更多代码 — 跳到终态
+        fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
     }
 }
 
@@ -3881,7 +3901,7 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
                     fputs(") {\n" as *byte, codegen.emit_stream as *void);
                     emit_async_segment_with_control(codegen, fbody, 0, fbody.block_stmt_count, null, for_stmt);
                     fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
-                    const r5: i32 = emit_async_segment(codegen, parent_block, for_si + 1, parent_to_si);
+                    const r5: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
                     if r5 != 0 {
                         fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
                     }
@@ -3910,7 +3930,7 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
                     fputs(") {\n" as *byte, codegen.emit_stream as *void);
                     emit_async_segment_with_control(codegen, fbody, 0, fbody.block_stmt_count, null, for_stmt);
                     fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
-                    const r6: i32 = emit_async_segment(codegen, parent_block, for_si + 1, parent_to_si);
+                    const r6: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
                     if r6 != 0 {
                         fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
                     }
@@ -3934,7 +3954,7 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
     }
     if for_stmt.for_stmt_is_ref != 0 {
         fprintf(stderr as *void, "错误: @async_fn 中 for |&x| 数组迭代与 @await 尚未支持\n" as *byte);
-        const r_ref: i32 = emit_async_segment(codegen, parent_block, for_si + 1, parent_to_si);
+        const r_ref: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
         if r_ref != 0 {
             fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
         }
@@ -3943,7 +3963,7 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
     const elem_cb: &byte = c99_async_for_array_elem_type_c(codegen, for_stmt);
     if elem_cb == null {
         fprintf(stderr as *void, "错误: @async_fn 中 for 数组迭代若为迭代器接口形式，@await 尚未支持\n" as *byte);
-        const r7: i32 = emit_async_segment(codegen, parent_block, for_si + 1, parent_to_si);
+        const r7: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
         if r7 != 0 {
             fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
         }
@@ -3974,7 +3994,7 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
         c99_emit_async_for_array_iter_bind_indexed(codegen, for_stmt, elem_cb, &idx_expr2[0] as &byte);
         emit_async_segment_with_control(codegen, fbody, 0, fbody.block_stmt_count, null, for_stmt);
         fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
-        const r8: i32 = emit_async_segment(codegen, parent_block, for_si + 1, parent_to_si);
+        const r8: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
         if r8 != 0 {
             fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
         }
@@ -3989,6 +4009,7 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
     const cond: &ASTNode = if_stmt.if_stmt_condition;
     const then_br: &ASTNode = if_stmt.if_stmt_then_branch;
     const else_br: &ASTNode = if_stmt.if_stmt_else_branch;
+    const label_id: usize = c99_async_if_label_id(if_stmt);
     var then_has_await: i32 = 0;
     var else_has_await: i32 = 0;
     if then_br != null { then_has_await = c99_stmt_tree_has_await(then_br); }
@@ -3999,7 +4020,12 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
     if then_has_await != 0 {
         // then 分支含 await：递归段发射（arm await 后 fall through 到对应 state handler）
         if then_br != null && then_br.type == ASTNodeType.AST_BLOCK {
-            emit_async_segment(codegen, then_br, 0, then_br.block_stmt_count);
+            const then_async_r: i32 = emit_async_segment(codegen, then_br, 0, then_br.block_stmt_count);
+            if then_async_r != 0 {
+                fprintf(codegen.emit_stream as *void, "        goto _uya_async_if_exit_%zu;\n" as *byte, label_id);
+            } else {
+                fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            }
         }
     } else {
         // then 分支无 await：同步执行全部语句，然后 fallthrough 到 if 后代码
@@ -4010,15 +4036,17 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
                 ti = ti + 1;
             }
         }
-        const then_r: i32 = emit_async_segment(codegen, parent_block, if_si + 1, parent_to_si);
-        if then_r != 0 {
-            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
-        }
+        fprintf(codegen.emit_stream as *void, "        goto _uya_async_if_exit_%zu;\n" as *byte, label_id);
     }
     fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
     if else_has_await != 0 {
         if else_br != null && else_br.type == ASTNodeType.AST_BLOCK {
-            emit_async_segment(codegen, else_br, 0, else_br.block_stmt_count);
+            const else_async_r: i32 = emit_async_segment(codegen, else_br, 0, else_br.block_stmt_count);
+            if else_async_r != 0 {
+                fprintf(codegen.emit_stream as *void, "        goto _uya_async_if_exit_%zu;\n" as *byte, label_id);
+            } else {
+                fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            }
         } else if else_br != null && else_br.type == ASTNodeType.AST_IF_STMT {
             emit_async_if_with_await(codegen, else_br, if_si, parent_block, parent_to_si);
         }
@@ -4033,12 +4061,14 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
         } else if else_br != null && else_br.type == ASTNodeType.AST_IF_STMT {
             gen_stmt(codegen, else_br);
         }
-        const else_r: i32 = emit_async_segment(codegen, parent_block, if_si + 1, parent_to_si);
-        if else_r != 0 {
-            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
-        }
+        fprintf(codegen.emit_stream as *void, "        goto _uya_async_if_exit_%zu;\n" as *byte, label_id);
     }
     fputs("        }\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "_uya_async_if_exit_%zu:\n" as *byte, label_id);
+    const r_after_if: i32 = emit_async_continue_after_range(codegen, parent_block, if_si + 1, parent_to_si);
+    if r_after_if != 0 {
+        fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
+    }
 }
 
 /// 发射单个提升到状态机的局部变量初始化（s->_uya_loc_name = expr）

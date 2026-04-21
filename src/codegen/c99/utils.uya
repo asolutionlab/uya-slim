@@ -1378,12 +1378,18 @@ fn c99_emit_indent(codegen: &C99CodeGenerator) void {
         return;
     }
     init_indent_spaces();
+    var effective_indent: i32 = codegen.indent_level;
+    // 缩进仅影响可读性，不影响 C 语义；这里对异常泄漏的缩进层级做上限保护，
+    // 避免单个生成函数把输出膨胀成海量空格。
+    if effective_indent > 63 {
+        effective_indent = 63;
+    }
     // 预先计算总空格数，避免循环
-    const total: i32 = codegen.indent_level * 4;
+    const total: i32 = effective_indent * 4;
     if total > 255 {
         // 超过缓存大小，使用循环（很少见）
         var i: i32 = 0;
-        while i < codegen.indent_level {
+        while i < effective_indent {
             fputs("    " as *byte, codegen.emit_stream as *void);
             i = i + 1;
         }
