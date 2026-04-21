@@ -1,7 +1,7 @@
 # Uya 回归测试说明
 
 **版本**：v0.3.4+  
-**更新日期**：2026-02-15
+**更新日期**：2026-04-21
 
 ---
 
@@ -56,6 +56,14 @@ gcc -std=c99 /tmp/test.c -o /tmp/test -lm
 /tmp/test
 ```
 
+对于带 `_start` 的 `--nostdlib` 产物，链接方式需改成仓库当前使用的 freestanding 方式。例如：
+
+```bash
+bin/uya --c99 --nostdlib tests/test_std_sql.uya -o /tmp/test_std_sql.c
+gcc -std=c99 -nostdlib -static -no-pie /tmp/test_std_sql.c -o /tmp/test_std_sql
+/tmp/test_std_sql
+```
+
 ---
 
 ## 测试分类
@@ -73,7 +81,7 @@ gcc -std=c99 /tmp/test.c -o /tmp/test -lm
 | 泛型 | `test_generic*.uya` | ~10 |
 | 切片 | `test_slice*.uya` | ~15 |
 | 指针 | `test_pointer*.uya` | ~20 |
-| 标准库 | `test_std_*.uya`, `test_crypto_*.uya` | ~24 |
+| 标准库 | `test_std_*.uya`, `test_crypto_*.uya` | ~25 |
 | libc | `test_ctype.uya`, `test_stdio.uya` 等 | ~10 |
 | 其他 | 其他 | ~143 |
 
@@ -116,6 +124,7 @@ make release-dirty
 
 - 文件名：`test_<功能>.uya`
 - 测试函数：`test_<功能>_<场景>()`
+- 新增标准库模块时，优先补对应回归文件，如 `tests/test_std_sql.uya`
 
 ### 错误处理
 
@@ -149,7 +158,7 @@ test:
 ## 测试覆盖率
 
 当前状态：
-- **总测试数**：348
+- **总测试数**：约 829（`tests/*.uya` + `tests/multifile/*.uya` + `tests/cross_deps/*.uya`）
 - **通过率**：100%
 - **自举验证**：通过
 

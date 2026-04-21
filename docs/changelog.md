@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### 标准库：`std.sql` 通用数据库抽象（2026-04-21）
+
+- **标准库**：新增 **`lib/std/sql/`**，包含 **`sql.uya`**、**`types.uya`**、**`driver.uya`**、**`db.uya`**。首版提供参考 Go `database/sql` 的核心对象模型：**`Value`**、**`NamedArg`**、**`ColumnInfo`**、**`Driver`**、**`Conn`**、**`Stmt`**、**`Rows`**、**`Tx`**、**`Result`**、高层 **`DB`** / **`Row`** 包装以及 **`db_open`**。
+- **实现取舍**：为兼容当前 C99 backend，接口层优先使用“普通返回值 + `out` 参数”的稳定组合，避免“接口方法返回接口值”这类尚不稳定的 codegen 路径。
+- **测试**：新增 **`tests/test_std_sql.uya`**，使用 fake driver 覆盖 `db_open`、`ping`、`prepare`、`exec`、`query`、`query_row`、`begin`、`commit`、`rollback` 以及 `ErrNoRows` / `ErrDBClosed` / `ErrTxDone`。
+- **文档**：新增 **`docs/std_sql.md`**，说明模块分层、驱动接入方式，以及 SQLite / MySQL 的推荐对接路线。
+
 ### 标准库：`std.crypto.blake2b` / `std.crypto.blake2s`（2026-04-21）
 
 - **标准库**：新增 **`lib/std/crypto/blake2b.uya`** 与 **`lib/std/crypto/blake2s.uya`**。接口分别为 **`blake2b_digest(data, digest_out)`** 与 **`blake2s_digest(data, digest_out)`**；均为纯 Uya 的一次性摘要实现，分别输出 **64** / **32** 字节。

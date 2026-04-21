@@ -84,6 +84,7 @@
 | 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD（**优先 `@vector`/`@mask`**，可选 Phase 5 `@asm`）、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
 | 38.1 | **新标准库 HTTP（std.http）** | [~] `lib/std/http/`：`types` / `parse` / `router` / `server`（阻塞、Keep-alive）；路线图与测试要求见 [todo_http.md](todo_http.md)、[readme.md](../readme.md) §标准库 HTTP |
 | 38.2 | **新标准库 Crypto（std.crypto）** | [x] `lib/std/crypto/`：`blake2b_digest`、`blake2s_digest`、`sha256_digest`、`hmac_sha256`、`md5_digest`、`crc32_compute`；测试 `test_crypto_blake2b.uya` / `test_crypto_blake2s.uya` / `test_crypto_sha256.uya` / `test_crypto_hmac_sha256.uya` / `test_crypto_md5.uya` / `test_crypto_crc32.uya` |
+| 38.3 | **新标准库 SQL（std.sql）** | [~] `lib/std/sql/`：`types` / `driver` / `db` 已落地，提供 `Value`、`NamedArg`、`Driver`、`Conn`、`Stmt`、`Rows`、`Tx`、`DB` 等通用抽象；fake driver 回归 `tests/test_std_sql.uya` 已通过。SQLite / MySQL 等真实驱动待接入，说明见 [std_sql.md](std_sql.md) |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
 | 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
@@ -1943,6 +1944,7 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 | 8 | `std.string` | 安全字符串操作（!T） | [ ] |
 | 9 | `std.collections.vec` | Vec<T> 泛型容器 | [ ] |
 | 9 | `std.collections.string_buf` | StringBuf | [x] |
+| 10 | `std.sql` | `DB` / `Row` 包装 + `Driver` / `Conn` / `Stmt` / `Rows` / `Tx` 抽象；真实 SQLite/MySQL 驱动待补 | [x] 部分 |
 | 10 | `libc.*` | 薄封装（调用 std） | [ ] |
 
 **长期计划**：

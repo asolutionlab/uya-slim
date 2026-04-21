@@ -263,6 +263,7 @@ export fn my_func(s: &byte) void;
 - [x] HeapAllocator（与 Phase 2.1 一致）：**`lib/std/mem/heap.uya`** 已用 **`osal.os_mmap` / `osal.os_munmap`** 实现 **`IAllocator`**；**`tests/test_mem_heap.uya`**。
 - [x] 泛型容器（部分）：**`Vec<T>`**（**`lib/std/collections/vec.uya`** + **`tests/test_vec.uya`**）；**`StringBuf`**（**`lib/std/collections/string_buf.uya`**，内联 `byte` 缓冲、**不内嵌 `Vec<byte>`**，避免 C 后端对嵌套泛型 `Vec` 字段发射不完整；**`tests/test_string_buf.uya`**）。
 - [x] 泛型容器：其余容器与设计对齐（如与 `Vec` 组合的更高层 API）；`HashMap` 通过 `values_vec/keys_vec` 将数据填充到调用方 `Vec`，并配套 `tests/test_hashmap.uya`。
+- [x] SQL 抽象（首版）：已新增 **`lib/std/sql/`**，包含 **`types`** / **`driver`** / **`db`**；提供参考 Go `database/sql` 的 `Driver` / `Conn` / `Stmt` / `Rows` / `Tx` / `DB` 分层。为兼容当前 C99 backend，接口层优先采用“普通返回值 + `out` 参数”的稳定组合；回归 **`tests/test_std_sql.uya`** 已通过，真实 SQLite / MySQL 驱动待后续接入。
 - [x] 验证：自举与测试通过；`lib/std` 仅向下依赖 **`libc`**、**`mem`**、**`syscall`**、**`osal`**（如 `HeapAllocator` 用 `osal`+`syscall` 常量），**`mem` / `osal` / `syscall` 不 `use std`**；`lib/libc` 中少数 shim 仍 `use std.runtime`（argv/env），为已知例外。2026-04-02：`make check` 通过（713/713）。
 
 ---

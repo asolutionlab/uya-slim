@@ -176,6 +176,27 @@ md5_digest(&"abc"[0: 3], digest[0: 16]);
 const checksum: u32 = crc32_compute(&"123456789"[0: 9]);
 ```
 
+## 标准库 SQL（实验性）
+
+`lib/std/sql/` 当前提供一层参考 Go `database/sql` 设计的通用抽象，包含：
+
+- `std.sql.types`：`Value`、`NamedArg`、`ColumnInfo`
+- `std.sql.driver`：`Driver`、`Conn`、`Stmt`、`Rows`、`Tx`、`Result`
+- `std.sql.db`：高层 `DB` / `Row` 包装与 `db_open`
+
+当前仓库已包含：
+
+- 首版抽象实现：`lib/std/sql/`
+- 回归测试：`tests/test_std_sql.uya`
+
+当前状态：
+
+- 已跑通 fake driver 端到端链路
+- 接口形状已稳定到当前 C99 backend 可接受的实现方式
+- SQLite / MySQL 等真实驱动尚未并入仓库主线
+
+如果你要接 SQLite、MySQL 或 MariaDB，推荐先实现一个具体驱动模块，再通过 `db_open(driver, dsn)` 暴露给业务代码。详细说明见 [`docs/std_sql.md`](docs/std_sql.md)。
+
 ## 设计哲学
 
 ### 核心思想
@@ -300,7 +321,7 @@ fn increment(counter: *Counter) void {
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：在 **v0.9.0 微容器产物链路**、**v0.9.1 `@async_fn` lowering 修复**、**v0.9.2 并行测试基础设施改进** 之上，当前为 **v0.9.3**（async 运行时与 `@frame(foo)` 生命周期 API 收口）；标准库侧现包含 `std.http`、`std.encoding.base64`、`std.crypto`（BLAKE2b / BLAKE2s / SHA-256 / HMAC-SHA256 / MD5 / CRC32）、HTTPS 系统根证书加载与 PEM 解析、C99 多文件输出、`--nostdlib` 与越界检测、@asm 优化框架等。
+- **最新特性**：在 **v0.9.0 微容器产物链路**、**v0.9.1 `@async_fn` lowering 修复**、**v0.9.2 并行测试基础设施改进** 之上，当前为 **v0.9.3**（async 运行时与 `@frame(foo)` 生命周期 API 收口）；标准库侧现包含 `std.http`、`std.sql`、`std.encoding.base64`、`std.crypto`（BLAKE2b / BLAKE2s / SHA-256 / HMAC-SHA256 / MD5 / CRC32）、HTTPS 系统根证书加载与 PEM 解析、C99 多文件输出、`--nostdlib` 与越界检测、@asm 优化框架等。
 
 ## 文档
 
@@ -310,6 +331,7 @@ fn increment(counter: *Counter) void {
 - **[buglist.md](./buglist.md)** - 当前已知问题与优先级清单，便于后续自动收集
 - **[docs/uya.md](./docs/uya.md)** - 完整语言规范（Markdown）
 - **[docs/changelog.md](./docs/changelog.md)** - 语言规范变更历史
+- **[docs/std_sql.md](./docs/std_sql.md)** - `std.sql` 模块与 SQLite/MySQL 驱动接入说明
 - **[docs/comparison.md](./docs/comparison.md)** - 与其他语言的对比
 - **[src/](./src/)** - 自举编译器源代码（唯一维护源）
 - **[bin/uya.c](./bin/uya.c)** - 自举编译器输出的 C99 代码（已提交，作为构建种子）

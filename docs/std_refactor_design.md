@@ -354,6 +354,11 @@ lib/
     │   ├── vec.uya             # Vec<T>
     │   └── string_buf.uya      # StringBuf
     │
+    ├── sql/                     # 数据库通用抽象
+    │   ├── types.uya           # Value / NamedArg / ColumnInfo
+    │   ├── driver.uya          # Driver / Conn / Stmt / Rows / Tx
+    │   └── db.uya              # DB / Row 包装
+    │
     ├── fmt/                     # 格式化
     │   └── fmt.uya             # format<T: Display>
     │
@@ -371,6 +376,16 @@ lib/
 | **错误** | **`error`**：`AllocError`、`AllocOutOfMemory`、`AllocInvalidSize`、`AllocInvalidPointer` |
 | **测试** | **`tests/test_mem_allocator.uya`**（`make tests`） |
 | **后续** | 本节下文 **`HeapAllocator`（mmap）** 仍为计划；与 **`MallocAllocator`** 可并存，按场景选用实现 **`IAllocator`** |
+
+### std.sql（首版已落地）
+
+| 项 | 说明 |
+|----|------|
+| **源码** | `lib/std/sql/driver.uya`、`lib/std/sql/db.uya`、`lib/std/sql/types.uya` |
+| **职责** | 提供数据库无关的公共抽象，让业务层依赖 `DB` / `Row` / `Driver` / `Conn` / `Stmt` / `Rows` / `Tx` 而不是具体厂商 API |
+| **当前取舍** | 为兼容当前 C99 backend，接口层优先使用普通返回值与 `out` 参数，避免“接口方法返回接口值”的不稳定 codegen 组合 |
+| **测试** | `tests/test_std_sql.uya`（fake driver 主链路回归） |
+| **后续** | 在该抽象层之上补 `std.sql.sqlite`、`std.sql.mysql` 等 hosted FFI 驱动 |
 
 ## 依赖关系详解
 
