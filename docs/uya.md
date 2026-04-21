@@ -56,6 +56,7 @@
 
 ### 0.49.47（2026-04-21）
 
+- **标准库 `std.crypto`**：新增 `lib/std/crypto/blake2b.uya` 与 `lib/std/crypto/blake2s.uya`。接口分别为 `blake2b_digest(data, digest_out)` 与 `blake2s_digest(data, digest_out)`；均为纯 Uya 一次性摘要实现，分别输出 64 / 32 字节。
 - **标准库 `std.crypto`**：新增 `lib/std/crypto/md5.uya` 与 `lib/std/crypto/crc32.uya`。接口分别为 `md5_digest(data, digest_out)` 与 `crc32_compute(data)`；MD5 为 RFC 1321 一次性摘要实现，CRC-32 使用 IEEE/ZIP 反射多项式 `0xEDB88320`。
 - **内核复用**：`lib/kernel/update.uya` 的元数据 CRC32 计算改为直接复用 `std.crypto.crc32`，避免同一算法在标准库和内核层重复维护。
 - **测试**：新增 `tests/test_crypto_md5.uya` 与 `tests/test_crypto_crc32.uya`，并保留 `tests/test_kernel_update.uya` 对 CRC32 集成路径的回归覆盖。
@@ -4637,6 +4638,8 @@ fn caller() void {
 | `std.mem` | `memcpy` / `memset` / `memmove` / `memcmp` 等 | 纯 Uya 内存操作 |
 | `std.encoding.base64` | Base64 / Base64URL 编解码 | 文本协议、JWT 等场景 |
 | `std.http` | `types` / `parse` / `router` / `server` / `jwt` | 阻塞式 HTTP 与 JWT 辅助 |
+| `std.crypto.blake2b` | `blake2b_digest(data, digest_out)` | BLAKE2b 一次性摘要，输出 64 字节 |
+| `std.crypto.blake2s` | `blake2s_digest(data, digest_out)` | BLAKE2s 一次性摘要，输出 32 字节 |
 | `std.crypto.sha256` | `sha256_digest(data, digest_out)` | SHA-256 一次性摘要，输出 32 字节 |
 | `std.crypto.hmac_sha256` | `hmac_sha256(key, msg, mac_out)` | HMAC-SHA256，一次性 MAC，输出 32 字节 |
 | `std.crypto.md5` | `md5_digest(data, digest_out)` | MD5 一次性摘要，输出 16 字节 |

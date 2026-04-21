@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### 标准库：`std.crypto.blake2b` / `std.crypto.blake2s`（2026-04-21）
+
+- **标准库**：新增 **`lib/std/crypto/blake2b.uya`** 与 **`lib/std/crypto/blake2s.uya`**。接口分别为 **`blake2b_digest(data, digest_out)`** 与 **`blake2s_digest(data, digest_out)`**；均为纯 Uya 的一次性摘要实现，分别输出 **64** / **32** 字节。
+- **测试**：新增 **`tests/test_crypto_blake2b.uya`** 与 **`tests/test_crypto_blake2s.uya`**，覆盖空串、短消息、跨块消息与短输出缓冲区保护。
+
 ### 标准库：`std.crypto.md5` / `std.crypto.crc32`（2026-04-21）
 
 - **标准库**：新增 **`lib/std/crypto/md5.uya`** 与 **`lib/std/crypto/crc32.uya`**。接口分别为 **`md5_digest(data, digest_out)`** 与 **`crc32_compute(data)`**；MD5 为 RFC 1321 一次性摘要实现，CRC-32 使用 IEEE/ZIP 反射多项式 **`0xEDB88320`**。
