@@ -314,14 +314,14 @@ fn increment(counter: *Counter) void {
 }
 ```
 
-## 当前状态（v0.9.3）
+## 当前状态（v0.9.4）
 
 - **自举编译器**：已完成自举，所有测试通过。编译器能编译自身，输出 C99 代码（默认多文件至 `.uyacache`，可用 `--no-split-c` 单文件）。
 - **开发模式**：仅维护 `src/` 目录的自举编译器。
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：在 **v0.9.0 微容器产物链路**、**v0.9.1 `@async_fn` lowering 修复**、**v0.9.2 并行测试基础设施改进** 之上，当前为 **v0.9.3**（async 运行时与 `@frame(foo)` 生命周期 API 收口）；标准库侧现包含 `std.http`、`std.sql`、`std.encoding.base64`、`std.crypto`（BLAKE2b / BLAKE2s / SHA-256 / HMAC-SHA256 / MD5 / CRC32）、HTTPS 系统根证书加载与 PEM 解析、C99 多文件输出、`--nostdlib` 与越界检测、@asm 优化框架等。
+- **最新特性**：在 **v0.9.0 微容器产物链路**、**v0.9.1 `@async_fn` lowering 修复**、**v0.9.2 并行测试基础设施改进**、**v0.9.3 `@frame(foo)` 生命周期 API 收口** 之上，当前为 **v0.9.4**：microapp mapped payload / `inspect-image` / `verify-image` / profile-first 默认链路进一步收口，并新增 `@embed` / `@embed_dir`、`@c_import` 构建集成、`std.sql`、`std.mqtt.async` 与扩展 `std.crypto`（BLAKE2b / BLAKE2s / SHA-256 / HMAC-SHA256 / MD5 / CRC32），同时改善 macOS hosted 交叉构建与 release 工作流稳定性。
 
 ## 文档
 
@@ -352,6 +352,6 @@ fn increment(counter: *Counter) void {
 
 ---
 
-**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.3**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.3.md](./docs/releases/RELEASE_v0.9.3.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
+**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.4**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.4.md](./docs/releases/RELEASE_v0.9.4.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目

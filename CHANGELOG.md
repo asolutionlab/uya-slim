@@ -1,5 +1,46 @@
 # Uya 变更日志
 
+## v0.9.4 - microapp 运行时收口、`@embed` / `@c_import` 与标准库扩展
+
+> 发布日期：2026-04-22
+
+### 概要
+
+**v0.9.4** 在 **v0.9.x** 发行线上继续推进 “可发布、可验证、可移植” 这条主线：
+
+1. **microapp / 微容器运行时链路继续收口**：补齐 mapped payload、reloc / bss / fault / exit-code / recovery 路径，新增 `inspect-image` / `verify-image` / profile-first 默认解析，并用聚合脚本覆盖样例源码、镜像、运行时与恢复流程。
+2. **语言与构建能力补齐**：新增 `@embed` / `@embed_dir`，完成 `@c_import` 构建集成；同时修复 macro 展开后的切片表达式 codegen 崩溃，并改进 codegen 输出缓冲与 release / zig / gcc 构建路径。
+3. **标准库继续扩展**：新增 `std.sql` 抽象、`std.mqtt.async`，并为 `std.crypto` 补上 BLAKE2b / BLAKE2s / MD5 / CRC32。
+
+`./tests/run_programs_parallel.sh --uya --c99` **828** 项测试通过，`make b` 自举验证通过，`make release-clean` 通过。详见 [docs/releases/RELEASE_v0.9.4.md](./docs/releases/RELEASE_v0.9.4.md)。
+
+### microapp / 工具链
+
+- `src/main.uya`：新增 / 完善 `pack-image`、`inspect-image`、`verify-image`、microapp profile 默认推导与诊断输出。
+- `lib/std/runtime/microapp/loader.uya`、`lib/kernel/image.uya`、`lib/kernel/sim.uya`、`lib/kernel/recovery.uya`：收口 mapped payload、relocation、BSS、fault / trap、recovery / update 与 host API 诊断路径。
+- `Makefile`、`src/compile.sh`：修复 release / release-clean、zig / gcc、`run` / `test` 与 hosted cross-build 工作流问题；补充 host-specific seeds 与 macOS hosted 交叉构建支持。
+
+### 语言 / 编译器
+
+- `src/parser/primary.uya`、`src/main.uya`：新增 `@embed` / `@embed_dir` 内建能力与配套 CLI / codegen 路径。
+- `src/compile.sh`、`tests/link_cimports_posix.sh`：完成 `@c_import` 的 sidecar / split-C 构建集成。
+- `src/main.uya`：补齐 `-v` / `--version`，使 CLI 版本查询与文档保持一致。
+- `src/codegen/c99/expr.uya`、`src/codegen/c99/function.uya`、`lib/std/io/file.uya`：修复 macro 展开切片表达式 codegen SIGSEGV，并改进 codegen 输出缓冲与 async / split-build 稳定性。
+
+### 标准库
+
+- `lib/std/sql/*.uya`：新增 `std.sql` 抽象层与文档。
+- `lib/std/mqtt/async.uya`：新增 async MQTT 客户端基础模块。
+- `lib/std/crypto/*.uya`：新增 BLAKE2b / BLAKE2s / MD5 / CRC32 实现。
+
+### 测试与文档
+
+- 新增 / 扩展 `tests/test_embed_builtin.uya`、`tests/test_c_import_file.uya`、`tests/test_c_import_dir.uya`、`tests/test_std_sql.uya`、`tests/test_std_mqtt_async.uya`、`tests/test_macro_slice_expr_codegen.uya` 及多组 microapp 验证脚本。
+- 更新 `readme.md`、`docs/TESTING.md`、`docs/UYA_BUILD_RUN.md`、`docs/c_import_design.md`、`docs/embed_design.md`、`docs/std_sql.md`、`docs/std_mqtt_async.md` 等文档。
+- 新增 `docs/releases/RELEASE_v0.9.4.md`
+
+---
+
 ## v0.9.3 - `@frame(foo)` 类型构造器与 pinned 语义
 
 > 发布日期：2026-04-14

@@ -73,6 +73,7 @@ enum CommandType {
     COMMAND_PACK_IMAGE, // uya pack-image - 将 .pobj 打包为 .uapp
     COMMAND_INSPECT_IMAGE, // uya inspect-image - 打印 .pobj/.uapp 头信息
     COMMAND_VERIFY_IMAGE, // uya verify-image - 校验 .pobj/.uapp
+    COMMAND_VERSION, // uya --version - 显示版本信息
     COMMAND_OUTLIBC,  // uya --outlibc - 生成独立 libc
     COMMAND_FMT       // uya fmt - 格式化代码
 }
@@ -3036,7 +3037,7 @@ fn print_usage(program_name: &byte) void {
     var name: &byte = program_name;
     if name == null { name = "uya" as *byte; }
     fprintf(libc.stderr, "Uya 编译器 - 零GC系统编程语言\n" as *byte);
-    fprintf(libc.stderr, "版本：v0.9.3\n" as *byte);
+    fprintf(libc.stderr, "版本：v0.9.4\n" as *byte);
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件或中间产物\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build --app microapp <文件> -o <xxx.pobj|xxx.uapp>  输出 microapp 载荷对象或镜像\n" as *byte, name as *byte);
@@ -3079,6 +3080,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  C99 默认多文件输出到 .uyacache（显式 -o xxx.c 或 UYA_SPLIT_C=0|false|no|off 时为单文件）\n" as *byte);
     fprintf(libc.stderr, "  多文件布局：默认镜像分 TU（一源一 .c，便于 make -j）；UYA_SPLIT_C_MIRROR=0|false|no|off 时用 uya_part1+part2\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
+    fprintf(libc.stderr, "  -v, --version        显示版本信息\n" as *byte);
     fprintf(libc.stderr, "\n微应用环境变量:\n" as *byte);
     fprintf(libc.stderr, "  MICROAPP_TARGET_PROFILE microapp 目标 profile；推荐优先使用；可选 linux_x86_64_hardvm / linux_aarch64_hardvm / macos_arm64_hardvm / rv32_baremetal_softvm / xtensa_baremetal_softvm\n" as *byte);
     fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH    microapp 目标架构；仅在未显式指定 profile 时参与回退推导\n" as *byte);
@@ -4549,6 +4551,9 @@ fn parse_args(
         } else if strcmp(first_arg, "verify-image" as *byte) == 0 {
             command[0] = CommandType.COMMAND_VERIFY_IMAGE;
             start_idx = 2;
+        } else if strcmp(first_arg, "--version" as *byte) == 0 || strcmp(first_arg, "-v" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_VERSION;
+            start_idx = 2;
         } else if strcmp(first_arg, "fmt" as *byte) == 0 {
             command[0] = CommandType.COMMAND_FMT;
             start_idx = 2;
@@ -4750,8 +4755,8 @@ fn parse_args(
         i = i + 1;
     }
 
-    // --outlibc 模式：不需要输入文件和 -o 参数
-    if command[0] == CommandType.COMMAND_OUTLIBC {
+    // --outlibc / --version 模式：不需要输入文件和 -o 参数
+    if command[0] == CommandType.COMMAND_OUTLIBC || command[0] == CommandType.COMMAND_VERSION {
         return 0;
     }
 
@@ -6526,6 +6531,10 @@ export fn main() i32 {
 
     if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib, &stack_size, &async_frame_heap_fallback) != 0 {
         return 1;
+    }
+    if command == CommandType.COMMAND_VERSION {
+        fprintf(libc.stdout, "v0.9.4\n" as *byte);
+        return 0;
     }
     // parse_args 中 stack_size=0 表示未传 --stack-size。编译器进程须尽快抬高主线程栈（与默认 65536 KB 一致），否则大依赖编译易栈溢出（段错误）。
     // 传给 compile_files 的 stack_size 仍保留 0：不在生成 C 里注入 setrlimit/resource.h（曾与生成类型、系统头冲突）；run/test 子进程由 sh ulimit；显式 --stack-size 仅保留文件头提示注释。
