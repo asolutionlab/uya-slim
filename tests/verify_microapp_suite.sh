@@ -37,7 +37,19 @@ SCRIPTS=(
 
 for rel in "${SCRIPTS[@]}"; do
     echo "==> $(basename "$rel")"
-    "$ROOT_DIR/$rel"
+    env -u CC \
+        -u CC_DRIVER \
+        -u CC_TARGET_FLAGS \
+        -u CFLAGS \
+        -u LDFLAGS \
+        -u HOST_OS \
+        -u HOST_ARCH \
+        -u TARGET_OS \
+        -u TARGET_ARCH \
+        -u TARGET_TRIPLE \
+        -u TOOLCHAIN \
+        -u UYA_TEST_JOBS \
+        "$ROOT_DIR/$rel"
 done
 
 echo "microapp suite ok"
