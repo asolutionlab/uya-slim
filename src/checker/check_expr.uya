@@ -80,6 +80,9 @@ fn checker_interp_format_max_width(t: Type, spec: &byte) i32 {
 const CHECKER_EMBED_PATH_MAX: i32 = 4096;
 const CHECKER_EMBED_MAX_DIR_ENTRIES: i32 = 4096;
 const DT_LNK: i8 = 10;
+const CHECKER_C_IMPORT_MAX_EXPANDED: i32 = 4096;
+const CHECKER_C_IMPORT_MAX_VISITED_DIRS: i32 = 4096;
+const CHECKER_C_IMPORT_MAX_SYMLINK_DEPTH: i32 = 64;
 
 fn checker_embed_is_path_sep(ch: byte) i32 {
     if ch == 47 as byte || ch == 92 as byte {
@@ -538,6 +541,427 @@ fn checker_embed_validate_embed_dir_entry_struct(checker: &TypeChecker, struct_d
         i = i + 1;
     }
     return 1;
+}
+
+fn checker_c_import_ascii_is_space(c: byte) i32 {
+    if c == 32 as byte || c == 9 as byte || c == 10 as byte || c == 13 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn checker_c_import_paths_equal(path1: &byte, path2: &byte) i32 {
+    if path1 == null || path2 == null {
+        return 0;
+    }
+    if strcmp(path1 as *byte, path2 as *byte) == 0 {
+        return 1;
+    }
+
+    var st1: Stat = Stat {
+        st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0,
+        st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0,
+        st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0
+    };
+    var st2: Stat = Stat {
+        st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0,
+        st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0,
+        st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0
+    };
+    if stat(path1 as &const byte, &st1) != 0 || stat(path2 as &const byte, &st2) != 0 {
+        return 0;
+    }
+    if st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino {
+        return 1;
+    }
+    return 0;
+}
+
+fn checker_c_import_is_c_file(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    const len: usize = strlen(path as *byte);
+    if len < 2 {
+        return 0;
+    }
+    if path[len - 2] == 46 as byte && path[len - 1] == 99 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn checker_c_import_copy_basename(checker: &TypeChecker, path: &byte) &byte {
+    if checker == null || checker.arena == null || path == null {
+        return null;
+    }
+    var base: &byte = strrchr(path as *byte, 47) as &byte;
+    if base == null {
+        base = strrchr(path as *byte, 92) as &byte;
+    }
+    if base != null {
+        base = (base as *byte + 1) as &byte;
+    } else {
+        base = path;
+    }
+    return checker_arena_strdup(checker.arena, base);
+}
+
+fn checker_c_import_normalize_flags(checker: &TypeChecker, literal: &byte) &byte {
+    if checker == null || checker.arena == null {
+        return null;
+    }
+    var src: &byte = literal;
+    if src == null {
+        src = "" as &byte;
+    }
+    const src_len: usize = strlen(src as *byte);
+    const out: &byte = compiler_arena_alloc(checker.arena, src_len + 1) as &byte;
+    if out == null {
+        return null;
+    }
+    var out_pos: usize = 0;
+    var pending_space: i32 = 0;
+    var i: usize = 0;
+    while i < src_len {
+        const ch: byte = src[i];
+        if checker_c_import_ascii_is_space(ch) != 0 {
+            if out_pos > 0 {
+                pending_space = 1;
+            }
+        } else {
+            if pending_space != 0 && out_pos > 0 {
+                out[out_pos] = 32 as byte;
+                out_pos = out_pos + 1;
+            }
+            out[out_pos] = ch;
+            out_pos = out_pos + 1;
+            pending_space = 0;
+        }
+        i = i + 1;
+    }
+    out[out_pos] = 0 as byte;
+    return out;
+}
+
+fn checker_c_import_follow_symlinks(checker: &TypeChecker, path: &byte, depth: i32) &byte {
+    if checker == null || checker.arena == null || path == null {
+        return null;
+    }
+    if depth >= CHECKER_C_IMPORT_MAX_SYMLINK_DEPTH {
+        return null;
+    }
+    var link_buf: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    const rl: i32 = readlink(path as &const byte, &link_buf[0] as &byte, (CHECKER_EMBED_PATH_MAX - 1) as usize);
+    if rl < 0 {
+        return checker_arena_strdup(checker.arena, path);
+    }
+    if rl >= CHECKER_EMBED_PATH_MAX {
+        return null;
+    }
+    link_buf[rl] = 0 as byte;
+
+    var target_joined: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    if checker_embed_path_is_absolute(&link_buf[0] as &byte) != 0 {
+        if checker_embed_normalize_path(&link_buf[0] as &byte, &target_joined[0], CHECKER_EMBED_PATH_MAX) != 0 {
+            return null;
+        }
+    } else {
+        var parent_dir: [byte: CHECKER_EMBED_PATH_MAX] = [];
+        if checker_embed_extract_dir(path, &parent_dir[0], CHECKER_EMBED_PATH_MAX) != 0 {
+            return null;
+        }
+        var tmp_joined: [byte: CHECKER_EMBED_PATH_MAX] = [];
+        if checker_embed_join_path(&parent_dir[0] as &byte, &link_buf[0] as &byte, &tmp_joined[0], CHECKER_EMBED_PATH_MAX) != 0 {
+            return null;
+        }
+        if checker_embed_normalize_path(&tmp_joined[0] as &byte, &target_joined[0], CHECKER_EMBED_PATH_MAX) != 0 {
+            return null;
+        }
+    }
+    return checker_c_import_follow_symlinks(checker, &target_joined[0] as &byte, depth + 1);
+}
+
+fn checker_c_import_resolve_path(checker: &TypeChecker, source_filename: &byte, literal: &byte) &byte {
+    if checker == null || checker.arena == null || literal == null {
+        return null;
+    }
+    var base_dir: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    var joined: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    var normalized: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    var absolute_joined: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    var absolute_normalized: [byte: CHECKER_EMBED_PATH_MAX] = [];
+    if checker_embed_extract_dir(source_filename, &base_dir[0], CHECKER_EMBED_PATH_MAX) != 0 {
+        return null;
+    }
+    if checker_embed_join_path(&base_dir[0], literal, &joined[0], CHECKER_EMBED_PATH_MAX) != 0 {
+        return null;
+    }
+    if checker_embed_normalize_path(&joined[0], &normalized[0], CHECKER_EMBED_PATH_MAX) != 0 {
+        return null;
+    }
+    if checker_embed_path_is_absolute(&normalized[0] as &byte) == 0 {
+        var cwd: [byte: CHECKER_EMBED_PATH_MAX] = [];
+        if getcwd(&cwd[0] as &byte, CHECKER_EMBED_PATH_MAX as usize) == null {
+            return checker_c_import_follow_symlinks(checker, &normalized[0] as &byte, 0);
+        }
+        if checker_embed_join_path(&cwd[0] as &byte, &normalized[0] as &byte, &absolute_joined[0], CHECKER_EMBED_PATH_MAX) != 0 {
+            return checker_c_import_follow_symlinks(checker, &normalized[0] as &byte, 0);
+        }
+        if checker_embed_normalize_path(&absolute_joined[0], &absolute_normalized[0], CHECKER_EMBED_PATH_MAX) != 0 {
+            return checker_c_import_follow_symlinks(checker, &normalized[0] as &byte, 0);
+        }
+        return checker_c_import_follow_symlinks(checker, &absolute_normalized[0] as &byte, 0);
+    }
+    return checker_c_import_follow_symlinks(checker, &normalized[0] as &byte, 0);
+}
+
+fn checker_c_import_visited_dir_contains(visited_dirs: & & byte, visited_count: i32, dir_path: &byte) i32 {
+    if visited_dirs == null || dir_path == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < visited_count {
+        if visited_dirs[i] != null && checker_c_import_paths_equal(visited_dirs[i], dir_path) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn checker_c_import_collect_dir_recursive(
+    checker: &TypeChecker,
+    current_dir: &byte,
+    rel_prefix: &byte,
+    visited_dirs: & & byte,
+    visited_count: &i32,
+    out_rel_paths: & & byte,
+    out_resolved_paths: & & byte,
+    out_count: &i32,
+    max_entries: i32
+) i32 {
+    if checker == null || current_dir == null || visited_dirs == null || visited_count == null ||
+        out_rel_paths == null || out_resolved_paths == null || out_count == null {
+        return 0;
+    }
+    if checker_c_import_visited_dir_contains(visited_dirs, visited_count[0], current_dir) != 0 {
+        return 1;
+    }
+    if visited_count[0] >= CHECKER_C_IMPORT_MAX_VISITED_DIRS {
+        return 0;
+    }
+    visited_dirs[visited_count[0]] = checker_arena_strdup(checker.arena, current_dir);
+    if visited_dirs[visited_count[0]] == null {
+        return 0;
+    }
+    visited_count[0] = visited_count[0] + 1;
+
+    const dir: &DIR = opendir(current_dir as &const byte);
+    if dir == null {
+        return 0;
+    }
+    var entry: &Dirent = readdir(dir);
+    while entry != null {
+        const name: &byte = &entry.d_name[0] as &byte;
+        if checker_embed_is_dot_or_dotdot(name) == 0 {
+            var child_path_buf: [byte: CHECKER_EMBED_PATH_MAX] = [];
+            if checker_embed_join_path(current_dir, name, &child_path_buf[0], CHECKER_EMBED_PATH_MAX) != 0 {
+                closedir(dir);
+                return 0;
+            }
+            var child_path_norm: [byte: CHECKER_EMBED_PATH_MAX] = [];
+            if checker_embed_normalize_path(&child_path_buf[0], &child_path_norm[0], CHECKER_EMBED_PATH_MAX) != 0 {
+                closedir(dir);
+                return 0;
+            }
+            const child_resolved: &byte = checker_c_import_follow_symlinks(checker, &child_path_norm[0] as &byte, 0);
+            if child_resolved == null {
+                closedir(dir);
+                return 0;
+            }
+
+            var child_rel_buf: [byte: CHECKER_EMBED_PATH_MAX] = [];
+            if rel_prefix != null && rel_prefix[0] != 0 as byte {
+                if checker_embed_join_path(rel_prefix, name, &child_rel_buf[0], CHECKER_EMBED_PATH_MAX) != 0 {
+                    closedir(dir);
+                    return 0;
+                }
+            } else {
+                if checker_embed_join_path(null, name, &child_rel_buf[0], CHECKER_EMBED_PATH_MAX) != 0 {
+                    closedir(dir);
+                    return 0;
+                }
+            }
+            var child_rel_norm: [byte: CHECKER_EMBED_PATH_MAX] = [];
+            if checker_embed_normalize_path(&child_rel_buf[0], &child_rel_norm[0], CHECKER_EMBED_PATH_MAX) != 0 {
+                closedir(dir);
+                return 0;
+            }
+
+            var st: Stat = Stat {
+                st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0,
+                st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0,
+                st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0
+            };
+            if stat(child_resolved as &const byte, &st) != 0 {
+                closedir(dir);
+                return 0;
+            }
+            const kind: u32 = (st.st_mode as u32) & S_IFMT;
+            if kind == S_IFDIR {
+                if checker_c_import_collect_dir_recursive(checker,
+                    child_resolved,
+                    &child_rel_norm[0] as &byte,
+                    visited_dirs,
+                    visited_count,
+                    out_rel_paths,
+                    out_resolved_paths,
+                    out_count,
+                    max_entries) == 0 {
+                    closedir(dir);
+                    return 0;
+                }
+            } else if kind == S_IFREG {
+                if checker_c_import_is_c_file(child_resolved) != 0 {
+                    if out_count[0] >= max_entries {
+                        closedir(dir);
+                        return 0;
+                    }
+                    out_rel_paths[out_count[0]] = checker_arena_strdup(checker.arena, &child_rel_norm[0] as &byte);
+                    out_resolved_paths[out_count[0]] = child_resolved;
+                    if out_rel_paths[out_count[0]] == null || out_resolved_paths[out_count[0]] == null {
+                        closedir(dir);
+                        return 0;
+                    }
+                    out_count[0] = out_count[0] + 1;
+                }
+            } else {
+                closedir(dir);
+                return 0;
+            }
+        }
+        entry = readdir(dir);
+    }
+    closedir(dir);
+    return 1;
+}
+
+fn checker_check_c_import_decl(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null || node.type != ASTNodeType.AST_C_IMPORT_DECL {
+        return 0;
+    }
+    if checker.scope_level > 0 {
+        checker_report_error(checker, node, "@c_import 只能在顶层使用" as *byte);
+        return 0;
+    }
+    if checker.container_mode != 0 {
+        checker_report_error(checker, node, "E4005: microapp 模式禁止使用 @c_import" as *byte);
+        return 0;
+    }
+    if node.c_import_path_literal == null {
+        checker_report_error(checker, node, "@c_import 需要一个字符串字面量路径参数" as *byte);
+        return 0;
+    }
+    if node.c_import_cflags_normalized == null {
+        node.c_import_cflags_normalized = checker_c_import_normalize_flags(checker, node.c_import_cflags_literal);
+    }
+    if node.c_import_ldflags_normalized == null {
+        node.c_import_ldflags_normalized = checker_c_import_normalize_flags(checker, node.c_import_ldflags_literal);
+    }
+    if node.c_import_resolved_path == null {
+        node.c_import_resolved_path = checker_c_import_resolve_path(checker, node.filename, node.c_import_path_literal);
+    }
+    if node.c_import_resolved_path == null {
+        checker_report_error(checker, node, "@c_import 路径解析失败" as *byte);
+        return 0;
+    }
+
+    var st: Stat = Stat {
+        st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0,
+        st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0,
+        st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0
+    };
+    if stat(node.c_import_resolved_path as &const byte, &st) != 0 {
+        var msg_missing: [byte: 768] = [];
+        snprintf(&msg_missing[0] as *byte, 768, "@c_import 目标不存在: literal=%s resolved=%s" as *byte,
+            node.c_import_path_literal as *byte, node.c_import_resolved_path as *byte);
+        checker_report_error(checker, node, &msg_missing[0] as &byte);
+        return 0;
+    }
+
+    const kind: u32 = (st.st_mode as u32) & S_IFMT;
+    if kind == S_IFREG {
+        if checker_c_import_is_c_file(node.c_import_resolved_path) == 0 {
+            var msg_file: [byte: 768] = [];
+            snprintf(&msg_file[0] as *byte, 768, "@c_import 目标必须是 .c 文件或目录: literal=%s resolved=%s" as *byte,
+                node.c_import_path_literal as *byte, node.c_import_resolved_path as *byte);
+            checker_report_error(checker, node, &msg_file[0] as &byte);
+            return 0;
+        }
+        const paths: & & byte = compiler_arena_alloc(checker.arena, @size_of(&byte)) as & & byte;
+        const rel_paths: & & byte = compiler_arena_alloc(checker.arena, @size_of(&byte)) as & & byte;
+        if paths == null || rel_paths == null {
+            checker_report_error(checker, node, "@c_import 内存分配失败" as *byte);
+            return 0;
+        }
+        paths[0] = node.c_import_resolved_path;
+        rel_paths[0] = checker_c_import_copy_basename(checker, node.c_import_resolved_path);
+        if rel_paths[0] == null {
+            checker_report_error(checker, node, "@c_import 内存分配失败" as *byte);
+            return 0;
+        }
+        node.c_import_expanded_paths = paths;
+        node.c_import_expanded_rel_paths = rel_paths;
+        node.c_import_expanded_count = 1;
+        return 1;
+    }
+    if kind == S_IFDIR {
+        const paths: & & byte = compiler_arena_alloc(checker.arena, @size_of(&byte) * CHECKER_C_IMPORT_MAX_EXPANDED as usize) as & & byte;
+        const rel_paths: & & byte = compiler_arena_alloc(checker.arena, @size_of(&byte) * CHECKER_C_IMPORT_MAX_EXPANDED as usize) as & & byte;
+        const visited_dirs: & & byte = compiler_arena_alloc(checker.arena, @size_of(&byte) * CHECKER_C_IMPORT_MAX_VISITED_DIRS as usize) as & & byte;
+        if paths == null || rel_paths == null || visited_dirs == null {
+            checker_report_error(checker, node, "@c_import 内存分配失败" as *byte);
+            return 0;
+        }
+        var visited_count: i32 = 0;
+        var expanded_count: i32 = 0;
+        if checker_c_import_collect_dir_recursive(checker,
+            node.c_import_resolved_path,
+            "" as &byte,
+            visited_dirs,
+            &visited_count,
+            rel_paths,
+            paths,
+            &expanded_count,
+            CHECKER_C_IMPORT_MAX_EXPANDED) == 0 {
+            var msg_dir: [byte: 768] = [];
+            snprintf(&msg_dir[0] as *byte, 768, "@c_import 目录展开失败: literal=%s resolved=%s" as *byte,
+                node.c_import_path_literal as *byte, node.c_import_resolved_path as *byte);
+            checker_report_error(checker, node, &msg_dir[0] as &byte);
+            return 0;
+        }
+        if expanded_count <= 0 {
+            var msg_empty: [byte: 768] = [];
+            snprintf(&msg_empty[0] as *byte, 768, "@c_import 目录中没有任何 .c 文件: literal=%s resolved=%s" as *byte,
+                node.c_import_path_literal as *byte, node.c_import_resolved_path as *byte);
+            checker_report_error(checker, node, &msg_empty[0] as &byte);
+            return 0;
+        }
+        checker_embed_sort_dir_entries(rel_paths, paths, expanded_count);
+        node.c_import_expanded_paths = paths;
+        node.c_import_expanded_rel_paths = rel_paths;
+        node.c_import_expanded_count = expanded_count;
+        return 1;
+    }
+
+    {
+        var msg_other: [byte: 768] = [];
+        snprintf(&msg_other[0] as *byte, 768, "@c_import 目标必须是普通 .c 文件或目录: literal=%s resolved=%s" as *byte,
+            node.c_import_path_literal as *byte, node.c_import_resolved_path as *byte);
+        checker_report_error(checker, node, &msg_other[0] as &byte);
+    }
+    return 0;
 }
 
 fn checker_program_contains_embed_dir(node: &ASTNode) i32 {

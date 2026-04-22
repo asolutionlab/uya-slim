@@ -1,7 +1,7 @@
 # Uya 回归测试说明
 
 **版本**：v0.3.4+  
-**更新日期**：2026-04-21
+**更新日期**：2026-04-22
 
 ---
 
@@ -63,6 +63,31 @@ bin/uya --c99 --nostdlib tests/test_std_sql.uya -o /tmp/test_std_sql.c
 gcc -std=c99 -nostdlib -static -no-pie /tmp/test_std_sql.c -o /tmp/test_std_sql
 /tmp/test_std_sql
 ```
+
+### 带 `@c_import` 的单个测试
+
+如果测试文件包含 `@c_import`，有两种推荐方式：
+
+1. 直接让编译器生成并链接可执行文件：
+
+```bash
+bin/uya build tests/test_c_import_file.uya -o /tmp/test_c_import_file --c99
+/tmp/test_c_import_file
+```
+
+2. 只生成 C，再使用 sidecar 完成手动链接：
+
+```bash
+bin/uya build tests/test_c_import_dir.uya -o /tmp/test_c_import_dir.c --c99 --no-split-c
+CC=gcc ./tests/link_cimports_posix.sh /tmp/test_c_import_dir.c /tmp/test_c_import_dir.bin
+/tmp/test_c_import_dir.bin
+```
+
+说明：
+- 当单文件 C 输出路径中检测到 `@c_import` 时，编译器会额外生成 `/tmp/test_c_import_dir.cimports.sh`
+- 该 sidecar 保存了导入的 C 源、相对路径、逐 token 的 `cflags` 和聚合后的 `ldflags`
+- `tests/link_cimports_posix.sh` 会读取 sidecar，先编译导入的 C object，再与主 `.c` 一起链接
+- 若走 split-C / `--split-c-dir` 路径，导入的 C object 会直接进入 Makefile，不会额外生成 sidecar
 
 ---
 
@@ -170,3 +195,4 @@ test:
 - **测试框架源码**：`lib/std/testing/testing.uya`
 - **测试规范**：[testing_guide.md](./testing_guide.md)
 - **发布流程**：`make release` / `make release-clean` / `make release-dirty`
+- **`@c_import` 设计**：[c_import_design.md](./c_import_design.md)

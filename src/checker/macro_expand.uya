@@ -1148,6 +1148,16 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.embed_dir_data = node.embed_dir_data;
         copy.embed_dir_sizes = node.embed_dir_sizes;
         copy.embed_dir_entry_count = node.embed_dir_entry_count;
+    } else if node.type == ASTNodeType.AST_C_IMPORT_DECL {
+        copy.c_import_path_literal = node.c_import_path_literal;
+        copy.c_import_resolved_path = node.c_import_resolved_path;
+        copy.c_import_cflags_literal = node.c_import_cflags_literal;
+        copy.c_import_ldflags_literal = node.c_import_ldflags_literal;
+        copy.c_import_cflags_normalized = node.c_import_cflags_normalized;
+        copy.c_import_ldflags_normalized = node.c_import_ldflags_normalized;
+        copy.c_import_expanded_paths = node.c_import_expanded_paths;
+        copy.c_import_expanded_rel_paths = node.c_import_expanded_rel_paths;
+        copy.c_import_expanded_count = node.c_import_expanded_count;
     } else if node.type == ASTNodeType.AST_CHAR {
         copy.char_literal_value = node.char_literal_value;
     } else if node.type == ASTNodeType.AST_INT_LIMIT {

@@ -2515,6 +2515,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 i = i + 1;
                 continue;
             }
+            if decl.type == ASTNodeType.AST_C_IMPORT_DECL {
+                i = i + 1;
+                continue;
+            }
             // 跳过宏声明（宏在 checker 阶段已展开，不需要生成代码）
             if decl.type == ASTNodeType.AST_MACRO_DECL {
                 i = i + 1;
@@ -3739,6 +3743,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             c99_mirror_emit_for_node(codegen, decl);
             // 跳过 use 语句（模块导入，不需要生成代码）
             if decl.type == ASTNodeType.AST_USE_STMT {
+                i = i + 1;
+                continue;
+            }
+            if decl.type == ASTNodeType.AST_C_IMPORT_DECL {
                 i = i + 1;
                 continue;
             }

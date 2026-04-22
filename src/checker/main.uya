@@ -362,6 +362,8 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
     } else if node.type == ASTNodeType.AST_USE_STMT {
         // use 语句处理（模块系统）
         return process_use_stmt(checker, node);
+    } else if node.type == ASTNodeType.AST_C_IMPORT_DECL {
+        return checker_check_c_import_decl(checker, node);
     } else if node.type == ASTNodeType.AST_BLOCK {
         // 放宽检查：代码块中的语句检查失败不报告错误
         // 这在编译器自举时很常见，因为类型推断可能失败

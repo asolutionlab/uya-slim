@@ -192,6 +192,27 @@ fn format_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, inde
         format_var_decl(node, out, out_pos, out_cap, indent);
     } else if node.type == ASTNodeType.AST_USE_STMT {
         format_use_stmt(node, out, out_pos, out_cap);
+    } else if node.type == ASTNodeType.AST_C_IMPORT_DECL {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "@c_import(" as &byte);
+        if node.c_import_path_literal != null {
+            write_byte(out, out_pos, out_cap, '"' as byte);
+            write_escaped_string(out, out_pos, out_cap, node.c_import_path_literal);
+            write_byte(out, out_pos, out_cap, '"' as byte);
+        } else {
+            write_str(out, out_pos, out_cap, "\"\"" as &byte);
+        }
+        if node.c_import_cflags_literal != null {
+            write_str(out, out_pos, out_cap, ", \"" as &byte);
+            write_escaped_string(out, out_pos, out_cap, node.c_import_cflags_literal);
+            write_byte(out, out_pos, out_cap, '"' as byte);
+        }
+        if node.c_import_ldflags_literal != null {
+            write_str(out, out_pos, out_cap, ", \"" as &byte);
+            write_escaped_string(out, out_pos, out_cap, node.c_import_ldflags_literal);
+            write_byte(out, out_pos, out_cap, '"' as byte);
+        }
+        write_str(out, out_pos, out_cap, ");\n" as &byte);
     } else if node.type == ASTNodeType.AST_TYPE_ALIAS {
         format_type_alias(node, out, out_pos, out_cap, indent);
     } else if node.type == ASTNodeType.AST_TEST_STMT {

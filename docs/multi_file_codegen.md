@@ -4,6 +4,11 @@
 
 **C99 后端默认**在目录 **`.uyacache`**（相对当前工作目录）生成多文件 C 与 **`Makefile`**，链接阶段走 **`make -C <dir> -j...`**，便于 **`make -j` 并行编译**。显式 **`-o xxx.c`**（只输出单个 C 文件）、或命令行 **`--no-split-c`**、或环境 **`UYA_SPLIT_C=0`** / **`false`** / **`no`** / **`off`**、或 **`UYA_SINGLE_FILE_C=1`** 时退回**单文件** C 路径（**`--no-split-c`** 还会忽略 **`UYA_SPLIT_C_DIR`** 与 **`--split-c-dir`**）。
 
+若程序包含 **`@c_import`**：
+
+- **单文件 `.c` 输出**：编译器会额外生成同名 sidecar，例如 `app.cimports.sh`
+- **split-C 输出**：导入的 C translation unit 直接进入 split 根目录 Makefile 的额外 object 规则，不再额外生成 sidecar
+
 仍可用 **`--split-c-dir`**（或 **`UYA_SPLIT_C_DIR`**）指定**其它**输出目录；行为与默认一致，仅路径不同。
 
 **默认：镜像分 TU（一源一 `.c`）**——未设置 **`UYA_SPLIT_C_MIRROR`** 或设为 **`1`** / `true` 等时，按源路径生成多个 `.c`（外加 `uya_part1.c`、`uya_common.c` 等），**并行度最高**，适合大项目加速迭代。

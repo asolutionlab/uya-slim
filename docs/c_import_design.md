@@ -248,11 +248,11 @@ extern fn add_i32(a: i32, b: i32) i32;
 - 与 `cflags` 一样，v1 先做最小规范化，再按 ASCII 空白做语法级 token 化
 - 即便目录模式展开成多个 `.c`，该 `ldflags` 也只作为这条 import 声明的一份程序级链接输入参与聚合，而不是每个文件重复追加
 
-v1 为了降低复杂度，**不做 token 级去重**。  
+v1 为了降低复杂度，**不做 token 级语义归并**。  
 也就是说：
 
 - 同一路径的重复导入会去重
-- 但不同路径带来的 `ldflags` 只做“整段规范化字符串完全相同”的稳定去重，不做 token 级语义去重
+- 但不同路径带来的 `ldflags` 只做“token 序列完全相同”的稳定去重，不做更激进的语义级合并
 
 ### 5.7 重复导入、去重与冲突规则
 
@@ -271,12 +271,24 @@ v1 为了降低复杂度，**不做 token 级去重**。
 - `resolved_path` 相同，且规范化后的 `cflags` 相同：去重，只编译一次
 - `resolved_path` 相同，但 `cflags` 不同：报错
 - `ldflags` **不参与** 编译单元去重 key；它们是程序级别聚合输入
-- 多处声明带来的 `ldflags` 片段按声明顺序聚合；对于完全相同的规范化片段可以做稳定去重，但 v1 不做 token 级语义去重
+- 多处声明带来的 `ldflags` 片段按声明顺序聚合；对于完全相同的 token 序列可以做稳定去重，但 v1 不做 token 级语义去重
 
 这条规则同样覆盖：
 
 - 同一个文件被直接 `@c_import("foo.c")` 导入
 - 同时又被某个 `@c_import("dir/")` 目录导入间接覆盖到
+
+当同一个 `resolved_path` 以多种来源命中时，`CImportItem.relative_path` 的保留规则建议固定为：
+
+1. 优先保留“来自目录导入”的相对路径
+2. 若存在多个目录来源，则取字典序最小的相对路径
+3. 若没有目录来源，仅有文件模式直接导入，则 `relative_path` 退化为该文件的 basename
+
+这样做的原因是：
+
+- 目录模式下的相对路径更适合 sidecar、日志和稳定 object 命名
+- 字典序最小规则可保证重叠导入时输出稳定
+- 直接文件导入也始终能得到一个非空的稳定展示名
 
 示例：
 
@@ -595,6 +607,7 @@ sidecar 采用 **POSIX shell 片段** 格式，要求能被：
 ```sh
 UYA_CIMPORT_COUNT='1'
 UYA_CIMPORT_SRC_0='/abs/vendor/sqlite3.c'
+UYA_CIMPORT_REL_0='sqlite3.c'
 UYA_CIMPORT_CFLAGC_0='2'
 UYA_CIMPORT_CFLAG_0_0='-Ivendor/sqlite'
 UYA_CIMPORT_CFLAG_0_1='-DSQLITE_THREADSAFE=0'

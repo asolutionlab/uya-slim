@@ -36,6 +36,29 @@ struct CompileStats {
     ast_nodes: i32,          // AST 节点数（近似）
 }
 
+struct CImportItem {
+    resolved_path: &byte,
+    relative_path: &byte,
+    cflags_tokens: & & byte,
+    cflags_token_count: i32,
+    filename: &byte,
+    line: i32,
+    column: i32,
+}
+
+struct CImportPlan {
+    items: &CImportItem,
+    item_count: i32,
+    aggregated_ldflags_tokens: & & byte,
+    aggregated_ldflags_token_count: i32,
+}
+
+struct CompileArtifacts {
+    generated_c_path: &byte,
+    c_import_plan: CImportPlan,
+    c_import_sidecar_path: &byte,
+}
+
 // 后端类型
 enum BackendType {
     BACKEND_LLVM,
@@ -4773,6 +4796,517 @@ fn is_c_output(output_path: &byte) i32 {
     return 0;
 }
 
+fn compile_artifacts_reset(artifacts: &CompileArtifacts) void {
+    if artifacts == null {
+        return;
+    }
+    artifacts.generated_c_path = null;
+    artifacts.c_import_plan.items = null;
+    artifacts.c_import_plan.item_count = 0;
+    artifacts.c_import_plan.aggregated_ldflags_tokens = null;
+    artifacts.c_import_plan.aggregated_ldflags_token_count = 0;
+    artifacts.c_import_sidecar_path = null;
+}
+
+fn c_import_plan_has_items(plan: &CImportPlan) i32 {
+    if plan == null {
+        return 0;
+    }
+    if plan.item_count > 0 && plan.items != null {
+        return 1;
+    }
+    return 0;
+}
+
+fn c_import_ascii_is_space(ch: byte) i32 {
+    if ch == 32 as byte || ch == 9 as byte || ch == 10 as byte || ch == 13 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn c_import_normalized_string_equals(a: &byte, b: &byte) i32 {
+    var left: &byte = a;
+    var right: &byte = b;
+    if left == null {
+        left = "" as &byte;
+    }
+    if right == null {
+        right = "" as &byte;
+    }
+    if strcmp(left as *byte, right as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c_import_tokenize_flags(arena: &CompilerArena, normalized: &byte, out_tokens: & & & byte, out_count: &i32) i32 {
+    if arena == null || out_tokens == null || out_count == null {
+        return 1;
+    }
+    out_tokens[0] = null;
+    out_count[0] = 0;
+    var src: &byte = normalized;
+    if src == null {
+        src = "" as &byte;
+    }
+    if src[0] == 0 as byte {
+        return 0;
+    }
+
+    var token_count: i32 = 0;
+    var i: usize = 0;
+    while src[i] != 0 as byte {
+        while src[i] != 0 as byte && c_import_ascii_is_space(src[i]) != 0 {
+            i = i + 1;
+        }
+        if src[i] == 0 as byte {
+            break;
+        }
+        token_count = token_count + 1;
+        while src[i] != 0 as byte && c_import_ascii_is_space(src[i]) == 0 {
+            i = i + 1;
+        }
+    }
+    if token_count <= 0 {
+        return 0;
+    }
+
+    const tokens: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * token_count as usize) as & & byte;
+    if tokens == null {
+        return 1;
+    }
+
+    var token_index: i32 = 0;
+    i = 0;
+    while src[i] != 0 as byte && token_index < token_count {
+        while src[i] != 0 as byte && c_import_ascii_is_space(src[i]) != 0 {
+            i = i + 1;
+        }
+        if src[i] == 0 as byte {
+            break;
+        }
+        const start: usize = i;
+        while src[i] != 0 as byte && c_import_ascii_is_space(src[i]) == 0 {
+            i = i + 1;
+        }
+        const len: usize = i - start;
+        const token: &byte = compiler_arena_alloc(arena, len + 1) as &byte;
+        if token == null {
+            return 1;
+        }
+        memcpy(token as *void, (&src[start]) as *void, len);
+        token[len] = 0 as byte;
+        tokens[token_index] = token;
+        token_index = token_index + 1;
+    }
+
+    out_tokens[0] = tokens;
+    out_count[0] = token_index;
+    return 0;
+}
+
+fn c_import_decl_expands_directory(decl: &ASTNode, resolved_path: &byte) i32 {
+    if decl == null || decl.type != ASTNodeType.AST_C_IMPORT_DECL || decl.c_import_resolved_path == null || resolved_path == null {
+        return 0;
+    }
+    if paths_equal(decl.c_import_resolved_path, resolved_path) != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn c_import_should_replace_relative_path(existing_decl: &ASTNode, existing_rel: &byte, new_decl: &ASTNode, new_rel: &byte, resolved_path: &byte) i32 {
+    if new_rel == null || resolved_path == null {
+        return 0;
+    }
+    const existing_is_dir: i32 = c_import_decl_expands_directory(existing_decl, resolved_path);
+    const new_is_dir: i32 = c_import_decl_expands_directory(new_decl, resolved_path);
+    if new_is_dir != 0 && existing_is_dir == 0 {
+        return 1;
+    }
+    if new_is_dir == 0 {
+        return 0;
+    }
+    if existing_is_dir == 0 {
+        return 1;
+    }
+    if existing_rel == null {
+        return 1;
+    }
+    if strcmp(new_rel as *byte, existing_rel as *byte) < 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c_import_append_token_sequence(arena: &CompilerArena, dst_tokens: & & & byte, dst_count: &i32, src_tokens: & & byte, src_count: i32) i32 {
+    if arena == null || dst_tokens == null || dst_count == null {
+        return 1;
+    }
+    if src_count <= 0 || src_tokens == null {
+        return 0;
+    }
+    const old_count: i32 = dst_count[0];
+    const new_count: i32 = old_count + src_count;
+    const merged: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * new_count as usize) as & & byte;
+    if merged == null {
+        return 1;
+    }
+    var i: i32 = 0;
+    while i < old_count {
+        if dst_tokens[0] != null {
+            merged[i] = dst_tokens[0][i];
+        }
+        i = i + 1;
+    }
+    var j: i32 = 0;
+    while j < src_count {
+        merged[old_count + j] = src_tokens[j];
+        j = j + 1;
+    }
+    dst_tokens[0] = merged;
+    dst_count[0] = new_count;
+    return 0;
+}
+
+fn collect_c_import_plan(arena: &CompilerArena, program: &ASTNode, plan: &CImportPlan) i32 {
+    if arena == null || program == null || program.type != ASTNodeType.AST_PROGRAM || plan == null {
+        return 1;
+    }
+    plan.items = null;
+    plan.item_count = 0;
+    plan.aggregated_ldflags_tokens = null;
+    plan.aggregated_ldflags_token_count = 0;
+
+    var max_items: i32 = 0;
+    var decl_count: i32 = 0;
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_C_IMPORT_DECL {
+            max_items = max_items + decl.c_import_expanded_count;
+            decl_count = decl_count + 1;
+        }
+        i = i + 1;
+    }
+    if max_items <= 0 {
+        return 0;
+    }
+
+    const items: &CImportItem = compiler_arena_alloc(arena, @size_of(CImportItem) * max_items as usize) as &CImportItem;
+    const item_cflags_norms: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * max_items as usize) as & & byte;
+    const item_sources: & & ASTNode = compiler_arena_alloc(arena, @size_of(&ASTNode) * max_items as usize) as & & ASTNode;
+    const seen_ldflags_norms: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * decl_count as usize) as & & byte;
+    if items == null || item_cflags_norms == null || item_sources == null || seen_ldflags_norms == null {
+        fprintf(libc.stderr, "错误: @c_import 计划内存分配失败\n" as *byte);
+        return 1;
+    }
+
+    var item_count: i32 = 0;
+    var seen_ldflags_count: i32 = 0;
+    i = 0;
+    while i < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_C_IMPORT_DECL {
+            var cflags_norm: &byte = decl.c_import_cflags_normalized;
+            if cflags_norm == null {
+                cflags_norm = "" as &byte;
+            }
+            var ldflags_norm: &byte = decl.c_import_ldflags_normalized;
+            if ldflags_norm == null {
+                ldflags_norm = "" as &byte;
+            }
+
+            if ldflags_norm[0] != 0 as byte {
+                var ld_seen: i32 = 0;
+                var ld_i: i32 = 0;
+                while ld_i < seen_ldflags_count {
+                    if c_import_normalized_string_equals(seen_ldflags_norms[ld_i], ldflags_norm) != 0 {
+                        ld_seen = 1;
+                        break;
+                    }
+                    ld_i = ld_i + 1;
+                }
+                if ld_seen == 0 {
+                    var ld_tokens: & & byte = null;
+                    var ld_token_count: i32 = 0;
+                    if c_import_tokenize_flags(arena, ldflags_norm, &ld_tokens, &ld_token_count) != 0 {
+                        fprintf(libc.stderr, "错误: @c_import ldflags token 化失败 (%s:%d:%d)\n" as *byte,
+                            decl.filename as *byte, decl.line, decl.column);
+                        return 1;
+                    }
+                    if c_import_append_token_sequence(arena, &plan.aggregated_ldflags_tokens, &plan.aggregated_ldflags_token_count, ld_tokens, ld_token_count) != 0 {
+                        fprintf(libc.stderr, "错误: @c_import 链接旗标聚合失败 (%s:%d:%d)\n" as *byte,
+                            decl.filename as *byte, decl.line, decl.column);
+                        return 1;
+                    }
+                    seen_ldflags_norms[seen_ldflags_count] = ldflags_norm;
+                    seen_ldflags_count = seen_ldflags_count + 1;
+                }
+            }
+
+            var expanded_i: i32 = 0;
+            while expanded_i < decl.c_import_expanded_count {
+                const resolved_path: &byte = decl.c_import_expanded_paths[expanded_i];
+                const relative_path: &byte = decl.c_import_expanded_rel_paths[expanded_i];
+                var existing_idx: i32 = -1;
+                var item_i: i32 = 0;
+                while item_i < item_count {
+                    if items[item_i].resolved_path != null && resolved_path != null &&
+                        paths_equal(items[item_i].resolved_path, resolved_path) != 0 {
+                        existing_idx = item_i;
+                        break;
+                    }
+                    item_i = item_i + 1;
+                }
+
+                if existing_idx >= 0 {
+                    if c_import_normalized_string_equals(item_cflags_norms[existing_idx], cflags_norm) == 0 {
+                        const prev_decl: &ASTNode = item_sources[existing_idx];
+                        fprintf(libc.stderr,
+                            "错误: @c_import 对同一 C 文件给出了冲突的 cflags:\n  %s:%d:%d -> %s\n  %s:%d:%d -> %s\n" as *byte,
+                            prev_decl.filename as *byte, prev_decl.line, prev_decl.column, item_cflags_norms[existing_idx] as *byte,
+                            decl.filename as *byte, decl.line, decl.column, cflags_norm as *byte);
+                        return 1;
+                    }
+                    if c_import_should_replace_relative_path(item_sources[existing_idx], items[existing_idx].relative_path, decl, relative_path, resolved_path) != 0 {
+                        items[existing_idx].relative_path = relative_path;
+                    }
+                } else {
+                    var cflags_tokens: & & byte = null;
+                    var cflags_token_count: i32 = 0;
+                    if c_import_tokenize_flags(arena, cflags_norm, &cflags_tokens, &cflags_token_count) != 0 {
+                        fprintf(libc.stderr, "错误: @c_import cflags token 化失败 (%s:%d:%d)\n" as *byte,
+                            decl.filename as *byte, decl.line, decl.column);
+                        return 1;
+                    }
+                    items[item_count].resolved_path = resolved_path;
+                    items[item_count].relative_path = relative_path;
+                    items[item_count].cflags_tokens = cflags_tokens;
+                    items[item_count].cflags_token_count = cflags_token_count;
+                    items[item_count].filename = decl.filename;
+                    items[item_count].line = decl.line;
+                    items[item_count].column = decl.column;
+                    item_cflags_norms[item_count] = cflags_norm;
+                    item_sources[item_count] = decl;
+                    item_count = item_count + 1;
+                }
+
+                expanded_i = expanded_i + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    plan.items = items;
+    plan.item_count = item_count;
+    return 0;
+}
+
+fn build_c_import_sidecar_path(arena: &CompilerArena, c_path: &byte) &byte {
+    if arena == null || c_path == null {
+        return null;
+    }
+    const len: usize = strlen(c_path as *byte);
+    const suffix: &byte = "imports.sh" as &byte;
+    const suffix_len: usize = strlen(suffix as *byte);
+    const out: &byte = compiler_arena_alloc(arena, len + suffix_len + 1) as &byte;
+    if out == null {
+        return null;
+    }
+    memcpy(out as *void, c_path as *void, len);
+    memcpy((out as *byte + len) as *void, suffix as *void, suffix_len);
+    out[len + suffix_len] = 0 as byte;
+    return out;
+}
+
+fn sidecar_write_single_quoted(file: &void, value: &byte) void {
+    if file == null {
+        return;
+    }
+    fputc(39, file as *void);
+    if value != null {
+        var i: usize = 0;
+        while value[i] != 0 as byte {
+            const ch: byte = value[i];
+            if ch == 39 as byte {
+                fputc(39, file as *void);
+                fputc(92, file as *void);
+                fputc(39, file as *void);
+                fputc(39, file as *void);
+            } else {
+                fputc(ch as i32, file as *void);
+            }
+            i = i + 1;
+        }
+    }
+    fputc(39, file as *void);
+}
+
+fn remove_c_import_sidecar_if_exists(arena: &CompilerArena, c_path: &byte) void {
+    if arena == null || c_path == null || is_c_output(c_path) == 0 {
+        return;
+    }
+    const sidecar_path: &byte = build_c_import_sidecar_path(arena, c_path);
+    if sidecar_path != null {
+        _ = unlink(sidecar_path as *byte);
+    }
+}
+
+fn write_c_import_sidecar(arena: &CompilerArena, c_path: &byte, plan: &CImportPlan, out_path: & & byte) i32 {
+    if arena == null || c_path == null || plan == null || out_path == null {
+        return 1;
+    }
+    out_path[0] = null;
+    if is_c_output(c_path) == 0 || c_import_plan_has_items(plan) == 0 {
+        remove_c_import_sidecar_if_exists(arena, c_path);
+        return 0;
+    }
+    const sidecar_path: &byte = build_c_import_sidecar_path(arena, c_path);
+    if sidecar_path == null {
+        return 1;
+    }
+    const file: &void = fopen(sidecar_path as *byte, "w" as *byte) as &void;
+    if file == null {
+        return 1;
+    }
+
+    fputs("# Generated by Uya @c_import\n" as *byte, file as *void);
+    fprintf(file as *void, "UYA_CIMPORT_COUNT='%d'\n" as *byte, plan.item_count);
+    var i: i32 = 0;
+    while i < plan.item_count {
+        const item: CImportItem = plan.items[i];
+        fprintf(file as *void, "UYA_CIMPORT_SRC_%d=" as *byte, i);
+        sidecar_write_single_quoted(file, item.resolved_path);
+        fputc(10, file as *void);
+        fprintf(file as *void, "UYA_CIMPORT_REL_%d=" as *byte, i);
+        sidecar_write_single_quoted(file, item.relative_path);
+        fputc(10, file as *void);
+        fprintf(file as *void, "UYA_CIMPORT_CFLAGC_%d='%d'\n" as *byte, i, item.cflags_token_count);
+        var j: i32 = 0;
+        while j < item.cflags_token_count {
+            fprintf(file as *void, "UYA_CIMPORT_CFLAG_%d_%d=" as *byte, i, j);
+            sidecar_write_single_quoted(file, item.cflags_tokens[j]);
+            fputc(10, file as *void);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    fprintf(file as *void, "UYA_CIMPORT_LDFLAGC='%d'\n" as *byte, plan.aggregated_ldflags_token_count);
+    i = 0;
+    while i < plan.aggregated_ldflags_token_count {
+        fprintf(file as *void, "UYA_CIMPORT_LDFLAG_%d=" as *byte, i);
+        sidecar_write_single_quoted(file, plan.aggregated_ldflags_tokens[i]);
+        fputc(10, file as *void);
+        i = i + 1;
+    }
+    _ = fclose(file as *void);
+    out_path[0] = sidecar_path;
+    return 0;
+}
+
+fn host_fill_temp_c_import_object_path(buf: &byte, cap: usize, stem: &byte, index: i32) i32 {
+    if buf == null || cap < 32 || stem == null {
+        return -1;
+    }
+    const pid: i32 = getpid();
+    const tmpdir: *byte = getenv("TMPDIR" as *byte);
+    if tmpdir != null && tmpdir[0] != 0 {
+        if index >= 0 {
+            const w: i32 = snprintf(buf as *byte, cap, "%s/%s_%d_%d.o" as *byte, tmpdir, stem as *byte, pid, index);
+            if w > 0 && (w as usize) < cap {
+                return 0;
+            }
+        } else {
+            const w2: i32 = snprintf(buf as *byte, cap, "%s/%s_%d.o" as *byte, tmpdir, stem as *byte, pid);
+            if w2 > 0 && (w2 as usize) < cap {
+                return 0;
+            }
+        }
+        return -1;
+    }
+    if index >= 0 {
+        const w3: i32 = snprintf(buf as *byte, cap, "/tmp/%s_%d_%d.o" as *byte, stem as *byte, pid, index);
+        if w3 > 0 && (w3 as usize) < cap {
+            return 0;
+        }
+        return -1;
+    }
+    const w4: i32 = snprintf(buf as *byte, cap, "/tmp/%s_%d.o" as *byte, stem as *byte, pid);
+    if w4 > 0 && (w4 as usize) < cap {
+        return 0;
+    }
+    return -1;
+}
+
+fn shell_cmd_append_raw(cmd: &byte, cap: i32, len: &i32, text: &byte) i32 {
+    if cmd == null || len == null || text == null || text[0] == 0 as byte {
+        return 0;
+    }
+    const remaining: i32 = cap - len[0];
+    if remaining <= 1 {
+        return 1;
+    }
+    var written: i32 = 0;
+    if len[0] == 0 {
+        written = snprintf((cmd as *byte + len[0]) as *byte, remaining as usize, "%s" as *byte, text as *byte);
+    } else {
+        written = snprintf((cmd as *byte + len[0]) as *byte, remaining as usize, " %s" as *byte, text as *byte);
+    }
+    if written <= 0 || written >= remaining {
+        return 1;
+    }
+    len[0] = len[0] + written;
+    return 0;
+}
+
+fn shell_cmd_append_quoted_word(cmd: &byte, cap: i32, len: &i32, word: &byte) i32 {
+    if cmd == null || len == null || word == null {
+        return 1;
+    }
+    if len[0] > 0 {
+        if len[0] + 1 >= cap {
+            return 1;
+        }
+        cmd[len[0]] = 32 as byte;
+        len[0] = len[0] + 1;
+    }
+    if len[0] + 2 >= cap {
+        return 1;
+    }
+    cmd[len[0]] = 39 as byte;
+    len[0] = len[0] + 1;
+    var i: usize = 0;
+    while word[i] != 0 as byte {
+        const ch: byte = word[i];
+        if ch == 39 as byte {
+            if len[0] + 4 >= cap {
+                return 1;
+            }
+            cmd[len[0]] = 39 as byte;
+            cmd[len[0] + 1] = 92 as byte;
+            cmd[len[0] + 2] = 39 as byte;
+            cmd[len[0] + 3] = 39 as byte;
+            len[0] = len[0] + 4;
+        } else {
+            if len[0] + 1 >= cap {
+                return 1;
+            }
+            cmd[len[0]] = ch;
+            len[0] = len[0] + 1;
+        }
+        i = i + 1;
+    }
+    if len[0] + 1 >= cap {
+        return 1;
+    }
+    cmd[len[0]] = 39 as byte;
+    len[0] = len[0] + 1;
+    cmd[len[0]] = 0 as byte;
+    return 0;
+}
+
 // UYA_SPLIT_C=0|false|no|off 或 UYA_SINGLE_FILE_C=1|true|yes 时关闭 C99 默认多文件输出（Makefile 自举等）
 fn env_disables_auto_split_c() i32 {
     const ns: *byte = getenv("UYA_SPLIT_C" as *byte);
@@ -4984,12 +5518,64 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
     return 0;
 }
 
+fn compile_c_source_to_object(
+    cc_driver: &byte,
+    target_flags: &byte,
+    cflags: &byte,
+    source_path: &byte,
+    object_path: &byte,
+    extra_tokens: & & byte,
+    extra_token_count: i32,
+    failure_label: &byte
+) i32 {
+    if cc_driver == null || source_path == null || object_path == null {
+        return 1;
+    }
+    var cmd: [byte: 32768] = [];
+    var cmd_len: i32 = 0;
+    if shell_cmd_append_raw(&cmd[0] as &byte, 32768, &cmd_len, cc_driver) != 0 ||
+        shell_cmd_append_raw(&cmd[0] as &byte, 32768, &cmd_len, target_flags) != 0 ||
+        shell_cmd_append_raw(&cmd[0] as &byte, 32768, &cmd_len, cflags) != 0 {
+        fprintf(libc.stderr, "错误：构建编译命令失败\n" as *byte);
+        return 1;
+    }
+    var i: i32 = 0;
+    while i < extra_token_count {
+        if extra_tokens != null && extra_tokens[i] != null {
+            if shell_cmd_append_quoted_word(&cmd[0] as &byte, 32768, &cmd_len, extra_tokens[i]) != 0 {
+                fprintf(libc.stderr, "错误：构建编译命令失败\n" as *byte);
+                return 1;
+            }
+        }
+        i = i + 1;
+    }
+    if shell_cmd_append_raw(&cmd[0] as &byte, 32768, &cmd_len, "-c" as &byte) != 0 ||
+        shell_cmd_append_quoted_word(&cmd[0] as &byte, 32768, &cmd_len, source_path) != 0 ||
+        shell_cmd_append_raw(&cmd[0] as &byte, 32768, &cmd_len, "-o" as &byte) != 0 ||
+        shell_cmd_append_quoted_word(&cmd[0] as &byte, 32768, &cmd_len, object_path) != 0 {
+        fprintf(libc.stderr, "错误：构建编译命令失败\n" as *byte);
+        return 1;
+    }
+
+    fprintf(libc.stderr, "信息：编译对象文件：%s\n" as *byte, &cmd[0] as *byte);
+    const result: i32 = system(&cmd[0] as *byte);
+    if result != 0 {
+        var label: &byte = failure_label;
+        if label == null {
+            label = source_path;
+        }
+        fprintf(libc.stderr, "错误：C 源编译失败: %s\n" as *byte, label as *byte);
+        return 1;
+    }
+    return 0;
+}
+
 // 调用宿主工具链链接生成可执行文件
 // c_file: C 源代码文件路径
 // output: 输出可执行文件路径
 // is_nostdlib: 是否使用 --nostdlib 模式
 // 返回：0 成功，非 0 失败
-fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
+fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CImportPlan) i32 {
     if g_split_c_dir_active != 0 {
         return link_split_with_make(&g_split_c_dir[0] as &byte, output, is_nostdlib);
     }
@@ -5035,6 +5621,126 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
             fprintf(libc.stderr, "错误：当前 build/run/test 的 --nostdlib 路径仅支持 Linux 目标，当前 TARGET_OS=%s\n" as *byte, target_os as *byte);
             return 1;
         }
+    }
+
+    if c_import_plan_has_items(plan) != 0 {
+        var generated_obj: [byte: PATH_MAX] = [];
+        if host_fill_temp_c_import_object_path(&generated_obj[0] as &byte, PATH_MAX, "uya_generated" as &byte, -1) != 0 {
+            fprintf(libc.stderr, "错误：无法生成 @c_import 主对象路径\n" as *byte);
+            return 1;
+        }
+        if compile_c_source_to_object(cc_driver, target_flags, cflags, c_file, &generated_obj[0] as &byte, null, 0, c_file) != 0 {
+            _ = unlink(&generated_obj[0] as *byte);
+            return 1;
+        }
+
+        var item_i: i32 = 0;
+        while item_i < plan.item_count {
+            var item_obj: [byte: PATH_MAX] = [];
+            if host_fill_temp_c_import_object_path(&item_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, item_i) != 0 {
+                fprintf(libc.stderr, "错误：无法生成 @c_import 临时对象路径\n" as *byte);
+                _ = unlink(&generated_obj[0] as *byte);
+                return 1;
+            }
+            const item: CImportItem = plan.items[item_i];
+            if compile_c_source_to_object(cc_driver, target_flags, cflags, item.resolved_path, &item_obj[0] as &byte,
+                item.cflags_tokens, item.cflags_token_count, item.resolved_path) != 0 {
+                _ = unlink(&generated_obj[0] as *byte);
+                var cleanup_i: i32 = 0;
+                while cleanup_i <= item_i {
+                    var cleanup_obj: [byte: PATH_MAX] = [];
+                    if host_fill_temp_c_import_object_path(&cleanup_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, cleanup_i) == 0 {
+                        _ = unlink(&cleanup_obj[0] as *byte);
+                    }
+                    cleanup_i = cleanup_i + 1;
+                }
+                return 1;
+            }
+            item_i = item_i + 1;
+        }
+
+        var link_cmd: [byte: 32768] = [];
+        var link_len: i32 = 0;
+        if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, cc_driver) != 0 ||
+            shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, target_flags) != 0 ||
+            shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, cflags) != 0 {
+            fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+            _ = unlink(&generated_obj[0] as *byte);
+            return 1;
+        }
+        if is_nostdlib != 0 {
+            if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-nostdlib" as &byte) != 0 ||
+                shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-static" as &byte) != 0 {
+                fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+                _ = unlink(&generated_obj[0] as *byte);
+                return 1;
+            }
+        }
+        if shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, &generated_obj[0] as &byte) != 0 {
+            fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+            _ = unlink(&generated_obj[0] as *byte);
+            return 1;
+        }
+        var link_item_i: i32 = 0;
+        while link_item_i < plan.item_count {
+            var link_item_obj: [byte: PATH_MAX] = [];
+            if host_fill_temp_c_import_object_path(&link_item_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, link_item_i) != 0 ||
+                shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, &link_item_obj[0] as &byte) != 0 {
+                fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+                _ = unlink(&generated_obj[0] as *byte);
+                return 1;
+            }
+            link_item_i = link_item_i + 1;
+        }
+        if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-o" as &byte) != 0 ||
+            shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, output) != 0 {
+            fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+            _ = unlink(&generated_obj[0] as *byte);
+            return 1;
+        }
+        if is_nostdlib != 0 {
+            if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-lgcc" as &byte) != 0 {
+                fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+                _ = unlink(&generated_obj[0] as *byte);
+                return 1;
+            }
+        }
+        if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, ldflags) != 0 {
+            fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+            _ = unlink(&generated_obj[0] as *byte);
+            return 1;
+        }
+        var ld_i: i32 = 0;
+        while ld_i < plan.aggregated_ldflags_token_count {
+            if plan.aggregated_ldflags_tokens != null && plan.aggregated_ldflags_tokens[ld_i] != null {
+                if shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, plan.aggregated_ldflags_tokens[ld_i]) != 0 {
+                    fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
+                    _ = unlink(&generated_obj[0] as *byte);
+                    return 1;
+                }
+            }
+            ld_i = ld_i + 1;
+        }
+
+        fprintf(libc.stderr, "信息：调用宿主工具链链接：%s\n" as *byte, &link_cmd[0] as *byte);
+        const link_result: i32 = system(&link_cmd[0] as *byte);
+        _ = unlink(&generated_obj[0] as *byte);
+        var cleanup_j: i32 = 0;
+        while cleanup_j < plan.item_count {
+            var cleanup_item_obj: [byte: PATH_MAX] = [];
+            if host_fill_temp_c_import_object_path(&cleanup_item_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, cleanup_j) == 0 {
+                _ = unlink(&cleanup_item_obj[0] as *byte);
+            }
+            cleanup_j = cleanup_j + 1;
+        }
+        if link_result != 0 {
+            fprintf(libc.stderr, "错误：宿主工具链链接失败，返回码：%d\n" as *byte, link_result);
+            return 1;
+        }
+        return 0;
+    }
+
+    if is_nostdlib != 0 {
         if target_flags[0] != 0 {
             cmd_len = snprintf(&cmd[0], 4096, "%s %s %s -nostdlib -static %s -o %s -lgcc %s" as *byte, cc_driver as *byte, target_flags as *byte, cflags as *byte, c_file as *byte, output as *byte, ldflags as *byte);
         } else {
@@ -5079,8 +5785,10 @@ fn compile_files(
     is_nostdlib: i32,
     stack_size: i32,
     split_c_dir: &byte,
-    async_frame_heap_fallback: i32
+    async_frame_heap_fallback: i32,
+    out_artifacts: &CompileArtifacts
 ) i32 {
+    compile_artifacts_reset(out_artifacts);
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
     var temp_arena: CompilerArena = CompilerArena {
@@ -5360,6 +6068,9 @@ fn compile_files(
     var actual_output: *byte = output_file;
     if output_path_override != null {
         actual_output = output_path_override as *byte;
+    }
+    if out_artifacts != null {
+        out_artifacts.generated_c_path = actual_output as &byte;
     }
     fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
     if project_root != null {
@@ -5641,6 +6352,11 @@ fn compile_files(
     if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM {
         merged_ast = checker.program_node;
     }
+    if out_artifacts != null {
+        if collect_c_import_plan(&arena, merged_ast, &out_artifacts.c_import_plan) != 0 {
+            return 1;
+        }
+    }
     checker_reset_reachability_visit_cache(&checker);
     seed_function_reachability_roots(&checker, merged_ast);
     checker_compute_function_reachability(&checker);
@@ -5732,6 +6448,11 @@ fn compile_files(
     // 设置单态化实例（从 TypeChecker 传入）
     c99_codegen_set_mono_instances(&c99_codegen, &checker);
     c99_codegen_set_reachable_functions(&c99_codegen, &checker);
+    if out_artifacts != null {
+        c99_codegen_set_c_import_plan(&c99_codegen, &out_artifacts.c_import_plan);
+    } else {
+        c99_codegen_set_c_import_plan(&c99_codegen, null);
+    }
     c99_codegen.container_mode = g_container_mode;
     c99_codegen.microapp_softvm_mode = g_microapp_softvm_mode;
     if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
@@ -5745,6 +6466,16 @@ fn compile_files(
     c99_codegen_free(&c99_codegen);
     if out_file != null {
         fclose(out_file);
+    }
+    if out_artifacts != null {
+        if out_file != null && output_file_index >= 0 && is_c_output(actual_output as &byte) != 0 {
+            if write_c_import_sidecar(&arena, actual_output as &byte, &out_artifacts.c_import_plan, &out_artifacts.c_import_sidecar_path) != 0 {
+                fprintf(libc.stderr, "错误: @c_import sidecar 生成失败\n" as *byte);
+                return 1;
+            }
+        } else if actual_output != null {
+            remove_c_import_sidecar_if_exists(&arena, actual_output as &byte);
+        }
     }
     codegen_end_time = clock();
 
@@ -6001,7 +6732,17 @@ export fn main() i32 {
     if g_split_c_dir_active != 0 {
         split_c_arg = &g_split_c_dir[0] as &byte;
     }
-    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback);
+    var artifacts: CompileArtifacts = CompileArtifacts {
+        generated_c_path: null,
+        c_import_plan: CImportPlan {
+            items: null,
+            item_count: 0,
+            aggregated_ldflags_tokens: null,
+            aggregated_ldflags_token_count: 0,
+        },
+        c_import_sidecar_path: null,
+    };
+    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, &artifacts);
     if result != 0 {
         return result;
     }
@@ -6023,7 +6764,8 @@ export fn main() i32 {
             fprintf(libc.stderr, "错误：无法生成 microapp 临时 payload_obj 路径\n" as *byte);
             return 1;
         }
-        const manifest_result: i32 = write_microapp_payload_obj(&microapp_pobj_path[0] as &byte, source_path as &byte, &auto_output_path[0] as &byte);
+        const payload_c_path: &byte = artifacts.generated_c_path;
+        const manifest_result: i32 = write_microapp_payload_obj(&microapp_pobj_path[0] as &byte, source_path as &byte, payload_c_path);
         if manifest_result != 0 {
             return manifest_result;
         }
@@ -6065,7 +6807,7 @@ export fn main() i32 {
             fprintf(libc.stderr, "错误: 无法获取 microapp 源文件路径\n" as *byte);
             return 1;
         }
-        const manifest_result: i32 = write_microapp_payload_obj(user_output_path as &byte, source_path as &byte, &auto_output_path[0] as &byte);
+        const manifest_result: i32 = write_microapp_payload_obj(user_output_path as &byte, source_path as &byte, artifacts.generated_c_path);
         if manifest_result != 0 {
             return manifest_result;
         }
@@ -6087,7 +6829,7 @@ export fn main() i32 {
             fprintf(libc.stderr, "错误: 无法生成 microapp 临时 payload_obj 路径\n" as *byte);
             return 1;
         }
-        const manifest_result: i32 = write_microapp_payload_obj(&temp_pobj_path[0] as &byte, source_path as &byte, &auto_output_path[0] as &byte);
+        const manifest_result: i32 = write_microapp_payload_obj(&temp_pobj_path[0] as &byte, source_path as &byte, artifacts.generated_c_path);
         if manifest_result != 0 {
             return manifest_result;
         }
@@ -6114,7 +6856,7 @@ export fn main() i32 {
     // 条件：output_file_index == -2（自动生成 C 文件）或用户指定了非 .c 输出
     if command == CommandType.COMMAND_BUILD && is_output_c_file == 0 {
         // C 文件路径（auto_output_path 已设置）
-        const c_file: &byte = &auto_output_path[0];
+        const c_file: &byte = artifacts.generated_c_path;
         
         var output: &byte = "a.out" as *byte;
 
@@ -6126,7 +6868,7 @@ export fn main() i32 {
         }
 
         // 调用宿主工具链链接
-        const link_result: i32 = link_with_toolchain(c_file, output, is_nostdlib);
+        const link_result: i32 = link_with_toolchain(c_file, output, is_nostdlib, &artifacts.c_import_plan);
         if link_result != 0 {
             fprintf(libc.stderr, "错误：链接失败\n" as *byte);
             return 1;
@@ -6139,7 +6881,7 @@ export fn main() i32 {
     // run 和 test 命令：自动编译并运行
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         // 获取输出路径
-        var actual_output: &byte = &auto_output_path[0];
+        var actual_output: &byte = artifacts.generated_c_path;
         if output_file_index >= 0 {
             actual_output = get_argv(output_file_index) as &byte;
         }
@@ -6160,7 +6902,7 @@ export fn main() i32 {
         // 调用宿主工具链链接生成可执行文件
         fprintf(libc.stderr, "\n编译完成：%s\n" as *byte, actual_output as *byte);
 
-        const link_result: i32 = link_with_toolchain(actual_output, &run_output[0] as &byte, is_nostdlib);
+        const link_result: i32 = link_with_toolchain(actual_output, &run_output[0] as &byte, is_nostdlib, &artifacts.c_import_plan);
         if link_result != 0 {
             fprintf(libc.stderr, "错误：宿主工具链链接失败\n" as *byte);
             return 1;

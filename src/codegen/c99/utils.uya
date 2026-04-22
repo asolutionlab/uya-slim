@@ -379,6 +379,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
     codegen.async_poll_ready_payload_c = null;
     codegen.async_poll_inner_is_err_union = 0;
     codegen.container_mode = 0;
+    codegen.c_import_plan = null;
     ii = 0;
     while ii < @len(codegen.async_param_names) {
         codegen.async_param_names[ii] = null;
@@ -417,6 +418,13 @@ fn c99_codegen_set_mono_instances(codegen: &C99CodeGenerator, checker: &TypeChec
     }
 
     return 0;
+}
+
+fn c99_codegen_set_c_import_plan(codegen: &C99CodeGenerator, plan: &CImportPlan) void {
+    if codegen == null {
+        return;
+    }
+    codegen.c_import_plan = plan;
 }
 
 fn c99_codegen_set_reachable_functions(codegen: &C99CodeGenerator, checker: &TypeChecker) i32 {
@@ -1208,6 +1216,13 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
     }
     if codegen.split_mirror != 0 {
         fputs("OBJS := uya_part1.o uya_common.o" as *byte, mf);
+        if codegen.c_import_plan != null {
+            var cimp_obj_i: i32 = 0;
+            while cimp_obj_i < codegen.c_import_plan.item_count {
+                fprintf(mf as *void, " uya_cimport_%d.o" as *byte, cimp_obj_i);
+                cimp_obj_i = cimp_obj_i + 1;
+            }
+        }
         const klcp: i32 = codegen.split_mirror_lcp;
         var oi: i32 = 0;
         while oi < codegen.split_mirror_count {
@@ -1252,12 +1267,52 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         fputs(".PHONY: all clean\n" as *byte, mf);
         fputs("all: $(UYA_OUT)\n" as *byte, mf);
         if codegen.is_nostdlib != 0 {
-            fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
+            fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)" as *byte, mf);
+            if codegen.c_import_plan != null {
+                var ld_i: i32 = 0;
+                while ld_i < codegen.c_import_plan.aggregated_ldflags_token_count {
+                    if codegen.c_import_plan.aggregated_ldflags_tokens != null && codegen.c_import_plan.aggregated_ldflags_tokens[ld_i] != null {
+                        fputc(32, mf as *void);
+                        fputs(codegen.c_import_plan.aggregated_ldflags_tokens[ld_i] as *byte, mf as *void);
+                    }
+                    ld_i = ld_i + 1;
+                }
+            }
+            fputc(10, mf as *void);
         } else {
-            fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS) -lm\n" as *byte, mf);
+            fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)" as *byte, mf);
+            if codegen.c_import_plan != null {
+                var ld_i2: i32 = 0;
+                while ld_i2 < codegen.c_import_plan.aggregated_ldflags_token_count {
+                    if codegen.c_import_plan.aggregated_ldflags_tokens != null && codegen.c_import_plan.aggregated_ldflags_tokens[ld_i2] != null {
+                        fputc(32, mf as *void);
+                        fputs(codegen.c_import_plan.aggregated_ldflags_tokens[ld_i2] as *byte, mf as *void);
+                    }
+                    ld_i2 = ld_i2 + 1;
+                }
+            }
+            fputs(" -lm\n" as *byte, mf);
         }
         fputs("uya_part1.o: uya_part1.c uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
         fputs("uya_common.o: uya_common.c uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_common.c -o uya_common.o\n" as *byte, mf);
+        if codegen.c_import_plan != null {
+            var cimp_rule_i: i32 = 0;
+            while cimp_rule_i < codegen.c_import_plan.item_count {
+                const item: CImportItem = codegen.c_import_plan.items[cimp_rule_i];
+                fprintf(mf as *void, "uya_cimport_%d.o: %s\n\t$(CC) -c $(CFLAGS)" as *byte,
+                    cimp_rule_i, item.resolved_path as *byte);
+                var cf_i: i32 = 0;
+                while cf_i < item.cflags_token_count {
+                    if item.cflags_tokens != null && item.cflags_tokens[cf_i] != null {
+                        fputc(32, mf as *void);
+                        fputs(item.cflags_tokens[cf_i] as *byte, mf as *void);
+                    }
+                    cf_i = cf_i + 1;
+                }
+                fprintf(mf as *void, " %s -o uya_cimport_%d.o\n" as *byte, item.resolved_path as *byte, cimp_rule_i);
+                cimp_rule_i = cimp_rule_i + 1;
+            }
+        }
         var ri: i32 = 0;
         while ri < codegen.split_mirror_count {
             if ri >= 0 && ri < @len(codegen.split_mirror_keys) {
@@ -1300,16 +1355,64 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         _ = fclose(mf);
         return;
     }
-    fputs("OBJS := uya_part1.o uya_part2.o\n" as *byte, mf);
+    fputs("OBJS := uya_part1.o uya_part2.o" as *byte, mf);
+    if codegen.c_import_plan != null {
+        var cimp_obj_i3: i32 = 0;
+        while cimp_obj_i3 < codegen.c_import_plan.item_count {
+            fprintf(mf as *void, " uya_cimport_%d.o" as *byte, cimp_obj_i3);
+            cimp_obj_i3 = cimp_obj_i3 + 1;
+        }
+    }
+    fputc(10, mf as *void);
     fputs(".PHONY: all clean\n" as *byte, mf);
     fputs("all: $(UYA_OUT)\n" as *byte, mf);
     if codegen.is_nostdlib != 0 {
-        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
+        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)" as *byte, mf);
+        if codegen.c_import_plan != null {
+            var ld_i3: i32 = 0;
+            while ld_i3 < codegen.c_import_plan.aggregated_ldflags_token_count {
+                if codegen.c_import_plan.aggregated_ldflags_tokens != null && codegen.c_import_plan.aggregated_ldflags_tokens[ld_i3] != null {
+                    fputc(32, mf as *void);
+                    fputs(codegen.c_import_plan.aggregated_ldflags_tokens[ld_i3] as *byte, mf as *void);
+                }
+                ld_i3 = ld_i3 + 1;
+            }
+        }
+        fputc(10, mf as *void);
     } else {
-        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS) -lm\n" as *byte, mf);
+        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)" as *byte, mf);
+        if codegen.c_import_plan != null {
+            var ld_i4: i32 = 0;
+            while ld_i4 < codegen.c_import_plan.aggregated_ldflags_token_count {
+                if codegen.c_import_plan.aggregated_ldflags_tokens != null && codegen.c_import_plan.aggregated_ldflags_tokens[ld_i4] != null {
+                    fputc(32, mf as *void);
+                    fputs(codegen.c_import_plan.aggregated_ldflags_tokens[ld_i4] as *byte, mf as *void);
+                }
+                ld_i4 = ld_i4 + 1;
+            }
+        }
+        fputs(" -lm\n" as *byte, mf);
     }
     fputs("uya_part1.o: uya_part1.c\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
     fputs("uya_part2.o: uya_part2.c\n\t$(CC) -c $(CFLAGS) -I. uya_part2.c -o uya_part2.o\n" as *byte, mf);
+    if codegen.c_import_plan != null {
+        var cimp_rule_i2: i32 = 0;
+        while cimp_rule_i2 < codegen.c_import_plan.item_count {
+            const item2: CImportItem = codegen.c_import_plan.items[cimp_rule_i2];
+            fprintf(mf as *void, "uya_cimport_%d.o: %s\n\t$(CC) -c $(CFLAGS)" as *byte,
+                cimp_rule_i2, item2.resolved_path as *byte);
+            var cf_i2: i32 = 0;
+            while cf_i2 < item2.cflags_token_count {
+                if item2.cflags_tokens != null && item2.cflags_tokens[cf_i2] != null {
+                    fputc(32, mf as *void);
+                    fputs(item2.cflags_tokens[cf_i2] as *byte, mf as *void);
+                }
+                cf_i2 = cf_i2 + 1;
+            }
+            fprintf(mf as *void, " %s -o uya_cimport_%d.o\n" as *byte, item2.resolved_path as *byte, cimp_rule_i2);
+            cimp_rule_i2 = cimp_rule_i2 + 1;
+        }
+    }
     fputs("clean:\n\trm -f $(OBJS) $(UYA_OUT)\n" as *byte, mf);
     _ = fclose(mf);
 }

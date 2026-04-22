@@ -15,6 +15,84 @@ fn parser_parse_optional_async_fn_attr(parser: &Parser) i32 {
     return 0;
 }
 
+fn parser_parse_c_import_decl(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null || parser.current_token.type != TokenType.TOKEN_AT_IDENTIFIER ||
+        parser.current_token.value == null || str_equals_lexer(parser.current_token.value, "c_import" as &byte) == 0 {
+        return null;
+    }
+
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    parser_consume(parser);  // @c_import
+
+    if parser_match(parser, TokenType.TOKEN_LEFT_PAREN) == 0 {
+        parser_report_syntax_error(parser, "@c_import 后期望 '('" as *byte);
+        return null;
+    }
+    parser_consume(parser);
+
+    if parser.current_token == null || parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) != 0 {
+        parser_report_syntax_error(parser, "@c_import 至少需要 1 个字符串字面量参数" as *byte);
+        return null;
+    }
+
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_C_IMPORT_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if node == null {
+        return null;
+    }
+
+    var arg_index: i32 = 0;
+    while parser.current_token != null && parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        if parser.current_token.type != TokenType.TOKEN_STRING && parser.current_token.type != TokenType.TOKEN_RAW_STRING {
+            var msg: [byte: 128] = [];
+            snprintf(&msg[0] as *byte, 128, "@c_import 第 %d 个参数必须是字符串字面量" as *byte, arg_index + 1);
+            parser_report_syntax_error(parser, &msg[0] as &byte);
+            return null;
+        }
+        if arg_index == 0 {
+            node.c_import_path_literal = parser.current_token.value;
+        } else if arg_index == 1 {
+            node.c_import_cflags_literal = parser.current_token.value;
+        } else if arg_index == 2 {
+            node.c_import_ldflags_literal = parser.current_token.value;
+        } else {
+            parser_report_syntax_error(parser, "@c_import 最多接受 3 个字符串字面量参数" as *byte);
+            return null;
+        }
+        arg_index = arg_index + 1;
+        parser_consume(parser);
+
+        if parser.current_token != null && parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            if arg_index >= 3 {
+                parser_report_syntax_error(parser, "@c_import 最多接受 3 个字符串字面量参数" as *byte);
+                return null;
+            }
+            parser_consume(parser);
+            if parser.current_token == null || parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) != 0 {
+                var msg2: [byte: 128] = [];
+                snprintf(&msg2[0] as *byte, 128, "@c_import 第 %d 个参数缺失" as *byte, arg_index + 1);
+                parser_report_syntax_error(parser, &msg2[0] as &byte);
+                return null;
+            }
+            continue;
+        }
+        break;
+    }
+
+    if parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 {
+        parser_report_syntax_error(parser, "@c_import(...) 后期望 ')'" as *byte);
+        return null;
+    }
+    parser_consume(parser);
+
+    if parser_match(parser, TokenType.TOKEN_SEMICOLON) == 0 {
+        parser_report_syntax_error(parser, "@c_import 声明后期望 ';'" as *byte);
+        return null;
+    }
+    parser_consume(parser);
+    return node;
+}
+
 fn parser_parse_interface(parser: &Parser) &ASTNode {
     if parser == null || parser.current_token == null {
         return null;

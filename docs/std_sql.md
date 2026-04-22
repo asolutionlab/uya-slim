@@ -142,8 +142,24 @@ fn use_db(driver: Driver) !void {
 构建时建议使用 hosted 路径：
 
 ```bash
-bin/uya --c99 your_sqlite_demo.uya -o /tmp/app.c
-gcc -std=c99 /tmp/app.c -lsqlite3 -o /tmp/app
+bin/uya build your_sqlite_demo.uya -o /tmp/app --c99
+```
+
+如果你使用 SQLite amalgamation，也可以直接把 `sqlite3.c` 写进源码构建图：
+
+```uya
+@c_import(
+    "third_party/sqlite/sqlite3.c",
+    "-Ithird_party/sqlite -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION=1",
+    "-ldl -lpthread"
+);
+```
+
+若只想输出 C：
+
+```bash
+bin/uya build your_sqlite_demo.uya -o /tmp/app.c --c99 --no-split-c
+# 额外生成：/tmp/app.cimports.sh
 ```
 
 ---
@@ -170,8 +186,20 @@ gcc -std=c99 /tmp/app.c -lsqlite3 -o /tmp/app
 构建方式通常类似：
 
 ```bash
-bin/uya --c99 your_mysql_demo.uya -o /tmp/app.c
-gcc -std=c99 /tmp/app.c mysql_shim.c -lmysqlclient -o /tmp/app
+bin/uya build your_mysql_demo.uya -o /tmp/app --c99
+```
+
+如果你已经把 shim 写成一个目录，也可以直接递归导入：
+
+```uya
+@c_import("mysql_shim/");
+@c_import("mysql_shim/", "", "-lmysqlclient");
+```
+
+更常见的单文件 shim 写法：
+
+```uya
+@c_import("mysql_shim.c", "", "-lmysqlclient");
 ```
 
 ---

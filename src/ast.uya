@@ -75,6 +75,7 @@ enum ASTNodeType {
     AST_EXTERN_VAR_DECL,  // extern 变量声明（extern const/var name: type; 或 export const/var name: type = val;）
     AST_DESTRUCTURE_DECL,  // 解构声明（const (x, y) = expr）
     AST_USE_STMT,         // use 语句（use path; 或 use path.item; 或 use path as alias;）
+    AST_C_IMPORT_DECL,    // @c_import("path", cflags?, ldflags?);
     AST_IF_STMT,
     AST_WHILE_STMT,
     AST_FOR_STMT,
@@ -272,6 +273,16 @@ struct ASTNode {
     use_stmt_path_segment_count: i32,   // 路径段数量
     use_stmt_item_name: &byte,          // 可选：导入的特定项名称（如 use std.io.read_file 中的 "read_file"，为 null 表示导入整个模块）
     use_stmt_alias: &byte,              // 可选：别名（如 use std.io as io 中的 "io"，为 null 表示无别名）
+    // c_import_decl（@c_import("path", cflags?, ldflags?);）
+    c_import_path_literal: &byte,
+    c_import_resolved_path: &byte,
+    c_import_cflags_literal: &byte,
+    c_import_ldflags_literal: &byte,
+    c_import_cflags_normalized: &byte,
+    c_import_ldflags_normalized: &byte,
+    c_import_expanded_paths: & & byte,
+    c_import_expanded_rel_paths: & & byte,
+    c_import_expanded_count: i32,
     // binary_expr
     binary_expr_left: &ASTNode,
     binary_expr_op: i32,
@@ -572,6 +583,15 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &CompilerArena
     node.use_stmt_path_segment_count = 0;
     node.use_stmt_item_name = null;
     node.use_stmt_alias = null;
+    node.c_import_path_literal = null;
+    node.c_import_resolved_path = null;
+    node.c_import_cflags_literal = null;
+    node.c_import_ldflags_literal = null;
+    node.c_import_cflags_normalized = null;
+    node.c_import_ldflags_normalized = null;
+    node.c_import_expanded_paths = null;
+    node.c_import_expanded_rel_paths = null;
+    node.c_import_expanded_count = 0;
     node.binary_expr_left = null;
     node.binary_expr_op = 0;
     node.binary_expr_right = null;

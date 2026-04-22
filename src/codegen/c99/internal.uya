@@ -395,6 +395,7 @@ struct C99CodeGenerator {
     // microapp 模式：生成指针访问边界检查
     container_mode: i32,
     microapp_softvm_mode: i32,
+    c_import_plan: &CImportPlan,
 
     // 多文件 C 输出（--split-c-dir）：part1=前导+字符串常量，part2=其余；emit_stream 指向当前写入目标
     emit_stream: &void,

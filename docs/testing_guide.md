@@ -168,6 +168,25 @@ gcc -std=c99 -no-pie /tmp/test_xxx.c tests/bridge_minimal.c -o /tmp/test_xxx -lm
 /tmp/test_xxx
 ```
 
+如果测试依赖 `@c_import`，且你选择只输出 `.c`，则编译器还会额外写出同名 sidecar：
+
+```bash
+bin/uya build tests/test_c_import_file.uya -o /tmp/test_c_import_file.c --c99
+# 额外生成：/tmp/test_c_import_file.cimports.sh
+```
+
+推荐用仓库自带脚本消费 sidecar：
+
+```bash
+CC=gcc ./tests/link_cimports_posix.sh /tmp/test_c_import_file.c /tmp/test_c_import_file
+/tmp/test_c_import_file
+```
+
+说明：
+- sidecar 中保存 `UYA_CIMPORT_SRC_*`、`UYA_CIMPORT_REL_*`、`UYA_CIMPORT_CFLAG_*_*` 与 `UYA_CIMPORT_LDFLAG_*`
+- 脚本会先编译导入的 C object，再与主 `.c` 一起链接
+- 若测试走 split-C 路径，则导入的 C object 直接进入 Makefile，不依赖 sidecar
+
 当前更推荐直接让编译器在 `-e` 模式下调用宿主工具链完成链接：
 
 ```bash

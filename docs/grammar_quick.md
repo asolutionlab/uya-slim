@@ -823,6 +823,21 @@ struct EmbedDirEntry {
 - 条目按相对路径排序
 - 目录中的 symlink / 特殊文件会报错
 
+### C 构建导入指令
+
+| 指令 | 说明 | 示例 |
+|------|------|------|
+| `@c_import("file.c");` | 顶层构建指令；导入单个 `.c` 文件 | `@c_import("fixtures/c_import/add_impl.c");` |
+| `@c_import("dir/");` | 顶层构建指令；递归导入目录下全部 `*.c` | `@c_import("fixtures/c_import/dir");` |
+| `@c_import("path", "cflags", "ldflags");` | 顶层构建指令；为导入项追加 per-import `cflags` 与程序级 `ldflags` | `@c_import("flag_impl.c", "-DC_IMPORT_MAGIC=7");` |
+
+速记：
+- 只能在顶层使用
+- 首参数必须是字符串字面量
+- 文件模式与目录模式都支持
+- `uya build -o app.c --c99` 时若程序包含 `@c_import`，会额外生成 `app.cimports.sh`
+- split-C 路径由 Makefile 直接处理导入的 C object，不额外生成 sidecar
+
 ### 宏调用与跨模块使用
 
 ```uya

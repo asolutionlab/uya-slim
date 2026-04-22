@@ -1318,6 +1318,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token {
             if str_equals_lexer(value, "func_name" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "embed" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "embed_dir" as &byte) != 0 { is_builtin = 1; }
+            if str_equals_lexer(value, "c_import" as &byte) != 0 { is_builtin = 1; }
             // 宏编译时内置函数
             if str_equals_lexer(value, "mc_eval" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "mc_code" as &byte) != 0 { is_builtin = 1; }
@@ -1357,7 +1358,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token {
             }
 
             // 未知的内置函数
-            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@va_copy、@src_name、@src_path、@src_line、@src_col、@func_name、@embed、@embed_dir、@async_fn、@await、@frame、@naked_fn、@align、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@mc_source、@syscall、@ptr_from_usize、@usize_from_ptr、@error_id、@print、@println、@asm、@asm_target、@vector、@mask\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@va_copy、@src_name、@src_path、@src_line、@src_col、@func_name、@embed、@embed_dir、@c_import、@async_fn、@await、@frame、@naked_fn、@align、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@mc_source、@syscall、@ptr_from_usize、@usize_from_ptr、@error_id、@print、@println、@asm、@asm_target、@vector、@mask\n" as *byte, value);
             return null;
         }
         return null;
