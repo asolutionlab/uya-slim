@@ -1193,6 +1193,10 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
     } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
         copy.array_access_array = deep_copy_ast_internal(node.array_access_array, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.array_access_index = deep_copy_ast_internal(node.array_access_index, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_SLICE_EXPR {
+        copy.slice_expr_base = deep_copy_ast_internal(node.slice_expr_base, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.slice_expr_start_expr = deep_copy_ast_internal(node.slice_expr_start_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.slice_expr_len_expr = deep_copy_ast_internal(node.slice_expr_len_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_MC_INTERP {
         const operand: &ASTNode = node.mc_interp_operand;
         if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
@@ -1713,6 +1717,18 @@ fn deep_copy_ast_simple(node: &ASTNode, arena: &CompilerArena, filename: &byte) 
                 }
             }
         }
+    } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        copy.member_access_object = deep_copy_ast_simple(node.member_access_object, arena, filename);
+        copy.member_access_field_name = node.member_access_field_name;
+        copy.member_access_is_module_access = node.member_access_is_module_access;
+        copy.member_access_module_name = node.member_access_module_name;
+    } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        copy.array_access_array = deep_copy_ast_simple(node.array_access_array, arena, filename);
+        copy.array_access_index = deep_copy_ast_simple(node.array_access_index, arena, filename);
+    } else if node.type == ASTNodeType.AST_SLICE_EXPR {
+        copy.slice_expr_base = deep_copy_ast_simple(node.slice_expr_base, arena, filename);
+        copy.slice_expr_start_expr = deep_copy_ast_simple(node.slice_expr_start_expr, arena, filename);
+        copy.slice_expr_len_expr = deep_copy_ast_simple(node.slice_expr_len_expr, arena, filename);
     }
     // 其他类型暂时只复制基本信息
     
