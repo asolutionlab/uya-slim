@@ -23,14 +23,14 @@
 
 - `make b` 已于 `2026-04-23` 在当前 `Linux x86_64` 工作树实跑通过
 - `make microapp-check` 与 `make microapp-hosted-smoke` 已形成稳定聚合入口
-- `make release-clean` 已于 `2026-04-23` 在当前宿主基于 Git HEAD 干净快照通过
+- `make release-clean` 已于 `2026-04-23` 在最新 Git HEAD `7f28a5d9` 的干净快照上通过
 - `make microapp-aarch64-runtime-check` 已于 `2026-04-23` 在当前 `Linux x86_64` 宿主按设计输出 `microapp aarch64 hosted runtime skipped (host_arch=x86_64)`
 - `make microapp-macos-runtime-check` 已于 `2026-04-23` 在当前 `Linux x86_64` 宿主按设计输出 `microapp macos arm64 hosted runtime skipped (host_os=Linux)`
 - `linux_x86_64_hardvm` 已建立真实 mapped payload 执行样板
 - `linux_aarch64_hardvm` 已具备 object extract 与 host-gated runtime 回归入口
 - `macos_arm64_hardvm` 已具备 Mach-O object extract 与 host-gated runtime 回归入口
 - 公开 `macos-ci` 在 `2026-04-22` 针对 `origin/main` 的最近几次 Apple Silicon 运行仍提前失败在 bootstrap 阶段，`make microapp-aarch64-runtime-check` 尚未真正开始执行
-- 当前工作树已把 `.github/workflows/macos-ci.yml` 的 macOS bootstrap 入口从 `make from-c` 修正为 `make from-c-native`，并补了 `workflow_dispatch` 以便后续手动触发 arm64 CI
+- 当前 Git HEAD `7f28a5d9` 已把 `.github/workflows/macos-ci.yml` 的 macOS bootstrap 入口从 `make from-c` 修正为 `make from-c-native`，并补了 `workflow_dispatch` 以便后续手动触发 arm64 CI
 - `tests/verify_microapp_portable_sources.sh` 已把 official portable source 与 `MMU / exit / fault` fixture 纳入 payload codegen 审计，持续拒绝宿主 libc 普通符号直接泄漏进 payload C
 - `.uapp v1/v2` 兼容、trap result、recovery/update、structured fault 已纳入当前 microapp 聚合回归
 
@@ -48,7 +48,7 @@
 | 宿主 / 入口 | 当前状态 | 说明 |
 |------|------|------|
 | `Linux x86_64` / `make b` | 已通过 | `2026-04-23` 本机实跑通过，自举编译与 bootstrap compare 一致 |
-| `Linux x86_64` / `make release-clean` | 已通过 | `2026-04-23` 已基于 Git HEAD 干净快照通过；该结果不覆盖当前未提交改动 |
+| `Linux x86_64` / `make release-clean` | 已通过 | `2026-04-23` 已在最新 Git HEAD `7f28a5d9` 的干净快照上通过 |
 | `Linux x86_64` / `make microapp-check` | 已通过 | 当前已包含 `example boundary`、portable source + `MMU / exit / fault` fixture 的 payload codegen 耦合审计、object extract、trap/result、recovery/update 聚合回归 |
 | `Linux x86_64` / `make microapp-hosted-smoke` | 已通过 | 当前已包含 `macos object extract`、`aarch64 object extract`、portable source/fixture 宿主符号泄漏审计与 host API 诊断回归 |
 | `Linux x86_64` / `make microapp-aarch64-runtime-check` | host-gated skip | `2026-04-23` 本机复核输出 `microapp aarch64 hosted runtime skipped (host_arch=x86_64)`，当前宿主不是 arm64，不构成 aarch64 真执行证明 |
@@ -61,11 +61,11 @@
 
 - 当前 `Linux x86_64` 宿主实跑通过：`make b`、`make microapp-check`、`make microapp-hosted-smoke`、`make release-clean`
 - 当前 `Linux x86_64` 宿主按设计 host-gated skip：`make microapp-aarch64-runtime-check`、`make microapp-macos-runtime-check`
-- 当前 Apple Silicon CI 前置修复：`.github/workflows/macos-ci.yml` 已在工作树改为 `make from-c-native` + `workflow_dispatch`，待提交并触发下一次 runner 实跑
+- 当前 Apple Silicon CI 前置修复：`.github/workflows/macos-ci.yml` 已进入 Git HEAD `7f28a5d9`，改为 `make from-c-native` + `workflow_dispatch`，待触发下一次 runner 实跑
 - 当前 portable source / core fixture payload 耦合审计入口：`tests/verify_microapp_portable_sources.sh`，已覆盖 official source 与 `MMU / exit / fault` fixture
 - 当前共享发布闸门本机统计：`4/4` 已通过
 - 当前跨宿主 runtime 闸门本机统计：`0/2` 真执行、`2/2` 按设计 skip
-- 风险备注：由于工作树仍有未提交脚本与文档，`make release-clean` 当前只证明 Git HEAD 快照可发布，不等于已覆盖工作树里的新增入口
+- 风险备注：共享发布闸门当前已覆盖最新 Git HEAD `7f28a5d9`，剩余风险集中在 arm64/macOS arm64 宿主的真实 runtime 绿灯尚未取回
 
 ---
 

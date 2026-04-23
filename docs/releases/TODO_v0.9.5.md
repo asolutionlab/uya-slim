@@ -105,7 +105,7 @@
 - [x] 确认新脚本、新文档、新 Makefile 入口都已提交到 Git，避免 `make release-clean` 仍在验证旧快照
   - 当前进展：已将 `docs/releases/*`、`Makefile`、`.github/workflows/macos-ci.yml`、`docs/microcontainer/*`、`src/main.uya` 与新增/更新的 hosted runtime 回归脚本纳入当前 Git HEAD
   - 当前进展：`macos-ci` 的 seed bootstrap 已修正为 `make from-c-native`，并补 `workflow_dispatch`，避免 Apple Silicon runner 继续卡在过时的 `make from-c` 入口
-  - 当前剩余：仍需在当前 Git HEAD 上再跑一次 `make release-clean`，把“已提交快照可发布”重新落实到最新提交
+  - 当前进展：已于 `2026-04-23` 在最新 Git HEAD `7f28a5d9` 上补跑 `make release-clean`，确认当前已提交快照可发布
 
 ---
 
@@ -118,7 +118,7 @@
 - [x] 更新 `docs/microcontainer/portable_native_todo.md`，把已完成的 object extract / profile / gate 状态改成当前真实状态
 - [x] 更新 `docs/releases/RELEASE_v0.9.5.md`，把“版本目标”和“当前事实”拆开写
 - [ ] 发版前补齐发布日期、验证统计、宿主矩阵结果
-  - 当前进展：已补 `2026-04-23` 本机验证统计；`make b` / `make microapp-check` / `make microapp-hosted-smoke` 已于当日复核通过，`make release-clean` 已于当日基于 Git HEAD 通过
+  - 当前进展：已补 `2026-04-23` 本机验证统计；`make b` / `make microapp-check` / `make microapp-hosted-smoke` 已于当日复核通过，`make release-clean` 已于当日在最新 Git HEAD `7f28a5d9` 上通过
   - 当前进展：`make microapp-aarch64-runtime-check` / `make microapp-macos-runtime-check` 在本机 `Linux x86_64` 上按设计 host-gated skip，相关矩阵已写入 release 草案
   - 当前剩余：最终发布日期以及 arm64 / macOS arm64 宿主真执行统计，仍待最后一次发版前整理
 
@@ -188,7 +188,7 @@
 
 - `规格冻结` 已正式落文
 - `release / CI / 文档` 已完成第一轮对齐
-- `Linux x86_64` 本机共享闸门已于 `2026-04-23` 实跑通过：`make b` / `make microapp-check` / `make microapp-hosted-smoke` / `make release-clean`
+- `Linux x86_64` 本机共享闸门已于 `2026-04-23` 实跑通过：`make b` / `make microapp-check` / `make microapp-hosted-smoke` / `make release-clean`（最新 Git HEAD `7f28a5d9`）
 - `三套 hosted hard-vm profile` 的构建与 profile 契约验证已通过当前矩阵回归
 - `payload` 对宿主 libc 普通符号的 codegen 审计已扩到 official source + MMU/exit/fault fixture
 - `v0.9.5` 当前脚本、文档、Makefile 与 CI 入口已纳入 Git HEAD
