@@ -45,6 +45,8 @@ export fn main() i32 {
 - 当前推荐的验证入口：
   - 全量 microapp 回归：`make microapp-check`
   - hosted smoke：`make microapp-hosted-smoke`
+  - arm64-host-gated 的 aarch64 runtime：`make microapp-aarch64-runtime-check`
+  - macOS arm64-host-gated 的 runtime：`make microapp-macos-runtime-check`
   - `.uapp v1/v2` 兼容：`make microapp-compat-check`
   - crash/recovery/update：`make microapp-recovery-check`
 - 如果你是从旧路径迁移过来，建议继续看 `migration_guide.md`。

@@ -50,7 +50,7 @@
 
 ## 3. Profile 里包含什么
 
-当前实现里的一个 `MicroAppTargetProfile` 至少包含这些关键信息：
+`v0.9.5` 冻结的 `MicroAppTargetProfile` 对外字段包含这些关键信息：
 
 - `profile_id`
 - `arch_raw`
@@ -66,6 +66,11 @@
 - `hard-vm` / `soft-vm` 的路径选择
 - `call_gate` / `trap` 的运行时路径选择
 - 默认编译/链接旗标
+
+补充说明：
+
+- `os` / `hard-vm` / `soft-vm` / 默认 bridge 这些语义，当前以 `name + profile_id + bridge_kind_raw` 为正式外部口径
+- 当前不再把更多推导语义扩成新的 public struct 字段
 
 ---
 

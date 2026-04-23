@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-macos-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -439,6 +439,14 @@ microapp-aarch64-runtime-check:
 	@./tests/verify_microapp_aarch64_hosted_runtime.sh
 	@echo ""
 	@echo "✓ microapp aarch64 hosted runtime 回归通过"
+
+microapp-macos-runtime-check:
+	@echo "=========================================="
+	@echo "运行 microapp macOS arm64 hosted runtime 回归"
+	@echo "=========================================="
+	@./tests/verify_microapp_macos_arm64_hosted_runtime.sh
+	@echo ""
+	@echo "✓ microapp macOS arm64 hosted runtime 回归通过"
 
 microapp-compat-check:
 	@echo "=========================================="
@@ -1017,6 +1025,7 @@ help:
 	@echo "  make microapp-check - 运行当前 microapp 聚合回归套件"
 	@echo "  make microapp-hosted-smoke - 运行 hosted 平台可用的 microapp smoke 套件"
 	@echo "  make microapp-aarch64-runtime-check - 运行 arm64-host-gated 的 aarch64 microapp runtime 回归"
+	@echo "  make microapp-macos-runtime-check - 运行 macOS arm64-host-gated 的 microapp runtime 回归"
 	@echo "  make microapp-compat-check - 运行 .uapp v1/v2 兼容回归"
 	@echo "  make microapp-recovery-check - 运行 crash/recovery/update 回归"
 	@echo "  make outlibc       - 输出标准库为 C 代码（使用自举编译器）"

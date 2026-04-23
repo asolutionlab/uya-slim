@@ -49,7 +49,7 @@
 - microapp 生成 C 里的 bridge helper 现在已经从过渡的 `uya_microapp_syscall*` 收成 `uya_microapp_bridge_dispatch*`
 - x86_64 call-gate payload 现在已通过 runtime bridge ABI slot 进入宿主 runtime，不再直接内嵌 `UYA_HOST_SYS_*` shim
 - x86_64 的 hosted `call-gate` 构建链现在已改成编译器直接从 `gcc -c` 产出的 `.o` 提取 section/symbol/rela，不再需要先链接中间 `.elf`
-- aarch64 的 hosted `call-gate` 构建链当前仍会先链接中间 `.elf`，但已经不再额外 shell-out 到 `objdump / nm / readelf / objcopy`
+- aarch64 的 hosted `call-gate` 构建链现在也已改成编译器直接从 `gcc -c` 产出的 `.o` 提取 section/symbol/rela，不再需要先链接中间 `.elf`
 - trap bridge 除了 `validated` 结果面之外，现在还补了一条手工 RV32 `.uapp` 的最小真执行链路（`print/yield/exit`）
 - 当前 x86_64 真执行回归也已经覆盖 fault/error 路径（通过子进程隔离把崩溃收口为可观测信号退出状态）
 - 当前统一 fault 结果模型已经在 x86_64 hosted loader 与 sim/recovery 链路落地，统一输出/记录 `fault_class / fault_code / fault_signal`
@@ -61,6 +61,7 @@
 - 推荐本地用 `make microapp-check` 运行当前 microapp 回归集
 - 在 hosted 平台上做轻量 smoke test 时，可用 `make microapp-hosted-smoke`
 - 若只想单独触发 arm64-host-gated 的 aarch64 runtime 回归，可用 `make microapp-aarch64-runtime-check`
+- 若只想单独触发 macOS arm64-host-gated 的 runtime 回归，可用 `make microapp-macos-runtime-check`
 - 若只想检查 `.uapp v1/v2` 兼容链路，可用 `make microapp-compat-check`
 - 若只想检查 crash/recovery/update 链路，可用 `make microapp-recovery-check`
 - `make microapp-recovery-check` 当前会覆盖 `test_kernel_update.uya` 与 `test_kernel_sim.uya`，并检查 crash log 的 structured fault 字段

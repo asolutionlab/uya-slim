@@ -168,6 +168,8 @@ export fn main() i32 {
 
 - 全量 microapp 回归：`make microapp-check`
 - hosted 平台 smoke：`make microapp-hosted-smoke`
+- arm64-host-gated 的 aarch64 runtime：`make microapp-aarch64-runtime-check`
+- macOS arm64-host-gated 的 runtime：`make microapp-macos-runtime-check`
 - `.uapp v1/v2` 兼容：`make microapp-compat-check`
 - crash/recovery/update：`make microapp-recovery-check`
 

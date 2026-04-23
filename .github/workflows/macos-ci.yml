@@ -1,6 +1,7 @@
 name: macos-ci
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "main" ]
   pull_request:
@@ -26,8 +27,8 @@ jobs:
         rm -rf bin
         mkdir -p bin
 
-    - name: Bootstrap seed compiler from hosted backup
-      run: make from-c
+    - name: Bootstrap seed compiler from native hosted seed
+      run: make from-c-native
 
     - name: Build hosted compiler
       run: make uya-hosted
@@ -51,3 +52,6 @@ jobs:
 
     - name: Run microapp aarch64 hosted runtime
       run: make microapp-aarch64-runtime-check
+
+    - name: Run microapp macOS arm64 hosted runtime
+      run: make microapp-macos-runtime-check
