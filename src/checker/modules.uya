@@ -653,6 +653,24 @@ fn append_module_export(
     return 1;
 }
 
+fn append_export_to_module_name(
+    checker: &TypeChecker,
+    module_name: &byte,
+    filename: &byte,
+    item_name: &byte,
+    item_type: i32,
+    decl: &ASTNode
+) i32 {
+    if checker == null || module_name == null || item_name == null || decl == null {
+        return 0;
+    }
+    const module: &ModuleInfo = find_or_create_module(checker, module_name, filename);
+    if module == null {
+        return 0;
+    }
+    return append_module_export(checker, module, module_name, item_name, item_type, decl);
+}
+
 // 为项目内 `dir/file.uya` 生成兼容别名 `dir.file`。
 // 这样既兼容目录模块（dir.*），也支持文件模式导入（dir.file.*）。
 fn build_project_file_module_alias(checker: &TypeChecker, filename: &byte, dir_module_name: &byte) &byte {
@@ -719,6 +737,51 @@ fn build_project_file_module_alias(checker: &TypeChecker, filename: &byte, dir_m
     memcpy((alias_name as *byte + dir_module_len + 1) as *void, file_name as *void, file_base_len);
     if total_len >= 0 && total_len < 1000000 {
         alias_name[total_len] = 0;
+    }
+    return alias_name;
+}
+
+// 为任意 UYA_ROOT 下的单文件生成文件模块别名，例如：
+//   lib/std/mem/mem.uya       -> std.mem.mem
+//   lib/std/runtime/entry.uya -> std.runtime.entry
+// 目录模块仍然保留；该别名只用于兼容和规范化单文件模块导入。
+fn build_uya_root_file_module_alias(checker: &TypeChecker, filename: &byte, dir_module_name: &byte) &byte {
+    if checker == null || filename == null || dir_module_name == null || checker.uya_root_dir == null {
+        return null;
+    }
+
+    const root_len: usize = strlen(checker.uya_root_dir as *byte);
+    if root_len == 0 || strncmp(filename as *byte, checker.uya_root_dir as *byte, root_len) != 0 {
+        return null;
+    }
+
+    const relative_path: &byte = (filename as *byte + root_len) as &byte;
+    const rel_len: usize = strlen(relative_path as *byte);
+    if rel_len <= 4 {
+        return null;
+    }
+    if strcmp((relative_path as *byte + (rel_len - 4)) as *byte, ".uya" as *byte) != 0 {
+        return null;
+    }
+
+    const base_len: usize = rel_len - 4;
+    const alias_name: &byte = compiler_arena_alloc(checker.arena, base_len + 1) as &byte;
+    if alias_name == null {
+        return null;
+    }
+    memcpy(alias_name as *void, relative_path as *void, base_len);
+    alias_name[base_len] = 0;
+
+    var idx: usize = 0;
+    while idx < base_len {
+        if alias_name[idx] == 47 || alias_name[idx] == 92 {
+            alias_name[idx] = 46;
+        }
+        idx = idx + 1;
+    }
+
+    if str_equals(alias_name, dir_module_name) != 0 {
+        return null;
     }
     return alias_name;
 }
@@ -808,10 +871,12 @@ fn build_module_exports(checker: &TypeChecker, program: &ASTNode) void {
 
             const alias_module_name: &byte = build_project_file_module_alias(checker, filename, module_name);
             if alias_module_name != null && str_equals(alias_module_name, module_name) == 0 {
-                const alias_module: &ModuleInfo = find_or_create_module(checker, alias_module_name, filename);
-                if alias_module != null {
-                    append_module_export(checker, alias_module, alias_module_name, item_name, item_type, decl);
-                }
+                append_export_to_module_name(checker, alias_module_name, filename, item_name, item_type, decl);
+            }
+
+            const root_alias_module_name: &byte = build_uya_root_file_module_alias(checker, filename, module_name);
+            if root_alias_module_name != null {
+                append_export_to_module_name(checker, root_alias_module_name, filename, item_name, item_type, decl);
             }
         }
         

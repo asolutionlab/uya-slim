@@ -397,6 +397,9 @@ use std.io;
 // 导入特定项
 use std.io.read_file;
 
+// 按文件模块导入特定项（兼容目录模块写法）
+use std.io.file.read_file;
+
 // 导入并重命名
 use std.io as io_module;
 
@@ -409,6 +412,11 @@ use math_macros.square;
 - 模块路径由目录路径决定，不包含文件名
 - 例如：`std/io/file.uya` 和 `std/io/stream.uya` 都属于 `std.io` 模块
 - 使用：`use std.io.fopen;` 或 `use std.io.fgetc;`（不需要 `std.io.file.fopen`）
+
+**单文件模块兼容规则**：
+- 每个 `.uya` 文件也可用包含文件名的模块路径导入
+- 例如：`std/io/file.uya` 也可写 `use std.io.file.fopen;`
+- 目录模块写法和文件模块写法都兼容；整体模块导入遇到同名目录和同名文件时优先目录模块
 
 ---
 

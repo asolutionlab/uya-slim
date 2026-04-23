@@ -456,6 +456,10 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     if function_table_lookup(checker, node.fn_decl_name) != null {
         return 1;
     }
+    if checker.function_table.count >= FUNCTION_TABLE_SIZE {
+        checker_report_error(checker, node, "函数表容量不足，请增大 FUNCTION_TABLE_SIZE" as *byte);
+        return 0;
+    }
     if function_table_insert(checker, sig) != 0 {
         checker_report_error(checker, node, "函数重复定义" as *byte);
         return 0;

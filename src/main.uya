@@ -3633,6 +3633,44 @@ fn paths_equal(path1: &byte, path2: &byte) i32 {
     return 0;
 }
 
+// 原地稳定去重路径数组，保留首次出现顺序。
+// 依赖收集阶段可能因为目录模块与单文件模块交叉命中，把同一文件放进 all_files 多次；
+// 若不在最终编译列表收口，会导致同一源文件被重复解析并在 split-C 下重复发射定义。
+fn dedupe_paths_in_place(paths: &(&byte), count: i32) i32 {
+    if paths == null || count <= 0 {
+        return 0;
+    }
+
+    var write_idx: i32 = 0;
+    var read_idx: i32 = 0;
+    while read_idx < count {
+        const candidate: &byte = paths[read_idx];
+        var duplicate: i32 = 0;
+        if candidate != null {
+            var seen_idx: i32 = 0;
+            while seen_idx < write_idx {
+                if paths[seen_idx] != null && paths_equal(paths[seen_idx], candidate) != 0 {
+                    duplicate = 1;
+                    break;
+                }
+                seen_idx = seen_idx + 1;
+            }
+        }
+        if duplicate == 0 {
+            paths[write_idx] = candidate;
+            write_idx = write_idx + 1;
+        }
+        read_idx = read_idx + 1;
+    }
+
+    const unique_count: i32 = write_idx;
+    while write_idx < count {
+        paths[write_idx] = null;
+        write_idx = write_idx + 1;
+    }
+    return unique_count;
+}
+
 // 注意：arena_strdup 函数在 parser.uya 中定义，这里不再重复定义
 
 // 检查路径是否为目录
@@ -4513,6 +4551,93 @@ fn find_module_file(
     return -1;
 }
 
+fn module_path_to_file_path(module_path: &byte, out: &byte, out_cap: usize) i32 {
+    if module_path == null || out == null || out_cap == 0 {
+        return -1;
+    }
+    const path_len: usize = strlen(module_path as *byte);
+    if path_len >= out_cap {
+        return -1;
+    }
+    strcpy(out as *byte, module_path as *byte);
+    var i: usize = 0;
+    while i < path_len {
+        if out[i] == 46 {
+            out[i] = 47;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn find_direct_module_file(
+    module_path: &byte,
+    project_root: &byte,
+    uya_root: &byte,
+    buffer: &byte,
+    buffer_size: usize
+) i32 {
+    if module_path == null || buffer == null || buffer_size == 0 {
+        return -1;
+    }
+    var file_path: [byte: PATH_MAX] = [];
+    if module_path_to_file_path(module_path, &file_path[0] as &byte, PATH_MAX) != 0 {
+        return -1;
+    }
+
+    var ri: i32 = 0;
+    while ri < 2 {
+        var root: &byte = null;
+        if ri == 0 { root = project_root; }
+        if ri == 1 { root = uya_root; }
+        ri = ri + 1;
+        if root == null || root[0] == 0 { continue; }
+
+        var uya_path: [byte: PATH_MAX] = [];
+        const ulen: i32 = snprintf(&uya_path[0], PATH_MAX, "%s%s.uya" as *byte, root as *byte, &file_path[0]);
+        if ulen > 0 && ulen < PATH_MAX as i32 {
+            const f: *void = fopen(&uya_path[0], "r" as *byte);
+            if f != null {
+                fclose(f);
+                if (ulen as usize) < buffer_size {
+                    strcpy(buffer as *byte, &uya_path[0]);
+                    return 0;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+fn module_dir_exists(module_path: &byte, project_root: &byte, uya_root: &byte, out_dir: &byte, out_cap: usize) i32 {
+    if module_path == null {
+        return 0;
+    }
+    var file_path: [byte: PATH_MAX] = [];
+    if module_path_to_file_path(module_path, &file_path[0] as &byte, PATH_MAX) != 0 {
+        return 0;
+    }
+
+    var ri: i32 = 0;
+    while ri < 2 {
+        var root: &byte = null;
+        if ri == 0 { root = project_root; }
+        if ri == 1 { root = uya_root; }
+        ri = ri + 1;
+        if root == null || root[0] == 0 { continue; }
+
+        var dir_path: [byte: PATH_MAX] = [];
+        const len: i32 = snprintf(&dir_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
+        if len > 0 && len < PATH_MAX as i32 && is_directory(&dir_path[0] as &byte) != 0 {
+            if out_dir != null && out_cap > 0 && (len as usize) < out_cap {
+                strcpy(out_dir as *byte, &dir_path[0]);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // 从 AST 中提取 use 语句的模块路径
 // 辅助函数：将 segments[0..count) 连接为 "a.b.c" 形式
 fn join_segments_alloc(segs: &(&byte), count: i32, arena: &CompilerArena) &byte {
@@ -4568,11 +4693,15 @@ fn extract_use_modules(
                     // item_name 已设置，所有 segments 都是模块路径
                     module_name = join_segments_alloc(decl.use_stmt_path_segments, seg_count, arena);
                 } else if seg_count > 1 {
-                    // 先尝试全路径作为模块名
+                    // use a.b.c 兼容两种模块模型：
+                    // - 若 a/b/c.uya 或 a/b/c/ 存在，则整体作为模块 a.b.c；
+                    // - 否则退回为模块 a.b 的导出项 c。
                     const full_path: &byte = join_segments_alloc(decl.use_stmt_path_segments, seg_count, arena);
                     if full_path != null {
                         var module_file: [byte: PATH_MAX] = [];
-                        if find_module_file(full_path, project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 {
+                        var module_dir: [byte: PATH_MAX] = [];
+                        if find_direct_module_file(full_path, project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 ||
+                            module_dir_exists(full_path, project_root, uya_root, &module_dir[0] as &byte, PATH_MAX) != 0 {
                             module_name = full_path;
                         } else {
                             module_name = join_segments_alloc(decl.use_stmt_path_segments, seg_count - 1, arena);
@@ -4744,11 +4873,101 @@ fn collect_module_dependencies(
             i = i + 1;
             continue;
         }
-        // std 模块：收集 lib/std/ 目录下所有 .uya 文件（与 C 编译器一致）
-        if (strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 || strncmp(&module_names_stack[i][0] as *byte, "std." as *byte, 4) == 0) && uya_root != null && uya_root[0] != 0 {
-            // 先尝试按单文件解析（如 std.async -> lib/std/async.uya），避免依赖 lib/std/async/ 目录存在
+        // 精确 `use std;` 只提供 std.cfg / 平台选择器，稳定映射到 lib/std/platform.uya。
+        if strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 && uya_root != null && uya_root[0] != 0 {
+            var std_platform_file: [byte: PATH_MAX] = [];
+            if find_module_file("std" as *byte, project_root, uya_root, &std_platform_file[0], PATH_MAX) == 0 {
+                var in_list: i32 = 0;
+                var j: i32 = 0;
+                while j < current_size {
+                    if file_list[j] != null && paths_equal(file_list[j], &std_platform_file[0] as &byte) != 0 {
+                        in_list = 1;
+                        break;
+                    }
+                    j = j + 1;
+                }
+                if in_list == 0 && current_size < max_files {
+                    const path_copy: &byte = compiler_arena_alloc(arena, strlen(&std_platform_file[0]) + 1) as &byte;
+                    if path_copy != null {
+                        strcpy(path_copy as *byte, &std_platform_file[0]);
+                        file_list[current_size] = path_copy;
+                        current_size = current_size + 1;
+                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                        if current_size < 0 { return -1; }
+                    }
+                }
+            }
+            i = i + 1;
+            continue;
+        }
+
+        // std 子模块：目录模块收集目录下所有 .uya；单文件模块优先走精确文件。
+        if strncmp(&module_names_stack[i][0] as *byte, "std." as *byte, 4) == 0 && uya_root != null && uya_root[0] != 0 {
+            var std_dir_exact: [byte: PATH_MAX] = [];
+            const std_has_dir: i32 = module_dir_exists(&module_names_stack[i][0] as *byte, project_root, uya_root, &std_dir_exact[0] as &byte, PATH_MAX);
+            // 约定目录内的 file.uya 代表该目录模块本身，例如 std.io -> lib/std/io/file.uya。
+            // 只有没有 file.uya 聚合文件时，才把 std.xxx 当成目录模块展开。
+            if std_has_dir != 0 {
+                var std_file_module: [byte: PATH_MAX] = [];
+                const std_file_len: i32 = snprintf(&std_file_module[0], PATH_MAX, "%s/file.uya" as *byte, &std_dir_exact[0]);
+                if std_file_len > 0 && std_file_len < PATH_MAX && is_file(&std_file_module[0] as &byte) != 0 {
+                    var in_list_file: i32 = 0;
+                    var jf: i32 = 0;
+                    while jf < current_size {
+                        if file_list[jf] != null && paths_equal(file_list[jf], &std_file_module[0] as &byte) != 0 {
+                            in_list_file = 1;
+                            break;
+                        }
+                        jf = jf + 1;
+                    }
+                    if in_list_file == 0 && current_size < max_files {
+                        const file_copy: &byte = compiler_arena_alloc(arena, strlen(&std_file_module[0]) + 1) as &byte;
+                        if file_copy != null {
+                            strcpy(file_copy as *byte, &std_file_module[0]);
+                            file_list[current_size] = file_copy;
+                            current_size = current_size + 1;
+                            current_size = collect_module_dependencies(file_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            if current_size < 0 { return -1; }
+                        }
+                    }
+                    i = i + 1;
+                    continue;
+                }
+
+                var module_base_name: &byte = &module_names_stack[i][0] as &byte;
+                const module_last_dot: *byte = strrchr(&module_names_stack[i][0] as *byte, 46);
+                if module_last_dot != null {
+                    module_base_name = (module_last_dot + 1) as &byte;
+                }
+                var std_named_module: [byte: PATH_MAX] = [];
+                const std_named_len: i32 = snprintf(&std_named_module[0], PATH_MAX, "%s/%s.uya" as *byte, &std_dir_exact[0], module_base_name as *byte);
+                if std_named_len > 0 && std_named_len < PATH_MAX && is_file(&std_named_module[0] as &byte) != 0 {
+                    var in_list_named: i32 = 0;
+                    var jn: i32 = 0;
+                    while jn < current_size {
+                        if file_list[jn] != null && paths_equal(file_list[jn], &std_named_module[0] as &byte) != 0 {
+                            in_list_named = 1;
+                            break;
+                        }
+                        jn = jn + 1;
+                    }
+                    if in_list_named == 0 && current_size < max_files {
+                        const named_copy: &byte = compiler_arena_alloc(arena, strlen(&std_named_module[0]) + 1) as &byte;
+                        if named_copy != null {
+                            strcpy(named_copy as *byte, &std_named_module[0]);
+                            file_list[current_size] = named_copy;
+                            current_size = current_size + 1;
+                            current_size = collect_module_dependencies(named_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            if current_size < 0 { return -1; }
+                        }
+                    }
+                    i = i + 1;
+                    continue;
+                }
+            }
+            // 只有精确单文件模块优先走单文件；若存在同名目录，必须收集目录内全部 .uya。
             var single_file: [byte: PATH_MAX] = [];
-            if find_module_file(&module_names_stack[i][0] as *byte, project_root, uya_root, &single_file[0], PATH_MAX) == 0 {
+            if std_has_dir == 0 && find_direct_module_file(&module_names_stack[i][0] as *byte, project_root, uya_root, &single_file[0], PATH_MAX) == 0 {
                 var in_list: i32 = 0;
                 var j: i32 = 0;
                 while j < current_size {
@@ -6852,6 +7071,8 @@ fn compile_files(
         all_file_count = new_count;
         i = i + 1;
     }
+
+    all_file_count = dedupe_paths_in_place(&all_files[0], all_file_count);
     
     fprintf(libc.stderr, "=== 开始编译 ===\n" as *byte);
     fprintf(libc.stderr, "输入文件数量: %d (包含依赖)\n" as *byte, all_file_count);
