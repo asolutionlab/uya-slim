@@ -74,7 +74,8 @@
   - 当前阻塞：需 arm64 宿主或 arm64 CI 的真实执行结果；本地 `Linux x86_64` 环境只能看到 host-gated skip
   - 当前进展：已于 `2026-04-23` 在本机补跑 `make microapp-aarch64-runtime-check`，输出 `microapp aarch64 hosted runtime skipped (host_arch=x86_64)`，再次确认当前缺口是宿主签收而不是脚本入口缺失
   - 当前进展：已核对公开 `macos-ci` 历史记录，当前 `origin/main` 对应的 `macos-15` workflow 仍在 `Bootstrap seed compiler from hosted backup` 处提前失败，`Run microapp aarch64 hosted runtime` 还没有真正执行到
-  - 当前进展：已在工作树把 `.github/workflows/macos-ci.yml` 的 bootstrap 入口从 `make from-c` 修正为 `make from-c-native`，并补了 `workflow_dispatch`，为后续 arm64 CI 真执行解锁前置条件
+  - 当前进展：已在当前分支把 `.github/workflows/macos-ci.yml` 的 bootstrap 入口从 `make from-c` 修正为 `make from-c-native`，并补了 `workflow_dispatch`，为后续 arm64 CI 真执行解锁前置条件
+  - 当前进展：新一轮公开 `macos-ci` 已确认跑到 `Bootstrap seed compiler from native hosted seed`；当前分支已继续修正 `from-c-native` 的 macOS seed 选择顺序为 `backup/uya-hosted-macos-<arch>.c` 优先，并刷新了 `backup/uya-hosted-macos-arm64.c` / `backup/uya-hosted-macos-x86_64.c` 以消除 `char* -> uint8_t*` 的 `-Werror` 构建失败
   - 当前进展：`tests/verify_microapp_aarch64_hosted_runtime.sh` 已把 `hello / alloc_yield / time / bss / reloc / reloc_data / exit-code / fault` 全部写入真执行断言
   - 当前进展：脚本已要求日志命中 `executed mapped payload`、不出现 `launching native payload`
   - 当前进展：脚本已要求 `fault_class / fault_code / fault_signal` 结果口径对齐当前 `x86_64` hosted loader
@@ -105,7 +106,7 @@
 - [x] 确认新脚本、新文档、新 Makefile 入口都已提交到 Git，避免 `make release-clean` 仍在验证旧快照
   - 当前进展：已将 `docs/releases/*`、`Makefile`、`.github/workflows/macos-ci.yml`、`docs/microcontainer/*`、`src/main.uya` 与新增/更新的 hosted runtime 回归脚本纳入当前 Git HEAD
   - 当前进展：`macos-ci` 的 seed bootstrap 已修正为 `make from-c-native`，并补 `workflow_dispatch`，避免 Apple Silicon runner 继续卡在过时的 `make from-c` 入口
-  - 当前进展：已于 `2026-04-23` 在最新 Git HEAD `7f28a5d9` 上补跑 `make release-clean`，确认当前已提交快照可发布
+  - 当前进展：已于 `2026-04-23` 在当时最新的 Git HEAD 上补跑 `make release-clean`，确认当前已提交快照可发布
 
 ---
 
@@ -118,7 +119,7 @@
 - [x] 更新 `docs/microcontainer/portable_native_todo.md`，把已完成的 object extract / profile / gate 状态改成当前真实状态
 - [x] 更新 `docs/releases/RELEASE_v0.9.5.md`，把“版本目标”和“当前事实”拆开写
 - [ ] 发版前补齐发布日期、验证统计、宿主矩阵结果
-  - 当前进展：已补 `2026-04-23` 本机验证统计；`make b` / `make microapp-check` / `make microapp-hosted-smoke` 已于当日复核通过，`make release-clean` 已于当日在最新 Git HEAD `7f28a5d9` 上通过
+  - 当前进展：已补 `2026-04-23` 本机验证统计；`make b` / `make microapp-check` / `make microapp-hosted-smoke` 已于当日复核通过，`make release-clean` 已于当日在当前分支最新已提交快照上通过
   - 当前进展：`make microapp-aarch64-runtime-check` / `make microapp-macos-runtime-check` 在本机 `Linux x86_64` 上按设计 host-gated skip，相关矩阵已写入 release 草案
   - 当前剩余：最终发布日期以及 arm64 / macOS arm64 宿主真执行统计，仍待最后一次发版前整理
 
@@ -188,7 +189,7 @@
 
 - `规格冻结` 已正式落文
 - `release / CI / 文档` 已完成第一轮对齐
-- `Linux x86_64` 本机共享闸门已于 `2026-04-23` 实跑通过：`make b` / `make microapp-check` / `make microapp-hosted-smoke` / `make release-clean`（最新 Git HEAD `7f28a5d9`）
+- `Linux x86_64` 本机共享闸门已于 `2026-04-23` 实跑通过：`make b` / `make microapp-check` / `make microapp-hosted-smoke` / `make release-clean`
 - `三套 hosted hard-vm profile` 的构建与 profile 契约验证已通过当前矩阵回归
 - `payload` 对宿主 libc 普通符号的 codegen 审计已扩到 official source + MMU/exit/fault fixture
 - `v0.9.5` 当前脚本、文档、Makefile 与 CI 入口已纳入 Git HEAD

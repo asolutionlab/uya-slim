@@ -75,7 +75,8 @@ c e:
 	@:
 
 # 从本机 seed 构建（macOS 不回退 Linux seed）
-# macOS 主入口 seed 为 backup/uya-hosted-macos.c；backup/uya-hosted-macos-arm64.c 与
+# macOS 主线优先使用 backup/uya-hosted-macos-<arch>.c，本机 arch seed 不存在时才回退
+# 到 backup/uya-hosted-macos.c；backup/uya-hosted-macos-arm64.c 与
 # backup/uya-hosted-macos-x86_64.c 永久保留作对照。zig 交叉产物仅作辅助参考，
 # 不作为 macOS 主线 seed 的可信依据。
 from-c-native:
@@ -89,12 +90,12 @@ from-c-native:
 		if [ "$(HOST_OS)" = "macos" ]; then \
 			HOSTED_SEED_UNIFIED="backup/uya-hosted-macos.c"; \
 			HOSTED_SEED_ARCH="backup/uya-hosted-macos-$(HOST_ARCH).c"; \
-			if [ -f "$$HOSTED_SEED_UNIFIED" ]; then \
-				SEED_PATH="$$HOSTED_SEED_UNIFIED"; \
-				SEED_DESC="macOS hosted 通用备份 $$HOSTED_SEED_UNIFIED"; \
-			elif [ -f "$$HOSTED_SEED_ARCH" ]; then \
+			if [ -f "$$HOSTED_SEED_ARCH" ]; then \
 				SEED_PATH="$$HOSTED_SEED_ARCH"; \
 				SEED_DESC="macOS hosted 本机备份 $$HOSTED_SEED_ARCH"; \
+			elif [ -f "$$HOSTED_SEED_UNIFIED" ]; then \
+				SEED_PATH="$$HOSTED_SEED_UNIFIED"; \
+				SEED_DESC="macOS hosted 通用备份 $$HOSTED_SEED_UNIFIED"; \
 			fi; \
 		else \
 			HOSTED_SEED="backup/uya-hosted-$(HOST_OS)-$(HOST_ARCH).c"; \
@@ -1006,7 +1007,7 @@ help:
 	@echo ""
 	@echo "可用目标:"
 	@echo "  make from-c        - 从 bin/uya.c 构建（零依赖）"
-	@echo "  make from-c-native - 从本机 seed 构建；macOS 优先使用 backup/uya-hosted-macos.c，其次是 backup/uya-hosted-macos-<arch>.c"
+	@echo "  make from-c-native - 从本机 seed 构建；macOS 优先使用 backup/uya-hosted-macos-<arch>.c，其次是 backup/uya-hosted-macos.c"
 	@echo "  make uya           - 构建自举编译器（默认 --nostdlib，静态链接）"
 	@echo "  make uya-hosted    - 构建自举编译器（hosted 主线）"
 	@echo "  make uya-portable  - 跨平台入口：Linux 用 uya，其它平台用 uya-hosted"
@@ -1060,4 +1061,4 @@ help:
 	@echo "  make install DOCDIR=/path/docs       # 显式文档目录（默认 前缀/docs）"
 	@echo "  make install TESTSDIR=/path/tests    # 显式测试目录（默认 前缀/tests）"
 	@echo ""
-	@echo "macOS: from-c-native 优先使用 backup/uya-hosted-macos.c；backup/uya-hosted-macos-arm64.c 与 -x86_64.c 永久保留。"
+	@echo "macOS: from-c-native 优先使用 backup/uya-hosted-macos-<arch>.c；backup/uya-hosted-macos.c 仅作统一回退入口。"
