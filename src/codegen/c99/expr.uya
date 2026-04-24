@@ -1287,6 +1287,46 @@ fn c99_emit_binary_operator(codegen: &C99CodeGenerator, op: TokenType) void {
     }
 }
 
+fn c99_unwrap_error_value_expr(expr: &ASTNode) &ASTNode {
+    if expr == null {
+        return null;
+    }
+    var cur: &ASTNode = expr;
+    while cur != null && cur.type == ASTNodeType.AST_CAST_EXPR && cur.cast_expr_expr != null {
+        cur = cur.cast_expr_expr;
+    }
+    if cur != null && cur.type == ASTNodeType.AST_ERROR_VALUE {
+        return cur;
+    }
+    return null;
+}
+
+fn c99_emit_error_value_for_err_union_param(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_index: i32, arg: &ASTNode) i32 {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        arg == null ||
+        fn_decl.fn_decl_params == null || param_index < 0 || param_index >= fn_decl.fn_decl_param_count {
+        return 0;
+    }
+    const err_expr: &ASTNode = c99_unwrap_error_value_expr(arg);
+    if err_expr == null {
+        return 0;
+    }
+    const param: &ASTNode = fn_decl.fn_decl_params[param_index];
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL || param.var_decl_type == null {
+        return 0;
+    }
+    const union_c: &byte = c99_mono_type_to_c(codegen, param.var_decl_type);
+    if union_c == null || strstr(union_c as *byte, "err_union_" as *byte) == null {
+        return 0;
+    }
+    var id: i32 = c99_get_or_add_error_id(codegen, err_expr.error_value_name);
+    if id == 0 {
+        id = 1;
+    }
+    fprintf(codegen.emit_stream as *void, "(%s){ .error_id = %uU }" as *byte, union_c as *byte, id as u32);
+    return 1;
+}
+
 // 调用实参：对按值 slice ABI，将 &expr（expr 为切片值）生成为 expr。
 fn c99_emit_call_arg_expr(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_index: i32, arg: &ASTNode) void {
     if arg != null && arg.type == ASTNodeType.AST_UNARY_EXPR &&
@@ -1328,6 +1368,9 @@ fn c99_emit_call_arg_expr(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_i
         fputs("(struct uya_slice_uint8_t){ .ptr = " as *byte, codegen.emit_stream as *void);
         c99_emit_string_literal_uint8_ptr_expr(codegen, arg);
         fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d }" as *byte, sl);
+        return;
+    }
+    if c99_emit_error_value_for_err_union_param(codegen, fn_decl, param_index, arg) != 0 {
         return;
     }
     gen_expr(codegen, arg);

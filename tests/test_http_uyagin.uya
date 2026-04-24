@@ -1,0 +1,364 @@
+// test_http_uyagin.uya — Gin 风格纯 @async_fn HTTP 框架核心测试
+
+use std.async;
+use std.http.types;
+use std.http.uyagin;
+use libc.syscall;
+use std.testing.assert_eq_i32;
+
+struct PingHandler : AsyncHandler {}
+
+PingHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.string(Status.OK, "pong");
+    }
+}
+
+struct ParamHandler : AsyncHandler {}
+
+ParamHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        const id: &[const byte] = try ctx.param("id");
+        return try @await ctx.string(Status.OK, id);
+    }
+}
+
+fn slice_has(hay: &[const byte], needle: &[const byte]) bool {
+    if hay.len < needle.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i + needle.len <= hay.len {
+        var ok: bool = true;
+        var j: usize = 0;
+        while j < needle.len {
+            if hay.ptr[i + j] != needle.ptr[j] {
+                ok = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if ok {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn fill_request_path(req: &Request, path: &[const byte]) void {
+    var i: usize = 0;
+    while i < path.len && i < MAX_URI_LENGTH as usize {
+        req.path[i] = path.ptr[i];
+        i = i + 1;
+    }
+    req.path_len = path.len as i32;
+}
+
+fn run_engine_request(engine: &Engine, method: Method, path: &[const byte], out: &byte, out_cap: usize) !isize {
+    var empty_raw: [byte: 1] = [];
+    var req: Request = Request{
+        method: method,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty_raw[0: 0],
+    };
+    fill_request_path(&req, path);
+
+    var fds: [i32: 2] = [0: 2];
+    _ = try sys_pipe2(&fds[0], 0);
+    var ctx: GinContext = uyagin_context_new(fds[1], &req, false, null);
+    const fut: Future<!i32> = engine.handle(&ctx);
+    _ = try block_on<i32>(fut);
+    _ = sys_close(fds[1]) catch {};
+    const n: isize = try sys_read(fds[0], out, out_cap);
+    _ = sys_close(fds[0]) catch {};
+    return n;
+}
+
+test "uyagin_get_ping" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/ping", handler);
+
+    var rb: [byte: 256] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/ping", &rb[0] as &byte, 256);
+    if n <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "HTTP/1.1 200 OK") {
+        try assert_eq_i32(0, 1);
+    }
+    if !slice_has(resp, "pong") {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "uyagin_path_param" {
+    var engine: Engine = uyagin_new();
+    var h: ParamHandler = ParamHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/users/:id", handler);
+
+    var rb: [byte: 256] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/users/42", &rb[0] as &byte, 256);
+    if n <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "HTTP/1.1 200 OK") {
+        try assert_eq_i32(0, 1);
+    }
+    if !slice_has(resp, "42") {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "uyagin_not_found" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/ping", handler);
+
+    var rb: [byte: 256] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/missing", &rb[0] as &byte, 256);
+    if n <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "HTTP/1.1 404 Not Found") {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+struct HeaderMiddleware : AsyncHandler {}
+
+HeaderMiddleware {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        try ctx.header_set("X-MW", "1");
+        return 0;
+    }
+}
+
+struct AbortMiddleware : AsyncHandler {}
+
+AbortMiddleware {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        ctx.status(Status.NoContent);
+        ctx.abort();
+        return 0;
+    }
+}
+
+struct ErrorHandler : AsyncHandler {}
+
+ErrorHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        _ = ctx;
+        return error.HandlerMissing;
+    }
+}
+
+struct QueryFormHandler : AsyncHandler {}
+
+QueryFormHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        const q: &[const byte] = ctx.DefaultQuery("q", "missing");
+        const name: &[const byte] = ctx.PostFormDefault("name", "none");
+        if slice_has(q, "ok") && slice_has(name, "bob") {
+            return try @await ctx.string(Status.OK, "form-ok");
+        }
+        return try @await ctx.string(Status.BadRequest, "form-bad");
+    }
+}
+
+struct BytesHandler : AsyncHandler {}
+
+BytesHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.bytes(Status.Created, "application/octet-stream", "raw");
+    }
+}
+
+struct RedirectHandler : AsyncHandler {}
+
+RedirectHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.redirect(Status.Created, "/next");
+    }
+}
+
+fn run_prepared_request(engine: &Engine, req: &Request, out: &byte, out_cap: usize) !isize {
+    var fds: [i32: 2] = [0: 2];
+    _ = try sys_pipe2(&fds[0], 0);
+    var ctx: GinContext = uyagin_context_new(fds[1], req, false, null);
+    const fut: Future<!i32> = engine.handle(&ctx);
+    _ = try block_on<i32>(fut);
+    _ = sys_close(fds[1]) catch {};
+    const n: isize = try sys_read(fds[0], out, out_cap);
+    _ = sys_close(fds[0]) catch {};
+    return n;
+}
+
+fn make_basic_request(method: Method, path: &[const byte], body: &[byte], req: &Request) void {
+    req.method = method;
+    req.http11 = true;
+    req.path = [];
+    req.path_len = 0;
+    req.path_params = [];
+    req.path_param_count = 0;
+    req.query = [];
+    req.query_count = 0;
+    req.headers = [];
+    req.header_count = 0;
+    req.body = body;
+    fill_request_path(req, path);
+}
+
+test "uyagin_group_middleware_header" {
+    var engine: Engine = uyagin_new();
+    var mw: HeaderMiddleware = HeaderMiddleware{};
+    const imw: AsyncHandler = mw;
+    var api: RouterGroup = try engine.Group("/api");
+    try api.Use(imw);
+    var h: PingHandler = PingHandler{};
+    const handler: AsyncHandler = h;
+    try api.GET("/ping", handler);
+
+    var rb: [byte: 512] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/api/ping", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "X-MW: 1") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "pong") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_abort_stops_chain" {
+    var engine: Engine = uyagin_new();
+    var mw: AbortMiddleware = AbortMiddleware{};
+    const imw: AsyncHandler = mw;
+    try engine.Use(imw);
+    var h: PingHandler = PingHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/ping", handler);
+
+    var rb: [byte: 256] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/ping", &rb[0] as &byte, 256);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "204 No Content") { try assert_eq_i32(0, 1); }
+    if slice_has(resp, "pong") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_error_recovery_500" {
+    var engine: Engine = uyagin_new();
+    var h: ErrorHandler = ErrorHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/err", handler);
+
+    var rb: [byte: 512] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/err", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "500 Internal Server Error") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "internal server error") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_head_and_options_allow" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/ping", handler);
+
+    var rb: [byte: 512] = [];
+    var n: isize = try run_engine_request(&engine, Method.HEAD, "/ping", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    var resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "HTTP/1.1 200 OK") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "Content-Length: 4") { try assert_eq_i32(0, 1); }
+    if slice_has(resp, "pong") { try assert_eq_i32(0, 1); }
+
+    n = try run_engine_request(&engine, Method.OPTIONS, "/ping", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "HTTP/1.1 200 OK") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "Allow: GET, HEAD, OPTIONS") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_method_not_allowed_allow" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const handler: AsyncHandler = h;
+    try engine.GET("/ping", handler);
+
+    var rb: [byte: 512] = [];
+    const n: isize = try run_engine_request(&engine, Method.POST, "/ping", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "405 Method Not Allowed") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "Allow: GET, HEAD, OPTIONS") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_query_form_bytes_redirect" {
+    var engine: Engine = uyagin_new();
+    var qh: QueryFormHandler = QueryFormHandler{};
+    const qhandler: AsyncHandler = qh;
+    try engine.POST("/form", qhandler);
+    var bh: BytesHandler = BytesHandler{};
+    const bhandler: AsyncHandler = bh;
+    try engine.GET("/bytes", bhandler);
+    var rh: RedirectHandler = RedirectHandler{};
+    const rhandler: AsyncHandler = rh;
+    try engine.GET("/go", rhandler);
+
+    var body_raw: [byte: 8] = [110, 97, 109, 101, 61, 98, 111, 98];
+    var req: Request = Request{ method: Method.POST, http11: true, path: [], path_len: 0, path_params: [], path_param_count: 0, query: [], query_count: 0, headers: [], header_count: 0, body: body_raw[0: 8] };
+    fill_request_path(&req, "/form");
+    const qk: &[const byte] = "q";
+    const qv: &[const byte] = "ok";
+    req.query[0] = HttpKvSlice{ key: qk, value: qv };
+    req.query_count = 1;
+    var rb: [byte: 512] = [];
+    var n: isize = try run_prepared_request(&engine, &req, &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    var resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "form-ok") { try assert_eq_i32(0, 1); }
+
+    n = try run_engine_request(&engine, Method.GET, "/bytes", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "201 Created") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "Content-Type: application/octet-stream") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "raw") { try assert_eq_i32(0, 1); }
+
+    n = try run_engine_request(&engine, Method.GET, "/go", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "201 Created") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "Location: /next") { try assert_eq_i32(0, 1); }
+}

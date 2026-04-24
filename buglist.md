@@ -239,6 +239,18 @@
     ```
   - 备注：`Future<!void>` 直接错误返回仍依赖 `Poll_err_void` / `Future_err_void` / `block_on<void>` 等 void monomorph 支持，需后续单独补齐
 
+- [x] **P1 / 高：`error.X` 作为 `!T` 实参参与普通函数调用时被错误降成裸 `u32`**
+  - 状态：已修复
+  - 验证状态：新增 `tests/test_error_value_err_union_arg.uya`，覆盖 `error.X -> !i32` 普通函数实参，以及 `error.X -> fn ready_i32(v: !i32) Future<!i32>` 两条路径，并已通过；`make b` 与 `make check` 也已通过
+  - 归属：C99 codegen / 调用实参发射
+  - 现象：
+    1. `fn ready_i32(v: !i32) Future<!i32>` 这类普通函数形参要求 `struct err_union_*`
+    2. 调用 `ready_i32(error.InvalidRequest)` 时，生成的 C 却把实参发射成裸 `unsigned int`
+    3. 宿主 `cc` 报参数类型不匹配
+  - 影响：所有把 `error.X` 直接作为 `!T` 实参传入普通函数的路径；UyaGin 中一度需要保留 `uyagin_error_from_error_id_i32` / `uyagin_ready_i32` 这类兼容辅助
+  - 修复位置：`src/codegen/c99/expr.uya`，调用实参发射时若目标形参最终 C 类型为 `err_union_*`，则将 `error.X` 生成为对应 err-union 复合字面量，而不是裸错误 ID
+  - 备注：UyaGin 源码中的兼容 helper 仍保留，后续可继续评估是否逐步删除
+
 - [x] **P0 / 严重：`@async_fn` 无 `@await` 与 `catch` 组合路径的 lowering 丢副作用**
   - 状态：已修复，待 release 验收确认
   - 验证状态：已在 DNS async transport 中复现过 lowering 丢副作用问题；现已补 `tests/test_async_transport_fallthrough.uya` 与 `tests/test_async_codegen_edge_paths.uya` 做无网络纯编译器回归，并已通过 `make uya`、`make b`
