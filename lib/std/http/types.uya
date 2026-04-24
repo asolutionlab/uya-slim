@@ -22,6 +22,9 @@ export error ConnectionClosed;
 export error ReadWouldBlock;
 export error IncompleteRequest;
 export error RouterFull;
+export error RouteConflict;
+export error RouteParamConflict;
+export error RouteWildcardNotTail;
 
 // ============================================================
 // 常量

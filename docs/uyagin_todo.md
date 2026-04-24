@@ -24,12 +24,14 @@
 
 ## P2：高性能路由
 
-- [ ] 将线性 `Router` 替换为方法分表 radix tree。
-- [ ] 静态路由优先，参数路由次之，通配路由最后。
-- [ ] 启动期预计算 pattern segment、param name offset、literal hash。
-- [ ] 提供 `GET_T<H: AsyncHandler>` 泛型注册，减少 vtable dispatch。
-- [ ] 增加路由冲突检测：重复路径、参数名冲突、wildcard 非尾部。
-- [ ] Benchmark 路由：1、16、128、1024 条路由的 ns/match 与 Gin 对比。
+- [x] 将线性 `Router` 替换为方法分表 radix tree。
+- [x] 静态路由优先，参数路由次之，通配路由最后。
+- [x] 启动期预计算 pattern segment、param name offset、literal hash。
+- [~] 提供 `GET_T<H: AsyncHandler>` 泛型注册，减少 vtable dispatch。
+  当前已落地兼容入口 `GET_T(engine, pattern, handler)`；受当前编译器对泛型 thunk / `sizeof(H)` codegen 限制，仍走 `AsyncHandler` 接口派发。
+- [x] 增加路由冲突检测：重复路径、参数名冲突、wildcard 非尾部。
+- [x] Benchmark 路由：1、16、128、1024 条路由的 ns/match 与 Gin 对比。
+  2026-04-24 本机实测：已新增 `benchmarks/uyagin_route_bench.uya`、`benchmarks/gin_route_bench/uyagin_route_gin_bench_test.go` 与 `benchmarks/run_uyagin_route_bench.sh`，并完成 Uya/Gin 对照。
 
 ## P3：连接与调度
 

@@ -213,6 +213,37 @@ RedirectHandler {
     }
 }
 
+struct StaticRouteHandler : AsyncHandler {}
+
+StaticRouteHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.string(Status.OK, "static");
+    }
+}
+
+struct WildcardHandler : AsyncHandler {}
+
+WildcardHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        const path: &[const byte] = try ctx.param("path");
+        return try @await ctx.string(Status.OK, path);
+    }
+}
+
+struct TypedPingHandler : AsyncHandler {}
+
+TypedPingHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.string(Status.OK, "typed");
+    }
+}
+
 fn run_prepared_request(engine: &Engine, req: &Request, out: &byte, out_cap: usize) !isize {
     var fds: [i32: 2] = [0: 2];
     _ = try sys_pipe2(&fds[0], 0);
@@ -361,4 +392,81 @@ test "uyagin_query_form_bytes_redirect" {
     resp = rb[0: n as usize];
     if !slice_has(resp, "201 Created") { try assert_eq_i32(0, 1); }
     if !slice_has(resp, "Location: /next") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_route_priority_static_param_wildcard" {
+    var engine: Engine = uyagin_new();
+    var wh: WildcardHandler = WildcardHandler{};
+    var ph: ParamHandler = ParamHandler{};
+    var sh: StaticRouteHandler = StaticRouteHandler{};
+    const whi: AsyncHandler = wh;
+    const phi: AsyncHandler = ph;
+    const shi: AsyncHandler = sh;
+    try engine.GET("/files/*path", whi);
+    try engine.GET("/files/:id", phi);
+    try engine.GET("/files/static", shi);
+
+    var rb: [byte: 512] = [];
+    var n: isize = try run_engine_request(&engine, Method.GET, "/files/static", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    var resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "static") { try assert_eq_i32(0, 1); }
+
+    n = try run_engine_request(&engine, Method.GET, "/files/42", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "42") { try assert_eq_i32(0, 1); }
+
+    n = try run_engine_request(&engine, Method.GET, "/files/a/b", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "/a/b") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_route_conflict_detection" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    var h2: ParamHandler = ParamHandler{};
+    var h3: WildcardHandler = WildcardHandler{};
+    const hi: AsyncHandler = h;
+    const h2i: AsyncHandler = h2;
+    const h3i: AsyncHandler = h3;
+    try engine.GET("/dup", hi);
+    const dup_res: !void = engine.GET("/dup", hi);
+    match dup_res {
+        error.RouteConflict => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    };
+
+    try engine.GET("/users/:id", h2i);
+    const param_conflict: !void = engine.GET("/users/:name", h2i);
+    match param_conflict {
+        error.RouteParamConflict => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    };
+
+    const wildcard_tail: !void = engine.GET("/files/*path/more", h3i);
+    match wildcard_tail {
+        error.RouteWildcardNotTail => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    };
+}
+
+test "uyagin_get_typed_handler" {
+    var engine: Engine = uyagin_new();
+    var h: TypedPingHandler = TypedPingHandler{};
+    const hi: AsyncHandler = h;
+    try GET_T(&engine, "/typed", hi);
+
+    var rb: [byte: 256] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/typed", &rb[0] as &byte, 256);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "typed") { try assert_eq_i32(0, 1); }
 }

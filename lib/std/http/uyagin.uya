@@ -4,7 +4,7 @@
 
 use std.async;
 use std.http.types;
-use std.http.router;
+use std.http.uyagin_router;
 use std.http.parse.http_parse_request;
 use std.http.parse.extract_multipart_boundary;
 use std.http.parse.parse_multipart;
@@ -17,11 +17,13 @@ export error HandlerMissing;
 export error RouteIndexInvalid;
 export error HeaderBufferTooSmall;
 
-export const UYAGIN_MAX_ROUTES: i32 = MAX_ROUTES;
+export const UYAGIN_MAX_ROUTES: i32 = 1024;
 export const UYAGIN_IO_CAP: usize = (65536 + 4096) as usize;
 export const UYAGIN_HEADER_CAP: usize = 768;
 export const UYAGIN_MAX_MIDDLEWARES: i32 = 8;
 export const UYAGIN_MAX_RESPONSE_HEADERS: i32 = 16;
+const UYAGIN_TYPED_HANDLER_WORDS: usize = 32;
+const UYAGIN_TYPED_HANDLER_BYTES: usize = UYAGIN_TYPED_HANDLER_WORDS * @size_of(usize);
 
 var uyagin_empty_body_raw: [byte: 1] = [0 as byte];
 
@@ -38,12 +40,32 @@ export interface AsyncMiddleware {
     fn handle(self: &Self, ctx: &GinContext, next: AsyncHandler) Future<!i32>;
 }
 
-/// 单条路由元数据。pattern 与底层 Router 保持同序，便于 O(1) 通过命中下标拿到 handler。
+fn uyagin_route_store_typed_handler<H: AsyncHandler>(route: &GinRoute, handler: &H) !AsyncHandler {
+    if route == null || handler == null {
+        return error.InvalidRequest;
+    }
+    const size: usize = @size_of(H);
+    if size > UYAGIN_TYPED_HANDLER_BYTES {
+        return error.ValueTooLong;
+    }
+    const dst: &byte = &route.typed_handler_words[0] as &byte;
+    const src: &byte = handler as &byte;
+    var i: usize = 0;
+    while i < size {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+    route.typed_handler_size = size as i32;
+    const stored: &H = &route.typed_handler_words[0] as &H;
+    const iface: AsyncHandler = *stored;
+    return iface;
+}
+
+/// 单条路由调度槽。路径匹配元数据放在 `Engine.route_meta`，这里只保留运行时 handler / middleware。
 export struct GinRoute {
-    method: Method,
-    pattern: [byte: MAX_URI_LENGTH],
-    pattern_len: i32,
     handler: AsyncHandler,
+    typed_handler_words: [usize: UYAGIN_TYPED_HANDLER_WORDS],
+    typed_handler_size: i32,
     middlewares: [AsyncHandler: UYAGIN_MAX_MIDDLEWARES],
     middleware_count: i32,
 }
@@ -272,8 +294,9 @@ export struct RouterGroup {
 
 /// Engine 是 Gin 风格入口：注册路由并调度请求。
 export struct Engine {
-    router: Router,
-    routes: [GinRoute: MAX_ROUTES],
+    router: UyaginRouter,
+    route_meta: [UyaginRouteMeta: UYAGIN_MAX_ROUTES],
+    routes: [GinRoute: UYAGIN_MAX_ROUTES],
     route_count: i32,
     middlewares: [AsyncHandler: UYAGIN_MAX_MIDDLEWARES],
     middleware_count: i32,
@@ -281,22 +304,35 @@ export struct Engine {
     allocator: &IAllocator,
 
     fn add(self: &Self, method: Method, pattern: &[const byte], handler: AsyncHandler) !void {
-        if self.route_count < 0 || self.route_count >= MAX_ROUTES {
+        if self.route_count < 0 || self.route_count >= UYAGIN_MAX_ROUTES {
             return error.RouterFull;
         }
-        try router_add(&self.router, method, pattern);
         const idx: i32 = self.route_count;
-        if idx < 0 || idx >= MAX_ROUTES {
+        if idx < 0 || idx >= UYAGIN_MAX_ROUTES {
             return error.RouterFull;
         }
-        self.routes[idx].method = method;
-        self.routes[idx].pattern_len = pattern.len as i32;
-        var i: usize = 0;
-        while i < pattern.len && i < MAX_URI_LENGTH as usize {
-            self.routes[idx].pattern[i] = pattern.ptr[i];
-            i = i + 1;
-        }
+        try uyagin_route_meta_init(&self.route_meta[idx], method, pattern);
+        try uyagin_router_add(&self.router, &self.route_meta[0] as &UyaginRouteMeta, idx, &self.route_meta[idx]);
         self.routes[idx].handler = handler;
+        self.routes[idx].typed_handler_size = 0;
+        self.routes[idx].middleware_count = 0;
+        self.route_count = idx + 1;
+    }
+
+    fn add_typed<H: AsyncHandler>(self: &Self, method: Method, pattern: &[const byte], handler: &H) !void {
+        if self.route_count < 0 || self.route_count >= UYAGIN_MAX_ROUTES {
+            return error.RouterFull;
+        }
+        if handler == null {
+            return error.InvalidRequest;
+        }
+        const idx: i32 = self.route_count;
+        if idx < 0 || idx >= UYAGIN_MAX_ROUTES {
+            return error.RouterFull;
+        }
+        try uyagin_route_meta_init(&self.route_meta[idx], method, pattern);
+        try uyagin_router_add(&self.router, &self.route_meta[0] as &UyaginRouteMeta, idx, &self.route_meta[idx]);
+        self.routes[idx].handler = try uyagin_route_store_typed_handler<H>(&self.routes[idx], handler);
         self.routes[idx].middleware_count = 0;
         self.route_count = idx + 1;
     }
@@ -321,54 +357,81 @@ export struct Engine {
         try self.add(Method.GET, pattern, handler);
     }
 
+    fn GET_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.GET, pattern, handler);
+    }
+
     fn POST(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void {
         try self.add(Method.POST, pattern, handler);
+    }
+
+    fn POST_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.POST, pattern, handler);
     }
 
     fn PUT(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void {
         try self.add(Method.PUT, pattern, handler);
     }
 
+    fn PUT_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.PUT, pattern, handler);
+    }
+
     fn PATCH(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void {
         try self.add(Method.PATCH, pattern, handler);
+    }
+
+    fn PATCH_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.PATCH, pattern, handler);
     }
 
     fn DELETE(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void {
         try self.add(Method.DELETE, pattern, handler);
     }
 
+    fn DELETE_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.DELETE, pattern, handler);
+    }
+
     fn OPTIONS(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void {
         try self.add(Method.OPTIONS, pattern, handler);
+    }
+
+    fn OPTIONS_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.OPTIONS, pattern, handler);
     }
 
     fn HEAD(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void {
         try self.add(Method.HEAD, pattern, handler);
     }
 
+    fn HEAD_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void {
+        try self.add_typed<H>(Method.HEAD, pattern, handler);
+    }
+
     fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
         if ctx == null || ctx.request == null {
             return uyagin_ready_i32(error.InvalidRequest);
         }
-        var idx: i32 = router_find_route_request(&self.router, ctx.request.method, ctx.request);
+        var idx: i32 = uyagin_router_find_route_request(&self.router, &self.route_meta[0] as &UyaginRouteMeta, ctx.request.method, ctx.request);
         if idx < 0 && ctx.request.method == Method.HEAD {
             ctx.request.method = Method.GET;
-            idx = router_find_route_request(&self.router, Method.GET, ctx.request);
+            idx = uyagin_router_match_method_request(&self.router, &self.route_meta[0] as &UyaginRouteMeta, Method.GET, ctx.request);
             ctx.request.method = Method.HEAD;
             if idx >= 0 {
                 ctx.suppress_body = true;
             }
         }
         if idx >= 0 {
-            if !(idx >= 0 && idx < self.route_count && idx < MAX_ROUTES) {
+            if !(idx >= 0 && idx < self.route_count && idx < UYAGIN_MAX_ROUTES) {
                 return uyagin_ready_i32(error.RouteIndexInvalid);
             }
             const route: &GinRoute = uyagin_route_ptr(self, idx);
-            if route == null {
+            const meta: &UyaginRouteMeta = uyagin_route_meta_ptr(self, idx);
+            if route == null || meta == null {
                 return uyagin_ready_i32(error.RouteIndexInvalid);
             }
-            const pat_base: &byte = &route.pattern[0] as &byte;
-            const pat: &[byte] = pat_base[0: route.pattern_len as usize];
-            router_apply_path_params_request(ctx.request, pat) catch {
+            uyagin_route_meta_bind_params_request(meta, ctx.request) catch {
                 return uyagin_ready_i32(error.InvalidRequest);
             };
             if self.recovery_enabled {
@@ -428,13 +491,49 @@ RouterGroup {
         route.middleware_count = i;
     }
 
+    fn add_typed<H: AsyncHandler>(self: &Self, method: Method, pattern: &[const byte], handler: &H) !void {
+        if self.engine == null {
+            return error.InvalidRequest;
+        }
+        var full: [byte: MAX_URI_LENGTH] = [];
+        const full_len: usize = try uyagin_join_group_path(self, pattern, &full[0] as &byte, MAX_URI_LENGTH as usize);
+        const full_base: &byte = &full[0] as &byte;
+        const full_path: &[byte] = full_base[0: full_len];
+        const before: i32 = self.engine.route_count;
+        try self.engine.add_typed<H>(method, full_path, handler);
+        const route: &GinRoute = uyagin_route_ptr(self.engine, before);
+        if route == null {
+            return error.RouteIndexInvalid;
+        }
+        var i: i32 = 0;
+        while i < self.middleware_count && i < UYAGIN_MAX_MIDDLEWARES {
+            route.middlewares[i] = self.middlewares[i];
+            i = i + 1;
+        }
+        route.middleware_count = i;
+    }
+
     fn GET(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.GET, pattern, handler); }
+    fn GET_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.GET, pattern, handler); }
     fn POST(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.POST, pattern, handler); }
+    fn POST_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.POST, pattern, handler); }
     fn PUT(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.PUT, pattern, handler); }
+    fn PUT_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.PUT, pattern, handler); }
     fn PATCH(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.PATCH, pattern, handler); }
+    fn PATCH_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.PATCH, pattern, handler); }
     fn DELETE(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.DELETE, pattern, handler); }
+    fn DELETE_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.DELETE, pattern, handler); }
     fn OPTIONS(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.OPTIONS, pattern, handler); }
+    fn OPTIONS_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.OPTIONS, pattern, handler); }
     fn HEAD(self: &Self, pattern: &[const byte], handler: AsyncHandler) !void { try self.add(Method.HEAD, pattern, handler); }
+    fn HEAD_T<H: AsyncHandler>(self: &Self, pattern: &[const byte], handler: &H) !void { try self.add_typed<H>(Method.HEAD, pattern, handler); }
+}
+
+export fn GET_T(engine: &Engine, pattern: &[const byte], handler: AsyncHandler) !void {
+    if engine == null {
+        return error.InvalidRequest;
+    }
+    try engine.add(Method.GET, pattern, handler);
 }
 
 fn uyagin_context_aborted(ctx: &GinContext) bool {
@@ -548,62 +647,67 @@ fn uyagin_append_allow_method(out: &byte, cap: usize, pos: usize, method: Method
     return uyagin_append_slice_fast(out, cap, p, uyagin_method_text(method));
 }
 
-fn uyagin_request_path_slice(req: &Request) &[byte] {
-    const base: &byte = &req.path[0] as &byte;
-    if req.path_len <= 0 {
-        return base[0: 0];
-    }
-    return base[0: req.path_len as usize];
+fn uyagin_method_index(method: Method) i32 {
+    if method == Method.GET { return 0; }
+    if method == Method.POST { return 1; }
+    if method == Method.PUT { return 2; }
+    if method == Method.PATCH { return 3; }
+    if method == Method.DELETE { return 4; }
+    if method == Method.OPTIONS { return 5; }
+    return 6;
 }
 
-fn uyagin_route_pattern_slice(route: &GinRoute) &[byte] {
-    const base: &byte = &route.pattern[0] as &byte;
-    if route.pattern_len <= 0 {
-        return base[0: 0];
-    }
-    return base[0: route.pattern_len as usize];
-}
-
-fn uyagin_route_matches_request(route: &GinRoute, req: &Request) bool {
-    return path_matches_pattern(uyagin_request_path_slice(req), uyagin_route_pattern_slice(route));
+fn uyagin_allow_mask_has_method(mask: u32, method: Method) bool {
+    const idx: i32 = uyagin_method_index(method);
+    return (mask & (1u32 << idx)) != 0u32;
 }
 
 fn uyagin_build_allow_header(engine: &Engine, req: &Request, out: &byte, cap: usize) usize {
+    const explicit_mask: u32 = uyagin_router_allow_mask(&engine.router, &engine.route_meta[0] as &UyaginRouteMeta, req);
+    if explicit_mask == 0u32 {
+        return 0usize;
+    }
     var pos: usize = 0;
     var first: bool = true;
-    var has_get: bool = false;
-    var has_options: bool = false;
-    var i: i32 = 0;
-    while i < engine.route_count && i < MAX_ROUTES {
-        const route: &GinRoute = uyagin_route_ptr(engine, i);
-        if route != null && uyagin_route_matches_request(route, req) {
-            pos = uyagin_append_allow_method(out, cap, pos, route.method, first);
-            first = false;
-            if route.method == Method.GET { has_get = true; }
-            if route.method == Method.OPTIONS { has_options = true; }
-        }
-        i = i + 1;
+    if uyagin_allow_mask_has_method(explicit_mask, Method.GET) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.GET, first);
+        first = false;
     }
-    if has_get {
+    if uyagin_allow_mask_has_method(explicit_mask, Method.POST) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.POST, first);
+        first = false;
+    }
+    if uyagin_allow_mask_has_method(explicit_mask, Method.PUT) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.PUT, first);
+        first = false;
+    }
+    if uyagin_allow_mask_has_method(explicit_mask, Method.PATCH) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.PATCH, first);
+        first = false;
+    }
+    if uyagin_allow_mask_has_method(explicit_mask, Method.DELETE) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.DELETE, first);
+        first = false;
+    }
+    if uyagin_allow_mask_has_method(explicit_mask, Method.OPTIONS) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.OPTIONS, first);
+        first = false;
+    }
+    if uyagin_allow_mask_has_method(explicit_mask, Method.HEAD) {
+        pos = uyagin_append_allow_method(out, cap, pos, Method.HEAD, first);
+        first = false;
+    } else if uyagin_allow_mask_has_method(explicit_mask, Method.GET) {
         pos = uyagin_append_allow_method(out, cap, pos, Method.HEAD, first);
         first = false;
     }
-    if !has_options {
+    if !uyagin_allow_mask_has_method(explicit_mask, Method.OPTIONS) {
         pos = uyagin_append_allow_method(out, cap, pos, Method.OPTIONS, first);
     }
     return pos;
 }
 
 fn uyagin_path_has_any_route(engine: &Engine, req: &Request) bool {
-    var i: i32 = 0;
-    while i < engine.route_count && i < MAX_ROUTES {
-        const route: &GinRoute = uyagin_route_ptr(engine, i);
-        if route != null && uyagin_route_matches_request(route, req) {
-            return true;
-        }
-        i = i + 1;
-    }
-    return false;
+    return uyagin_router_allow_mask(&engine.router, &engine.route_meta[0] as &UyaginRouteMeta, req) != 0u32;
 }
 
 export fn uyagin_method_not_allowed(engine: &Engine, ctx: &GinContext) Future<!i32> {
@@ -699,7 +803,8 @@ export struct GinListener {
 
 export fn uyagin_new() Engine {
     return Engine{
-        router: router_new(),
+        router: uyagin_router_new(),
+        route_meta: [],
         routes: [],
         route_count: 0,
         middlewares: [],
@@ -711,7 +816,8 @@ export fn uyagin_new() Engine {
 
 export fn uyagin_new_with_allocator(allocator: &IAllocator) Engine {
     return Engine{
-        router: router_new(),
+        router: uyagin_router_new(),
+        route_meta: [],
         routes: [],
         route_count: 0,
         middlewares: [],
@@ -867,12 +973,21 @@ export fn uyagin_listen_loopback(port: u16, max_connections: i32) !GinListener {
 }
 
 fn uyagin_route_ptr(engine: &Engine, idx: i32) &GinRoute {
-    if engine == null || idx < 0 || idx >= MAX_ROUTES {
+    if engine == null || idx < 0 || idx >= UYAGIN_MAX_ROUTES {
         return null;
     }
     const base: &GinRoute = &engine.routes[0];
     const off: usize = (idx as usize) * @size_of(GinRoute);
     return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &GinRoute;
+}
+
+fn uyagin_route_meta_ptr(engine: &Engine, idx: i32) &UyaginRouteMeta {
+    if engine == null || idx < 0 || idx >= UYAGIN_MAX_ROUTES {
+        return null;
+    }
+    const base: &UyaginRouteMeta = &engine.route_meta[0];
+    const off: usize = (idx as usize) * @size_of(UyaginRouteMeta);
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &UyaginRouteMeta;
 }
 
 fn uyagin_find_kv(kvs: &[HttpKvSlice], name: &[const byte]) !&[const byte] {

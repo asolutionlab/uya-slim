@@ -1,0 +1,180 @@
+// benchmarks/uyagin_route_bench.uya - UyaGin 路由匹配基准
+//
+// 运行：
+//   UYA_SPLIT_C=0 ./bin/uya-hosted run benchmarks/uyagin_route_bench.uya
+
+use std.runtime.entry;
+use std.http.types;
+use std.http.uyagin;
+use std.http.uyagin_router;
+use libc.syscall;
+use libc.pthread;
+
+extern "libc" fn printf(fmt: *byte, ...) i32;
+
+const BENCH_COUNTS: [i32: 4] = [1, 16, 128, 1024];
+const BENCH_CASE_STATIC: i32 = 0;
+const BENCH_CASE_PARAM: i32 = 1;
+const BENCH_CASE_WILDCARD: i32 = 2;
+const BENCH_ITERATIONS: i32 = 200000;
+
+fn bench_now_ns() !i64 {
+    var ts: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+    _ = try sys_clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
+fn bench_fill_request_path(req: &Request, path: &[const byte]) void {
+    var i: usize = 0;
+    while i < path.len && i < MAX_URI_LENGTH as usize {
+        req.path[i] = path.ptr[i];
+        i = i + 1;
+    }
+    req.path_len = path.len as i32;
+}
+
+fn bench_build_static_path(id: i32, out: &byte, cap: usize) !usize {
+    if cap < 3 {
+        return error.URITooLong;
+    }
+    out[0] = '/' as byte;
+    out[1] = 'r' as byte;
+    var pos: usize = 2;
+    if id == 0 {
+        if pos >= cap { return error.URITooLong; }
+        out[pos] = '0' as byte;
+        return pos + 1;
+    }
+    var tmp: [byte: 12] = [];
+    var t: usize = 0;
+    var x: i32 = id;
+    while x > 0 && t < 12 {
+        tmp[t] = (((x % 10) + 48) as! byte).value;
+        x = x / 10;
+        t = t + 1;
+    }
+    while t > 0 {
+        t = t - 1;
+        if pos >= cap {
+            return error.URITooLong;
+        }
+        out[pos] = tmp[t];
+        pos = pos + 1;
+    }
+    return pos;
+}
+
+fn bench_add_route(router: &UyaginRouter, meta: &UyaginRouteMeta, meta_base: &UyaginRouteMeta, idx: i32, pattern: &[byte]) !void {
+    try uyagin_route_meta_init(meta, Method.GET, pattern);
+    try uyagin_router_add(router, meta_base, idx, meta);
+}
+
+fn bench_make_request(path: &[const byte], req: &Request) void {
+    var empty_raw: [byte: 1] = [];
+    req.method = Method.GET;
+    req.http11 = true;
+    req.path_len = 0;
+    req.path_param_count = 0;
+    req.query_count = 0;
+    req.header_count = 0;
+    req.body = empty_raw[0: 0];
+    bench_fill_request_path(req, path);
+}
+
+fn bench_case_name(case_kind: i32) &byte {
+    if case_kind == BENCH_CASE_PARAM {
+        return "param" as &byte;
+    }
+    if case_kind == BENCH_CASE_WILDCARD {
+        return "wildcard" as &byte;
+    }
+    return "static" as &byte;
+}
+
+fn bench_prepare_router(route_count: i32, case_kind: i32, router: &UyaginRouter, meta: &UyaginRouteMeta, req: &Request) !void {
+    *router = uyagin_router_new();
+
+    var path_buf: [byte: 32] = [];
+    var idx: i32 = 0;
+    if case_kind == BENCH_CASE_PARAM {
+        try bench_add_route(router, &meta[idx], meta, idx, &"/users/:id"[0: 10]);
+        idx = idx + 1;
+    } else if case_kind == BENCH_CASE_WILDCARD {
+        try bench_add_route(router, &meta[idx], meta, idx, &"/assets/*path"[0: 13]);
+        idx = idx + 1;
+    }
+
+    while idx < route_count {
+        const n: usize = try bench_build_static_path(idx, &path_buf[0] as &byte, 32);
+        const path_base: &byte = &path_buf[0] as &byte;
+        const path: &[byte] = path_base[0: n];
+        try bench_add_route(router, &meta[idx], meta, idx, path);
+        idx = idx + 1;
+    }
+
+    if case_kind == BENCH_CASE_PARAM {
+        bench_make_request("/users/42", req);
+        return;
+    }
+    if case_kind == BENCH_CASE_WILDCARD {
+        bench_make_request("/assets/a/b/c", req);
+        return;
+    }
+    const static_idx: i32 = route_count - 1;
+    const n: usize = try bench_build_static_path(static_idx, &path_buf[0] as &byte, 32);
+    const path_base: &byte = &path_buf[0] as &byte;
+    const static_path: &[byte] = path_base[0: n];
+    bench_make_request(static_path, req);
+}
+
+fn bench_run_case(route_count: i32, case_kind: i32) !void {
+    var router: UyaginRouter = uyagin_router_new();
+    var meta: [UyaginRouteMeta: UYAGIN_MAX_ROUTES] = [];
+    var req: Request = Request{
+        method: Method.GET,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: [],
+    };
+    try bench_prepare_router(route_count, case_kind, &router, &meta[0] as &UyaginRouteMeta, &req);
+
+    var warm: i32 = 0;
+    while warm < 1024 {
+        _ = uyagin_router_find_route_request(&router, &meta[0] as &UyaginRouteMeta, Method.GET, &req);
+        warm = warm + 1;
+    }
+
+    const start: i64 = try bench_now_ns();
+    var iter: i32 = 0;
+    var checksum: i32 = 0;
+    while iter < BENCH_ITERATIONS {
+        const idx: i32 = uyagin_router_find_route_request(&router, &meta[0] as &UyaginRouteMeta, Method.GET, &req);
+        checksum = checksum + idx;
+        iter = iter + 1;
+    }
+    const end: i64 = try bench_now_ns();
+    const elapsed_ns: i64 = end - start;
+    const ns_per_match: i64 = elapsed_ns / (BENCH_ITERATIONS as i64);
+
+    printf("uyagin_route_bench routes=%d case=%s ns_per_match=%ld checksum=%d\n" as *byte,
+           route_count, bench_case_name(case_kind), ns_per_match, checksum);
+}
+
+export fn main() i32 {
+    var i: usize = 0;
+    while i < 4 {
+        const count: i32 = BENCH_COUNTS[i];
+        _ = bench_run_case(count, BENCH_CASE_STATIC) catch { return 1; };
+        _ = bench_run_case(count, BENCH_CASE_PARAM) catch { return 2; };
+        _ = bench_run_case(count, BENCH_CASE_WILDCARD) catch { return 3; };
+        i = i + 1;
+    }
+    return 0;
+}
