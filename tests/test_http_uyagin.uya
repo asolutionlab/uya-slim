@@ -1,8 +1,11 @@
 // test_http_uyagin.uya — Gin 风格纯 @async_fn HTTP 框架核心测试
 
 use std.async;
+use std.async_event;
+use std.async_scheduler;
 use std.http.types;
 use std.http.uyagin;
+use libc.pthread;
 use libc.syscall;
 use std.testing.assert_eq_i32;
 
@@ -469,4 +472,43 @@ test "uyagin_get_typed_handler" {
     if n <= 0 { try assert_eq_i32(0, 1); }
     const resp: &[byte] = rb[0: n as usize];
     if !slice_has(resp, "typed") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_engine_run_stop_requested_smoke" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const hi: AsyncHandler = h;
+    try engine.GET("/ping", hi);
+
+    var listener: GinListener = try uyagin_listen_loopback_with_reuseport(0, 64, true);
+    var controller: EngineRunController = uyagin_run_controller_new();
+    uyagin_run_controller_request_stop(&controller);
+    var opts: EngineRunOptions = uyagin_run_options_default();
+    opts.max_connections = 8;
+    opts.poll_timeout_ms = 10;
+    opts.shutdown_grace_ms = 200u32;
+    var scheduler: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try linux_epoll_create(0);
+    const loop: EventLoop = loop_impl;
+    const served: i32 = try engine.run_with_options(&listener, loop, &scheduler, &opts, &controller);
+    try assert_eq_i32(served, 0);
+}
+
+test "uyagin_engine_run_shards_stop_requested_smoke" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const hi: AsyncHandler = h;
+    try engine.GET("/ping", hi);
+
+    var listener: GinListener = try uyagin_listen_loopback(0, 64);
+    var controller: EngineRunController = uyagin_run_controller_new();
+    uyagin_run_controller_request_stop(&controller);
+    var opts: EngineRunOptions = uyagin_run_options_default();
+    opts.shard_count = 1;
+    opts.reuse_port = true;
+    opts.max_connections = 8;
+    opts.poll_timeout_ms = 10;
+    opts.shutdown_grace_ms = 200u32;
+    const served: i32 = try engine.run_shards_with_options(&listener, &opts, &controller);
+    try assert_eq_i32(served, 0);
 }

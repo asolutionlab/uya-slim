@@ -35,12 +35,12 @@
 
 ## P3：连接与调度
 
-- [ ] 实现 `Engine.run(listener, loop, scheduler)` accept loop。
-- [ ] 支持单 EventLoop 多连接任务队列，连接 future 完成后回收 slot。
-- [ ] 支持多 reactor shard：按 CPU 数启动 N 个 loop。
-- [ ] 支持 `SO_REUSEPORT` 或 accept 后 fd 分发。
-- [ ] 增加连接限流、read timeout、write timeout、idle timeout。
-- [ ] 增加优雅关闭：停止 accept、drain keep-alive、deadline 强关。
+- [x] 实现 `Engine.run(listener, loop, scheduler)` accept loop。
+- [x] 支持单 EventLoop 多连接任务队列，连接 future 完成后回收 slot。
+- [x] 支持多 reactor shard：按 CPU 数启动 N 个 loop。
+- [x] 支持 `SO_REUSEPORT` 或 accept 后 fd 分发。
+- [x] 增加连接限流、read timeout、write timeout、idle timeout。
+- [x] 增加优雅关闭：停止 accept、drain keep-alive、deadline 强关。
 
 ## P4：内存与 allocator
 
