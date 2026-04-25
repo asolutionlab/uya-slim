@@ -65,7 +65,7 @@
 - [x] **错误联合类型**: `!T`
 - [x] **泛型**: `<T>`, `<T: Constraint>`
 - [x] **接口 (interface)**: 鸭子类型
-- [x] **方法块**: 结构体方法定义
+- [x] **方法块 / 方法调用**: 结构体与联合体方法、`Type.method(...)`、`obj.method(...)` 语法糖、泛型方法与无限制链式后缀调用
 - [x] **函数**: 普通函数、泛型函数、可变参数函数
 - [x] **控制流**: if/else, while, for, break, continue, return
 - [x] **defer/errdefer**: 作用域结束执行

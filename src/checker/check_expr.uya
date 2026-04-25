@@ -2981,7 +2981,10 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             method_name != null && checker.program_node != null {
             const m_union: &ASTNode = find_instance_method_in_union(checker.program_node, object_type.union_name, method_name);
             if m_union != null {
-                return type_from_ast(checker, m_union.fn_decl_return_type);
+                return checker_method_type_from_value_owner(checker, m_union.fn_decl_return_type, &object_type,
+                    null, 0,
+                    expr.call_expr_type_args, expr.call_expr_type_arg_count,
+                    expr.line, expr.column, expr.filename);
             }
             const m_union_static: &ASTNode = find_static_method_in_union(checker.program_node, object_type.union_name, method_name);
             if m_union_static != null {
@@ -2994,7 +2997,10 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             method_name != null && checker.program_node != null {
             const m: &ASTNode = find_instance_method_in_struct(checker.program_node, object_type.struct_name, method_name);
             if m != null {
-                return type_from_ast(checker, m.fn_decl_return_type);
+                return checker_method_type_from_value_owner(checker, m.fn_decl_return_type, &object_type,
+                    m.fn_decl_type_params, m.fn_decl_type_param_count,
+                    expr.call_expr_type_args, expr.call_expr_type_arg_count,
+                    expr.line, expr.column, expr.filename);
             }
             const m_static: &ASTNode = find_static_method_in_struct(checker.program_node, object_type.struct_name, method_name);
             if m_static != null {
@@ -3020,7 +3026,10 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                 }
             }
             if m_fallback != null {
-                return type_from_ast(checker, m_fallback.fn_decl_return_type);
+                return checker_method_type_from_value_owner(checker, m_fallback.fn_decl_return_type, &object_type,
+                    m_fallback.fn_decl_type_params, m_fallback.fn_decl_type_param_count,
+                    expr.call_expr_type_args, expr.call_expr_type_arg_count,
+                    expr.line, expr.column, expr.filename);
             }
         }
         

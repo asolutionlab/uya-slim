@@ -527,7 +527,10 @@ fn parser_parse_rel_expr(parser: &Parser) &ASTNode {
                 call.call_expr_has_ellipsis_forward = 0;
                 
                 // 继续处理可能的链式调用（如 obj.method<T>().another()）
-                left = call;
+                left = parser_parse_postfix_expr_tail(parser, call);
+                if left == null {
+                    return null;
+                }
                 continue;  // 跳过后面的比较表达式处理
             }
         }

@@ -2,9 +2,17 @@
 
 **设计文档**：[static_method_design.md](static_method_design.md)  
 **创建日期**：2026-04-25  
-**状态**：未开始
+**状态**：主线已完成（2026-04-26 回填状态；历史清单未逐项补打全部复选框）
 
 本 TODO 与 [static_method_design.md](static_method_design.md) 配合使用：设计文档负责定义“静态方法是什么、语义边界在哪里”，本文档负责定义“按什么顺序落地、改哪些文件、补哪些测试”。
+
+2026-04-26 更新：
+
+- 已完成统一方法命名空间调用：`Type.method(...)` 可调用静态方法，也可在实例方法场景中显式传入 receiver。
+- 已完成实例语法糖约束：`obj.method(...)` 仍只匹配首参为实例 receiver 的方法。
+- 已完成调用链收口：结构体字面量、括号表达式、数组下标结果、泛型方法返回值都可继续链式调用。
+- 已落地回归：`test_static_method_struct.uya`、`test_static_method_generic_struct.uya`、`test_static_method_generic_method.uya`、`test_static_method_union.uya`、`test_struct_method_chain.uya` 以及多条误用负例均已在主测试集中通过。
+- 已完成自举与回归验证：`make b`、`make tests-uya` 通过。
 
 ---
 
@@ -30,6 +38,7 @@
 - 静态泛型方法 `Type.method<U>(...)` 可用
 - `@async_fn` 静态方法可用
 - `obj.method(...)` 仍只匹配实例方法
+- 方法返回值可继续无限制后缀链：`Type.make().next().done()`、`obj.method<T>().next()`
 - 同一类型里静态/实例同名会报错
 - 接口静态方法签名报错
 - 联合体静态方法与变体名冲突报错

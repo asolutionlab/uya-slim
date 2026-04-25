@@ -8,6 +8,18 @@
 
 **发布日期：** 待定
 
+### 语言：对象方法无限制链式调用（2026-04-26）
+
+- **Parser**：统一了后缀表达式链的解析，`.` / `[]` / `()` 现在都可以在同一对象表达式后无限继续组合。
+- **方法调用**：以下形式现都属于同一条主链能力，后续可继续接成员访问或方法调用：
+  - `Struct{ ... }.method().next()`
+  - `(expr).method().next()`
+  - `arr[i].method().next()`
+  - `obj.method<T>(...).next()`
+- **Checker**：方法参数与返回类型现在会基于实际 receiver 继续替换 `Self`、owner 泛型和方法泛型，因此匿名表达式上的实例方法返回值也能继续正确参与下一段链。
+- **测试**：新增 `tests/test_struct_method_chain.uya`，覆盖结构体字面量链、泛型方法链、括号表达式链、数组下标结果链。
+- **文档**：同步更新 `uya.md`、`grammar_quick.md`、`grammar_formal.md`、`compiler_status.md`，并修正文档中遗留的静态方法旧语义描述。
+
 ### 标准库 HTTP / UyaGin P7：Benchmark Harness（2026-04-25）
 
 - **Benchmark 服务端**：新增 **`benchmarks/uyagin_http_bench.uya`**，基于 `std.http.uyagin` 固化 P7 五个场景：**12B plaintext**、**100B JSON**、**`/users/:id`**、**middleware x3**（disabled logger + recovery + auth stub）以及 **64KiB body**。

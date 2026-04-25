@@ -1,6 +1,6 @@
 # Uya 语法速查手册（Quick Reference）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.47 同步（2026-04-21）
+> **版本**：与 [uya.md](./uya.md) 0.49.48 同步（2026-04-26）
 
 本文档是 Uya 语言的快速参考手册，包含精简语法定义、常用代码模式和速查表。
 
@@ -288,6 +288,9 @@ Factory {
 
 const f: Factory = Factory.new();
 
+// 统一方法命名空间与链式调用：Type.make().next().finish()
+// 实例方法也支持按类型显式传 receiver：Type.method(value, ...)
+
 // async 方法也可以写在结构体内部或外部方法块
 struct AsyncName {
     field: i32,
@@ -318,6 +321,8 @@ struct Container<T> {
 // 调用泛型方法
 const c: Container<i32> = Container<i32>{ value: 42 };
 const v: i64 = c.as_type<i64>();  // 显式指定类型参数
+const same: i32 = Container<i32>{ value: 7 }.as_type<i32>();
+// 若返回值本身仍支持后缀操作，则可继续写成 obj.method<T>().next()
 ```
 
 ### 联合体定义模板
@@ -914,6 +919,9 @@ A: `obj.field = value;`（直接赋值）或 `ptr.field = value;`（指针自动
 
 ### Q: 如何定义结构体方法？
 A: 在结构体内部定义，或使用外部方法块 `StructName { fn method(self: &Self) ... }`
+
+### Q: 如何写链式方法调用？
+A: 后缀链没有层数限制，可写成 `obj.method().next().finish()`、`Type.make().next()`、`arr[i].method().next()` 或 `obj.method<T>().next()`
 
 ### Q: 如何实现接口？
 A: 在结构体定义时声明：`struct MyStruct : InterfaceName { ... }`
