@@ -44,12 +44,14 @@
 
 ## P4：内存与 allocator
 
-- [ ] 为每请求增加 `Arena`，通过 `GinContext.allocator` 注入。
-- [ ] `RequestArena.drop` 自动 reset/归还，错误路径用同步 helper + `errdefer` rollback。
-- [ ] async frame pool 与 scheduler 绑定，避免热路径 malloc。
-- [ ] 增加响应 body trait：static slice、arena bytes、file/sendfile。
-- [ ] 增加最大 header/body/form 限额并暴露配置。
-- [ ] 增加内存指标：arena used、frame alloc/free、heap fallback 次数。
+- [x] 为每请求增加 `Arena`，通过 `GinContext.allocator` 注入。
+- [x] `RequestArena.drop` 自动 reset/归还，错误路径用同步 helper + `errdefer` rollback。
+- [x] async frame pool 与 scheduler 绑定，避免热路径 malloc。
+- [x] 增加响应 body trait：static slice、arena bytes、file/sendfile。
+- [x] 增加最大 header/body/form 限额并暴露配置。
+- [x] 增加内存指标：arena used、frame alloc/free、heap fallback 次数。
+
+注：当前实现里 `RequestArena` 采用作用域 `reset`/归还完成自动回收；语言层 `drop(self: T)` 限制使其没有单独暴露按值 `drop` 方法名。默认请求路径可通过 `ctx.request_arena` / `ctx.arena_alloc()` 使用 arena；若显式配置 engine allocator，则 `ctx.allocator` 保留该自定义 allocator。
 
 ## P5：HTTP 协议与 I/O 优化
 

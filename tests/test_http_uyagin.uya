@@ -8,6 +8,7 @@ use std.http.uyagin;
 use libc.pthread;
 use libc.syscall;
 use std.testing.assert_eq_i32;
+use std.testing.assert_true;
 
 struct PingHandler : AsyncHandler {}
 
@@ -247,6 +248,50 @@ TypedPingHandler {
     }
 }
 
+struct StaticTraitHandler : AsyncHandler {}
+
+StaticTraitHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.bytes(Status.OK, "text/plain", "static-trait");
+    }
+}
+
+struct ArenaTraitHandler : AsyncHandler {}
+
+ArenaTraitHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        const p: &byte = try ctx.arena_alloc(8);
+        p[0] = 'a' as byte;
+        p[1] = 'r' as byte;
+        p[2] = 'e' as byte;
+        p[3] = 'n' as byte;
+        p[4] = 'a' as byte;
+        p[5] = '-' as byte;
+        p[6] = 'o' as byte;
+        p[7] = 'k' as byte;
+        if ctx.allocator == null {
+            return try @await ctx.string(Status.InternalServerError, "no-alloc");
+        }
+        return try @await ctx.string(Status.OK, "arena-ok");
+    }
+}
+
+struct FileTraitHandler : AsyncHandler {
+    fd: i32,
+    len: usize,
+}
+
+FileTraitHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        return try @await ctx.file(Status.OK, "text/plain", self.fd, self.len);
+    }
+}
+
 fn run_prepared_request(engine: &Engine, req: &Request, out: &byte, out_cap: usize) !isize {
     var fds: [i32: 2] = [0: 2];
     _ = try sys_pipe2(&fds[0], 0);
@@ -259,17 +304,74 @@ fn run_prepared_request(engine: &Engine, req: &Request, out: &byte, out_cap: usi
     return n;
 }
 
+fn run_prepared_request_with_request_arena(engine: &Engine, req: &Request, out: &byte, out_cap: usize, arena_storage: &byte, arena_cap: usize) !isize {
+    var fds: [i32: 2] = [0: 2];
+    _ = try sys_pipe2(&fds[0], 0);
+    var request_arena: RequestArena = RequestArena{};
+    request_arena.bind(arena_storage, arena_cap);
+    request_arena.begin();
+    var ctx: GinContext = uyagin_context_new_with_request_arena(fds[1], req, false, request_arena.allocator(), &request_arena);
+    const fut: Future<!i32> = engine.handle(&ctx);
+    _ = try block_on<i32>(fut);
+    request_arena.reset();
+    _ = sys_close(fds[1]) catch {};
+    const n: isize = try sys_read(fds[0], out, out_cap);
+    _ = sys_close(fds[0]) catch {};
+    return n;
+}
+
+fn request_set_header(req: &Request, idx: i32, name: &[const byte], value: &[const byte]) void {
+    if idx < 0 || idx >= MAX_HEADER_SIZE {
+        return;
+    }
+    const header_idx: usize = idx as usize;
+    if header_idx >= MAX_HEADER_SIZE as usize {
+        return;
+    }
+    req.headers[header_idx].name_len = name.len;
+    req.headers[header_idx].value_len = value.len;
+    var i: usize = 0;
+    while i < name.len && i < MAX_HEADER_SIZE as usize {
+        req.headers[header_idx].name[i] = name.ptr[i];
+        i = i + 1;
+    }
+    i = 0;
+    while i < value.len && i < MAX_HEADER_VALUE_SIZE as usize {
+        req.headers[header_idx].value[i] = value.ptr[i];
+        i = i + 1;
+    }
+}
+
 fn make_basic_request(method: Method, path: &[const byte], body: &[byte], req: &Request) void {
     req.method = method;
     req.http11 = true;
-    req.path = [];
     req.path_len = 0;
-    req.path_params = [];
+    var i: usize = 0;
+    while i < MAX_URI_LENGTH as usize {
+        req.path[i] = 0;
+        i = i + 1;
+    }
     req.path_param_count = 0;
-    req.query = [];
+    i = 0;
+    while i < MAX_PATH_PARAMS as usize {
+        req.path_params[i].key = body[0: 0];
+        req.path_params[i].value = body[0: 0];
+        i = i + 1;
+    }
     req.query_count = 0;
-    req.headers = [];
+    i = 0;
+    while i < MAX_QUERY_PARAMS as usize {
+        req.query[i].key = body[0: 0];
+        req.query[i].value = body[0: 0];
+        i = i + 1;
+    }
     req.header_count = 0;
+    i = 0;
+    while i < MAX_HEADER_SIZE as usize {
+        req.headers[i].name_len = 0;
+        req.headers[i].value_len = 0;
+        i = i + 1;
+    }
     req.body = body;
     fill_request_path(req, path);
 }
@@ -511,4 +613,259 @@ test "uyagin_engine_run_shards_stop_requested_smoke" {
     opts.shutdown_grace_ms = 200u32;
     const served: i32 = try engine.run_shards_with_options(&listener, &opts, &controller);
     try assert_eq_i32(served, 0);
+}
+
+test "uyagin_body_traits_static_arena_file" {
+    var engine: Engine = uyagin_new();
+    var hs: StaticTraitHandler = StaticTraitHandler{};
+    var ha: ArenaTraitHandler = ArenaTraitHandler{};
+
+    const file_path: &[const byte] = "/tmp/uya_uyagin_body_trait.txt";
+    _ = sys_unlink(file_path.ptr) catch {};
+    const wfd: i32 = try sys_open(file_path.ptr, (O_CREAT | O_TRUNC | O_WRONLY) as i32, 0o600);
+    const file_body: &[const byte] = "file-trait";
+    _ = try sys_write(wfd, file_body.ptr, file_body.len);
+    _ = try sys_close(wfd);
+    const rfd: i32 = try sys_open(file_path.ptr, O_RDONLY as i32, 0);
+    _ = try sys_lseek(rfd, 0i64, SEEK_SET);
+    defer {
+        _ = sys_close(rfd) catch {};
+        _ = sys_unlink(file_path.ptr) catch {};
+    }
+    var hf: FileTraitHandler = FileTraitHandler{ fd: rfd, len: file_body.len };
+
+    const his: AsyncHandler = hs;
+    const hia: AsyncHandler = ha;
+    const hif: AsyncHandler = hf;
+    try engine.GET("/static-trait", his);
+    try engine.GET("/arena-trait", hia);
+    try engine.GET("/file-trait", hif);
+
+    var empty_raw: [byte: 1] = [];
+    var req: Request = Request{
+        method: Method.GET,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty_raw[0: 0],
+    };
+    var arena_storage: [byte: UYAGIN_REQUEST_ARENA_CAP] = [];
+    var rb: [byte: 512] = [];
+
+    make_basic_request(Method.GET, "/static-trait", empty_raw[0: 0], &req);
+    var n: isize = try run_prepared_request_with_request_arena(&engine, &req, &rb[0] as &byte, 512, &arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    var resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "static-trait") { try assert_eq_i32(0, 1); }
+
+    make_basic_request(Method.GET, "/arena-trait", empty_raw[0: 0], &req);
+    n = try run_prepared_request_with_request_arena(&engine, &req, &rb[0] as &byte, 512, &arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "arena-ok") { try assert_eq_i32(0, 1); }
+
+    make_basic_request(Method.GET, "/file-trait", empty_raw[0: 0], &req);
+    n = try run_prepared_request_with_request_arena(&engine, &req, &rb[0] as &byte, 512, &arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "file-trait") { try assert_eq_i32(0, 1); }
+
+    make_basic_request(Method.GET, "/file-trait", empty_raw[0: 0], &req);
+    n = try run_prepared_request_with_request_arena(&engine, &req, &rb[0] as &byte, 512, &arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "file-trait") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_limits_and_metrics_via_serve_conn" {
+    var engine: Engine = uyagin_new();
+    var h: ArenaTraitHandler = ArenaTraitHandler{};
+    const hi: AsyncHandler = h;
+    try engine.GET("/arena", hi);
+    try engine.POST("/arena", hi);
+
+    var empty_raw: [byte: 1] = [];
+    var req_ok: Request = Request{
+        method: Method.GET,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty_raw[0: 0],
+    };
+    fill_request_path(&req_ok, "/arena");
+    var fds: [i32: 2] = [0: 2];
+    _ = try sys_pipe2(&fds[0], 0);
+    var arena_storage: [byte: UYAGIN_REQUEST_ARENA_CAP] = [];
+    var request_arena: RequestArena = RequestArena{};
+    request_arena.bind(&arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    request_arena.begin();
+    var ctx: GinContext = uyagin_context_new_with_request_arena(fds[1], &req_ok, false, request_arena.allocator(), &request_arena);
+    var scheduler: Scheduler = scheduler_new();
+    const fut: Future<!i32> = engine.handle(&ctx);
+    _ = try scheduler_run<i32>(&scheduler, fut);
+    uyagin_collect_metrics(&engine, &scheduler, &request_arena);
+    request_arena.reset();
+    _ = sys_close(fds[1]) catch {};
+
+    var rb: [byte: 512] = [];
+    var n: isize = try sys_read(fds[0], &rb[0] as *byte, 512);
+    _ = sys_close(fds[0]) catch {};
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    var resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "arena-ok") { try assert_eq_i32(0, 1); }
+    const metrics: &UyaginMetrics = uyagin_metrics(&engine);
+    try assert_true(metrics.arena_used_bytes > 0u64);
+    try assert_true(metrics.arena_reset_count > 0u64);
+    try assert_true(metrics.frame_alloc_count >= metrics.frame_free_count);
+
+    const form_body: &[byte] = &"a=1&b=2"[0: 7];
+    var req: Request = Request{
+        method: Method.POST,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: form_body,
+    };
+    fill_request_path(&req, "/arena");
+    req.header_count = 2;
+
+    var header_engine: Engine = uyagin_new();
+    uyagin_set_limits(&header_engine, UyaginLimits{
+        max_header_count: 1,
+        max_body_bytes: MAX_BODY_SIZE as usize,
+        max_form_fields: 16,
+    });
+    const header_limit: !void = uyagin_validate_request_limits(&header_engine, &req);
+    match header_limit {
+        error.HeaderTooLarge => {},
+        else => { try assert_eq_i32(0, 1); },
+    };
+
+    var body_engine: Engine = uyagin_new();
+    uyagin_set_limits(&body_engine, UyaginLimits{
+        max_header_count: 64,
+        max_body_bytes: 4,
+        max_form_fields: 16,
+    });
+    const body_limit: !void = uyagin_validate_request_limits(&body_engine, &req);
+    match body_limit {
+        error.PayloadTooLarge => {},
+        else => { try assert_eq_i32(0, 1); },
+    };
+
+    var form_engine: Engine = uyagin_new();
+    uyagin_set_limits(&form_engine, UyaginLimits{
+        max_header_count: 64,
+        max_body_bytes: MAX_BODY_SIZE as usize,
+        max_form_fields: 1,
+    });
+    request_set_header(&req, 0, "Host", "x");
+    request_set_header(&req, 1, "Content-Type", "application/x-www-form-urlencoded");
+    req.header_count = 2;
+    const form_limit: !void = uyagin_validate_request_limits(&form_engine, &req);
+    match form_limit {
+        error.PayloadTooLarge => {},
+        else => { try assert_eq_i32(0, 1); },
+    };
+}
+
+test "uyagin_limit_errors_render_http_response" {
+    var engine: Engine = uyagin_new();
+    var h: PingHandler = PingHandler{};
+    const hi: AsyncHandler = h;
+    try engine.POST("/ping", hi);
+
+    var empty_raw: [byte: 1] = [];
+    var req: Request = Request{
+        method: Method.POST,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty_raw[0: 0],
+    };
+    var arena_storage: [byte: UYAGIN_REQUEST_ARENA_CAP] = [];
+    var rb: [byte: 512] = [];
+
+    make_basic_request(Method.POST, "/ping", empty_raw[0: 0], &req);
+    request_set_header(&req, 0, "Host", "x");
+    request_set_header(&req, 1, "X-Test", "y");
+    req.header_count = 2;
+    uyagin_set_limits(&engine, UyaginLimits{
+        max_header_count: 1,
+        max_body_bytes: MAX_BODY_SIZE as usize,
+        max_form_fields: 16,
+    });
+    var n: isize = try run_prepared_request_with_request_arena(&engine, &req, &rb[0] as &byte, 512, &arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    var resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "400 Bad Request") { try assert_eq_i32(0, 1); }
+
+    const form_body: &[byte] = &"a=1&b=2"[0: 7];
+    make_basic_request(Method.POST, "/ping", form_body, &req);
+    request_set_header(&req, 0, "Host", "x");
+    request_set_header(&req, 1, "Content-Type", "application/x-www-form-urlencoded");
+    req.header_count = 2;
+    uyagin_set_limits(&engine, UyaginLimits{
+        max_header_count: 64,
+        max_body_bytes: MAX_BODY_SIZE as usize,
+        max_form_fields: 1,
+    });
+    n = try run_prepared_request_with_request_arena(&engine, &req, &rb[0] as &byte, 512, &arena_storage[0] as &byte, UYAGIN_REQUEST_ARENA_CAP);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    resp = rb[0: n as usize];
+    if !slice_has(resp, "413 Payload Too Large") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_form_limit_ignores_non_form_body" {
+    var engine: Engine = uyagin_new();
+    const json_body: &[byte] = &"{\"a\":\"1&2\",\"b\":\"3&4\"}"[0: 21];
+    var req: Request = Request{
+        method: Method.POST,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: json_body,
+    };
+    fill_request_path(&req, "/fallback");
+    request_set_header(&req, 0, "Host", "x");
+    request_set_header(&req, 1, "Content-Type", "application/json");
+    req.header_count = 2;
+
+    uyagin_set_limits(&engine, UyaginLimits{
+        max_header_count: 64,
+        max_body_bytes: MAX_BODY_SIZE as usize,
+        max_form_fields: 1,
+    });
+    const limit_result: !void = uyagin_validate_request_limits(&engine, &req);
+    _ = try limit_result;
 }

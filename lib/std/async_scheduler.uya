@@ -256,6 +256,9 @@ export fn task_queue_usize_new() TaskQueue_usize {
 /// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
 export struct Scheduler {
     _frame_pool: AsyncFramePool,
+    _metrics_frame_alloc_seen: u64,
+    _metrics_frame_free_seen: u64,
+    _metrics_heap_fallback_seen: u64,
 }
 
 /// 辅助：将 AsyncFramePool 值装箱为 IAllocator（利用 return 隐式转换）。
@@ -267,6 +270,9 @@ fn scheduler_pool_to_allocator(pool: AsyncFramePool) IAllocator {
 export fn scheduler_new() Scheduler {
     var s: Scheduler = Scheduler{};
     async_frame_pool_init(&s._frame_pool, 0, 65536);
+    s._metrics_frame_alloc_seen = 0u64;
+    s._metrics_frame_free_seen = 0u64;
+    s._metrics_heap_fallback_seen = 0u64;
     return s;
 }
 
