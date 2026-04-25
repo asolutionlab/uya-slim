@@ -141,6 +141,29 @@ fn main() i32 {
 }
 ```
 
+## 标准库 UIP（实验性）
+
+`lib/std/uip/` 当前提供一个最小可用的 UIP 协议栈实现，包含：
+
+- `std.uip.types`：协议常量、`UipMessage`、`UipConfig`
+- `std.uip.wire`：帧头/消息编码与解码
+- `std.uip.tcp`：基于 TCP 的阻塞式收发
+- `std.uip.session`：请求 ID 管理、request/response、ping
+
+最小示例：
+
+- 请求/响应：[`examples/uip_demo.uya`](examples/uip_demo.uya)
+- 纯编解码：[`examples/uip_wire_demo.uya`](examples/uip_wire_demo.uya)
+- 心跳 ping/pong：[`examples/uip_ping_demo.uya`](examples/uip_ping_demo.uya)
+
+运行方式：
+
+```bash
+./bin/uya run examples/uip_demo.uya
+./bin/uya run examples/uip_wire_demo.uya
+./bin/uya run examples/uip_ping_demo.uya
+```
+
 ## 标准库 HTTP（实验性）
 
 `lib/std/http/` 提供阻塞式解析、路由与最小服务器原语（`types` / `parse` / `router` / `server`）。示例见根目录 [`examples/http_server.uya`](examples/http_server.uya)。
