@@ -1,0 +1,133 @@
+// examples/uip_ping_demo.uya - UIP ping/pong 最小示例
+
+use std.runtime.entry;
+use std.uip.tcp;
+use std.uip.types;
+use std.uip.session;
+use std.testing.assert_eq_u64;
+use std.http.server.read_port_from_sockaddr_16;
+use libc.syscall;
+
+fn demo_listen_loopback(port_out: &u16) !i32 {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    var one: i32 = 1;
+    _ = sys_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4 as u32) catch {};
+
+    var addr: [byte: 16] = [0:16];
+    addr[0] = 2;
+    addr[1] = 0;
+    addr[2] = 0;
+    addr[3] = 0;
+    addr[4] = 127;
+    addr[5] = 0;
+    addr[6] = 0;
+    addr[7] = 1;
+
+    _ = try sys_bind(fd, &addr[0] as &void, 16 as u32);
+    _ = try sys_listen(fd, 4);
+
+    var out: [byte: 16] = [0:16];
+    var alen: u32 = 16;
+    _ = try sys_getsockname(fd, &out[0] as &void, &alen);
+    port_out[0] = read_port_from_sockaddr_16(&out[0] as &byte);
+    return fd;
+}
+
+fn demo_sleep_ms(ms: i64) void {
+    var req: TimeSpec = TimeSpec{ tv_sec: ms / 1000, tv_nsec: ((ms % (1000 as i64)) * (1000000 as i64)) };
+    var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+    _ = sys_nanosleep(&req, &rem) catch {};
+}
+
+fn demo_client_cfg(port: u16) UipTcpClientConfig {
+    return UipTcpClientConfig{
+        host: &"127.0.0.1"[0:9],
+        port: port,
+        nameserver: &""[0:0],
+        timeout_ms: 1000,
+        max_body_len: 1024,
+    };
+}
+
+fn run_server(listen_fd: i32) !void {
+    var peer: [byte: 16] = [0:16];
+    var alen: u32 = 16;
+    const cfd: i32 = try sys_accept(listen_fd, &peer[0] as &void, &alen);
+
+    var conn: UipTcpConn = UipTcpConn{
+        fd: cfd,
+        config: UipConfig{
+            max_body_len: 1024,
+            timeout_ms: 1000,
+            heartbeat_ms: 30000,
+            enable_checksum: true,
+        },
+    };
+
+    var body_buf: [byte: 1024] = [0:1024];
+    const ping: UipMessage = try uip_tcp_read_message(&conn, &body_buf[0], 1024);
+
+    try assert_eq_u64(ping.msg_type as u64, UIP_MSG_PING as u64);
+    try assert_eq_u64((ping.flags & UIP_FLAG_HEARTBEAT) as u64, UIP_FLAG_HEARTBEAT as u64);
+    try assert_eq_u64((ping.flags & UIP_FLAG_ONEWAY) as u64, UIP_FLAG_ONEWAY as u64);
+
+    _ = try uip_tcp_write_message(&conn, UIP_FLAG_RESPONSE | UIP_FLAG_HEARTBEAT, UIP_CODEC_RAW, UIP_MSG_PONG, 0, &[]);
+    uip_tcp_close(&conn);
+}
+
+fn run_client(port: u16) !void {
+    var cfg: UipTcpClientConfig = demo_client_cfg(port);
+    var sess: UipSession = UipSession{
+        conn: try uip_tcp_connect(&cfg),
+        next_request_id: 1,
+    };
+
+    try uip_session_send_ping(&sess);
+
+    var body_buf: [byte: 1024] = [0:1024];
+    const pong: UipMessage = try uip_tcp_read_message(&sess.conn, &body_buf[0], 1024);
+
+    try assert_eq_u64(pong.msg_type as u64, UIP_MSG_PONG as u64);
+    try assert_eq_u64((pong.flags & UIP_FLAG_RESPONSE) as u64, UIP_FLAG_RESPONSE as u64);
+    try assert_eq_u64((pong.flags & UIP_FLAG_HEARTBEAT) as u64, UIP_FLAG_HEARTBEAT as u64);
+
+    @println("UIP ping demo success: received pong");
+    uip_session_close(&sess);
+}
+
+export fn main() i32 {
+    var port: u16 = 0;
+    const listen_fd: i32 = demo_listen_loopback(&port) catch {
+        @println("UIP ping demo failed: listen error");
+        return 1;
+    };
+
+    const pid: i64 = sys_fork() catch {
+        _ = sys_close(listen_fd) catch {};
+        @println("UIP ping demo failed: fork error");
+        return 1;
+    };
+
+    if pid == 0 {
+        run_server(listen_fd) catch {
+            _ = sys_close(listen_fd) catch {};
+            sys_exit(2);
+        };
+        _ = sys_close(listen_fd) catch {};
+        sys_exit(0);
+    }
+
+    demo_sleep_ms(50);
+    run_client(port) catch {
+        _ = sys_close(listen_fd) catch {};
+        var st1: i32 = 0;
+        _ = sys_waitpid(pid as i32, &st1, 0) catch {};
+        @println("UIP ping demo failed: client error");
+        return 1;
+    };
+
+    _ = sys_close(listen_fd) catch {};
+    var status: i32 = 0;
+    _ = sys_waitpid(pid as i32, &status, 0) catch {};
+    return 0;
+}
