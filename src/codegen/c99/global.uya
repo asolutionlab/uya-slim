@@ -160,6 +160,10 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode, init_ctx_typ
         return;
     }
 
+    if init_ctx_type != null && c99_emit_interface_box_global_init(codegen, init_ctx_type, expr) != 0 {
+        return;
+    }
+
     if g_c99_global_init_expand_depth < C99_GLOBAL_INIT_MAX_EXPAND_DEPTH &&
         expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
         var nested_type: &ASTNode = null;
@@ -197,12 +201,20 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode, init_ctx_typ
     if expr.type == ASTNodeType.AST_STRUCT_INIT {
         // 对于全局作用域，生成标准初始化器列表，不使用复合字面量
         const field_count: i32 = expr.struct_init_field_count;
+        var struct_decl: &ASTNode = null;
+        if expr.struct_init_struct_name != null {
+            struct_decl = find_struct_decl_c99(codegen, expr.struct_init_struct_name);
+        }
         fputc(123, codegen.emit_stream as *void);  // '{'
         var i: i32 = 0;
         while i < field_count {
             const safe_field_name: &byte = get_safe_c_identifier(codegen, expr.struct_init_field_names[i]);
+            var field_ctx: &ASTNode = null;
+            if struct_decl != null {
+                field_ctx = c99_find_struct_field_type(codegen, struct_decl, expr.struct_init_field_names[i]);
+            }
             fprintf(codegen.emit_stream as *void, ".%s = " as *byte, safe_field_name as *byte);
-            gen_global_init_expr(codegen, expr.struct_init_field_values[i], null);
+            gen_global_init_expr(codegen, expr.struct_init_field_values[i], field_ctx);
             if i < field_count - 1 {
                 c99_emit_comma_space(codegen);
             }

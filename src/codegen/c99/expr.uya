@@ -6640,14 +6640,14 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if object.type == ASTNodeType.AST_IDENTIFIER {
             const enum_name: &byte = object.identifier_name;
             if enum_name != null {
-                // 检查是否是枚举类型名称（不检查变量表，直接检查枚举声明）
-                const enum_decl: &ASTNode = find_enum_decl_c99(codegen, enum_name);
+                // 枚举既可能来自当前文件，也可能来自 use 导入的别名；两种情况都要落到稳定的模块前缀 C 名。
+                const enum_decl: &ASTNode = c99_find_enum_decl_in_context(codegen, enum_name, object.filename);
                 if enum_decl != null {
                     // 是枚举类型，查找变体值
                     const enum_value: i32 = find_enum_variant_value(codegen, enum_decl, field_name);
                     if enum_value >= 0 {
-                        // 找到变体，输出带枚举名前缀的 C 枚举值名称，避免跨枚举重名
-                        const safe_enum_name3: &byte = get_safe_c_identifier(codegen, enum_name);
+                        // 找到变体，输出带模块前缀的 C 枚举值名称，避免跨模块同名 enum 冲突。
+                        const safe_enum_name3: &byte = c99_get_enum_c_name_from_decl(codegen, enum_decl);
                         const safe_variant_name: &byte = get_safe_c_identifier(codegen, field_name);
                         fputs(safe_enum_name3 as *byte, codegen.emit_stream as *void);
                         fputc(95, codegen.emit_stream as *void);
@@ -6852,12 +6852,10 @@ fn gen_sizeof_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     if is_struct_in_table(codegen, safe_name) != 0 {
                         fprintf(codegen.emit_stream as *void, "struct %s" as *byte, safe_name as *byte);
                     } else {
-                        var is_enum: i32 = is_enum_in_table(codegen, safe_name);
-                        if is_enum == 0 && find_enum_decl_c99(codegen, safe_name) != null {
-                            is_enum = 1;
-                        }
-                        if is_enum != 0 {
-                            fprintf(codegen.emit_stream as *void, "enum %s" as *byte, safe_name as *byte);
+                        const enum_decl_ctx: &ASTNode = c99_find_enum_decl_in_context(codegen, name, target.filename);
+                        if enum_decl_ctx != null {
+                            const enum_c_name: &byte = c99_get_enum_c_name_from_decl(codegen, enum_decl_ctx);
+                            fprintf(codegen.emit_stream as *void, "enum %s" as *byte, enum_c_name as *byte);
                         } else {
                             gen_expr(codegen, target);
                         }
@@ -7124,7 +7122,13 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         }
                         codegen.expected_type = resolved;
                     }
-                    if struct_init_needs_memcpy != 0 && field.var_decl_type != null &&
+                    var did_interface_field_box: i32 = 0;
+                    if field.var_decl_type != null {
+                        did_interface_field_box = c99_emit_interface_box_expr(codegen, field.var_decl_type, user_value);
+                    }
+                    if did_interface_field_box != 0 {
+                        // 接口字段保存具体实现时，需要在表达式上下文里稳定装箱，避免把 concrete struct 直接塞进 void* 聚合。
+                    } else if struct_init_needs_memcpy != 0 && field.var_decl_type != null &&
                         field.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY &&
                         user_value.type == ASTNodeType.AST_IDENTIFIER {
                         if array_element_is_aggregate_c99(codegen, field.var_decl_type) != 0 {
@@ -7147,11 +7151,15 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     codegen.expected_type = saved_expected;
                 } else if field.var_decl_init != null {
                     // 使用字段默认值
-                    gen_expr(codegen, field.var_decl_init);
+                    if c99_emit_interface_box_expr(codegen, field.var_decl_type, field.var_decl_init) == 0 {
+                        gen_expr(codegen, field.var_decl_init);
+                    }
                 } else {
                     // 没有默认值，使用零值；数组字段：元素为聚合用 {{0}}，否则用 {0}
                     const ft: &ASTNode = field.var_decl_type;
-                    if ft != null && ft.type == ASTNodeType.AST_TYPE_ARRAY {
+                    if c99_emit_zero_init_for_interface(codegen, ft) != 0 {
+                        // 接口字段零值应显式落成接口聚合，避免用标量 0 初始化结构体字段。
+                    } else if ft != null && ft.type == ASTNodeType.AST_TYPE_ARRAY {
                         if array_element_is_aggregate_c99(codegen, ft) != 0 {
                             fputs("{{0}}" as *byte, codegen.emit_stream as *void);
                         } else {
@@ -7443,7 +7451,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     }
                 }
             } else if expr.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_ENUM {
-                const enum_decl: &ASTNode = find_enum_decl_c99(codegen, expr.match_expr_arms[i].enum_name);
+                const enum_decl: &ASTNode = c99_find_enum_decl_in_context(codegen, expr.match_expr_arms[i].enum_name, expr.filename);
                 var ev: i32 = -1;
                 if enum_decl != null {
                     ev = find_enum_variant_value(codegen, enum_decl, expr.match_expr_arms[i].variant_name);

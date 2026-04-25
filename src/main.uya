@@ -6471,6 +6471,44 @@ fn hosted_cflags_has_no_small_inline(cflags: &byte) i32 {
     return 0;
 }
 
+fn main_path_is_absolute(path: &byte) i32 {
+    if path == null || path[0] == 0 as byte {
+        return 0;
+    }
+    if path[0] == 47 as byte || path[0] == 92 as byte {
+        return 1;
+    }
+    const c0: i32 = path[0] as i32;
+    if ((c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122)) &&
+        path[1] == 58 as byte &&
+        (path[2] == 47 as byte || path[2] == 92 as byte) {
+        return 1;
+    }
+    return 0;
+}
+
+fn main_fill_absolute_output_path(raw_path: &byte, out: &byte, out_cap: i32) i32 {
+    if raw_path == null || out == null || out_cap <= 1 {
+        return -1;
+    }
+    if main_path_is_absolute(raw_path) != 0 {
+        const copied: i32 = snprintf(out as *byte, out_cap as usize, "%s" as *byte, raw_path as *byte);
+        if copied <= 0 || copied >= out_cap {
+            return -1;
+        }
+        return 0;
+    }
+    var cwd: [byte: PATH_MAX] = [];
+    if getcwd(&cwd[0] as *byte, PATH_MAX as usize) == null {
+        return -1;
+    }
+    const written: i32 = snprintf(out as *byte, out_cap as usize, "%s/%s" as *byte, &cwd[0] as *byte, raw_path as *byte);
+    if written <= 0 || written >= out_cap {
+        return -1;
+    }
+    return 0;
+}
+
 // 多文件 C：在 split 目录下执行 make -j（UYA_GCC_JOBS）链接 UYA_OUT
 fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i32 {
     if split_dir == null || split_dir[0] == 0 as byte || output_exe == null {
@@ -6483,6 +6521,12 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
             return 1;
         }
     }
+    var output_abs_buf: [byte: PATH_MAX] = [];
+    var output_for_make: &byte = output_exe;
+    if main_fill_absolute_output_path(output_exe, &output_abs_buf[0] as &byte, PATH_MAX) == 0 {
+        output_for_make = &output_abs_buf[0] as &byte;
+    }
+    c99_mkdir_p_for_file(output_for_make);
     var cc_driver_buffer: [byte: PATH_MAX] = [];
     const cc_driver: &byte = resolve_cc_driver(&cc_driver_buffer[0] as &byte, PATH_MAX);
     const cflags_env: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin" as *byte);
@@ -6534,7 +6578,7 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
     var cmd: [byte: 8192] = [];
     const cmd_len: i32 = snprintf(&cmd[0] as *byte, 8192,
         "env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS UYA_OUT=\"%s\" CC=\"%s\" CFLAGS=\"%s\" LDFLAGS=\"%s\" make -C \"%s\" -j%s" as *byte,
-        output_exe as *byte, cc_make as *byte, cflags as *byte, ld_use as *byte, split_dir as *byte, jobs_env as *byte);
+        output_for_make as *byte, cc_make as *byte, cflags as *byte, ld_use as *byte, split_dir as *byte, jobs_env as *byte);
     if cmd_len <= 0 || cmd_len >= 8192 {
         fprintf(libc.stderr, "错误：构建 make 链接命令失败\n" as *byte);
         return 1;
@@ -6609,6 +6653,7 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
     if g_split_c_dir_active != 0 {
         return link_split_with_make(&g_split_c_dir[0] as &byte, output, is_nostdlib);
     }
+    c99_mkdir_p_for_file(output);
     var cmd: [byte: 4096] = [];
     var cmd_len: i32 = 0;
     var cc_driver_buffer: [byte: PATH_MAX] = [];

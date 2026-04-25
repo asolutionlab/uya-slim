@@ -41,6 +41,212 @@ fn find_enum_decl_c99(codegen: &C99CodeGenerator, enum_name: &byte) &ASTNode {
     return null;
 }
 
+fn c99_build_use_module_name(codegen: &C99CodeGenerator, use_stmt: &ASTNode) &byte {
+    if codegen == null || use_stmt == null || use_stmt.use_stmt_path_segments == null ||
+        use_stmt.use_stmt_path_segment_count <= 0 {
+        return null;
+    }
+    var total_len: usize = 0;
+    var i: i32 = 0;
+    while i < use_stmt.use_stmt_path_segment_count {
+        if use_stmt.use_stmt_path_segments[i] != null {
+            total_len = total_len + strlen(use_stmt.use_stmt_path_segments[i] as *byte);
+            if i > 0 {
+                total_len = total_len + 1;
+            }
+        }
+        i = i + 1;
+    }
+    if total_len == 0 {
+        return null;
+    }
+    const buf: &byte = compiler_arena_alloc(codegen.arena, total_len + 1) as &byte;
+    if buf == null {
+        return null;
+    }
+    var dst: &byte = buf;
+    i = 0;
+    while i < use_stmt.use_stmt_path_segment_count {
+        const seg: &byte = use_stmt.use_stmt_path_segments[i];
+        if seg != null {
+            if i > 0 {
+                dst[0] = 46;
+                dst = &dst[1];
+            }
+            const sl: usize = strlen(seg as *byte);
+            memcpy(dst as *void, seg as *void, sl);
+            dst = &dst[sl];
+        }
+        i = i + 1;
+    }
+    dst[0] = 0;
+    return buf;
+}
+
+fn c99_find_module_export_decl(codegen: &C99CodeGenerator, module_name: &byte, item_name: &byte, item_type: i32) &ASTNode {
+    if codegen == null || codegen.checker == null || module_name == null || item_name == null {
+        return null;
+    }
+    var mi: i32 = 0;
+    while mi < MODULE_TABLE_SIZE {
+        const module: &ModuleInfo = codegen.checker.module_table.slots[mi];
+        if module != null && module.module_name != null &&
+            strcmp(module.module_name as *byte, module_name as *byte) == 0 {
+            var ei: i32 = 0;
+            while ei < module.export_count {
+                if module.exports != null && module.exports[ei].name != null &&
+                    strcmp(module.exports[ei].name as *byte, item_name as *byte) == 0 &&
+                    module.exports[ei].item_type == item_type {
+                    return module.exports[ei].decl_node;
+                }
+                ei = ei + 1;
+            }
+            return null;
+        }
+        mi = mi + 1;
+    }
+    return null;
+}
+
+fn c99_find_enum_decl_from_use_stmt(codegen: &C99CodeGenerator, use_stmt: &ASTNode, local_name: &byte) &ASTNode {
+    if codegen == null || use_stmt == null || local_name == null || use_stmt.use_stmt_item_name == null {
+        return null;
+    }
+    var imported_local: &byte = use_stmt.use_stmt_item_name;
+    if use_stmt.use_stmt_alias != null {
+        imported_local = use_stmt.use_stmt_alias;
+    }
+    if imported_local == null || strcmp(imported_local as *byte, local_name as *byte) != 0 {
+        return null;
+    }
+    const module_name: &byte = c99_build_use_module_name(codegen, use_stmt);
+    if module_name == null {
+        return null;
+    }
+    const decl: &ASTNode = c99_find_module_export_decl(codegen, module_name, use_stmt.use_stmt_item_name, 5);
+    if decl != null && decl.type == ASTNodeType.AST_ENUM_DECL {
+        return decl;
+    }
+    return null;
+}
+
+fn c99_find_enum_decl_in_context(codegen: &C99CodeGenerator, enum_name: &byte, context_filename: &byte) &ASTNode {
+    if codegen == null || codegen.program_node == null || enum_name == null {
+        return null;
+    }
+    const decl_count: i32 = codegen.program_node.program_decl_count;
+    if context_filename != null {
+        var i_alias: i32 = 0;
+        while i_alias < decl_count {
+            const decl_alias: &ASTNode = codegen.program_node.program_decls[i_alias];
+            if decl_alias != null && decl_alias.type == ASTNodeType.AST_TYPE_ALIAS &&
+                decl_alias.type_alias_name != null && decl_alias.filename != null &&
+                strcmp(decl_alias.type_alias_name as *byte, enum_name as *byte) == 0 &&
+                strcmp(decl_alias.filename as *byte, context_filename as *byte) == 0 &&
+                decl_alias.type_alias_target_type != null &&
+                decl_alias.type_alias_target_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                decl_alias.type_alias_target_type.type_named_name != null &&
+                strcmp(decl_alias.type_alias_target_type.type_named_name as *byte, enum_name as *byte) != 0 {
+                return c99_find_enum_decl_in_context(codegen,
+                    decl_alias.type_alias_target_type.type_named_name, context_filename);
+            }
+            i_alias = i_alias + 1;
+        }
+
+        var i_local: i32 = 0;
+        while i_local < decl_count {
+            const decl_local: &ASTNode = codegen.program_node.program_decls[i_local];
+            if decl_local != null && decl_local.type == ASTNodeType.AST_ENUM_DECL &&
+                decl_local.enum_decl_name != null && decl_local.filename != null &&
+                strcmp(decl_local.enum_decl_name as *byte, enum_name as *byte) == 0 &&
+                strcmp(decl_local.filename as *byte, context_filename as *byte) == 0 {
+                return decl_local;
+            }
+            i_local = i_local + 1;
+        }
+
+        var i_use: i32 = 0;
+        while i_use < decl_count {
+            const decl_use: &ASTNode = codegen.program_node.program_decls[i_use];
+            if decl_use != null && decl_use.type == ASTNodeType.AST_USE_STMT &&
+                decl_use.filename != null &&
+                strcmp(decl_use.filename as *byte, context_filename as *byte) == 0 {
+                const imported_decl: &ASTNode = c99_find_enum_decl_from_use_stmt(codegen, decl_use, enum_name);
+                if imported_decl != null {
+                    return imported_decl;
+                }
+            }
+            i_use = i_use + 1;
+        }
+    }
+
+    const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, enum_name);
+    if alias_decl != null && alias_decl.type_alias_target_type != null &&
+        alias_decl.type_alias_target_type.type == ASTNodeType.AST_TYPE_NAMED &&
+        alias_decl.type_alias_target_type.type_named_name != null &&
+        strcmp(alias_decl.type_alias_target_type.type_named_name as *byte, enum_name as *byte) != 0 {
+        return c99_find_enum_decl_in_context(codegen,
+            alias_decl.type_alias_target_type.type_named_name, alias_decl.filename);
+    }
+
+    return find_enum_decl_c99(codegen, enum_name);
+}
+
+fn c99_get_enum_module_prefix(codegen: &C99CodeGenerator, filename: &byte) &byte {
+    if codegen == null || filename == null {
+        return ("" as *byte) as &byte;
+    }
+    if codegen.checker != null {
+        const module_name: &byte = extract_module_path_allocated(codegen.checker, filename);
+        if module_name != null && module_name[0] != 0 as byte {
+            const module_len: i32 = strlen(module_name as *byte);
+            const buf: &byte = compiler_arena_alloc(codegen.arena, (module_len + 2) as usize) as &byte;
+            if buf != null {
+                var i: i32 = 0;
+                while i < module_len {
+                    var ch: byte = module_name[i];
+                    if ch == 46 as byte || ch == 47 as byte || ch == 92 as byte {
+                        ch = 95 as byte;
+                    }
+                    buf[i] = ch;
+                    i = i + 1;
+                }
+                ((buf as *byte) + module_len)[0] = 95 as byte;
+                ((buf as *byte) + module_len + 1)[0] = 0 as byte;
+                return buf;
+            }
+        }
+    }
+    const legacy_prefix: &byte = get_module_prefix_from_filename(codegen, filename);
+    if legacy_prefix != null {
+        return legacy_prefix;
+    }
+    return ("" as *byte) as &byte;
+}
+
+fn c99_get_enum_c_name_from_decl(codegen: &C99CodeGenerator, enum_decl: &ASTNode) &byte {
+    if codegen == null || enum_decl == null || enum_decl.enum_decl_name == null {
+        return null;
+    }
+    const safe_name: &byte = get_safe_c_identifier(codegen, enum_decl.enum_decl_name);
+    if safe_name == null {
+        return null;
+    }
+    const prefix: &byte = c99_get_enum_module_prefix(codegen, enum_decl.filename);
+    if prefix == null || prefix[0] == 0 as byte {
+        return safe_name;
+    }
+    const prefix_len: usize = strlen(prefix as *byte);
+    const name_len: usize = strlen(safe_name as *byte);
+    const result: &byte = compiler_arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
+    if result == null {
+        return safe_name;
+    }
+    strcpy(result as *byte, prefix as *byte);
+    strcpy((result as *byte + prefix_len) as *byte, safe_name as *byte);
+    return result;
+}
+
 // 查找枚举变体的值（返回-1表示未找到）
 fn find_enum_variant_value(codegen: &C99CodeGenerator, enum_decl: &ASTNode, variant_name: &byte) i32 {
     // codegen 参数未使用，但保留以保持接口一致性
@@ -140,7 +346,7 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
         return -1;
     }
     
-    const enum_name: &byte = get_safe_c_identifier(codegen, enum_decl.enum_decl_name);
+    const enum_name: &byte = c99_get_enum_c_name_from_decl(codegen, enum_decl);
     if enum_name == null {
         return -1;
     }

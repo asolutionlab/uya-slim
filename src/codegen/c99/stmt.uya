@@ -420,6 +420,134 @@ fn get_expr_concrete_struct_for_interface(codegen: &C99CodeGenerator, expr: &AST
     return null;
 }
 
+fn c99_expr_is_pointer_like_for_interface_box(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
+    if codegen == null || expr == null {
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR &&
+        (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+        return 1;
+    }
+    const expr_c_raw: &byte = get_c_type_of_expr(codegen, expr);
+    if expr_c_raw == null {
+        return 0;
+    }
+    var expr_c: &byte = expr_c_raw;
+    if strncmp(expr_c as *byte, "const " as *byte, 6) == 0 {
+        expr_c = &expr_c[6] as &byte;
+    }
+    if strncmp(expr_c as *byte, "struct " as *byte, 7) != 0 {
+        return 0;
+    }
+    if strstr(expr_c as *byte, "uya_interface_" as *byte) != null {
+        return 0;
+    }
+    if strchr(expr_c as *byte, 42) != null {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_emit_zero_init_for_interface(codegen: &C99CodeGenerator, interface_type: &ASTNode) i32 {
+    if codegen == null || interface_type == null ||
+        interface_type.type != ASTNodeType.AST_TYPE_NAMED ||
+        interface_type.type_named_name == null {
+        return 0;
+    }
+    if find_interface_decl_c99(codegen, interface_type.type_named_name) == null {
+        return 0;
+    }
+    const iface_c: &byte = c99_type_to_c(codegen, interface_type);
+    if iface_c == null {
+        return 0;
+    }
+    fprintf(codegen.emit_stream as *void, "(%s){0}" as *byte, iface_c as *byte);
+    return 1;
+}
+
+fn c99_emit_interface_box_global_init(codegen: &C99CodeGenerator, interface_type: &ASTNode, expr: &ASTNode) i32 {
+    if codegen == null || interface_type == null || expr == null ||
+        interface_type.type != ASTNodeType.AST_TYPE_NAMED ||
+        interface_type.type_named_name == null {
+        return 0;
+    }
+    if find_interface_decl_c99(codegen, interface_type.type_named_name) == null {
+        return 0;
+    }
+    const struct_name_for_check: &byte = get_expr_concrete_struct_for_interface(codegen, expr, interface_type.type_named_name);
+    if struct_name_for_check == null {
+        return 0;
+    }
+    var iface_mono: &byte = interface_type.type_named_name;
+    if interface_type.type_named_type_arg_count > 0 && interface_type.type_named_type_args != null {
+        iface_mono = get_mono_struct_name(codegen, interface_type.type_named_name,
+            interface_type.type_named_type_args, interface_type.type_named_type_arg_count);
+    }
+    var struct_mono: &byte = struct_name_for_check;
+    if expr.type == ASTNodeType.AST_STRUCT_INIT &&
+        expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
+        struct_mono = get_mono_struct_name(codegen, struct_name_for_check,
+            expr.struct_init_type_args, expr.struct_init_type_arg_count);
+    }
+    const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
+    const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
+    if c99_expr_is_pointer_like_for_interface_box(codegen, expr) != 0 {
+        fprintf(codegen.emit_stream as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)(" as *byte,
+            safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+        gen_expr(codegen, expr);
+        fputs(") }" as *byte, codegen.emit_stream as *void);
+    } else {
+        fprintf(codegen.emit_stream as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
+            safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+        gen_expr(codegen, expr);
+        fputs(") }" as *byte, codegen.emit_stream as *void);
+    }
+    return 1;
+}
+
+fn c99_emit_interface_box_expr(codegen: &C99CodeGenerator, interface_type: &ASTNode, expr: &ASTNode) i32 {
+    if codegen == null || interface_type == null || expr == null ||
+        interface_type.type != ASTNodeType.AST_TYPE_NAMED ||
+        interface_type.type_named_name == null {
+        return 0;
+    }
+    if find_interface_decl_c99(codegen, interface_type.type_named_name) == null {
+        return 0;
+    }
+    const struct_name_for_check: &byte = get_expr_concrete_struct_for_interface(codegen, expr, interface_type.type_named_name);
+    if struct_name_for_check == null {
+        return 0;
+    }
+    var iface_mono: &byte = interface_type.type_named_name;
+    if interface_type.type_named_type_arg_count > 0 && interface_type.type_named_type_args != null {
+        iface_mono = get_mono_struct_name(codegen, interface_type.type_named_name,
+            interface_type.type_named_type_args, interface_type.type_named_type_arg_count);
+    }
+    var struct_mono: &byte = struct_name_for_check;
+    if expr.type == ASTNodeType.AST_STRUCT_INIT &&
+        expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
+        struct_mono = get_mono_struct_name(codegen, struct_name_for_check,
+            expr.struct_init_type_args, expr.struct_init_type_arg_count);
+    }
+    const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
+    const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
+    if c99_expr_is_pointer_like_for_interface_box(codegen, expr) != 0 {
+        fprintf(codegen.emit_stream as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)(" as *byte,
+            safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+        gen_expr(codegen, expr);
+        fputs(") }" as *byte, codegen.emit_stream as *void);
+        return 1;
+    }
+    codegen.needs_stdlib_h = 1;
+    fprintf(codegen.emit_stream as *void,
+        "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)({ struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s)); if (_uya_box != (void*)0) { *_uya_box = " as *byte,
+        safe_iface as *byte, safe_iface as *byte, safe_struct as *byte,
+        safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
+    gen_expr(codegen, expr);
+    fputs("; } _uya_box; }) }" as *byte, codegen.emit_stream as *void);
+    return 1;
+}
+
 fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if stmt == null {
         return;

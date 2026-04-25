@@ -808,6 +808,19 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             // va_list 类型 - 直接映射到 C 的 va_list
             return ("va_list" as *byte) as &byte;
         } else {
+            const enum_decl_ctx: &ASTNode = c99_find_enum_decl_in_context(codegen, name, type_node.filename);
+            if enum_decl_ctx != null {
+                const enum_c_name: &byte = c99_get_enum_c_name_from_decl(codegen, enum_decl_ctx);
+                if enum_c_name != null {
+                    const enum_len: i32 = strlen(enum_c_name as *byte) + 6;
+                    const enum_buf: &byte = compiler_arena_alloc(codegen.arena, enum_len) as &byte;
+                    if enum_buf != null {
+                        snprintf(enum_buf as *byte, enum_len, "enum %s" as *byte, enum_c_name as *byte);
+                        return enum_buf;
+                    }
+                }
+            }
+
             // 结构体、接口或枚举类型
             const safe_name: &byte = get_safe_c_identifier(codegen, name);
 
