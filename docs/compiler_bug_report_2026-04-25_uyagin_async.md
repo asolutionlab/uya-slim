@@ -69,6 +69,63 @@ fn f() Future<!i32> {
 
 这不是 compiler bug，但属于“优化引入的新 API 契约边界”，在这里一并记录。
 
+### Bug 5：`HttpKvSlice` 切片在 C99 lowering 中退化成错误的切片类型
+
+触发方式：
+
+- 2026-04-25 首次执行 `tests/verify_uyagin_http_bench_runtime.sh`；
+- 源码路径位于 `lib/std/http/uyagin.uya` 的 `GinContext.param/query`：
+
+```uya
+return uyagin_find_kv(self.request.path_params[0: self.request.path_param_count as usize], name);
+return uyagin_find_kv(self.request.query[0: self.request.query_count as usize], name);
+```
+
+旧现象：
+
+- `self.request.path_params[0: ...]` / `self.request.query[0: ...]` 被错误降成 `struct uya_slice_int32_t`；
+- 随后生成 `uyagin_find_kv((struct uya_slice_int32_t){ ... }, name)`；
+- 最终 C 编译直接失败。
+
+修复：
+
+- `src/codegen/c99/types.uya`
+  - 为切片表达式新增 `checker_infer_type` 优先路径，直接从推断结果恢复 `struct uya_slice_HttpKvSlice` 等真实切片类型；
+  - 为成员访问类型推断新增 `checker` 兜底，避免链式成员访问在无法就地解析时退化成 `int32_t`。
+
+回归：
+
+- `tests/verify_uyagin_http_bench_runtime.sh`
+
+### Bug 6：`!T` 实参传给 helper future 构造器时被错误降成裸整数
+
+触发方式：
+
+- 同样由 `tests/verify_uyagin_http_bench_runtime.sh` 暴露；
+- 典型源码位于 `lib/std/http/uyagin.uya`：
+
+```uya
+return uyagin_ready_i32(error.InvalidRequest);
+inner = uyagin_ready_i32(error.RouteIndexInvalid);
+return uyagin_ready_usize(error.InvalidRequest);
+```
+
+旧现象：
+
+- `uyagin_ready_i32` / `uyagin_ready_usize` 的形参仍是 `struct err_union_int32_t` / `struct err_union_size_t`；
+- 但调用点被错误发成 `uyagin_ready_i32(-2045762251U)`、`uyagin_ready_i32(488695475U)`、`uyagin_ready_usize(-2045762251U)` 这类裸整数；
+- 最终 C 编译报“参数类型不匹配”。
+
+修复：
+
+- `src/codegen/c99/expr.uya`
+  - `AST_ERROR_VALUE` 在 `expected_type` 为错误联合时，直接生成对应的 `err_union_*` 复合字面量；
+  - `c99_emit_call_arg_expr` 在发射普通实参前把当前形参类型写入 `expected_type`，让 `error.X` 这类值实参可以按 `!T` 正确 lowering。
+
+回归：
+
+- `tests/verify_uyagin_http_bench_runtime.sh`
+
 ## 仍保留
 
 ### Bug 4：parser 对 `catch { ... }` 某些写法打印假性语法错误
@@ -101,5 +158,6 @@ const x: i32 = foo() catch { 0 - 1 };
 
 ## 当前结论
 
-- UyaGin P5 所需的主 blocker 已从“编译器导致功能不可达”收缩到“个别 parser 诊断噪音”。
-- 当前 HTTP/1.1 chunked / `writev` / `sendfile` / TLS -> UyaGin 桥接链路都已经可以通过真实回归验证。
+- 对 P5 主链路而言，原先 `sendfile` / 直接 err-union await / header cache 回退问题已修复，parser 假性诊断仍只是噪音。
+- 2026-04-25 复跑 `tests/verify_uyagin_http_bench_runtime.sh` 已恢复通过，`HttpKvSlice` 切片 lowering 错型与 `!T` helper future 实参 lowering 错型都已消除。
+- 当前剩余项重新收缩为 parser 对 `catch { ... }` 的假性诊断噪音；P7 benchmark runtime 的 compiler/codegen blocker 已解除。

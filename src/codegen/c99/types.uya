@@ -6830,6 +6830,10 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
     if codegen == null || slice_expr == null || slice_expr.type != ASTNodeType.AST_SLICE_EXPR {
         return ("struct uya_slice_int32_t" as *byte) as &byte;
     }
+    const inferred_slice_c: &byte = c99_get_inferred_expr_type_c(codegen, slice_expr);
+    if inferred_slice_c != null && strstr(inferred_slice_c as *byte, "uya_slice_" as *byte) != null {
+        return inferred_slice_c;
+    }
     const base: &ASTNode = slice_expr.slice_expr_base;
     if base.type == ASTNodeType.AST_SLICE_EXPR {
         return get_slice_struct_type_c(codegen, base);
@@ -6980,6 +6984,17 @@ fn c99_type_to_c_from_inferred_type(codegen: &C99CodeGenerator, inferred: Type, 
     return c99_type_to_c(codegen, inferred_ast);
 }
 
+fn c99_get_inferred_expr_type_c(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
+    if codegen == null || expr == null || codegen.checker == null {
+        return null;
+    }
+    const inferred: Type = checker_infer_type(codegen.checker, expr);
+    if inferred.kind == TypeKind.TYPE_VOID {
+        return null;
+    }
+    return c99_type_to_c_from_inferred_type(codegen, inferred, expr.line, expr.column, expr.filename);
+}
+
 fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     if codegen == null || expr == null {
         return ("int32_t" as *byte) as &byte;
@@ -7024,6 +7039,10 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         const object: &ASTNode = expr.member_access_object;
         const field_name: &byte = expr.member_access_field_name;
         if object == null || field_name == null {
+            const inferred_type_c0: &byte = c99_get_inferred_expr_type_c(codegen, expr);
+            if inferred_type_c0 != null {
+                return inferred_type_c0;
+            }
             return ("int32_t" as *byte) as &byte;
         }
         var base_type_c: &byte = null;
@@ -7033,10 +7052,18 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             base_type_c = get_c_type_of_expr(codegen, object);
         }
         if base_type_c == null {
+            const inferred_type_c1: &byte = c99_get_inferred_expr_type_c(codegen, expr);
+            if inferred_type_c1 != null {
+                return inferred_type_c1;
+            }
             return ("int32_t" as *byte) as &byte;
         }
         const struct_decl: &ASTNode = find_struct_decl_from_type_c(codegen, base_type_c);
         if struct_decl == null {
+            const inferred_type_c2: &byte = c99_get_inferred_expr_type_c(codegen, expr);
+            if inferred_type_c2 != null {
+                return inferred_type_c2;
+            }
             return ("int32_t" as *byte) as &byte;
         }
         // 先尝试查找字段
@@ -7059,6 +7086,10 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             codegen.struct_type_param_count = saved_spc;
             codegen.struct_type_arg_count = saved_sac;
             return ret;
+        }
+        const inferred_type_c3: &byte = c99_get_inferred_expr_type_c(codegen, expr);
+        if inferred_type_c3 != null {
+            return inferred_type_c3;
         }
         return ("int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_UNARY_EXPR {

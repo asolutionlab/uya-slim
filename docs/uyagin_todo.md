@@ -98,14 +98,48 @@
 
 ### 达标指标
 
-- [ ] RPS：UyaGin median ≥ Gin median * 1.20。
-- [ ] p99：UyaGin p99 ≤ Gin p99 * 0.85。
-- [ ] alloc/op：热路径 0 heap allocation。
-- [ ] syscall/req：hello keep-alive 接近 1 write + 摊销 read/epoll。
-- [ ] CPU：同 RPS 下 user+sys CPU 低于 Gin。
+#### 硬性通过条件
+
+- [ ] 吞吐门槛：5 个基准场景都要求 `summary.csv.rps_ratio_vs_gin >= 1.20`，按每场景 5 次采样的 `median_rps` 判定，不接受只挑单次峰值或最优 run。
+- [ ] 尾延迟门槛：5 个基准场景都要求 `summary.csv.p99_ratio_vs_gin <= 0.85`，按每场景 5 次采样的 `median_p99_latency_us` 判定，不用 avg/p50 替代。
+- [ ] 分配门槛：5 个基准场景都要求 `summary.csv.uya_median_heap_fallback_delta == 0`，以 `/__uyagin/metrics` 中 `heap_fallback_count` 的 run 前后 delta 作为热路径是否仍有 heap fallback 的唯一口径。
+- [ ] syscall 门槛：仅 `hello plaintext` 场景要求 `write_per_req <= 1.10` 且 `(read_per_req + epoll_wait_per_req) <= 1.50`；这是“接近 1 write + 摊销 read/epoll”的机器化近似，不用人工读 `strace` 摘要替代。
+- [ ] 同 RPS CPU 门槛：仅 `hello plaintext` 场景要求 same-RPS CPU probe 双方都命中 `target_rps ±10%`，且 UyaGin `cpu_per_req_us < Gin`；默认目标 RPS 取 hello 场景双方 median RPS 的较小值再乘 `0.80`。
+- [ ] 总判定：正式验收以 `report.json.overall_pass_target == true` 为总开关，同时要求 `summary.csv` 中所有场景 `overall_pass_target == 1`；任一场景任一硬门槛为 `0`，都不得把 P7 标记为达标。
+- [ ] 辅助指标：`cpu_per_req_pass_estimate` 仅作为常规 `wrk` 轮次里的粗粒度参考，不单独作为 P7 验收依据。
+
+#### 执行与证据
+
+- [ ] 当前门禁状态：以 2026-04-25 HEAD 实测为准，`tests/verify_uyagin_http_bench_runtime.sh`（当前覆盖 `threads=1`）已恢复通过；正式 benchmark 仍必须先过这条语义门禁，不能跳过 runtime 校验直接引用性能数字。
+- [ ] 统一执行命令：正式验收默认使用 `python3 benchmarks/run_uyagin_http_bench.py --fail-on-target`；若需要改 `runs/wrk_threads/connections/duration/server_threads`，必须先同步本文档与历史基线，再重新出完整报告。
+- [ ] 统一默认参数：正式验收沿用 runner 默认值 `runs=5`、`wrk_threads=4`、`connections=64`、`duration=10s`、`server_threads=4`；其中 `connections > 64` 已超出当前 UyaGin 连接槽上限，不属于 P7 可比口径。
+- [ ] 统一输出物：每次正式验收都要保留当次 `output_dir` 下的 `report.json`、`summary.csv` 与 `raw/` 原始结果；没有原始输出，不允许复用或转述“已达标”结论。
+- [ ] 禁止跳项验收：正式达标结论不得基于 `--backend` 单边运行、`--scenario` 子集运行、`--skip-syscall-probe` 或 `--skip-cpu-probe`；这些模式只允许用于本地调优和缩小回归范围。
+- [ ] 禁止 benchmark 专用快路径：当前 benchmark server 已切回官方 `engine.run_shards()` 主链路，后续性能收敛只接受 core 路径优化，不接受只在 benchmark binary 生效的特殊分支。
+
+#### 反作弊约束
+
+- [ ] 先校验语义，再看性能：任何正式性能数据都必须先通过 `tests/verify_uyagin_http_bench_runtime.sh`；若 `/plaintext`、`/json`、`/users/42`、`/middleware/ping`、`/blob64k` 的 body、`Content-Length`、状态码、keep-alive 或授权语义不一致，则该轮 benchmark 结果作废。
+- [ ] 禁止挑样本：固定 5 次 run 全部纳入 `median_rps` / `median_p99_latency_us` 计算，不得手工删除慢样本、只截取最优 run、失败后反复重跑直到撞到“好看数字”再宣称达标。
+- [ ] 禁止单边调参：UyaGin 与 Gin 必须使用同一组场景、同一 `wrk` 参数、同一请求头与同类编译级别；不得只对一边额外绑核、改单独线程数、改单独连接数、改单独持续时间、关额外运行时开销或施加退化配置。
+- [ ] 禁止缩语义换吞吐：不得通过减少响应字节数、移除 middleware、放宽错误处理、跳过 header/协议语义、降低超时/限额约束、绕开正式执行链路等方式换取数字；任何会让 benchmark 请求不再代表真实框架语义的改动，都不计入 P7 成绩。
+- [ ] 禁止改规则后复用旧结果：若 benchmark 场景、runner 字段、阈值、构建方式或统计逻辑发生变化，必须重新跑完整 UyaGin/Gin 对照并生成新的 `report.json` / `summary.csv`；旧报告不得继续作为当前口径的达标证据。
 
 2026-04-25：已新增 `benchmarks/uyagin_http_bench.uya`、`benchmarks/uyagin_http_bench_gin/main.go`、`benchmarks/run_uyagin_http_bench.py` 与 `tests/verify_uyagin_http_bench_runtime.sh`。
-当前 runner 会固定 5 次采样，导出 median / p99、环境信息、Uya heap fallback 指标，并在可用时追加 hello 场景 `strace` syscall 统计；同时新增 same-RPS CPU probe（内置 keep-alive paced client），可直接在报告里给出 `rps/p99/alloc/syscall/cpu` 的 pass/fail 字段，并支持 `--fail-on-target`。注意：当前 benchmark server 已切回官方 `engine.run_shards()` 主链路，后续性能收敛只接受 core 路径优化，不接受 benchmark 专用快路径。上述“达标指标”是否满足，仍以当次实测报告为准，不在代码提交时预先勾选。
+当前 runner 会固定 5 次采样，导出 median / p99、环境信息、Uya heap fallback 指标，并在可用时追加 hello 场景 `strace` syscall 统计；同时新增 same-RPS CPU probe（内置 keep-alive paced client），可直接在报告里给出 `rps/p99/alloc/syscall/cpu` 的 pass/fail 字段，并支持 `--fail-on-target`。Gin 对照构建现已增加 `GOPROXY` fallback（优先 `https://goproxy.cn,direct`），并且在 server startup 失败时会直接输出 `server.log` 路径与退出信号，避免 runner 静默卡住。P7 是否达标，只以当次 `summary.csv` / `report.json` 的字段为准；缺少 Gin 对照、syscall probe、same-RPS CPU probe 或原始输出目录的结果，只能用于调优，不得用于对外宣称达标。
+
+2026-04-25 修复更新：重新执行 `tests/verify_uyagin_http_bench_runtime.sh` 已通过。此前阻塞 benchmark runtime 的两类 C99 codegen 问题已修复：
+1. `GinContext.param/query` 的 `HttpKvSlice` 切片表达式现在优先走 checker 推断类型，不再错误降成 `struct uya_slice_int32_t`。
+2. `uyagin_ready_i32(...)` / `uyagin_ready_usize(...)` 这类 `!T` helper future 调用现在会按形参期望类型发射 `err_union_*` 实参，不再把 `error.X` 降成裸整数。
+
+2026-04-25 实测补充：
+1. 正式默认口径 `server_threads=4` 运行 `python3 benchmarks/run_uyagin_http_bench.py --scenario hello_plaintext --runs 1 --duration 1s --skip-syscall-probe --skip-cpu-probe` 时，Uya benchmark server 会在 `engine.run_shards()` 启动阶段 `SIGSEGV`，runner 现已能明确报出 `process exited via signal 11` 与对应 `server.log`；因此默认 4 线程正式 benchmark 目前仍被 multi-shard 回归阻塞。
+2. 已补记一组当前 HEAD 的 single-shard smoke 指标：先通过 `tests/verify_uyagin_http_bench_runtime.sh`，再运行 `python3 benchmarks/run_uyagin_http_bench.py --scenario hello_plaintext --runs 1 --duration 2s --server-threads 1 --skip-syscall-probe --skip-cpu-probe`；产物位于 `build/uyagin_http_bench/20260425_232813/`，包含 `report.json`、`summary.csv` 与 `raw/` 原始 `wrk/server.log`。
+3. 上述 smoke 报告对应机器信息为 `Linux 6.12.65-amd64-desktop-rolling`、`x86_64`、`Intel(R) Xeon(R) CPU E5-2696 v4 @ 2.20GHz`、CPU governor=`performance`、`somaxconn=4096`、`ulimit -n=1048576`；执行参数为 `wrk_threads=4`、`connections=64`、`duration=2s`、`server_threads=1`、`runs=1`。
+4. `build/uyagin_http_bench/20260425_232813/summary.csv` 记录的 `hello_plaintext` 指标为：`uya_rps=12539.27`、`gin_rps=41556.29`、`rps_ratio=0.3017`；`uya_p99_us=8640.0`、`gin_p99_us=3990.0`、`p99_ratio=2.1654`；`uya_cpu_per_req_us=79.3808`、`gin_cpu_per_req_us=24.1778`；`uya_heap_fallback_delta=0`、`alloc_pass_target=1`、`overall_pass_target=0`。
+5. 由于本次只跑 `hello_plaintext` 且显式跳过 `syscall/cpu probe`，`syscall_pass_target` 与 `cpu_matched_pass_target` 仍为空；这组数字只能作为“single-shard smoke 已恢复”的指标记录，不能替代默认 4 线程、5 场景、5 次采样的正式 P7 验收结果。
+
+结论：P7 当前状态应表述为“single-shard smoke benchmark 已恢复、默认 multi-shard 正式 benchmark 仍有运行时 blocker”；`rps/p99/alloc/syscall/cpu` 指标是否达标，仍必须以当次完整实测报告为准，上述“达标指标”继续保留为验收门槛，不在代码提交时预先勾选。
 
 ## P8：兼容性与文档
 
@@ -114,4 +148,4 @@
 - [ ] 示例：hello、JSON、JWT、multipart、static file、middleware。
 - [ ] 压测报告：包含命令、硬件、原始数据、火焰图。
 - [ ] 编译器边界清理：继续随着 Uya C 后端修复删除 UyaGin 中的兼容层 / workaround；当前状态见 [`compiler_bug_report_2026-04-25_uyagin_async.md`](./compiler_bug_report_2026-04-25_uyagin_async.md)。
-  当前报告已同步到：direct err-union await bind、文件发送路径 lowering 缺口、Header 缓存兼容回退均已修复；parser 对 `catch { ... }` 的假性“意外 token”诊断仍待清理。
+  当前报告已同步到：direct err-union await bind、文件发送路径 lowering 缺口、Header 缓存兼容回退，以及 benchmark runtime 的 `HttpKvSlice` 切片 lowering / `!T` helper future 实参 lowering 问题均已修复；parser 对 `catch { ... }` 的假性“意外 token”诊断仍待清理。

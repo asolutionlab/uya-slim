@@ -263,6 +263,22 @@ def wait_http_ready(url: str, *, timeout_s: float = 10.0) -> None:
     raise RuntimeError(f"server did not become ready: {url}")
 
 
+def format_server_start_failure(proc: subprocess.Popen[Any], log_path: Path, ready_url: str) -> str:
+    lines = [f"server did not become ready: {ready_url}", f"server log: {log_path}"]
+    exit_code = proc.poll()
+    if exit_code is not None:
+        if exit_code < 0:
+            lines.append(f"process exited via signal {-exit_code}")
+        else:
+            lines.append(f"process exited with code {exit_code}")
+    if log_path.exists():
+        log_text = log_path.read_text(encoding="utf-8", errors="ignore").strip()
+        if log_text:
+            lines.append("server log tail:")
+            lines.extend(log_text.splitlines()[-20:])
+    return "\n".join(lines)
+
+
 def terminate_process(proc: subprocess.Popen[Any]) -> None:
     if proc.poll() is not None:
         return
@@ -337,15 +353,51 @@ def build_gin(args: argparse.Namespace, out_dir: Path) -> dict[str, Any]:
     go = resolve_go()
     exe = out_dir / "uyagin_http_bench_gin"
     ldflags = os.environ.get("GIN_BENCH_LDFLAGS", "-s -w")
+    goproxy_override = os.environ.get("GIN_BENCH_GOPROXY", "").strip()
+    used_goproxy = goproxy_override or "default"
     if not args.skip_build:
-        run_checked(
-            [go, "build", "-ldflags", ldflags, "-o", str(exe), "./uyagin_http_bench_gin"],
-            cwd=BENCH_DIR,
-            stdout_path=out_dir / "build_gin.log",
-        )
+        attempts: list[tuple[str, str | None]] = []
+        if goproxy_override:
+            attempts.append((f"override:{goproxy_override}", goproxy_override))
+        else:
+            attempts.append(("goproxy.cn", "https://goproxy.cn,direct"))
+            attempts.append(("default", None))
+            attempts.append(("direct", "direct"))
+
+        build_cmd = [go, "build", "-ldflags", ldflags, "-o", str(exe), "./uyagin_http_bench_gin"]
+        build_log = out_dir / "build_gin.log"
+        failure_logs: list[tuple[str, Path, str]] = []
+        for idx, (label, goproxy_value) in enumerate(attempts, start=1):
+            env = os.environ.copy()
+            if goproxy_value is not None:
+                env["GOPROXY"] = goproxy_value
+            attempt_log = build_log if len(attempts) == 1 else out_dir / f"build_gin_attempt{idx}.log"
+            try:
+                run_checked(build_cmd, cwd=BENCH_DIR, env=env, stdout_path=attempt_log)
+                used_goproxy = goproxy_value or "default"
+                if attempt_log != build_log:
+                    attempt_text = attempt_log.read_text(encoding="utf-8", errors="ignore")
+                    build_log.write_text(
+                        f"# gin build attempt: {label}\n# GOPROXY={used_goproxy}\n\n{attempt_text}",
+                        encoding="utf-8",
+                    )
+                break
+            except RuntimeError as exc:
+                failure_logs.append((label, attempt_log, str(exc)))
+        else:
+            lines = []
+            for label, attempt_log, message in failure_logs:
+                lines.append(f"## attempt: {label}")
+                lines.append(message)
+                if attempt_log.exists():
+                    lines.append(attempt_log.read_text(encoding="utf-8", errors="ignore"))
+                lines.append("")
+            build_log.write_text("\n".join(lines), encoding="utf-8")
+            raise RuntimeError(f"gin benchmark build failed after {len(attempts)} attempts; see {build_log}")
     return {
         "go": go,
         "ldflags": ldflags,
+        "goproxy": goproxy_override or used_goproxy,
         "exe": str(exe),
         "port": args.gin_port,
     }
@@ -413,9 +465,13 @@ def run_backend_scenario(
         run_dir = out_dir / "raw" / backend_name / scenario.name / f"run_{run_idx + 1}"
         run_dir.mkdir(parents=True, exist_ok=True)
         cmd = [backend_info["exe"], "--port", str(port), "--threads", str(clamp_positive(args.server_threads, DEFAULT_SERVER_THREADS))]
-        proc, log_fp = start_server(cmd, cwd=REPO_ROOT, log_path=run_dir / "server.log")
+        server_log = run_dir / "server.log"
+        proc, log_fp = start_server(cmd, cwd=REPO_ROOT, log_path=server_log)
         try:
-            wait_http_ready(ready_url)
+            try:
+                wait_http_ready(ready_url)
+            except RuntimeError as exc:
+                raise RuntimeError(format_server_start_failure(proc, server_log, ready_url)) from exc
             before_cpu = read_proc_stat(proc.pid)
             before_metrics: dict[str, Any] | None = None
             if backend_name == "uya":
@@ -557,7 +613,8 @@ def run_keepalive_cpu_probe(
     cmd = [backend_info["exe"], "--port", str(port), "--threads", str(clamp_positive(args.server_threads, DEFAULT_SERVER_THREADS))]
     probe_dir = out_dir / "raw" / backend_name / scenario.name / "cpu_probe"
     probe_dir.mkdir(parents=True, exist_ok=True)
-    proc, log_fp = start_server(cmd, cwd=REPO_ROOT, log_path=probe_dir / "server.log")
+    server_log = probe_dir / "server.log"
+    proc, log_fp = start_server(cmd, cwd=REPO_ROOT, log_path=server_log)
 
     counts = [0 for _ in range(connection_count)]
     errors = [0 for _ in range(connection_count)]
@@ -598,7 +655,10 @@ def run_keepalive_cpu_probe(
                     pass
 
     try:
-        wait_http_ready(ready_url)
+        try:
+            wait_http_ready(ready_url)
+        except RuntimeError as exc:
+            raise RuntimeError(format_server_start_failure(proc, server_log, ready_url)) from exc
         before_cpu = read_proc_stat(proc.pid)
         start_ts = time.monotonic() + 0.25
         stop_ts = start_ts + duration_s
@@ -673,7 +733,10 @@ def run_syscall_probe(
     ]
     proc, log_fp = start_server(cmd, cwd=REPO_ROOT, log_path=server_log)
     try:
-        wait_http_ready(ready_url)
+        try:
+            wait_http_ready(ready_url)
+        except RuntimeError as exc:
+            raise RuntimeError(format_server_start_failure(proc, server_log, ready_url)) from exc
         wrk_cmd = build_wrk_command(wrk_path, args, url, scenario.headers)
         wrk_result = run_checked(wrk_cmd, cwd=REPO_ROOT)
         (probe_dir / "wrk.txt").write_text(wrk_result.stdout, encoding="utf-8")
