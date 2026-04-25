@@ -1761,7 +1761,8 @@ fn uyagin_listen_loopback_server(port: u16, listen_backlog: i32, reuse_port: boo
 
 fn uyagin_shard_thread_main(arg: &void) &void {
     const ctx: &UyaginShardThreadCtx = arg as &UyaginShardThreadCtx;
-    var scheduler: Scheduler = scheduler_new();
+    var scheduler: Scheduler = Scheduler{};
+    scheduler_init(&scheduler);
     const loop_impl: !LinuxEpoll = linux_epoll_create(0);
     const loop_ok: LinuxEpoll = loop_impl catch {
         ctx.failed = 1;
@@ -1786,7 +1787,8 @@ fn uyagin_engine_run_shards(engine: &Engine, listener: &GinListener, opts: &Engi
         shard_count = 1;
     }
     if shard_count == 1 {
-        var scheduler: Scheduler = scheduler_new();
+        var scheduler: Scheduler = Scheduler{};
+        scheduler_init(&scheduler);
         var loop_impl: LinuxEpoll = try linux_epoll_create(0);
         const loop: EventLoop = loop_impl;
         return uyagin_engine_run(engine, &listener.server, loop, &scheduler, &options, controller);
@@ -1834,7 +1836,8 @@ fn uyagin_engine_run_shards(engine: &Engine, listener: &GinListener, opts: &Engi
         i = i + 1;
     }
 
-    var local_scheduler: Scheduler = scheduler_new();
+    var local_scheduler: Scheduler = Scheduler{};
+    scheduler_init(&local_scheduler);
     var local_loop_impl: LinuxEpoll = try linux_epoll_create(0);
     const local_loop: EventLoop = local_loop_impl;
     const total_main: i32 = try uyagin_engine_run(engine, &listener.server, local_loop, &local_scheduler, &options, controller);
