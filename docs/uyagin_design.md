@@ -31,6 +31,9 @@ UyaGin 是 `std.http.uyagin` 中的 Gin 风格 HTTP 框架核心，目标是在 
 - `uyagin_conn_read_parse_async`：异步读取并解析一个 HTTP/1.x 请求；当前已支持 chunked request 线级解析与连接缓冲内原地解码。
 - `uyagin_accept_async`：异步 accept。
 - `uyagin_serve_conn`：单连接 keep-alive 请求循环。
+- `UyaginAccessLogOptions` / `uyagin_emit_access_log`：可关闭、可采样、栈缓冲零分配 access log。
+- `UyaginMetrics` / `UyaginObserveFuture`：请求数、状态码、延迟直方图、连接数与 arena/frame 统计统一收口。
+- `UyaginConfig` / `EngineRunOptions`：allocator、limits、backlog、buffer cap、request arena cap、timeouts、mode、access log 配置。
 - `GinListener`：监听 socket 的 RAII 包装，`drop` 自动关闭。
 - `tls.https.https_server_serve_uyagin_once`：最小 HTTPS -> UyaGin handler 桥接。
 
@@ -103,6 +106,7 @@ export fn main() i32 {
 - `AsyncHandler.handle` 是异步接口，业务可在 handler 中 `try @await` 数据库、DNS、HTTP 客户端等 future。
 - 返回 `i32` 而不是 `void`，是为了避开当前 C 后端对 `Future<!void>` 的不完整支持，同时为 middleware 返回码预留空间。
 - 错误通过 `!T` 传播，框架上层可统一映射为 4xx/5xx；当前 `uyagin_run_chain_recover` 已接通 recovery 返回 `500`。
+- `engine.handle(...)` 外层现在统一包一层 `UyaginObserveFuture`：直接覆盖 request count、状态码、延迟统计与 access log，不要求业务自己手工插 middleware。
 
 ### 6. 响应层
 
@@ -111,6 +115,13 @@ export fn main() i32 {
 - 文件响应优先复用 `sendfile`；不满足平台条件时回退到 nonblocking `read/write` future。
 - 若调用方显式选择 `ctx.chunked(...)`，则输出 `Transfer-Encoding: chunked` 并按块 framing。
 - `Connection` 根据 `persist` 与 HTTP/1.0 keep-alive 规则输出。
+
+### 7. 可观测性与生产配置
+
+- access log 默认可关闭；开启后按 `sample_every` 采样，使用固定栈缓冲格式化 `method/path/status/latency`，debug 模式额外带 `wrote/persist`。
+- 错误 trace 统一走 `uyagin_error_response`，在 `500` 或 debug 模式下输出错误名、请求方法/路径，以及 `@src_path` / `@src_line` builtin 生成的位置。
+- `UyaginMetrics` 同时覆盖 request/status/latency/connection 与 arena/frame allocator 指标；其中连接计数在 `engine_run` accept/cleanup 路径维护。
+- `UyaginConfig` 统一承载 allocator、limits、run options 与 access log；`EngineRunOptions` 负责 backlog、max connections、buffer cap、request arena cap、timeouts、mode 等生产运行项。
 
 ## 性能设计
 

@@ -72,11 +72,11 @@
 
 ## P6：可观测性与生产配置
 
-- [ ] Access log middleware：可关闭、可采样、零分配格式化。
-- [ ] Metrics middleware：请求数、状态码、延迟直方图、连接数。
-- [ ] Panic/error trace：结合 Uya 源码位置 builtin 输出。
-- [ ] 配置结构：backlog、max connections、buffer cap、timeouts、allocator。
-- [ ] 运行模式：debug/release，debug 开启更多边界检查和日志。
+- [x] Access log middleware：可关闭、可采样、零分配格式化。
+- [x] Metrics middleware：请求数、状态码、延迟直方图、连接数。
+- [x] Panic/error trace：结合 Uya 源码位置 builtin 输出。
+- [x] 配置结构：backlog、max connections、buffer cap、timeouts、allocator。
+- [x] 运行模式：debug/release，debug 开启更多边界检查和日志。
 
 ## P7：Benchmark 达标计划
 

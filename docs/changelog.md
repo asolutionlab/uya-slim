@@ -8,6 +8,14 @@
 
 **发布日期：** 待定
 
+### 标准库 HTTP / UyaGin P6：可观测性与生产配置（2026-04-25）
+
+- **`std.http.uyagin`**：新增 **`UyaginMode`**、**`UyaginAccessLogOptions`**、**`UyaginConfig`**，并扩展 **`EngineRunOptions`** 支持 **`listen_backlog`**、**`buffer_cap`**、**`request_arena_cap`**、**`mode`**。
+- **Access log / error trace**：`engine.handle(...)` 外层补入统一 observation wrapper；access log 现支持开关与 **`sample_every`** 采样，并使用固定栈缓冲零分配格式化；recovery / limit error 现可输出带 **`@src_path`** / **`@src_line`** 的 trace。
+- **Metrics**：`UyaginMetrics` 扩展为同时统计 **request count**、常见 **HTTP status**、延迟直方图、accept/close/active 连接数，以及既有 arena/frame allocator 指标。
+- **生产运行配置**：新增 **`uyagin_new_with_config`**、**`uyagin_set_config`**、**`uyagin_set_run_options`**、**`uyagin_set_access_log_options`**、**`uyagin_listen_loopback_with_options`**、**`uyagin_listen_loopback_with_config`**；`engine.run()` / `run_shards()` 默认直接使用 engine 上配置。
+- **测试**：更新 **`tests/test_http_uyagin.uya`** 覆盖 access log 采样/禁用、debug trace、config round-trip 与扩展 metrics；并补跑 **`test_http_server.uya`**、**`test_https_loopback.uya`** 相关链路。
+
 ### 标准库 HTTP / UyaGin P5 与 async lowering 收口（2026-04-25）
 
 - **`std.http.parse` / `std.http.types`**：HTTP/1.x 解析热路径补入 **8-byte word-at-a-time** 的 `CRLF` / `:` / 空格扫描；Header 名在解析时统一转小写、缓存 **hash** 与常见头 **kind**（`Content-Length` / `Connection` / `Transfer-Encoding` / `Content-Type` / `Host` / `Authorization`），并保留“无缓存元数据时按字节回退比较”的兼容路径。
