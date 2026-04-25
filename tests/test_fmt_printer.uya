@@ -6,6 +6,7 @@ use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
 use std.testing.run_test;
 use std.fmt.ast.File;
+use std.fmt.comments.CommentGroup;
 use std.fmt.tokenizer.Token;
 use std.fmt.tokenizer.tokenize;
 use std.fmt.parser.parse_file;
@@ -13,6 +14,11 @@ use std.fmt.printer.print_file_to_buffer;
 
 fn byte_at(s: &[byte], i: usize) i32 {
     return s.ptr[i] as i32;
+}
+
+fn empty_comment_groups() &[CommentGroup] {
+    var groups: [CommentGroup: 1] = [];
+    return groups[0:0];
 }
 
 fn test_print_simple_function() !void {
@@ -23,7 +29,7 @@ fn test_print_simple_function() !void {
     const src: &[byte] = "fn add(a,b){return a+b;}" as &[byte];
     var tokens: &[Token] = try tokenize(&a, src);
     var file: &File = try parse_file(&a, tokens);
-    const out: &[byte] = try print_file_to_buffer(&a, file);
+    const out: &[byte] = try print_file_to_buffer(&a, file, empty_comment_groups());
 
     try assert_eq_i32(out.len as i32, 31);
     try assert_eq_i32(byte_at(out, 0), 'f' as i32);
@@ -44,7 +50,7 @@ fn test_print_assign_and_call() !void {
     const src: &[byte] = "fn main(){x=1+2;foo(x,1);}" as &[byte];
     var tokens: &[Token] = try tokenize(&a, src);
     var file: &File = try parse_file(&a, tokens);
-    const out: &[byte] = try print_file_to_buffer(&a, file);
+    const out: &[byte] = try print_file_to_buffer(&a, file, empty_comment_groups());
 
     try assert_eq_i32(byte_at(out, 10), '{' as i32);
     try assert_eq_i32(byte_at(out, 11), '\n' as i32);
@@ -59,7 +65,7 @@ fn test_print_two_functions_with_blank_line() !void {
     const src: &[byte] = "fn a(){return 1;} fn b(){return 2;}" as &[byte];
     var tokens: &[Token] = try tokenize(&a, src);
     var file: &File = try parse_file(&a, tokens);
-    const out: &[byte] = try print_file_to_buffer(&a, file);
+    const out: &[byte] = try print_file_to_buffer(&a, file, empty_comment_groups());
 
     var found_double_newline: bool = false;
     var i: usize = 0;

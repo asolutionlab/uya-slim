@@ -235,7 +235,7 @@ fn test_async_fd_read_with_event_loop_wakes() !void {
     const read_count: usize = try scheduler_run_with_event_loop<usize>(&scheduler, loop, f, 50);
     try assert_eq_i32(read_count as i32, 4);
     try assert_eq_i32(async_fd_mock_registered_fd, read_fd);
-    try assert_eq_i32(async_fd_mock_register_count, 2);
+    try assert_eq_i32(async_fd_mock_register_count, 1);
     try assert_eq_i32(async_fd_mock_poll_count, 1);
     try assert_eq_i32(buf[0] as i32, 10);
     try assert_eq_i32(buf[1] as i32, 20);

@@ -1096,6 +1096,30 @@ fn emit_struct_deps_for_struct(codegen: &C99CodeGenerator, struct_decl: &ASTNode
     return generated;
 }
 
+// 为单态化结构体收集“替换类型参数后的”值类型结构体依赖。
+fn emit_struct_deps_for_mono_struct(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
+    type_args: & &ASTNode, type_arg_count: i32) i32 {
+    if codegen == null || struct_decl == null {
+        return 0;
+    }
+    const field_count: i32 = struct_decl.struct_decl_field_count;
+    if field_count <= 0 || struct_decl.struct_decl_fields == null {
+        return 0;
+    }
+
+    var i: i32 = 0;
+    while i < field_count {
+        const field: &ASTNode = struct_decl.struct_decl_fields[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const resolved_field_type: &ASTNode = substitute_type_arg_explicit(codegen, field.var_decl_type,
+                struct_decl.struct_decl_type_params, type_args, type_arg_count);
+            ensure_value_type_deps_emitted(codegen, resolved_field_type);
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 // 从 C 类型字符串（如 "struct Data"、"const struct Data *"、"struct Data *"）中提取结构体名并查找声明
 fn find_struct_decl_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) &ASTNode {
     if codegen == null || type_c == null || codegen.program_node == null {
@@ -3131,7 +3155,7 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
     // 与普通结构体定义保持一致：单态化后的值字段仍可能依赖非指针结构体
     // （例如 TaskQueueSlot<i32> 的 Waker 字段）。若不先发射依赖，types 头里会出现
     // 不完整类型字段，镜像 split-C 会直接编译失败。
-    emit_struct_deps_for_struct(codegen, struct_decl);
+    emit_struct_deps_for_mono_struct(codegen, struct_decl, subst_args, type_arg_count);
     
     // 先生成依赖的值类型定义（含泛型 union / 普通 union / 结构体）
     const field_count: i32 = struct_decl.struct_decl_field_count;
@@ -3139,7 +3163,9 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
     while fi < field_count {
         const field: &ASTNode = struct_decl.struct_decl_fields[fi];
         if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
-            ensure_value_type_deps_emitted(codegen, field.var_decl_type);
+            const resolved_field_type: &ASTNode = substitute_type_arg_explicit(codegen, field.var_decl_type,
+                struct_decl.struct_decl_type_params, subst_args, type_arg_count);
+            ensure_value_type_deps_emitted(codegen, resolved_field_type);
         }
         fi = fi + 1;
     }
@@ -3162,8 +3188,10 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
     while fi_mono_fwd < field_count {
         const field_mono_fwd: &ASTNode = struct_decl.struct_decl_fields[fi_mono_fwd];
         if field_mono_fwd != null && field_mono_fwd.type == ASTNodeType.AST_VAR_DECL && field_mono_fwd.var_decl_type != null {
-            c99_emit_async_frame_forward_for_type(codegen, field_mono_fwd.var_decl_type);
-            ensure_value_type_deps_emitted(codegen, field_mono_fwd.var_decl_type);
+            const resolved_field_type_fwd: &ASTNode = substitute_type_arg_explicit(codegen, field_mono_fwd.var_decl_type,
+                struct_decl.struct_decl_type_params, subst_args, type_arg_count);
+            c99_emit_async_frame_forward_for_type(codegen, resolved_field_type_fwd);
+            ensure_value_type_deps_emitted(codegen, resolved_field_type_fwd);
         }
         fi_mono_fwd = fi_mono_fwd + 1;
     }
