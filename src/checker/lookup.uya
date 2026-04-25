@@ -414,6 +414,71 @@ fn find_fn_decl_from_program(program_node: &ASTNode, fn_name: &byte) &ASTNode {
 
 // ===== 方法查找 =====
 
+fn fn_decl_has_interface_receiver(fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        fn_decl.fn_decl_param_count < 1 || fn_decl.fn_decl_params == null {
+        return 0;
+    }
+    const param: &ASTNode = fn_decl.fn_decl_params[0];
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL || param.var_decl_type == null {
+        return 0;
+    }
+    const param_type: &ASTNode = param.var_decl_type;
+    if param_type.type != ASTNodeType.AST_TYPE_POINTER || param_type.type_pointer_is_ffi_pointer != 0 ||
+        param_type.type_pointer_pointed_type == null {
+        return 0;
+    }
+    const pointed: &ASTNode = param_type.type_pointer_pointed_type;
+    if pointed.type == ASTNodeType.AST_TYPE_NAMED && pointed.type_named_name != null &&
+        str_equals(pointed.type_named_name, "Self" as *byte) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn fn_decl_has_receiver_for_owner(fn_decl: &ASTNode, owner_name: &byte) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || owner_name == null ||
+        fn_decl.fn_decl_param_count < 1 || fn_decl.fn_decl_params == null {
+        return 0;
+    }
+    const param: &ASTNode = fn_decl.fn_decl_params[0];
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL || param.var_decl_type == null {
+        return 0;
+    }
+    const param_type: &ASTNode = param.var_decl_type;
+    if param_type.type != ASTNodeType.AST_TYPE_POINTER || param_type.type_pointer_is_ffi_pointer != 0 ||
+        param_type.type_pointer_pointed_type == null {
+        return 0;
+    }
+    const pointed: &ASTNode = param_type.type_pointer_pointed_type;
+    if pointed.type != ASTNodeType.AST_TYPE_NAMED || pointed.type_named_name == null {
+        return 0;
+    }
+    if str_equals(pointed.type_named_name, "Self" as *byte) != 0 ||
+        str_equals(pointed.type_named_name, owner_name) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn find_method_in_block_with_receiver_kind(method_block: &ASTNode, owner_name: &byte, method_name: &byte, want_self_receiver: i32) &ASTNode {
+    if method_block == null || method_block.type != ASTNodeType.AST_METHOD_BLOCK || method_name == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < method_block.method_block_method_count {
+        const m: &ASTNode = method_block.method_block_methods[i];
+        if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null &&
+            str_equals(m.fn_decl_name, method_name) != 0 {
+            if want_self_receiver < 0 || fn_decl_has_receiver_for_owner(m, owner_name) == want_self_receiver {
+                return m;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
 // 查找结构体对应的方法块
 fn find_method_block_for_struct(program_node: &ASTNode, struct_name: &byte) &ASTNode {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || struct_name == null {
@@ -477,6 +542,60 @@ fn find_method_in_struct(program_node: &ASTNode, struct_name: &byte, method_name
     return null;
 }
 
+fn find_instance_method_in_struct(program_node: &ASTNode, struct_name: &byte, method_name: &byte) &ASTNode {
+    if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || struct_name == null || method_name == null {
+        return null;
+    }
+    const method_block: &ASTNode = find_method_block_for_struct(program_node, struct_name);
+    if method_block != null {
+        const m_block: &ASTNode = find_method_in_block_with_receiver_kind(method_block, struct_name, method_name, 1);
+        if m_block != null {
+            return m_block;
+        }
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(program_node, struct_name);
+    if struct_decl != null && struct_decl.struct_decl_methods != null {
+        var i: i32 = 0;
+        while i < struct_decl.struct_decl_method_count {
+            const m: &ASTNode = struct_decl.struct_decl_methods[i];
+            if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null &&
+                str_equals(m.fn_decl_name, method_name) != 0 &&
+                fn_decl_has_receiver_for_owner(m, struct_name) != 0 {
+                return m;
+            }
+            i = i + 1;
+        }
+    }
+    return null;
+}
+
+fn find_static_method_in_struct(program_node: &ASTNode, struct_name: &byte, method_name: &byte) &ASTNode {
+    if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || struct_name == null || method_name == null {
+        return null;
+    }
+    const method_block: &ASTNode = find_method_block_for_struct(program_node, struct_name);
+    if method_block != null {
+        const m_block: &ASTNode = find_method_in_block_with_receiver_kind(method_block, struct_name, method_name, 0);
+        if m_block != null {
+            return m_block;
+        }
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(program_node, struct_name);
+    if struct_decl != null && struct_decl.struct_decl_methods != null {
+        var i: i32 = 0;
+        while i < struct_decl.struct_decl_method_count {
+            const m: &ASTNode = struct_decl.struct_decl_methods[i];
+            if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null &&
+                str_equals(m.fn_decl_name, method_name) != 0 &&
+                fn_decl_has_receiver_for_owner(m, struct_name) == 0 {
+                return m;
+            }
+            i = i + 1;
+        }
+    }
+    return null;
+}
+
 // 查找联合体对应的方法块
 fn find_method_block_for_union(program_node: &ASTNode, union_name: &byte) &ASTNode {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || union_name == null {
@@ -530,6 +649,60 @@ fn find_method_in_union(program_node: &ASTNode, union_name: &byte, method_name: 
             const m: &ASTNode = union_decl.union_decl_methods[i];
             if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null &&
                 str_equals(m.fn_decl_name, method_name) != 0 {
+                return m;
+            }
+            i = i + 1;
+        }
+    }
+    return null;
+}
+
+fn find_instance_method_in_union(program_node: &ASTNode, union_name: &byte, method_name: &byte) &ASTNode {
+    if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || union_name == null || method_name == null {
+        return null;
+    }
+    const method_block: &ASTNode = find_method_block_for_union(program_node, union_name);
+    if method_block != null {
+        const m_block: &ASTNode = find_method_in_block_with_receiver_kind(method_block, union_name, method_name, 1);
+        if m_block != null {
+            return m_block;
+        }
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(program_node, union_name);
+    if union_decl != null && union_decl.union_decl_methods != null {
+        var i: i32 = 0;
+        while i < union_decl.union_decl_method_count {
+            const m: &ASTNode = union_decl.union_decl_methods[i];
+            if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null &&
+                str_equals(m.fn_decl_name, method_name) != 0 &&
+                fn_decl_has_receiver_for_owner(m, union_name) != 0 {
+                return m;
+            }
+            i = i + 1;
+        }
+    }
+    return null;
+}
+
+fn find_static_method_in_union(program_node: &ASTNode, union_name: &byte, method_name: &byte) &ASTNode {
+    if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || union_name == null || method_name == null {
+        return null;
+    }
+    const method_block: &ASTNode = find_method_block_for_union(program_node, union_name);
+    if method_block != null {
+        const m_block: &ASTNode = find_method_in_block_with_receiver_kind(method_block, union_name, method_name, 0);
+        if m_block != null {
+            return m_block;
+        }
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(program_node, union_name);
+    if union_decl != null && union_decl.union_decl_methods != null {
+        var i: i32 = 0;
+        while i < union_decl.union_decl_method_count {
+            const m: &ASTNode = union_decl.union_decl_methods[i];
+            if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null &&
+                str_equals(m.fn_decl_name, method_name) != 0 &&
+                fn_decl_has_receiver_for_owner(m, union_name) == 0 {
                 return m;
             }
             i = i + 1;
@@ -753,19 +926,75 @@ fn check_method_self_param(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
         return 1;
     }
     const param: &ASTNode = fn_decl.fn_decl_params[0];
-    if param == null || param.type != ASTNodeType.AST_VAR_DECL || param.var_decl_name == null ||
-        str_equals(param.var_decl_name, "self" as *byte) == 0 {
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL {
         return 1;
     }
     const param_type: &ASTNode = param.var_decl_type;
     if param_type == null || param_type.type != ASTNodeType.AST_TYPE_POINTER {
-        return 1;
+        checker_report_error(checker, fn_decl, "实例方法首参必须为 &Self，静态方法请省略 receiver 参数" as *byte);
+        return 0;
     }
     if param_type.type_pointer_is_ffi_pointer != 0 {
         checker_report_error(checker, fn_decl, "方法 self 必须为 &T，不能为 *T（*T 仅用于 FFI）" as *byte);
         return 0;
     }
+    if param_type.type_pointer_pointed_type == null ||
+        param_type.type_pointer_pointed_type.type != ASTNodeType.AST_TYPE_NAMED ||
+        param_type.type_pointer_pointed_type.type_named_name == null ||
+        str_equals(param_type.type_pointer_pointed_type.type_named_name, "Self" as *byte) == 0 {
+        checker_report_error(checker, fn_decl, "实例方法首参必须为 &Self" as *byte);
+        return 0;
+    }
     return 1;
+}
+
+fn check_method_self_param_for_owner(checker: &TypeChecker, fn_decl: &ASTNode, owner_name: &byte) i32 {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || owner_name == null {
+        return 1;
+    }
+    if fn_decl.fn_decl_param_count < 1 || fn_decl.fn_decl_params == null {
+        return 1;
+    }
+    const param: &ASTNode = fn_decl.fn_decl_params[0];
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL || param.var_decl_type == null {
+        return 1;
+    }
+    const param_type: &ASTNode = param.var_decl_type;
+    if param_type.type != ASTNodeType.AST_TYPE_POINTER {
+        return 1;
+    }
+    if param_type.type_pointer_is_ffi_pointer != 0 {
+        const pointed_ffi: &ASTNode = param_type.type_pointer_pointed_type;
+        if pointed_ffi != null && pointed_ffi.type == ASTNodeType.AST_TYPE_NAMED && pointed_ffi.type_named_name != null &&
+            (str_equals(pointed_ffi.type_named_name, "Self" as *byte) != 0 ||
+             str_equals(pointed_ffi.type_named_name, owner_name) != 0) {
+            checker_report_error(checker, fn_decl, "实例方法 receiver 必须为 &Self 或 &该类型，不能为 *T（*T 仅用于 FFI）" as *byte);
+            return 0;
+        }
+        return 1;
+    }
+    if fn_decl_has_receiver_for_owner(fn_decl, owner_name) != 0 {
+        return 1;
+    }
+    const pointed: &ASTNode = param_type.type_pointer_pointed_type;
+    if pointed != null && pointed.type == ASTNodeType.AST_TYPE_NAMED && pointed.type_named_name != null &&
+        (str_equals(pointed.type_named_name, "Self" as *byte) != 0 ||
+         str_equals(pointed.type_named_name, owner_name) != 0) {
+        checker_report_error(checker, fn_decl, "实例方法 receiver 必须为 &Self 或 &该类型" as *byte);
+        return 0;
+    }
+    return 1;
+}
+
+fn check_interface_method_self_param(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 1;
+    }
+    if fn_decl_has_interface_receiver(fn_decl) == 0 {
+        checker_report_error(checker, fn_decl, "接口方法的首参必须为 &Self；静态方法不能出现在 interface 中" as *byte);
+        return 0;
+    }
+    return check_method_self_param(checker, fn_decl);
 }
 
 // ===== 接口实现检查 =====

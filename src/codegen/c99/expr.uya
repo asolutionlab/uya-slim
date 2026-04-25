@@ -1479,6 +1479,232 @@ fn c99_async_frame_helper_name(codegen: &C99CodeGenerator, async_struct_name: &b
 }
 
 // 生成调用表达式
+fn c99_type_namespace_owner_info_from_type_node(codegen: &C99CodeGenerator, type_node: &ASTNode,
+    out_is_union: &i32, out_args: &&&ASTNode, out_count: &i32) &byte {
+    if codegen == null || type_node == null {
+        return null;
+    }
+    if out_is_union != null {
+        out_is_union[0] = 0;
+    }
+    if out_args != null {
+        out_args[0] = null;
+    }
+    if out_count != null {
+        out_count[0] = 0;
+    }
+    if type_node.type != ASTNodeType.AST_TYPE_NAMED || type_node.type_named_name == null {
+        return null;
+    }
+    if find_struct_decl_c99(codegen, type_node.type_named_name) != null {
+        if out_args != null {
+            out_args[0] = type_node.type_named_type_args;
+        }
+        if out_count != null {
+            out_count[0] = type_node.type_named_type_arg_count;
+        }
+        return type_node.type_named_name;
+    }
+    if find_union_decl_c99(codegen, type_node.type_named_name) != null {
+        if out_is_union != null {
+            out_is_union[0] = 1;
+        }
+        if out_args != null {
+            out_args[0] = type_node.type_named_type_args;
+        }
+        if out_count != null {
+            out_count[0] = type_node.type_named_type_arg_count;
+        }
+        return type_node.type_named_name;
+    }
+    if codegen.program_node != null {
+        const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, type_node.type_named_name);
+        if alias_decl != null && alias_decl.type_alias_target_type != null && alias_decl.type_alias_target_type != type_node {
+            return c99_type_namespace_owner_info_from_type_node(codegen, alias_decl.type_alias_target_type,
+                out_is_union, out_args, out_count);
+        }
+    }
+    return null;
+}
+
+fn c99_type_namespace_owner_name(codegen: &C99CodeGenerator, object: &ASTNode, out_is_union: &i32) &byte {
+    if codegen == null || object == null {
+        return null;
+    }
+    if object.type == ASTNodeType.AST_TYPE_NAMED {
+        return c99_type_namespace_owner_info_from_type_node(codegen, object, out_is_union, null, null);
+    }
+    if object.type != ASTNodeType.AST_IDENTIFIER || object.identifier_name == null {
+        return null;
+    }
+    if get_identifier_type_c(codegen, object.identifier_name) != null {
+        return null;
+    }
+    if find_struct_decl_c99(codegen, object.identifier_name) != null {
+        if out_is_union != null {
+            out_is_union[0] = 0;
+        }
+        return object.identifier_name;
+    }
+    if find_union_decl_c99(codegen, object.identifier_name) != null {
+        if out_is_union != null {
+            out_is_union[0] = 1;
+        }
+        return object.identifier_name;
+    }
+    if codegen.program_node != null {
+        const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, object.identifier_name);
+        if alias_decl != null && alias_decl.type_alias_target_type != null {
+            return c99_type_namespace_owner_info_from_type_node(codegen, alias_decl.type_alias_target_type, out_is_union, null, null);
+        }
+    }
+    return null;
+}
+
+fn c99_type_namespace_owner_type_args(codegen: &C99CodeGenerator, object: &ASTNode, out_args: &&&ASTNode, out_count: &i32) void {
+    if out_args != null {
+        out_args[0] = null;
+    }
+    if out_count != null {
+        out_count[0] = 0;
+    }
+    if codegen == null || object == null {
+        return;
+    }
+    if object.type == ASTNodeType.AST_TYPE_NAMED {
+        _ = c99_type_namespace_owner_info_from_type_node(codegen, object, null, out_args, out_count);
+        return;
+    }
+    if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null && codegen.program_node != null {
+        if get_identifier_type_c(codegen, object.identifier_name) == null {
+            const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, object.identifier_name);
+            if alias_decl != null && alias_decl.type_alias_target_type != null {
+                _ = c99_type_namespace_owner_info_from_type_node(codegen, alias_decl.type_alias_target_type, null, out_args, out_count);
+            }
+        }
+    }
+}
+
+fn c99_emit_static_method_call(codegen: &C99CodeGenerator, expr: &ASTNode,
+    owner_name: &byte, owner_is_union: i32,
+    owner_type_args: & & ASTNode, owner_type_arg_count: i32,
+    method_name: &byte) i32 {
+    if codegen == null || expr == null || owner_name == null || method_name == null {
+        return 0;
+    }
+    var method_fn: &ASTNode = null;
+    var instance_method_fn: &ASTNode = null;
+    var owner_mono_name: &byte = owner_name;
+    if owner_is_union != 0 {
+        method_fn = find_static_method_in_union_c99(codegen, owner_name, method_name);
+        if method_fn == null {
+            instance_method_fn = find_instance_method_in_union_c99(codegen, owner_name, method_name);
+            if instance_method_fn == null {
+                return 0;
+            }
+        }
+        if owner_type_args != null && owner_type_arg_count > 0 {
+            const mono_union: &byte = get_mono_union_name(codegen, owner_name, owner_type_args, owner_type_arg_count);
+            if mono_union != null {
+                owner_mono_name = mono_union;
+            }
+        }
+    } else {
+        method_fn = find_static_method_in_struct_c99(codegen, owner_name, method_name);
+        if method_fn == null {
+            instance_method_fn = find_instance_method_in_struct_c99(codegen, owner_name, method_name);
+            if instance_method_fn == null {
+                return 0;
+            }
+        }
+        if owner_type_args != null && owner_type_arg_count > 0 {
+            const mono_struct: &byte = get_mono_struct_name(codegen, owner_name, owner_type_args, owner_type_arg_count);
+            if mono_struct != null {
+                owner_mono_name = mono_struct;
+            }
+        }
+    }
+
+    var target_method_fn: &ASTNode = method_fn;
+    if target_method_fn == null {
+        target_method_fn = instance_method_fn;
+    }
+    var cname: &byte = null;
+    if expr.call_expr_type_arg_count > 0 && expr.call_expr_type_args != null && target_method_fn.fn_decl_type_param_count > 0 {
+        var mono_method_name: [byte: NAME_BUF_SIZE] = [];
+        var pos: i32 = snprintf(&mono_method_name[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, owner_mono_name as *byte, method_name as *byte);
+        var ti: i32 = 0;
+        while ti < expr.call_expr_type_arg_count && pos < NAME_BUF_SIZE - 6 {
+            pos = pos + snprintf(&mono_method_name[pos] as *byte, NAME_BUF_SIZE - pos, "_" as *byte);
+            const type_arg: &ASTNode = expr.call_expr_type_args[ti];
+            if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
+                pos = pos + snprintf(&mono_method_name[pos] as *byte, NAME_BUF_SIZE - pos, "%s" as *byte, type_arg.type_named_name as *byte);
+            }
+            ti = ti + 1;
+        }
+        cname = get_safe_c_identifier(codegen, &mono_method_name[0]);
+    } else {
+        cname = get_method_c_name(codegen, owner_mono_name, method_name);
+    }
+    if cname == null {
+        return 0;
+    }
+
+    fprintf(codegen.emit_stream as *void, "%s(" as *byte, cname as *byte);
+    if instance_method_fn != null {
+        var prefix: &byte = "" as *byte;
+        if instance_method_fn.fn_decl_params != null && instance_method_fn.fn_decl_param_count > 0 &&
+            instance_method_fn.fn_decl_params[0] != null && instance_method_fn.fn_decl_params[0].type == ASTNodeType.AST_VAR_DECL &&
+            instance_method_fn.fn_decl_params[0].var_decl_type != null &&
+            instance_method_fn.fn_decl_params[0].var_decl_type.type == ASTNodeType.AST_TYPE_POINTER {
+            prefix = "&" as *byte;
+            const receiver_type_c: &byte = get_c_type_of_expr(codegen, expr.call_expr_args[0]);
+            if receiver_type_c != null && strchr(receiver_type_c as *byte, 42) != null {
+                prefix = "" as *byte;
+            }
+        }
+        fputs(prefix as *byte, codegen.emit_stream as *void);
+        gen_expr(codegen, expr.call_expr_args[0]);
+        var i: i32 = 1;
+        while i < expr.call_expr_arg_count {
+            c99_emit_comma_space(codegen);
+            if codegen.interp_arg_temp_names[i] != null {
+                fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.emit_stream as *void);
+            } else {
+                if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
+                    if c99_string_literal_passes_as_const_byte_slice_value(instance_method_fn, i, expr.call_expr_args[i]) == 0 {
+                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    }
+                }
+                c99_emit_call_arg_expr(codegen, instance_method_fn, i, expr.call_expr_args[i]);
+            }
+            i = i + 1;
+        }
+    } else {
+        var i: i32 = 0;
+        while i < expr.call_expr_arg_count {
+            if i > 0 {
+                c99_emit_comma_space(codegen);
+            }
+            if codegen.interp_arg_temp_names[i] != null {
+                fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.emit_stream as *void);
+            } else {
+                if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
+                    if c99_string_literal_passes_as_const_byte_slice_value(method_fn, i, expr.call_expr_args[i]) == 0 {
+                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    }
+                }
+                c99_emit_call_arg_expr(codegen, method_fn, i, expr.call_expr_args[i]);
+            }
+            i = i + 1;
+        }
+    }
+    fputc(41, codegen.emit_stream as *void);
+    return 1;
+}
+
 fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const callee: &ASTNode = expr.call_expr_callee;
         const args: & & ASTNode = expr.call_expr_args;
@@ -1923,6 +2149,15 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     }
                 }
             }
+            var owner_is_union: i32 = 0;
+            const owner_name: &byte = c99_type_namespace_owner_name(codegen, obj, &owner_is_union);
+            var owner_type_args: & & ASTNode = null;
+            var owner_type_arg_count: i32 = 0;
+            c99_type_namespace_owner_type_args(codegen, obj, &owner_type_args, &owner_type_arg_count);
+            if owner_name != null &&
+                c99_emit_static_method_call(codegen, expr, owner_name, owner_is_union, owner_type_args, owner_type_arg_count, method_name) != 0 {
+                return;
+            }
             const obj_type_c: &byte = get_c_type_of_expr(codegen, obj);
             if obj_type_c != null && strstr(obj_type_c as *byte, "uya_interface_" as *byte) != null {
                 const p: *byte = strstr(obj_type_c as *byte, "uya_interface_" as *byte);
@@ -2036,7 +2271,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             if did_interface_call == 0 {
                             const union_decl: &ASTNode = find_union_decl_by_tagged_c99(codegen, &struct_name_buf[0]);
                             if union_decl != null {
-                                const method_fn: &ASTNode = find_method_in_union_c99(codegen, union_decl.union_decl_name, method_name);
+                                const method_fn: &ASTNode = find_instance_method_in_union_c99(codegen, union_decl.union_decl_name, method_name);
                                 if method_fn != null {
                                     const cname: &byte = get_method_c_name(codegen, union_decl.union_decl_name, method_name);
                                     if cname != null {
@@ -2074,7 +2309,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             }
                             }
                             if did_interface_call == 0 {
-                                const method_fn: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);
+                                const method_fn: &ASTNode = find_instance_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);
                                 if method_fn != null {
                                     // 检查是否是泛型方法调用
                                     var cname: &byte = null;

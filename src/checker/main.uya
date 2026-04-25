@@ -135,7 +135,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             while i < node.interface_decl_method_sig_count {
                 const msig: &ASTNode = node.interface_decl_method_sigs[i];
                 if msig != null {
-                    if check_method_self_param(checker, msig) == 0 {
+                    if check_interface_method_self_param(checker, msig) == 0 {
                         return 0;
                     }
                     if msig.fn_decl_is_async != 0 {
@@ -189,6 +189,16 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 checker_report_error(checker, node, "extern union 不能有方法块" as *byte);
                 return 0;
             }
+            if node.method_block_methods != null {
+                if checker_check_duplicate_method_names_in_list(checker, node, union_name, node.method_block_methods, node.method_block_method_count) == 0 {
+                    return 0;
+                }
+                if checker_check_union_method_names_vs_variants(checker, node, union_name,
+                    node.method_block_methods, node.method_block_method_count,
+                    union_decl_ptr.union_decl_variants, union_decl_ptr.union_decl_variant_count) == 0 {
+                    return 0;
+                }
+            }
             var drop_count: i32 = 0;
             if node.method_block_methods != null {
                 var i: i32 = 0;
@@ -200,7 +210,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                             if check_drop_method_signature_union(checker, m, union_name) == 0 {
                                 return 0;
                             }
-                        } else if check_method_self_param(checker, m) == 0 {
+                        } else if check_method_self_param_for_owner(checker, m, union_name) == 0 {
                             return 0;
                         }
                         if m.fn_decl_is_async != 0 && checker_check_fn_decl(checker, m) == 0 {
@@ -229,6 +239,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                 }
             }
+            if union_decl_ptr.union_decl_methods != null && node.method_block_methods != null &&
+                checker_check_duplicate_method_names_across_lists(checker, node, union_name,
+                    node.method_block_methods, node.method_block_method_count,
+                    union_decl_ptr.union_decl_methods, union_decl_ptr.union_decl_method_count) == 0 {
+                return 0;
+            }
             return 1;
         }
         if find_struct_decl_from_program(checker.program_node, node.method_block_struct_name) == null {
@@ -236,6 +252,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             return 0;
         }
         const struct_name: &byte = node.method_block_struct_name;
+        if node.method_block_methods != null {
+            if checker_check_duplicate_method_names_in_list(checker, node, struct_name, node.method_block_methods, node.method_block_method_count) == 0 {
+                return 0;
+            }
+        }
         var drop_count: i32 = 0;
         if node.method_block_methods != null {
             var i: i32 = 0;
@@ -247,7 +268,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                         if check_drop_method_signature(checker, m, struct_name) == 0 {
                             return 0;
                         }
-                    } else if check_method_self_param(checker, m) == 0 {
+                    } else if check_method_self_param_for_owner(checker, m, struct_name) == 0 {
                         return 0;
                     }
                     if m.fn_decl_is_async != 0 && checker_check_fn_decl(checker, m) == 0 {
@@ -330,11 +351,26 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             i = i + 1;
         }
         if node.union_decl_methods != null {
+            if checker_check_duplicate_method_names_in_list(checker, node, node.union_decl_name, node.union_decl_methods, node.union_decl_method_count) == 0 {
+                return 0;
+            }
+            if checker_check_union_method_names_vs_variants(checker, node, node.union_decl_name,
+                node.union_decl_methods, node.union_decl_method_count,
+                node.union_decl_variants, node.union_decl_variant_count) == 0 {
+                return 0;
+            }
             i = 0;
             while i < node.union_decl_method_count {
                 const m: &ASTNode = node.union_decl_methods[i];
-                if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_is_async != 0 {
-                    if checker_check_fn_decl(checker, m) == 0 {
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    if m.fn_decl_name != null && str_equals(m.fn_decl_name, "drop" as *byte) != 0 {
+                        if check_drop_method_signature_union(checker, m, node.union_decl_name) == 0 {
+                            return 0;
+                        }
+                    } else if check_method_self_param_for_owner(checker, m, node.union_decl_name) == 0 {
+                        return 0;
+                    }
+                    if m.fn_decl_is_async != 0 && checker_check_fn_decl(checker, m) == 0 {
                         return 0;
                     }
                 }
@@ -798,10 +834,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                             const future_t: Type = inner_err.error_union_payload_type[0];
                             if type_equals(expr_type, future_t) != 0 {
                                 return 1;
-                            }
-                        }
                     }
                 }
+            }
+        }
             }
             
             // 特殊处理：检查是否是 null 字面量（ASTNodeType.AST_IDENTIFIER 且名称为 "null"）

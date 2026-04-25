@@ -374,6 +374,23 @@ fn resolve_reachable_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &AS
             }
         }
         if module_name == null {
+            var owner_is_union_no_module: i32 = 0;
+            const owner_name_no_module: &byte = checker_type_namespace_owner_name(checker, callee.member_access_object, &owner_is_union_no_module);
+            if owner_name_no_module != null {
+                var static_method_no_module: &ASTNode = null;
+                if owner_is_union_no_module != 0 {
+                    static_method_no_module = find_static_method_in_union(checker.program_node, owner_name_no_module, callee.member_access_field_name);
+                    if static_method_no_module != null {
+                        return static_method_no_module;
+                    }
+                    return find_instance_method_in_union(checker.program_node, owner_name_no_module, callee.member_access_field_name);
+                }
+                static_method_no_module = find_static_method_in_struct(checker.program_node, owner_name_no_module, callee.member_access_field_name);
+                if static_method_no_module != null {
+                    return static_method_no_module;
+                }
+                return find_instance_method_in_struct(checker.program_node, owner_name_no_module, callee.member_access_field_name);
+            }
             return null;
         }
         var mh: u32 = hash_string(module_name);
@@ -404,6 +421,44 @@ fn resolve_reachable_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &AS
             }
             i3 = i3 + 1;
         }
+        var owner_is_union: i32 = 0;
+        const owner_name: &byte = checker_type_namespace_owner_name(checker, callee.member_access_object, &owner_is_union);
+        if owner_name != null {
+            var static_method: &ASTNode = null;
+            if owner_is_union != 0 {
+                static_method = find_static_method_in_union(checker.program_node, owner_name, callee.member_access_field_name);
+                if static_method != null {
+                    return static_method;
+                }
+                return find_instance_method_in_union(checker.program_node, owner_name, callee.member_access_field_name);
+            }
+            static_method = find_static_method_in_struct(checker.program_node, owner_name, callee.member_access_field_name);
+            if static_method != null {
+                return static_method;
+            }
+            return find_instance_method_in_struct(checker.program_node, owner_name, callee.member_access_field_name);
+        }
+    }
+    if callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+        callee.member_access_object != null &&
+        callee.member_access_field_name != null {
+        var owner_is_union2: i32 = 0;
+        const owner_name2: &byte = checker_type_namespace_owner_name(checker, callee.member_access_object, &owner_is_union2);
+        if owner_name2 != null {
+            var static_method2: &ASTNode = null;
+            if owner_is_union2 != 0 {
+                static_method2 = find_static_method_in_union(checker.program_node, owner_name2, callee.member_access_field_name);
+                if static_method2 != null {
+                    return static_method2;
+                }
+                return find_instance_method_in_union(checker.program_node, owner_name2, callee.member_access_field_name);
+            }
+            static_method2 = find_static_method_in_struct(checker.program_node, owner_name2, callee.member_access_field_name);
+            if static_method2 != null {
+                return static_method2;
+            }
+            return find_instance_method_in_struct(checker.program_node, owner_name2, callee.member_access_field_name);
+        }
     }
     return null;
 }
@@ -419,18 +474,40 @@ fn resolve_async_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &ASTNod
     if callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
         callee.member_access_object != null &&
         callee.member_access_field_name != null {
+        var owner_is_union: i32 = 0;
+        const owner_name: &byte = checker_type_namespace_owner_name(checker, callee.member_access_object, &owner_is_union);
+        if owner_name != null {
+            var static_method: &ASTNode = null;
+            if owner_is_union != 0 {
+                static_method = find_static_method_in_union(checker.program_node, owner_name, callee.member_access_field_name);
+            } else {
+                static_method = find_static_method_in_struct(checker.program_node, owner_name, callee.member_access_field_name);
+            }
+            if static_method != null && static_method.fn_decl_is_async != 0 {
+                return static_method;
+            }
+            var instance_method: &ASTNode = null;
+            if owner_is_union != 0 {
+                instance_method = find_instance_method_in_union(checker.program_node, owner_name, callee.member_access_field_name);
+            } else {
+                instance_method = find_instance_method_in_struct(checker.program_node, owner_name, callee.member_access_field_name);
+            }
+            if instance_method != null && instance_method.fn_decl_is_async != 0 {
+                return instance_method;
+            }
+        }
         var object_type: Type = checker_infer_type(checker, callee.member_access_object);
         if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
             object_type = object_type.pointer_to[0];
         }
         if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null {
-            const method_decl: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, callee.member_access_field_name);
+            const method_decl: &ASTNode = find_instance_method_in_struct(checker.program_node, object_type.struct_name, callee.member_access_field_name);
             if method_decl != null && method_decl.fn_decl_is_async != 0 {
                 return method_decl;
             }
         }
         if object_type.kind == TypeKind.TYPE_UNION && object_type.union_name != null {
-            const method_decl2: &ASTNode = find_method_in_union(checker.program_node, object_type.union_name, callee.member_access_field_name);
+            const method_decl2: &ASTNode = find_instance_method_in_union(checker.program_node, object_type.union_name, callee.member_access_field_name);
             if method_decl2 != null && method_decl2.fn_decl_is_async != 0 {
                 return method_decl2;
             }
@@ -525,6 +602,307 @@ fn checker_async_frame_poll_return_type(checker: &TypeChecker, fn_decl: &ASTNode
     result.union_type_args = ta;
     result.union_type_arg_count = 1;
     return result;
+}
+
+fn checker_type_namespace_owner_info_from_type_node(checker: &TypeChecker, type_node: &ASTNode,
+    out_is_union: &i32, out_args: &&&ASTNode, out_count: &i32) &byte {
+    if checker == null || type_node == null || checker.program_node == null {
+        return null;
+    }
+    if out_is_union != null {
+        out_is_union[0] = 0;
+    }
+    if out_args != null {
+        out_args[0] = null;
+    }
+    if out_count != null {
+        out_count[0] = 0;
+    }
+    if type_node.type != ASTNodeType.AST_TYPE_NAMED || type_node.type_named_name == null {
+        return null;
+    }
+    if find_struct_decl_from_program(checker.program_node, type_node.type_named_name) != null {
+        if out_args != null {
+            out_args[0] = type_node.type_named_type_args;
+        }
+        if out_count != null {
+            out_count[0] = type_node.type_named_type_arg_count;
+        }
+        return type_node.type_named_name;
+    }
+    if find_union_decl_from_program(checker.program_node, type_node.type_named_name) != null {
+        if out_is_union != null {
+            out_is_union[0] = 1;
+        }
+        if out_args != null {
+            out_args[0] = type_node.type_named_type_args;
+        }
+        if out_count != null {
+            out_count[0] = type_node.type_named_type_arg_count;
+        }
+        return type_node.type_named_name;
+    }
+    const alias_decl: &ASTNode = find_type_alias_from_program(checker.program_node, type_node.type_named_name);
+    if alias_decl != null && alias_decl.type_alias_target_type != null && alias_decl.type_alias_target_type != type_node {
+        return checker_type_namespace_owner_info_from_type_node(checker, alias_decl.type_alias_target_type,
+            out_is_union, out_args, out_count);
+    }
+    return null;
+}
+
+fn checker_type_namespace_owner_name(checker: &TypeChecker, object: &ASTNode, out_is_union: &i32) &byte {
+    if checker == null || object == null || checker.program_node == null {
+        return null;
+    }
+    if object.type == ASTNodeType.AST_TYPE_NAMED {
+        return checker_type_namespace_owner_info_from_type_node(checker, object, out_is_union, null, null);
+    }
+    if object.type != ASTNodeType.AST_IDENTIFIER || object.identifier_name == null {
+        return null;
+    }
+    const symbol: &Symbol = symbol_table_lookup(checker, object.identifier_name);
+    if symbol != null {
+        return null;
+    }
+    const imported_item: &ImportedItem = checker_import_table_lookup_local_name(checker, object.identifier_name);
+    if imported_item != null && imported_item.item_type == (0 - 1) {
+        return null;
+    }
+    if find_struct_decl_from_program(checker.program_node, object.identifier_name) != null {
+        if out_is_union != null {
+            out_is_union[0] = 0;
+        }
+        return object.identifier_name;
+    }
+    if find_union_decl_from_program(checker.program_node, object.identifier_name) != null {
+        if out_is_union != null {
+            out_is_union[0] = 1;
+        }
+        return object.identifier_name;
+    }
+    const alias_decl: &ASTNode = find_type_alias_from_program(checker.program_node, object.identifier_name);
+    if alias_decl != null && alias_decl.type_alias_target_type != null {
+        return checker_type_namespace_owner_info_from_type_node(checker, alias_decl.type_alias_target_type, out_is_union, null, null);
+    }
+    return null;
+}
+
+fn checker_type_namespace_owner_type_args(checker: &TypeChecker, object: &ASTNode, out_args: &&&ASTNode, out_count: &i32) void {
+    if out_args != null {
+        out_args[0] = null;
+    }
+    if out_count != null {
+        out_count[0] = 0;
+    }
+    if checker == null || object == null {
+        return;
+    }
+    if object.type == ASTNodeType.AST_TYPE_NAMED {
+        _ = checker_type_namespace_owner_info_from_type_node(checker, object, null, out_args, out_count);
+        return;
+    }
+    if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null && checker.program_node != null {
+        const symbol: &Symbol = symbol_table_lookup(checker, object.identifier_name);
+        const imported_item: &ImportedItem = checker_import_table_lookup_local_name(checker, object.identifier_name);
+        if symbol == null && (imported_item == null || imported_item.item_type != (0 - 1)) {
+            const alias_decl: &ASTNode = find_type_alias_from_program(checker.program_node, object.identifier_name);
+            if alias_decl != null && alias_decl.type_alias_target_type != null {
+                _ = checker_type_namespace_owner_info_from_type_node(checker, alias_decl.type_alias_target_type, null, out_args, out_count);
+            }
+        }
+    }
+}
+
+fn checker_substitute_method_type_with_owner(checker: &TypeChecker, method_type: &Type,
+    owner_type_params: &TypeParam, owner_type_param_count: i32,
+    owner_type_args: & & ASTNode, owner_type_arg_count: i32,
+    method_type_params: &TypeParam, method_type_param_count: i32,
+    method_type_args: & & ASTNode, method_type_arg_count: i32) Type {
+    var result: Type = make_void_type();
+    if method_type != null {
+        result = copy_type(method_type);
+    }
+    if owner_type_params != null && owner_type_param_count > 0 &&
+        owner_type_args != null && owner_type_arg_count > 0 {
+        result = substitute_generic_type(checker, copy_type(&result),
+            owner_type_params, owner_type_param_count,
+            owner_type_args, owner_type_arg_count);
+    }
+    if method_type_params != null && method_type_param_count > 0 &&
+        method_type_args != null && method_type_arg_count > 0 {
+        result = substitute_generic_type(checker, copy_type(&result),
+            method_type_params, method_type_param_count,
+            method_type_args, method_type_arg_count);
+    }
+    return result;
+}
+
+fn checker_register_mono_from_method_return_with_owner(checker: &TypeChecker, ret_type: &ASTNode,
+    owner_type_params: &TypeParam, owner_type_param_count: i32,
+    owner_type_args: & & ASTNode, owner_type_arg_count: i32,
+    method_type_params: &TypeParam, method_type_param_count: i32,
+    method_type_args: & & ASTNode, method_type_arg_count: i32) void {
+    if checker == null || ret_type == null {
+        return;
+    }
+    const owner_substituted: &ASTNode = substitute_type_ast_for_mono(checker, ret_type,
+        owner_type_params, owner_type_param_count,
+        owner_type_args, owner_type_arg_count);
+    register_mono_from_return_type_ast(checker, owner_substituted,
+        method_type_params, method_type_param_count,
+        method_type_args, method_type_arg_count);
+}
+
+fn checker_register_static_method_mono_instance(checker: &TypeChecker, owner_name: &byte,
+    owner_type_args: & & ASTNode, owner_type_arg_count: i32,
+    method_name: &byte, method_type_args: & & ASTNode, method_type_arg_count: i32) void {
+    if checker == null || owner_name == null || method_name == null {
+        return;
+    }
+    var mono_name: [byte: MAX_MONO_NAME_LEN] = [];
+    var pos: i32 = snprintf(mono_name as *byte, MAX_MONO_NAME_LEN, "%s" as *byte, owner_name as *byte);
+    var i: i32 = 0;
+    while owner_type_args != null && i < owner_type_arg_count && pos < MAX_MONO_NAME_LIMIT {
+        const type_arg_node: &ASTNode = owner_type_args[i];
+        if type_arg_node != null && type_arg_node.type == ASTNodeType.AST_TYPE_NAMED && type_arg_node.type_named_name != null {
+            pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_%s" as *byte, type_arg_node.type_named_name as *byte);
+        }
+        i = i + 1;
+    }
+    pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_%s" as *byte, method_name as *byte);
+    i = 0;
+    while method_type_args != null && i < method_type_arg_count && pos < MAX_MONO_NAME_LIMIT {
+        const type_arg_node: &ASTNode = method_type_args[i];
+        if type_arg_node != null && type_arg_node.type == ASTNodeType.AST_TYPE_NAMED && type_arg_node.type_named_name != null {
+            pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_%s" as *byte, type_arg_node.type_named_name as *byte);
+        }
+        i = i + 1;
+    }
+    register_mono_instance(checker, mono_name as &byte, method_type_args, method_type_arg_count, 1);
+}
+
+fn checker_expected_owner_value_type(checker: &TypeChecker, owner_name: &byte, owner_is_union: i32,
+    owner_type_params: &TypeParam, owner_type_param_count: i32,
+    owner_type_args: & & ASTNode, owner_type_arg_count: i32) Type {
+    var result: Type = make_void_type();
+    if owner_name == null {
+        return result;
+    }
+    if owner_is_union != 0 {
+        result = make_named_type(TypeKind.TYPE_UNION, owner_name);
+        if owner_type_args != null && owner_type_arg_count > 0 {
+            const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (owner_type_arg_count as usize)) as &Type;
+            if ta != null {
+                var i: i32 = 0;
+                while i < owner_type_arg_count {
+                    ta[i] = type_from_ast(checker, owner_type_args[i]);
+                    i = i + 1;
+                }
+                result.union_type_args = ta;
+                result.union_type_arg_count = owner_type_arg_count;
+            }
+        }
+        return result;
+    }
+    result = make_named_type(TypeKind.TYPE_STRUCT, owner_name);
+    if owner_type_args != null && owner_type_arg_count > 0 {
+        const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (owner_type_arg_count as usize)) as &Type;
+        if ta != null {
+            var i: i32 = 0;
+            while i < owner_type_arg_count {
+                ta[i] = type_from_ast(checker, owner_type_args[i]);
+                i = i + 1;
+            }
+            result.struct_type_args = ta;
+            result.struct_type_arg_count = owner_type_arg_count;
+        }
+    }
+    if owner_type_params != null && owner_type_param_count > 0 &&
+        owner_type_args != null && owner_type_arg_count > 0 {
+        result = substitute_generic_type(checker, copy_type(&result),
+            owner_type_params, owner_type_param_count,
+            owner_type_args, owner_type_arg_count);
+    }
+    return result;
+}
+
+fn checker_check_explicit_receiver_arg(checker: &TypeChecker, arg: &ASTNode, param_decl: &ASTNode,
+    owner_name: &byte, owner_is_union: i32,
+    owner_type_params: &TypeParam, owner_type_param_count: i32,
+    owner_type_args: & & ASTNode, owner_type_arg_count: i32) i32 {
+    if checker == null || arg == null || param_decl == null || param_decl.type != ASTNodeType.AST_VAR_DECL ||
+        param_decl.var_decl_type == null {
+        return 0;
+    }
+    const param_type: &ASTNode = param_decl.var_decl_type;
+    if param_type.type != ASTNodeType.AST_TYPE_POINTER || param_type.type_pointer_pointed_type == null {
+        return checker_check_expr_type(checker, arg, type_from_ast(checker, param_type));
+    }
+    const expected_owner: Type = checker_expected_owner_value_type(checker, owner_name, owner_is_union,
+        owner_type_params, owner_type_param_count,
+        owner_type_args, owner_type_arg_count);
+    if expected_owner.kind == TypeKind.TYPE_VOID {
+        return 0;
+    }
+    const arg_type: Type = checker_infer_type(checker, arg);
+    if type_equals(copy_type(&arg_type), copy_type(&expected_owner)) != 0 {
+        return 1;
+    }
+    if arg.type == ASTNodeType.AST_IDENTIFIER && arg.identifier_name != null {
+        const sym: &Symbol = symbol_table_lookup(checker, arg.identifier_name);
+        if sym != null && sym.decl_node != null && sym.decl_node.type == ASTNodeType.AST_VAR_DECL &&
+            sym.decl_node.var_decl_type != null {
+            const declared_type_node: &ASTNode = sym.decl_node.var_decl_type;
+            var named_node: &ASTNode = null;
+            if declared_type_node.type == ASTNodeType.AST_TYPE_NAMED {
+                named_node = declared_type_node;
+            } else if declared_type_node.type == ASTNodeType.AST_TYPE_POINTER &&
+                declared_type_node.type_pointer_pointed_type != null &&
+                declared_type_node.type_pointer_pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
+                named_node = declared_type_node.type_pointer_pointed_type;
+            }
+            if named_node != null && named_node.type_named_name != null &&
+                str_equals(named_node.type_named_name, owner_name) != 0 {
+                if owner_type_arg_count == 0 || named_node.type_named_type_arg_count == 0 {
+                    return 1;
+                }
+                if named_node.type_named_type_arg_count == owner_type_arg_count {
+                    var ast_args_ok: i32 = 1;
+                    var ai: i32 = 0;
+                    while ai < owner_type_arg_count {
+                        const want_arg: &ASTNode = owner_type_args[ai];
+                        const got_arg: &ASTNode = named_node.type_named_type_args[ai];
+                        if want_arg == null || got_arg == null ||
+                            want_arg.type != ASTNodeType.AST_TYPE_NAMED || got_arg.type != ASTNodeType.AST_TYPE_NAMED ||
+                            want_arg.type_named_name == null || got_arg.type_named_name == null ||
+                            str_equals(want_arg.type_named_name, got_arg.type_named_name) == 0 {
+                            ast_args_ok = 0;
+                            ai = owner_type_arg_count;
+                            break;
+                        }
+                        ai = ai + 1;
+                    }
+                    if ast_args_ok != 0 {
+                        return 1;
+                    }
+                }
+            }
+            const declared_type: Type = type_from_ast(checker, sym.decl_node.var_decl_type);
+            if type_equals(copy_type(&declared_type), copy_type(&expected_owner)) != 0 {
+                return 1;
+            }
+            if declared_type.kind == TypeKind.TYPE_POINTER && declared_type.pointer_to != null &&
+                type_equals(copy_type(&declared_type.pointer_to[0]), copy_type(&expected_owner)) != 0 {
+                return 1;
+            }
+        }
+    }
+    if arg_type.kind == TypeKind.TYPE_POINTER && arg_type.pointer_to != null {
+        if type_equals(copy_type(&arg_type.pointer_to[0]), copy_type(&expected_owner)) != 0 {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 fn checker_async_frame_check_call(checker: &TypeChecker, node: &ASTNode, frame_type: &Type, method_name: &byte) Type {
@@ -883,11 +1261,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         if union_name_for_lookup != null && checker.program_node != null {
             const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, union_name_for_lookup);
             if union_decl != null && method_name != null {
+                var found_variant_name: i32 = 0;
                 var i: i32 = 0;
                 while i < union_decl.union_decl_variant_count {
                     const v: &ASTNode = union_decl.union_decl_variants[i];
                         if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                         str_equals(v.var_decl_name, method_name) != 0 {
+                        found_variant_name = 1;
                         var variant_type: Type = type_from_ast(checker, v.var_decl_type);
                         if union_decl.union_decl_type_param_count > 0 && object != null && object.type == ASTNodeType.AST_TYPE_NAMED &&
                             object.type_named_type_args != null && object.type_named_type_arg_count > 0 {
@@ -935,9 +1315,253 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     }
                     i = i + 1;
                 }
-                checker_report_error(checker, node, "联合体上不存在该变体" as *byte);
-                return result;
+                if found_variant_name != 0 {
+                    checker_report_error(checker, node, "联合体变体构造检查失败" as *byte);
+                    return result;
+                }
             }
+        }
+        var owner_is_union: i32 = 0;
+        const owner_name: &byte = checker_type_namespace_owner_name(checker, object, &owner_is_union);
+        if owner_name != null && method_name != null {
+            var owner_type_params: &TypeParam = null;
+            var owner_type_param_count: i32 = 0;
+            var owner_type_args: & & ASTNode = null;
+            var owner_type_arg_count: i32 = 0;
+            checker_type_namespace_owner_type_args(checker, object, &owner_type_args, &owner_type_arg_count);
+
+            var static_method: &ASTNode = null;
+            var instance_method: &ASTNode = null;
+            if owner_is_union != 0 {
+                const union_decl_owner: &ASTNode = find_union_decl_from_program(checker.program_node, owner_name);
+                if union_decl_owner != null {
+                    owner_type_params = union_decl_owner.union_decl_type_params;
+                    owner_type_param_count = union_decl_owner.union_decl_type_param_count;
+                }
+                static_method = find_static_method_in_union(checker.program_node, owner_name, method_name);
+                instance_method = find_instance_method_in_union(checker.program_node, owner_name, method_name);
+            } else {
+                const struct_decl_owner: &ASTNode = find_struct_decl_from_program(checker.program_node, owner_name);
+                if struct_decl_owner != null {
+                    owner_type_params = struct_decl_owner.struct_decl_type_params;
+                    owner_type_param_count = struct_decl_owner.struct_decl_type_param_count;
+                }
+                static_method = find_static_method_in_struct(checker.program_node, owner_name, method_name);
+                instance_method = find_instance_method_in_struct(checker.program_node, owner_name, method_name);
+            }
+
+            if static_method != null {
+                if owner_type_args != null && owner_type_arg_count > 0 {
+                    register_mono_instance(checker, owner_name, owner_type_args, owner_type_arg_count, 0);
+                }
+                if static_method.fn_decl_type_param_count > 0 {
+                    const type_param_count: i32 = static_method.fn_decl_type_param_count;
+                    const type_params: &TypeParam = static_method.fn_decl_type_params;
+                    const type_args: & & ASTNode = node.call_expr_type_args;
+                    const type_arg_count: i32 = node.call_expr_type_arg_count;
+                    if type_arg_count != type_param_count || type_args == null {
+                        checker_report_error(checker, node, "静态泛型方法类型参数数量不匹配" as *byte);
+                        return result;
+                    }
+                    var ci: i32 = 0;
+                    while ci < type_param_count {
+                        const arg_type: Type = type_from_ast(checker, type_args[ci]);
+                        if check_type_param_constraints(checker, arg_type, &type_params[ci], node, type_params[ci].name) == 0 {
+                            return result;
+                        }
+                        ci = ci + 1;
+                    }
+                    checker_register_static_method_mono_instance(checker, owner_name,
+                        owner_type_args, owner_type_arg_count,
+                        method_name, type_args, type_arg_count);
+                    checker_register_mono_from_method_return_with_owner(checker, static_method.fn_decl_return_type,
+                        owner_type_params, owner_type_param_count,
+                        owner_type_args, owner_type_arg_count,
+                        type_params, type_param_count,
+                        type_args, type_arg_count);
+                    if node.call_expr_arg_count != static_method.fn_decl_param_count {
+                        checker_report_error(checker, node, "静态方法调用实参个数不匹配" as *byte);
+                        return result;
+                    }
+                    var j: i32 = 0;
+                    while j < node.call_expr_arg_count {
+                        const param_decl: &ASTNode = static_method.fn_decl_params[j];
+                        if param_decl != null && param_decl.type == ASTNodeType.AST_VAR_DECL && param_decl.var_decl_type != null {
+                            const raw_param_type: Type = type_from_ast(checker, param_decl.var_decl_type);
+                            const param_type: Type = checker_substitute_method_type_with_owner(checker, &raw_param_type,
+                                owner_type_params, owner_type_param_count,
+                                owner_type_args, owner_type_arg_count,
+                                type_params, type_param_count,
+                                type_args, type_arg_count);
+                            if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                                checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "静态方法调用" as *byte, j + 1, copy_type(&param_type));
+                                return result;
+                            }
+                        }
+                        j = j + 1;
+                    }
+                    var pi_pin_static: i32 = 0;
+                    while pi_pin_static < node.call_expr_arg_count {
+                        const arg: &ASTNode = node.call_expr_args[pi_pin_static];
+                        if arg != null {
+                            const arg_type: Type = checker_infer_type(checker, arg);
+                            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                                checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                                return result;
+                            }
+                        }
+                        pi_pin_static = pi_pin_static + 1;
+                    }
+                    const raw_return_type: Type = type_from_ast(checker, static_method.fn_decl_return_type);
+                    return checker_substitute_method_type_with_owner(checker, &raw_return_type,
+                        owner_type_params, owner_type_param_count,
+                        owner_type_args, owner_type_arg_count,
+                        type_params, type_param_count,
+                        type_args, type_arg_count);
+                }
+
+                if node.call_expr_arg_count != static_method.fn_decl_param_count {
+                    checker_report_error(checker, node, "静态方法调用实参个数不匹配" as *byte);
+                    return result;
+                }
+                var j: i32 = 0;
+                while j < node.call_expr_arg_count {
+                    const param_decl: &ASTNode = static_method.fn_decl_params[j];
+                    if param_decl != null && param_decl.type == ASTNodeType.AST_VAR_DECL && param_decl.var_decl_type != null {
+                        const raw_param_type: Type = type_from_ast(checker, param_decl.var_decl_type);
+                        const param_type: Type = checker_substitute_method_type_with_owner(checker, &raw_param_type,
+                            owner_type_params, owner_type_param_count,
+                            owner_type_args, owner_type_arg_count,
+                            null, 0, null, 0);
+                        if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                            checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "静态方法调用" as *byte, j + 1, copy_type(&param_type));
+                            return result;
+                        }
+                    }
+                    j = j + 1;
+                }
+                var pi_pin_static2: i32 = 0;
+                while pi_pin_static2 < node.call_expr_arg_count {
+                    const arg: &ASTNode = node.call_expr_args[pi_pin_static2];
+                    if arg != null {
+                        const arg_type: Type = checker_infer_type(checker, arg);
+                        if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                            checker_report_frame_move_error(checker, arg, "arg" as &byte);
+                            return result;
+                        }
+                    }
+                    pi_pin_static2 = pi_pin_static2 + 1;
+                }
+                const raw_return_type: Type = type_from_ast(checker, static_method.fn_decl_return_type);
+                return checker_substitute_method_type_with_owner(checker, &raw_return_type,
+                    owner_type_params, owner_type_param_count,
+                    owner_type_args, owner_type_arg_count,
+                    null, 0, null, 0);
+            }
+            if instance_method != null {
+                if owner_type_args != null && owner_type_arg_count > 0 {
+                    register_mono_instance(checker, owner_name, owner_type_args, owner_type_arg_count, 0);
+                }
+                if instance_method.fn_decl_type_param_count > 0 {
+                    const type_param_count: i32 = instance_method.fn_decl_type_param_count;
+                    const type_params: &TypeParam = instance_method.fn_decl_type_params;
+                    const type_args: & & ASTNode = node.call_expr_type_args;
+                    const type_arg_count: i32 = node.call_expr_type_arg_count;
+                    if type_arg_count != type_param_count || type_args == null {
+                        checker_report_error(checker, node, "实例泛型方法类型参数数量不匹配" as *byte);
+                        return result;
+                    }
+                    var ci: i32 = 0;
+                    while ci < type_param_count {
+                        const arg_type: Type = type_from_ast(checker, type_args[ci]);
+                        if check_type_param_constraints(checker, arg_type, &type_params[ci], node, type_params[ci].name) == 0 {
+                            return result;
+                        }
+                        ci = ci + 1;
+                    }
+                    checker_register_static_method_mono_instance(checker, owner_name,
+                        owner_type_args, owner_type_arg_count,
+                        method_name, type_args, type_arg_count);
+                    checker_register_mono_from_method_return_with_owner(checker, instance_method.fn_decl_return_type,
+                        owner_type_params, owner_type_param_count,
+                        owner_type_args, owner_type_arg_count,
+                        type_params, type_param_count,
+                        type_args, type_arg_count);
+                    if node.call_expr_arg_count != instance_method.fn_decl_param_count {
+                        checker_report_error(checker, node, "Type.method(...) 调用实例方法时实参个数不匹配" as *byte);
+                        return result;
+                    }
+                    if checker_check_explicit_receiver_arg(checker, node.call_expr_args[0], instance_method.fn_decl_params[0],
+                        owner_name, owner_is_union,
+                        owner_type_params, owner_type_param_count,
+                        owner_type_args, owner_type_arg_count) == 0 {
+                        checker_report_error(checker, node.call_expr_args[0], "Type.method(...) 调用实例方法时第一个参数必须是该类型实例或其引用" as *byte);
+                        return result;
+                    }
+                    var j: i32 = 1;
+                    while j < node.call_expr_arg_count {
+                        const param_decl: &ASTNode = instance_method.fn_decl_params[j];
+                        if param_decl != null && param_decl.type == ASTNodeType.AST_VAR_DECL && param_decl.var_decl_type != null {
+                            const raw_param_type: Type = type_from_ast(checker, param_decl.var_decl_type);
+                            const param_type: Type = checker_substitute_method_type_with_owner(checker, &raw_param_type,
+                                owner_type_params, owner_type_param_count,
+                                owner_type_args, owner_type_arg_count,
+                                type_params, type_param_count,
+                                type_args, type_arg_count);
+                            if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                                checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "Type.method(...) 实例方法调用" as *byte, j + 1, copy_type(&param_type));
+                                return result;
+                            }
+                        }
+                        j = j + 1;
+                    }
+                    const raw_return_type: Type = type_from_ast(checker, instance_method.fn_decl_return_type);
+                    return checker_substitute_method_type_with_owner(checker, &raw_return_type,
+                        owner_type_params, owner_type_param_count,
+                        owner_type_args, owner_type_arg_count,
+                        type_params, type_param_count,
+                        type_args, type_arg_count);
+                }
+
+                if node.call_expr_arg_count != instance_method.fn_decl_param_count {
+                    checker_report_error(checker, node, "Type.method(...) 调用实例方法时实参个数不匹配" as *byte);
+                    return result;
+                }
+                if checker_check_explicit_receiver_arg(checker, node.call_expr_args[0], instance_method.fn_decl_params[0],
+                    owner_name, owner_is_union,
+                    owner_type_params, owner_type_param_count,
+                    owner_type_args, owner_type_arg_count) == 0 {
+                    checker_report_error(checker, node.call_expr_args[0], "Type.method(...) 调用实例方法时第一个参数必须是该类型实例或其引用" as *byte);
+                    return result;
+                }
+                var j: i32 = 1;
+                while j < node.call_expr_arg_count {
+                    const param_decl: &ASTNode = instance_method.fn_decl_params[j];
+                    if param_decl != null && param_decl.type == ASTNodeType.AST_VAR_DECL && param_decl.var_decl_type != null {
+                        const raw_param_type: Type = type_from_ast(checker, param_decl.var_decl_type);
+                        const param_type: Type = checker_substitute_method_type_with_owner(checker, &raw_param_type,
+                            owner_type_params, owner_type_param_count,
+                            owner_type_args, owner_type_arg_count,
+                            null, 0, null, 0);
+                        if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                            checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "Type.method(...) 实例方法调用" as *byte, j + 1, copy_type(&param_type));
+                            return result;
+                        }
+                    }
+                    j = j + 1;
+                }
+                const raw_return_type: Type = type_from_ast(checker, instance_method.fn_decl_return_type);
+                return checker_substitute_method_type_with_owner(checker, &raw_return_type,
+                    owner_type_params, owner_type_param_count,
+                    owner_type_args, owner_type_arg_count,
+                    null, 0, null, 0);
+            }
+            if owner_is_union != 0 {
+                checker_report_error(checker, node, "联合体上不存在该方法" as *byte);
+            } else {
+                checker_report_error(checker, node, "结构体上不存在该方法" as *byte);
+            }
+            return result;
         }
         var object_type: Type = checker_infer_type(checker, callee.member_access_object);
         if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
@@ -977,7 +1601,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             return result;
         }
         if object_type.kind == TypeKind.TYPE_UNION && object_type.union_name != null && method_name != null && checker.program_node != null {
-            const m: &ASTNode = find_method_in_union(checker.program_node, object_type.union_name, method_name);
+            const m: &ASTNode = find_instance_method_in_union(checker.program_node, object_type.union_name, method_name);
             if m != null {
                 var expected_args: i32 = m.fn_decl_param_count - 1;
                 if expected_args < 0 { expected_args = 0; }
@@ -1012,7 +1636,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             return result;
         }
         if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null && method_name != null && checker.program_node != null {
-            const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, method_name);
+            const m: &ASTNode = find_instance_method_in_struct(checker.program_node, object_type.struct_name, method_name);
             if m != null {
                 // 检查是否是泛型方法调用
                 if m.fn_decl_type_param_count > 0 && node.call_expr_type_arg_count > 0 && node.call_expr_type_args != null {
@@ -1171,7 +1795,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     base_buf[bi] = 0;
                 }
                 const base_name: &byte = &base_buf[0];
-                var m_fallback: &ASTNode = find_method_in_struct(checker.program_node, base_name, method_name);
+                var m_fallback: &ASTNode = find_instance_method_in_struct(checker.program_node, base_name, method_name);
                 if m_fallback == null {
                     if find_interface_decl_from_program(checker.program_node, base_name) != null {
                         m_fallback = find_interface_method_sig(checker.program_node, base_name, method_name);
@@ -1629,7 +2253,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     
     // 联合体类型：仅允许 obj.method（方法调用）
     if object_type.kind == TypeKind.TYPE_UNION && object_type.union_name != null && checker.program_node != null {
-        const m: &ASTNode = find_method_in_union(checker.program_node, object_type.union_name, node.member_access_field_name);
+        const m: &ASTNode = find_instance_method_in_union(checker.program_node, object_type.union_name, node.member_access_field_name);
         if m != null {
             return type_from_ast(checker, m.fn_decl_return_type);
         }
@@ -1727,7 +2351,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
         return field_type;
     }
     // 字段不存在：检查是否为结构体方法
-    const m: &ASTNode = find_method_in_struct(checker.program_node, type_get_struct_name(&object_type), node.member_access_field_name);
+    const m: &ASTNode = find_instance_method_in_struct(checker.program_node, type_get_struct_name(&object_type), node.member_access_field_name);
     if m != null {
         return type_from_ast(checker, m.fn_decl_return_type);
     }

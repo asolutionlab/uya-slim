@@ -8,6 +8,18 @@
 
 **发布日期：** 待定
 
+### 语言：静态方法 `Type.method(...)`（2026-04-25）
+
+- **语言 / Checker / C99**：结构体与联合体的方法现在支持“无 `self` 参数”的静态方法，公开调用语法为 **`Type.method(...)`**。
+- **调用约束**：
+  - 所有方法都支持 `Type.method(...)` 调用。
+  - 只有首参为实例 receiver 的方法，额外支持 `obj.method(...)` 语法糖。
+  - 接口方法签名仍要求显式 `self`，不支持静态方法。
+- **冲突规则**：
+  - 同一类型中不允许静态/实例同名方法。
+  - 联合体静态方法不得与变体名冲突。
+- **测试**：新增 `tests/test_static_method_struct.uya`、`tests/test_static_method_generic_struct.uya`、`tests/test_static_method_generic_method.uya`、`tests/test_static_method_union.uya`，并补充多条误用负例。
+
 ### 标准库：`std.sql` 通用数据库抽象（2026-04-21）
 
 - **标准库**：新增 **`lib/std/sql/`**，包含 **`sql.uya`**、**`types.uya`**、**`driver.uya`**、**`db.uya`**。首版提供参考 Go `database/sql` 的核心对象模型：**`Value`**、**`NamedArg`**、**`ColumnInfo`**、**`Driver`**、**`Conn`**、**`Stmt`**、**`Rows`**、**`Tx`**、**`Result`**、高层 **`DB`** / **`Row`** 包装以及 **`db_open`**。

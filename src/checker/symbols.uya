@@ -977,12 +977,59 @@ fn checker_mark_moved_call_args(checker: &TypeChecker, node: &ASTNode) void {
         return;
     }
     if callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+        var owner_is_union: i32 = 0;
+        const owner_name: &byte = checker_type_namespace_owner_name(checker, callee.member_access_object, &owner_is_union);
+        if owner_name != null {
+            var static_method: &ASTNode = null;
+            var instance_method: &ASTNode = null;
+            if owner_is_union != 0 {
+                static_method = find_static_method_in_union(checker.program_node, owner_name, callee.member_access_field_name);
+                instance_method = find_instance_method_in_union(checker.program_node, owner_name, callee.member_access_field_name);
+            } else {
+                static_method = find_static_method_in_struct(checker.program_node, owner_name, callee.member_access_field_name);
+                instance_method = find_instance_method_in_struct(checker.program_node, owner_name, callee.member_access_field_name);
+            }
+            if static_method != null && static_method.type == ASTNodeType.AST_FN_DECL && static_method.fn_decl_params != null {
+                var i_static: i32 = 0;
+                while i_static < n && i_static < static_method.fn_decl_param_count {
+                    const arg_static: &ASTNode = args[i_static];
+                    if arg_static != null && arg_static.type == ASTNodeType.AST_IDENTIFIER {
+                        const param_static: &ASTNode = static_method.fn_decl_params[i_static];
+                        if param_static != null && param_static.type == ASTNodeType.AST_VAR_DECL && param_static.var_decl_type != null {
+                            const pt_static: Type = type_from_ast(checker, param_static.var_decl_type);
+                            if pt_static.kind == TypeKind.TYPE_STRUCT && pt_static.struct_name != null {
+                                checker_mark_moved(checker, arg_static, arg_static.identifier_name, pt_static.struct_name);
+                            }
+                        }
+                    }
+                    i_static = i_static + 1;
+                }
+                return;
+            }
+            if instance_method != null && instance_method.type == ASTNodeType.AST_FN_DECL && instance_method.fn_decl_params != null {
+                var i_inst: i32 = 1;
+                while i_inst < n && i_inst < instance_method.fn_decl_param_count {
+                    const arg_inst: &ASTNode = args[i_inst];
+                    if arg_inst != null && arg_inst.type == ASTNodeType.AST_IDENTIFIER {
+                        const param_inst: &ASTNode = instance_method.fn_decl_params[i_inst];
+                        if param_inst != null && param_inst.type == ASTNodeType.AST_VAR_DECL && param_inst.var_decl_type != null {
+                            const pt_inst: Type = type_from_ast(checker, param_inst.var_decl_type);
+                            if pt_inst.kind == TypeKind.TYPE_STRUCT && pt_inst.struct_name != null {
+                                checker_mark_moved(checker, arg_inst, arg_inst.identifier_name, pt_inst.struct_name);
+                            }
+                        }
+                    }
+                    i_inst = i_inst + 1;
+                }
+                return;
+            }
+        }
         var object_type: Type = checker_infer_type(checker, callee.member_access_object);
         if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
             object_type = object_type.pointer_to[0];
         }
         if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null && checker.program_node != null {
-            const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, callee.member_access_field_name);
+            const m: &ASTNode = find_instance_method_in_struct(checker.program_node, object_type.struct_name, callee.member_access_field_name);
             if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_params != null {
                 var i: i32 = 0;
                 while i < n && i + 1 < m.fn_decl_param_count {

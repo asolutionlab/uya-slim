@@ -824,8 +824,8 @@ fn gen_for_iterator(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode,
         struct_name_buf[k] = 0;
     }
     
-    const next_method: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], "next" as *byte);
-    const value_method: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], "value" as *byte);
+    const next_method: &ASTNode = find_instance_method_in_struct_c99(codegen, &struct_name_buf[0], "next" as *byte);
+    const value_method: &ASTNode = find_instance_method_in_struct_c99(codegen, &struct_name_buf[0], "value" as *byte);
     
     if next_method == null || value_method == null {
         return 0;
@@ -1027,7 +1027,12 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         if id == 0 {
             id = 1;
         }
-        const ret_c: &byte = c99_type_to_c(codegen, return_type);
+        var ret_c: &byte = null;
+        if codegen.current_method_struct_name != null {
+            ret_c = c99_type_to_c_with_self_opt(codegen, return_type, codegen.current_method_struct_name, 0);
+        } else {
+            ret_c = c99_type_to_c(codegen, return_type);
+        }
         const payload_node: &ASTNode = return_type.type_error_union_payload_type;
         var payload_void: i32 = 0;
         if payload_node != null && payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null && strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0 {
@@ -1070,7 +1075,14 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if return_type != null && return_type.type == ASTNodeType.AST_TYPE_ARRAY {
         is_array_return = 1;
     }
-    var ret_c: &byte = convert_array_return_type(codegen, return_type);
+    var ret_c: &byte = null;
+    if is_array_return != 0 {
+        ret_c = convert_array_return_type(codegen, return_type);
+    } else if codegen.current_method_struct_name != null {
+        ret_c = c99_type_to_c_with_self_opt(codegen, return_type, codegen.current_method_struct_name, 0);
+    } else {
+        ret_c = convert_array_return_type(codegen, return_type);
+    }
     ret_c = normalize_poll_return_type(codegen, ret_c);
     const libc_return_c_stmt: &byte = get_extern_libc_return_c_type(codegen, codegen.current_function_decl);
     if libc_return_c_stmt != null {

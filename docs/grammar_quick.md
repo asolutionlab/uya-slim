@@ -268,6 +268,26 @@ Name {
     }
 }
 
+// 实例方法参数名不限，只要首参类型是 &Self / &Name
+Name {
+    fn method2(this: &Self) ReturnType {
+        // 方法体
+    }
+}
+
+// 静态方法：无 self，使用 Type.method(...) 调用
+struct Factory {
+    value: i32
+}
+
+Factory {
+    fn new() Self {
+        return Factory{ value: 1 };
+    }
+}
+
+const f: Factory = Factory.new();
+
 // async 方法也可以写在结构体内部或外部方法块
 struct AsyncName {
     field: i32,

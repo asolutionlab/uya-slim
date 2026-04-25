@@ -507,8 +507,8 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         // 检查是否是结构体类型，且实现了迭代器接口（有 next 和 value 方法）
         if expr_type.kind == TypeKind.TYPE_STRUCT && expr_type.struct_name != null && checker.program_node != null {
             const struct_name: &byte = expr_type.struct_name;
-            const next_method: &ASTNode = find_method_in_struct(checker.program_node, struct_name, "next" as *byte);
-            const value_method: &ASTNode = find_method_in_struct(checker.program_node, struct_name, "value" as *byte);
+            const next_method: &ASTNode = find_instance_method_in_struct(checker.program_node, struct_name, "next" as *byte);
+            const value_method: &ASTNode = find_instance_method_in_struct(checker.program_node, struct_name, "value" as *byte);
             
             if next_method != null && value_method != null {
                 // 检查 next 方法签名：next(self: &Self) !void

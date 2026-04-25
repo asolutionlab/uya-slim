@@ -7045,7 +7045,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             return c99_type_to_c(codegen, field_type);
         }
         // 字段不存在，尝试查找方法
-        const method: &ASTNode = find_method_in_struct_c99(codegen, struct_decl.struct_decl_name, field_name);
+        const method: &ASTNode = find_instance_method_in_struct_c99(codegen, struct_decl.struct_decl_name, field_name);
         if method != null && method.type == ASTNodeType.AST_FN_DECL {
             var ret: &byte = ("int32_t" as *byte) as &byte;
             const saved_sp: &TypeParam = codegen.struct_type_params;
@@ -7210,6 +7210,20 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         const callee: &ASTNode = expr.call_expr_callee;
         const type_args: & & ASTNode = expr.call_expr_type_args;
         const type_arg_count: i32 = expr.call_expr_type_arg_count;
+        if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+            callee.member_access_object != null {
+            var owner_is_union: i32 = 0;
+            const owner_name: &byte = c99_type_namespace_owner_name(codegen, callee.member_access_object, &owner_is_union);
+            if owner_name != null {
+                const inferred_call: Type = checker_infer_type(codegen.checker, expr);
+                if inferred_call.kind != TypeKind.TYPE_VOID {
+                    const inferred_c: &byte = c99_type_to_c_from_inferred_type(codegen, inferred_call, expr.line, expr.column, expr.filename);
+                    if inferred_c != null {
+                        return inferred_c;
+                    }
+                }
+            }
+        }
         
         // 泛型方法调用：有类型参数
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && type_args != null && type_arg_count > 0 {
@@ -7231,7 +7245,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                         snprintf(&struct_name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "%s" as *byte, safe_obj_type as *byte);
                     }
                     // 查找方法声明
-                    const method_fn: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);
+                    const method_fn: &ASTNode = find_instance_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);
                     if method_fn != null && method_fn.type == ASTNodeType.AST_FN_DECL {
                         const return_type: &ASTNode = method_fn.fn_decl_return_type;
                         if return_type != null {
