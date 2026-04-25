@@ -1,0 +1,47 @@
+use std.runtime.entry;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+use std.fmt.tokenizer.Token;
+use std.fmt.tokenizer.tokenize_ptr_len;
+
+const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;
+
+export fn main() i32 {
+    var arena_buf: [byte: ARENA_BUFFER_SIZE] = [];
+    var arena: Arena = Arena {
+        buffer: &arena_buf[0],
+        size: 0,
+        offset: 0,
+    };
+    arena_init(&arena, &arena_buf[0], ARENA_BUFFER_SIZE as usize);
+
+    var src_buf: [byte: 32] = [];
+    src_buf[0] = 'f' as byte;
+    src_buf[1] = 'n' as byte;
+    src_buf[2] = ' ' as byte;
+    src_buf[3] = 'm' as byte;
+    src_buf[4] = 'a' as byte;
+    src_buf[5] = 'i' as byte;
+    src_buf[6] = 'n' as byte;
+    src_buf[7] = '(' as byte;
+    src_buf[8] = ')' as byte;
+    src_buf[9] = '{' as byte;
+    src_buf[10] = 'r' as byte;
+    src_buf[11] = 'e' as byte;
+    src_buf[12] = 't' as byte;
+    src_buf[13] = 'u' as byte;
+    src_buf[14] = 'r' as byte;
+    src_buf[15] = 'n' as byte;
+    src_buf[16] = ' ' as byte;
+    src_buf[17] = '1' as byte;
+    src_buf[18] = ';' as byte;
+    src_buf[19] = '}' as byte;
+
+    const tokens: &[Token] = tokenize_ptr_len(&arena, &src_buf[0], 20) catch {
+        return 2;
+    };
+    if tokens.len > 0 {
+        return 0;
+    }
+    return 3;
+}
