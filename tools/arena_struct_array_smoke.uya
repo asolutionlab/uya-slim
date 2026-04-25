@@ -1,0 +1,49 @@
+use std.runtime.entry;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+use std.mem.arena.arena_alloc;
+
+struct MiniPos {
+    offset: usize,
+    line: usize,
+    column: usize,
+}
+
+struct MiniSpan {
+    start: MiniPos,
+    end: MiniPos,
+}
+
+struct MiniToken {
+    typ: i32,
+    span: MiniSpan,
+}
+
+const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;
+
+export fn main() i32 {
+    var arena_buf: [byte: ARENA_BUFFER_SIZE] = [];
+    var arena: Arena = Arena {
+        buffer: &arena_buf[0],
+        size: 0,
+        offset: 0,
+    };
+    arena_init(&arena, &arena_buf[0], ARENA_BUFFER_SIZE as usize);
+
+    var toks: &MiniToken = arena_alloc(&arena, (@size_of(MiniToken) as usize) * 4) as &MiniToken;
+    toks[0].typ = 1;
+    toks[0].span.start.offset = 0;
+    toks[0].span.start.line = 1;
+    toks[0].span.start.column = 1;
+    toks[0].span.end.offset = 2;
+    toks[0].span.end.line = 1;
+    toks[0].span.end.column = 3;
+
+    if toks[0].typ != 1 {
+        return 2;
+    }
+    if toks[0].span.end.column != 3 {
+        return 3;
+    }
+    return 0;
+}

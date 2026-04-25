@@ -1,0 +1,104 @@
+use std.runtime.get_argc;
+use std.runtime.get_argv;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+use std.fmt.fmt.format_ptr_len;
+use std.io.file.FILE;
+use std.io.file.fopen;
+use std.io.file.fclose;
+use std.io.file.fread;
+use std.io.file.fwrite;
+use libc.write_stdout_bytes;
+use libc.stderr;
+use libc.fprintf;
+use libc.strcmp;
+
+const FMT_BUFFER_SIZE: i32 = 1024 * 1024;
+const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;
+
+fn read_file_local(filename: &byte, buffer: &byte, buffer_size: usize) i32 {
+    const file: &FILE = fopen(filename as *byte, "r" as *byte);
+    if file == null {
+        return -1;
+    }
+    const bytes_read: usize = fread(buffer as *void, 1, buffer_size - 1, file);
+    fclose(file);
+    buffer[bytes_read] = 0 as byte;
+    return bytes_read as i32;
+}
+
+fn write_file_local(path: &byte, buf: &byte, len: usize) i32 {
+    const f: &FILE = fopen(path as *byte, "w" as *byte);
+    if f == null {
+        return 1;
+    }
+    const n: usize = fwrite(buf as *void, 1, len, f);
+    fclose(f);
+    if n != len {
+        return 2;
+    }
+    return 0;
+}
+
+fn write_output(buf: &byte, len: usize) void {
+    _ = write_stdout_bytes(buf as &const byte, len);
+}
+
+export fn main() i32 {
+    const argc: i32 = get_argc();
+    if argc < 2 {
+        fprintf(stderr, "usage: uyafmt [-w] <file>\n" as *byte);
+        return 1;
+    }
+
+    var write_back: bool = false;
+    var arg_index: i32 = 1;
+    const arg1: &byte = get_argv(1);
+    if arg1 != null && strcmp(arg1 as *byte, "-w" as *byte) == 0 {
+        write_back = true;
+        arg_index = 2;
+    }
+
+    if argc <= arg_index {
+        fprintf(stderr, "usage: uyafmt [-w] <file>\n" as *byte);
+        return 1;
+    }
+
+    const filename: &byte = get_argv(arg_index);
+    if filename == null {
+        fprintf(stderr, "error: missing file\n" as *byte);
+        return 1;
+    }
+
+    var file_buf: [byte: FMT_BUFFER_SIZE] = [];
+    const file_size: i32 = read_file_local(filename, &file_buf[0], FMT_BUFFER_SIZE as usize);
+    if file_size < 0 {
+        fprintf(stderr, "error: cannot read file %s\n" as *byte, filename);
+        return 1;
+    }
+
+    var arena_buf: [byte: ARENA_BUFFER_SIZE] = [];
+    var arena: Arena = Arena {
+        buffer: &arena_buf[0],
+        size: 0,
+        offset: 0,
+    };
+    arena_init(&arena, &arena_buf[0], ARENA_BUFFER_SIZE as usize);
+
+    const out: &[byte] = format_ptr_len(&arena, &file_buf[0], file_size as usize) catch {
+        fprintf(stderr, "error: format failed\n" as *byte);
+        return 1;
+    };
+
+    if write_back {
+        const rc: i32 = write_file_local(filename, out.ptr, out.len);
+        if rc != 0 {
+            fprintf(stderr, "error: cannot write file %s\n" as *byte, filename);
+            return 1;
+        }
+        return 0;
+    }
+
+    write_output(out.ptr, out.len);
+    return 0;
+}

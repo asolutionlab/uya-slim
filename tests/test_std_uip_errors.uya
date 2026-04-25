@@ -1,0 +1,202 @@
+// test_std_uip_errors.uya - std.uip.errors 模块测试
+// TDD 模式：先写测试，再实现
+
+use std.runtime.entry;
+use std.uip.errors;
+use std.testing.assert_eq_bool;
+
+// ========== TC-ERR-01: 验证所有错误类型可被 import ==========
+test "TC-ERR-01: all error types can be imported" {
+    // 验证所有 13 个错误类型可被 use 并使用
+    const e1: error = error.UipInvalidMagic;
+    const e2: error = error.UipUnsupportedVersion;
+    const e3: error = error.UipInvalidFlags;
+    const e4: error = error.UipInvalidCodec;
+    const e5: error = error.UipInvalidFrame;
+    const e6: error = error.UipMessageTooLarge;
+    const e7: error = error.UipChecksumMismatch;
+    const e8: error = error.UipTimeout;
+    const e9: error = error.UipConnectionClosed;
+    const e10: error = error.UipResolveFailed;
+    const e11: error = error.UipTransportError;
+    const e12: error = error.UipUnsupportedTransport;
+    const e13: error = error.UipRequestIdMismatch;
+
+    // 验证每个错误可赋值（用于类型推导）
+    _ = e1; _ = e2; _ = e3; _ = e4; _ = e5;
+    _ = e6; _ = e7; _ = e8; _ = e9; _ = e10;
+    _ = e11; _ = e12; _ = e13;
+}
+
+// ========== TC-ERR-02: 验证错误可被 try-catch 捕获 ==========
+test "TC-ERR-02: errors can be caught with try-catch" {
+    // 测试 UipInvalidMagic
+    fn throw_invalid_magic() !void {
+        return error.UipInvalidMagic;
+    }
+    var caught_magic: bool = false;
+    try throw_invalid_magic() catch error.UipInvalidMagic {
+        caught_magic = true;
+    }
+    try assert_eq_bool(caught_magic, true);
+
+    // 测试 UipUnsupportedVersion
+    fn throw_unsupported_version() !void {
+        return error.UipUnsupportedVersion;
+    }
+    var caught_version: bool = false;
+    try throw_unsupported_version() catch error.UipUnsupportedVersion {
+        caught_version = true;
+    }
+    try assert_eq_bool(caught_version, true);
+
+    // 测试 UipInvalidFlags
+    fn throw_invalid_flags() !void {
+        return error.UipInvalidFlags;
+    }
+    var caught_flags: bool = false;
+    try throw_invalid_flags() catch error.UipInvalidFlags {
+        caught_flags = true;
+    }
+    try assert_eq_bool(caught_flags, true);
+
+    // 测试 UipTimeout
+    fn throw_timeout() !void {
+        return error.UipTimeout;
+    }
+    var caught_timeout: bool = false;
+    try throw_timeout() catch error.UipTimeout {
+        caught_timeout = true;
+    }
+    try assert_eq_bool(caught_timeout, true);
+
+    // 测试 UipConnectionClosed
+    fn throw_conn_closed() !void {
+        return error.UipConnectionClosed;
+    }
+    var caught_closed: bool = false;
+    try throw_conn_closed() catch error.UipConnectionClosed {
+        caught_closed = true;
+    }
+    try assert_eq_bool(caught_closed, true);
+
+    // 测试 UipResolveFailed
+    fn throw_resolve_failed() !void {
+        return error.UipResolveFailed;
+    }
+    var caught_resolve: bool = false;
+    try throw_resolve_failed() catch error.UipResolveFailed {
+        caught_resolve = true;
+    }
+    try assert_eq_bool(caught_resolve, true);
+
+    // 测试 UipTransportError
+    fn throw_transport_error() !void {
+        return error.UipTransportError;
+    }
+    var caught_transport: bool = false;
+    try throw_transport_error() catch error.UipTransportError {
+        caught_transport = true;
+    }
+    try assert_eq_bool(caught_transport, true);
+
+    // 测试 UipUnsupportedTransport
+    fn throw_unsupported_transport() !void {
+        return error.UipUnsupportedTransport;
+    }
+    var caught_unsupported_transport: bool = false;
+    try throw_unsupported_transport() catch error.UipUnsupportedTransport {
+        caught_unsupported_transport = true;
+    }
+    try assert_eq_bool(caught_unsupported_transport, true);
+
+    // 测试 UipRequestIdMismatch
+    fn throw_request_id_mismatch() !void {
+        return error.UipRequestIdMismatch;
+    }
+    var caught_request_id: bool = false;
+    try throw_request_id_mismatch() catch error.UipRequestIdMismatch {
+        caught_request_id = true;
+    }
+    try assert_eq_bool(caught_request_id, true);
+}
+
+// ========== TC-ERR-03: 验证 catch-all 捕获 ==========
+test "TC-ERR-03: catch-all captures all errors" {
+    fn throw_checksum_mismatch() !void {
+        return error.UipChecksumMismatch;
+    }
+    var caught: bool = false;
+    try throw_checksum_mismatch() catch {
+        caught = true;
+    }
+    try assert_eq_bool(caught, true);
+
+    fn throw_message_too_large() !void {
+        return error.UipMessageTooLarge;
+    }
+    caught = false;
+    try throw_message_too_large() catch {
+        caught = true;
+    }
+    try assert_eq_bool(caught, true);
+}
+
+// ========== TC-ERR-04: 错误可传播 through 函数调用 ==========
+test "TC-ERR-04: errors propagate through function calls" {
+    fn level1() !void {
+        return error.UipChecksumMismatch;
+    }
+
+    fn level2() !void {
+        try level1();
+    }
+
+    fn level3() !void {
+        try level2();
+    }
+
+    var caught: bool = false;
+    try level3() catch error.UipChecksumMismatch {
+        caught = true;
+    }
+    try assert_eq_bool(caught, true);
+}
+
+// ========== TC-ERR-05: 错误可作为函数返回值类型 ==========
+test "TC-ERR-05: errors can be used as return types" {
+    fn return_magic_error() error {
+        return error.UipInvalidMagic;
+    }
+
+    fn return_frame_error() error {
+        return error.UipInvalidFrame;
+    }
+
+    const r1: error = return_magic_error();
+    const r2: error = return_frame_error();
+    _ = r1; _ = r2;
+}
+
+// ========== TC-ERR-06: 错误在 error union 中的行为 ==========
+test "TC-ERR-06: errors work in error union types" {
+    fn try_return_bool() !bool {
+        return error.UipMessageTooLarge;
+    }
+
+    var caught: bool = false;
+    try try_return_bool() catch error.UipMessageTooLarge {
+        caught = true;
+    }
+    try assert_eq_bool(caught, true);
+
+    fn try_return_usize() !usize {
+        return error.UipTimeout;
+    }
+
+    caught = false;
+    try try_return_usize() catch error.UipTimeout {
+        caught = true;
+    }
+    try assert_eq_bool(caught, true);
+}
