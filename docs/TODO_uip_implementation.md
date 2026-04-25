@@ -48,10 +48,10 @@ Step 9:  test_tcp.uya     → TCP 联调测试
 
 ### 实现步骤
 
-- [ ] 1. 创建 `lib/std/uip/` 目录结构
-- [ ] 2. 定义 13 个 export error 类型
-- [ ] 3. 添加模块级文档注释
-- [ ] 4. 检查与现有错误定义风格的一致性
+- [x] 1. 创建 `lib/std/uip/` 目录结构
+- [x] 2. 定义 13 个 export error 类型
+- [x] 3. 添加模块级文档注释
+- [x] 4. 检查与现有错误定义风格的一致性
 
 ### 代码模板
 
@@ -165,12 +165,12 @@ export struct UipConfig {
 
 ### 实现步骤
 
-- [ ] 1. 依赖 errors.uya
-- [ ] 2. 定义所有常量（协议版本、codec、flags、msg_type）
-- [ ] 3. 定义 UipHeader 结构体（24字节内存布局）
-- [ ] 4. 定义 UipMessage 结构体
-- [ ] 5. 定义 UipConfig 结构体
-- [ ] 6. 实现 `uip_default_config()` 函数，返回默认配置
+- [x] 1. 依赖 errors.uya
+- [x] 2. 定义所有常量（协议版本、codec、flags、msg_type）
+- [x] 3. 定义 UipHeader 结构体（24字节内存布局）
+- [x] 4. 定义 UipMessage 结构体
+- [x] 5. 定义 UipConfig 结构体
+- [x] 6. 实现 `uip_default_config()` 函数，返回默认配置
 
 ### 代码模板
 
@@ -320,18 +320,18 @@ fn uip_calc_checksum(body: &[byte]) u32 {
 
 ### 实现步骤
 
-- [ ] 1. 依赖 errors.uya, types.uya
-- [ ] 2. 实现 `uip_write_u16_be` / `uip_write_u32_be`
-- [ ] 3. 实现 `uip_read_u16_be` / `uip_read_u32_be`
-- [ ] 4. 实现 `uip_fill_magic` 填充 "UIP"
-- [ ] 5. 实现 `uip_copy_body` 内存复制
-- [ ] 6. 实现 `uip_validate_flags` 校验
-- [ ] 7. 实现 `uip_validate_codec` 校验
-- [ ] 8. 实现 `uip_calc_checksum` 调用 crc32
-- [ ] 9. 实现 `uip_encode_header` 编码帧头
-- [ ] 10. 实现 `uip_decode_header` 解码帧头（含所有校验）
-- [ ] 11. 实现 `uip_encode_message` 编码完整帧
-- [ ] 12. 实现 `uip_decode_message` 解码完整帧（含 checksum）
+- [x] 1. 依赖 errors.uya, types.uya
+- [x] 2. 实现 `uip_write_u16_be` / `uip_write_u32_be`
+- [x] 3. 实现 `uip_read_u16_be` / `uip_read_u32_be`
+- [x] 4. 实现 `uip_fill_magic` 填充 "UIP"
+- [x] 5. 实现 `uip_copy_body` 内存复制
+- [x] 6. 实现 `uip_validate_flags` 校验
+- [x] 7. 实现 `uip_validate_codec` 校验
+- [x] 8. 实现 `uip_calc_checksum` 调用 crc32
+- [x] 9. 实现 `uip_encode_header` 编码帧头
+- [x] 10. 实现 `uip_decode_header` 解码帧头（含所有校验）
+- [x] 11. 实现 `uip_encode_message` 编码完整帧
+- [x] 12. 实现 `uip_decode_message` 解码完整帧（含 checksum）
 
 ### 测试用例
 
@@ -374,10 +374,10 @@ fn uip_calc_checksum(body: &[byte]) u32 {
 
 ### 实现步骤
 
-- [ ] 1. 创建 tests/ 目录
-- [ ] 2. 引入 std.uip.wire 依赖
-- [ ] 3. 实现 11 个测试用例
-- [ ] 4. 运行测试验证
+- [x] 1. 创建 tests/ 目录
+- [x] 2. 引入 std.uip.wire 依赖
+- [x] 3. 实现 11 个测试用例
+- [x] 4. 运行测试验证
 
 ---
 
@@ -420,12 +420,12 @@ export struct UipResolver {
 
 ### 实现步骤
 
-- [ ] 1. 依赖 errors.uya, std.net.dns
-- [ ] 2. 定义 UipResolver 结构体
-- [ ] 3. 实现 `uip_resolver_init` 调用 dns_client_init
-- [ ] 4. 实现 `uip_resolver_set_timeout_ms` 调用 dns_client_set_timeout_ms
-- [ ] 5. 实现 `uip_resolve_first_ipv4` 调用 dns_client_resolve_first_ipv4
-- [ ] 6. DNS 错误统一映射为 UipResolveFailed
+- [x] 1. 依赖 errors.uya, std.net.dns
+- [x] 2. 定义 UipResolver 结构体
+- [x] 3. 实现 `uip_resolver_init` 调用 dns_client_init
+- [x] 4. 实现 `uip_resolver_set_timeout_ms` 调用 dns_client_set_timeout_ms
+- [x] 5. 实现 `uip_resolve_first_ipv4` 调用 dns_client_resolve_first_ipv4
+- [x] 6. DNS 错误统一映射为 UipResolveFailed
 
 ### 测试用例
 
@@ -546,20 +546,20 @@ Offset   Size   Field
 
 ### 实现步骤
 
-- [ ] 1. 依赖 errors.uya, types.uya, wire.uya, resolver.uya, libc.syscall
-- [ ] 2. 定义 UipTcpConn / UipTcpClientConfig / UipTcpServer / UipTcpServerConfig
-- [ ] 3. 实现 `uip_fill_sockaddr_ipv4`
-- [ ] 4. 实现 `uip_tcp_set_reuseaddr`
-- [ ] 5. 实现 `uip_tcp_set_timeouts`
-- [ ] 6. 实现 `uip_tcp_read_exact`
-- [ ] 7. 实现 `uip_tcp_write_all`
-- [ ] 8. 实现 `uip_tcp_connect`
-- [ ] 9. 实现 `uip_tcp_close`
-- [ ] 10. 实现 `uip_tcp_server_listen`
-- [ ] 11. 实现 `uip_tcp_server_accept`
-- [ ] 12. 实现 `uip_tcp_server_close`
-- [ ] 13. 实现 `uip_tcp_write_message`
-- [ ] 14. 实现 `uip_tcp_read_message`
+- [x] 1. 依赖 errors.uya, types.uya, wire.uya, resolver.uya, libc.syscall
+- [x] 2. 定义 UipTcpConn / UipTcpClientConfig / UipTcpServer / UipTcpServerConfig
+- [x] 3. 实现 `uip_fill_sockaddr_ipv4`
+- [x] 4. 实现 `uip_tcp_set_reuseaddr`
+- [x] 5. 实现 `uip_tcp_set_timeouts`
+- [x] 6. 实现 `uip_tcp_read_exact`
+- [x] 7. 实现 `uip_tcp_write_all`
+- [x] 8. 实现 `uip_tcp_connect`
+- [x] 9. 实现 `uip_tcp_close`
+- [x] 10. 实现 `uip_tcp_server_listen`
+- [x] 11. 实现 `uip_tcp_server_accept`
+- [x] 12. 实现 `uip_tcp_server_close`
+- [x] 13. 实现 `uip_tcp_write_message`
+- [x] 14. 实现 `uip_tcp_read_message`
 
 ### 测试用例
 
@@ -628,14 +628,14 @@ export struct UipSession {
 
 ### 实现步骤
 
-- [ ] 1. 依赖 errors.uya, types.uya, wire.uya, tcp.uya
-- [ ] 2. 定义 UipSession 结构体
-- [ ] 3. 实现 `uip_session_init`
-- [ ] 4. 实现 `uip_session_close`
-- [ ] 5. 实现 `uip_session_next_id`（到达 MAX 后回绕到 1）
-- [ ] 6. 实现 `uip_session_request`
-- [ ] 7. 实现 `uip_session_send_ping`
-- [ ] 8. 实现 `uip_session_send_pong`
+- [x] 1. 依赖 errors.uya, types.uya, wire.uya, tcp.uya
+- [x] 2. 定义 UipSession 结构体
+- [x] 3. 实现 `uip_session_init`
+- [x] 4. 实现 `uip_session_close`
+- [x] 5. 实现 `uip_session_next_id`（到达 MAX 后回绕到 1）
+- [x] 6. 实现 `uip_session_request`
+- [x] 7. 实现 `uip_session_send_ping`
+- [x] 8. 实现 `uip_session_send_pong`
 
 ### 测试用例
 
@@ -672,10 +672,10 @@ pub use std.uip.session;  // Session 管理
 
 ### 实现步骤
 
-- [ ] 1. 创建 uip.uya 文件
-- [ ] 2. 按项目风格 re-export 所有子模块
-- [ ] 3. 添加模块级文档注释
-- [ ] 4. 验证 `use std.uip` 可访问所有导出
+- [x] 1. 创建 uip.uya 文件
+- [x] 2. 按项目风格 re-export 所有子模块
+- [x] 3. 添加模块级文档注释
+- [x] 4. 验证 `use std.uip` 可访问所有导出
 
 ---
 
@@ -712,28 +712,30 @@ fn start_server(handler: fn (fd: i32) !void) !i32 {
 
 ### 实现步骤
 
-- [ ] 1. 创建 tests/test_std_uip_tcp.uya
-- [ ] 2. 实现 start_server 辅助函数
-- [ ] 3. 实现 TC-TCP-INT-01 ~ TC-TCP-INT-06
-- [ ] 4. 运行测试验证
+- [x] 1. 创建 tests/test_std_uip_tcp.uya
+- [x] 2. 实现 start_server 辅助函数
+- [x] 3. 实现 TC-TCP-INT-01 ~ TC-TCP-INT-06
+- [x] 4. 运行测试验证
 
 ---
 
 ## 验收标准
 
+> 当前实现状态：wire 层 13 个测试通过；TCP 集成层 6 个测试通过。
+
 ### wire 层
-- [ ] 所有 11 个 wire 测试用例通过
-- [ ] magic/version/flags/codec 校验路径覆盖完整
-- [ ] checksum 计算正确（对比已知 CRC32 值）
+- [x] 所有 11 个 wire 测试用例通过
+- [x] magic/version/flags/codec 校验路径覆盖完整
+- [x] checksum 计算正确（对比已知 CRC32 值）
 
 ### TCP 层
-- [ ] loopback request/response 往返正确
-- [ ] ping/pong 往返正确
-- [ ] request_id mismatch 可被检测
-- [ ] oversized body 可被拒绝
-- [ ] 连接关闭后读返回 `UipConnectionClosed`
+- [x] loopback request/response 往返正确
+- [x] ping/pong 往返正确
+- [x] request_id mismatch 可被检测
+- [x] oversized body 可被拒绝
+- [x] 连接关闭后读返回 `UipConnectionClosed`
 
 ### 代码质量
-- [ ] `std.uip` 可作为独立模块使用
-- [ ] 不污染现有 `std.http` / `std.net.dns` 模块
-- [ ] 所有 export 函数有文档注释
+- [x] `std.uip` 可作为独立模块使用
+- [x] 不污染现有 `std.http` / `std.net.dns` 模块
+- [x] 所有 export 函数有文档注释
