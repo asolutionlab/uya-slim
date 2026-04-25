@@ -518,8 +518,12 @@ export fn http_decode_chunked_body_inplace(pr: &ParseResult) !usize {
     }
 }
 
-/// 解析 HTTP/1.1 请求；`request.body` 为指向 `buf` 内部子切片；`consumed` 为本请求在 `buf` 中占用字节数。
-export fn http_parse_request(buf: &[byte]) !ParseResult {
+/// 解析 HTTP/1.1 请求并直接填充到调用方提供的输出槽。
+/// `request.body` 为指向 `buf` 内部子切片；`consumed` 为本请求在 `buf` 中占用字节数。
+export fn http_parse_request_into(buf: &[byte], out: &ParseResult) !void {
+    if out == null {
+        return error.InvalidRequest;
+    }
     if buf.len == 0 {
         return error.IncompleteRequest;
     }
@@ -527,22 +531,15 @@ export fn http_parse_request(buf: &[byte]) !ParseResult {
     const fl: FirstLineParts = try parse_first_line(buf, 0, line1_end);
     const method_slice: &[byte] = buf[fl.method_start: fl.method_len];
     const method: Method = try parse_method_bytes(&method_slice);
-    var req: Request = Request{
-        method: Method.GET,
-        http11: true,
-        path: [],
-        path_len: 0,
-        path_params: [],
-        path_param_count: 0,
-        query: [],
-        query_count: 0,
-        headers: [],
-        header_count: 0,
-        body: buf[0: 0],
-    };
+    const req: &Request = &out.request;
     req.method = method;
     req.http11 = fl.http11;
-    try set_path_and_query(buf, fl.uri_start, fl.uri_len, &req);
+    req.path_len = 0;
+    req.path_param_count = 0;
+    req.query_count = 0;
+    req.header_count = 0;
+    req.body = buf[0: 0];
+    try set_path_and_query(buf, fl.uri_start, fl.uri_len, req);
     var pos: usize = line1_end + 2;
     while pos < buf.len {
         const le: usize = try find_crlf_or_incomplete(buf, pos);
@@ -555,12 +552,12 @@ export fn http_parse_request(buf: &[byte]) !ParseResult {
         if line_len > max_line {
             return error.HeaderTooLarge;
         }
-        try parse_one_header_line(buf, pos, le, &req);
+        try parse_one_header_line(buf, pos, le, req);
         pos = le + 2;
     }
     const body_start: usize = pos;
-    const content_length: ContentLengthInfo = find_content_length_info(&req);
-    const chunked: bool = request_has_chunked_transfer_encoding(&req);
+    const content_length: ContentLengthInfo = find_content_length_info(req);
+    const chunked: bool = request_has_chunked_transfer_encoding(req);
     if chunked && content_length.found {
         return error.InvalidRequest;
     }
@@ -568,7 +565,8 @@ export fn http_parse_request(buf: &[byte]) !ParseResult {
         var decoded_len: usize = 0;
         const wire_len: usize = try find_chunked_body_wire_len(buf, body_start, &decoded_len);
         req.body = buf[body_start: wire_len];
-        return ParseResult{ request: req, consumed: body_start + wire_len };
+        out.consumed = body_start + wire_len;
+        return;
     }
     if content_length.value > MAX_BODY_SIZE as usize {
         return error.PayloadTooLarge;
@@ -577,8 +575,29 @@ export fn http_parse_request(buf: &[byte]) !ParseResult {
         return error.IncompleteRequest;
     }
     req.body = buf[body_start: content_length.value];
-    const consumed: usize = body_start + content_length.value;
-    return ParseResult{ request: req, consumed: consumed };
+    out.consumed = body_start + content_length.value;
+}
+
+/// 解析 HTTP/1.1 请求；`request.body` 为指向 `buf` 内部子切片；`consumed` 为本请求在 `buf` 中占用字节数。
+export fn http_parse_request(buf: &[byte]) !ParseResult {
+    var out: ParseResult = ParseResult{
+        request: Request{
+            method: Method.GET,
+            http11: true,
+            path: [],
+            path_len: 0,
+            path_params: [],
+            path_param_count: 0,
+            query: [],
+            query_count: 0,
+            headers: [],
+            header_count: 0,
+            body: buf[0: 0],
+        },
+        consumed: 0,
+    };
+    try http_parse_request_into(buf, &out);
+    return out;
 }
 
 fn strip_prefix_ignore_case(hay: &[byte], prefix: &[byte]) bool {

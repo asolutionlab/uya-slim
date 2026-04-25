@@ -326,7 +326,9 @@ export extern "libc" fn _pthread_child_bootstrap(desc: &pthread_desc) void {
         sys_exit(0);
         return;
     }
-    desc.started = 1;
+    while desc.started == 0 {
+        _ = pthread_yield();
+    }
     _pthread_thread_exit(desc, _pthread_call_start(desc.start_routine, desc.arg));
 }
 
@@ -548,8 +550,7 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         };
         if tid == 0 {
             _ = sys_set_tid_address(null);
-            desc.started = 1;
-            _pthread_thread_exit(desc, _pthread_call_start(desc.start_routine, desc.arg));
+            _pthread_child_bootstrap(desc);
         }
     })
 
@@ -558,10 +559,6 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         free(stack_mem);
         free(desc as &void);
         return 1;
-    }
-
-    while desc.started == 0 {
-        _ = pthread_yield();
     }
 
     // 父线程路径
@@ -578,6 +575,7 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     thread.arg = arg;
 
     _pthread_registry_insert(tid, desc);
+    desc.started = 1;
     _ = pthread_mutex_unlock(&_pthread_create_mutex);
     return 0;
 }

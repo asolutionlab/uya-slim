@@ -10,6 +10,7 @@ use std.async_frame.AsyncFramePool;
 use std.http.types;
 use std.http.uyagin_router;
 use std.http.parse.http_parse_request;
+use std.http.parse.http_parse_request_into;
 use std.http.parse.http_decode_chunked_body_inplace;
 use std.http.parse.extract_multipart_boundary;
 use std.http.parse.parse_multipart;
@@ -19,6 +20,7 @@ use std.mem.arena.Arena;
 use std.mem.arena.arena_init;
 use std.mem.arena.arena_reset;
 use std.mem.arena.arena_alloc;
+use libc.heap;
 use libc.pthread;
 use libc.syscall;
 use libc.errno;
@@ -37,6 +39,13 @@ export const UYAGIN_REQUEST_ARENA_CAP: usize = 16384;
 const UYAGIN_TYPED_HANDLER_WORDS: usize = 32;
 const UYAGIN_TYPED_HANDLER_BYTES: usize = UYAGIN_TYPED_HANDLER_WORDS * @size_of(usize);
 const UYAGIN_OBSERVE_LOG_CAP: usize = 640;
+const UYAGIN_SHARD_THREAD_STACK_BYTES: usize = 32 * 1024 * 1024;
+// Hot-path connection frame is caller-owned by the engine slot. Keep a
+// conservative fixed backing store so slot orchestration stays independent of
+// compile-time @size_of(@frame(...)) folding.
+const UYAGIN_CONN_FRAME_BYTES: usize = 8192;
+const UYAGIN_CONN_FRAME_WORDS: usize =
+    (UYAGIN_CONN_FRAME_BYTES + @size_of(usize) - 1) / @size_of(usize);
 
 var uyagin_empty_body_raw: [byte: 1] = [0 as byte];
 
@@ -157,20 +166,9 @@ export struct RequestArena {
     }
 }
 
-struct UyaginConnTaskSlot {
-    active: i32,
-    fd: i32,
-    future: Future<!i32>,
-    waker: Waker,
-    io_registered_fd: i32,
-    accepted_ms: u64,
-    last_progress_ms: u64,
-    wait_interest: i32,
-}
-
 struct UyaginShardThreadCtx {
     engine: &Engine,
-    listener: GinListener,
+    server: HttpServer,
     controller: &EngineRunController,
     options: EngineRunOptions,
     served: i32,
@@ -389,6 +387,43 @@ export struct GinContext {
     }
 }
 
+struct UyaginConnState {
+    io_buf: [byte: UYAGIN_IO_CAP] = [],
+    parse_result: ParseResult,
+    parse_error_id: u32 = 0u32,
+    ctx: GinContext,
+    request_arena_storage: [byte: UYAGIN_REQUEST_ARENA_CAP] = [],
+    request_arena: RequestArena = RequestArena{},
+    filled: usize = 0,
+    served: i32 = 0,
+    http10_session_keep_alive: bool = false,
+
+    fn io_buf_base(self: &Self) &byte {
+        return &self.io_buf[0] as &byte;
+    }
+
+    fn prepare(self: &Self, request_arena_cap: usize) void {
+        self.request_arena.bind(&self.request_arena_storage[0] as &byte, request_arena_cap);
+        self.parse_error_id = 0u32;
+        self.filled = 0;
+        self.served = 0;
+        self.http10_session_keep_alive = false;
+    }
+}
+
+struct UyaginConnTaskSlot {
+    active: i32,
+    fd: i32,
+    future_live: i32,
+    frame_storage: [usize: UYAGIN_CONN_FRAME_WORDS] = [],
+    state: UyaginConnState,
+    waker: Waker,
+    io_registered_fd: i32,
+    accepted_ms: u64,
+    last_progress_ms: u64,
+    wait_interest: i32,
+}
+
 fn uyagin_status_for_error_id(err_id: u32) Status {
     if err_id == @error_id(error.PayloadTooLarge) {
         return Status.PayloadTooLarge;
@@ -505,7 +540,7 @@ struct UyaginRecoverFuture : Future<!i32> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -540,7 +575,7 @@ struct UyaginObserveFuture : Future<!i32> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -1686,6 +1721,13 @@ fn uyagin_deadline_expired(now_ms: u64, started_ms: u64, timeout_ms: u32) bool {
     return now_ms >= started_ms + (timeout_ms as u64);
 }
 
+fn uyagin_conn_slot_ptr(base: &UyaginConnTaskSlot, idx: i32, cap: i32) &UyaginConnTaskSlot {
+    if base == null || idx < 0 || idx >= cap {
+        return null;
+    }
+    return @ptr_from_usize(@usize_from_ptr(base as &void) + (idx as usize) * @size_of(UyaginConnTaskSlot)) as &UyaginConnTaskSlot;
+}
+
 fn uyagin_sync_slot_io_registration(loop: EventLoop, slot: &UyaginConnTaskSlot) !void {
     if slot.io_registered_fd >= 0 && slot.io_registered_fd != slot.waker.io_fd() {
         _ = loop.deregister(slot.io_registered_fd) catch {};
@@ -1713,6 +1755,7 @@ fn uyagin_cleanup_slot(loop: EventLoop, slot: &UyaginConnTaskSlot) void {
     if slot.io_registered_fd >= 0 {
         _ = loop.deregister(slot.io_registered_fd) catch {};
     }
+    uyagin_conn_slot_release(slot);
     slot.active = 0;
     slot.fd = -1;
     slot.io_registered_fd = -1;
@@ -1720,17 +1763,31 @@ fn uyagin_cleanup_slot(loop: EventLoop, slot: &UyaginConnTaskSlot) void {
     slot.last_progress_ms = 0u64;
     slot.wait_interest = 0;
     slot.waker.clear_io_interest();
+    slot.future_live = 0;
+    slot.state.parse_error_id = 0u32;
+    slot.state.filled = 0;
+    slot.state.served = 0;
+    slot.state.http10_session_keep_alive = false;
 }
 
 fn uyagin_init_slot(slot: &UyaginConnTaskSlot) void {
     slot.active = 0;
     slot.fd = -1;
-    slot.future = uyagin_ready_i32(ok<i32>(0));
+    slot.future_live = 0;
+    var i: usize = 0;
+    while i < UYAGIN_CONN_FRAME_WORDS {
+        slot.frame_storage[i] = 0usize;
+        i = i + 1;
+    }
     slot.waker = Waker{ _io_fd: -1, _event_fd: -1 };
     slot.io_registered_fd = -1;
     slot.accepted_ms = 0u64;
     slot.last_progress_ms = 0u64;
     slot.wait_interest = 0;
+    slot.state.parse_error_id = 0u32;
+    slot.state.filled = 0;
+    slot.state.served = 0;
+    slot.state.http10_session_keep_alive = false;
 }
 
 fn uyagin_server_set_reuseport(fd: i32) void {
@@ -1769,7 +1826,7 @@ fn uyagin_shard_thread_main(arg: &void) &void {
         return null;
     };
     const loop: EventLoop = loop_ok;
-    const served: !i32 = uyagin_engine_run(ctx.engine, &ctx.listener.server, loop, &scheduler, &ctx.options, ctx.controller);
+    const served: !i32 = uyagin_engine_run(ctx.engine, &ctx.server, loop, &scheduler, &ctx.options, ctx.controller);
     ctx.served = served catch {
         ctx.failed = 1;
         return null;
@@ -1802,14 +1859,21 @@ fn uyagin_engine_run_shards(engine: &Engine, listener: &GinListener, opts: &Engi
 
     var threads: [pthread_t: 31] = [];
     var ctxs: [UyaginShardThreadCtx: 31] = [];
+    var thread_attr: pthread_attr_t = pthread_attr_t{ stack_size: 0, detached: 0 };
+    _ = pthread_attr_init(&thread_attr);
+    _ = pthread_attr_setstacksize(&thread_attr, UYAGIN_SHARD_THREAD_STACK_BYTES);
+    defer {
+        _ = pthread_attr_destroy(&thread_attr);
+    }
     var i: i32 = 0;
     while i < worker_count {
-        var shard_listener: GinListener = GinListener{ server: listener.server };
+        var shard_server: HttpServer = listener.server;
         if options.reuse_port {
-            shard_listener.server = try uyagin_listen_loopback_server(listener.server.port, options.listen_backlog, true);
+            shard_server = try uyagin_listen_loopback_server(listener.server.port, options.listen_backlog, true);
         }
         ctxs[i as usize].engine = engine;
-        ctxs[i as usize].listener.server = shard_listener.server;
+        ctxs[i as usize].server.listen_fd = shard_server.listen_fd;
+        ctxs[i as usize].server.port = shard_server.port;
         ctxs[i as usize].controller = controller;
         ctxs[i as usize].options.max_connections = options.max_connections;
         ctxs[i as usize].options.accept_batch = options.accept_batch;
@@ -1826,10 +1890,10 @@ fn uyagin_engine_run_shards(engine: &Engine, listener: &GinListener, opts: &Engi
         ctxs[i as usize].options.mode = options.mode;
         ctxs[i as usize].served = 0;
         ctxs[i as usize].failed = 0;
-        const cret: i32 = pthread_create(&threads[i as usize], null as &const pthread_attr_t, &uyagin_shard_thread_main as &void, (&ctxs[i as usize]) as &void);
+        const cret: i32 = pthread_create(&threads[i as usize], &thread_attr as &const pthread_attr_t, &uyagin_shard_thread_main as &void, (&ctxs[i as usize]) as &void);
         if cret != 0 {
             if options.reuse_port {
-                http_server_close(&ctxs[i as usize].listener.server);
+                http_server_close(&ctxs[i as usize].server);
             }
             return error.InvalidRequest;
         }
@@ -1851,7 +1915,7 @@ fn uyagin_engine_run_shards(engine: &Engine, listener: &GinListener, opts: &Engi
         }
         total = total + ctxs[i as usize].served;
         if options.reuse_port {
-            http_server_close(&ctxs[i as usize].listener.server);
+            http_server_close(&ctxs[i as usize].server);
         }
         i = i + 1;
     }
@@ -1863,6 +1927,7 @@ fn uyagin_engine_run(engine: &Engine, srv: &HttpServer, loop: EventLoop, schedul
         return error.InvalidRequest;
     }
     const options: EngineRunOptions = uyagin_run_options_normalize(*opts);
+    const slot_cap: i32 = options.max_connections;
     const alloc: IAllocator = *scheduler_frame_pool(scheduler);
     const old_alloc: &IAllocator = get_async_frame_allocator();
     set_async_frame_allocator(&alloc);
@@ -1872,14 +1937,38 @@ fn uyagin_engine_run(engine: &Engine, srv: &HttpServer, loop: EventLoop, schedul
         uyagin_server_set_reuseport(srv.listen_fd);
     }
 
-    var slots: [UyaginConnTaskSlot: UYAGIN_RUN_CONN_SLOT_CAP] = [];
+    const slots_bytes: usize = (slot_cap as usize) * @size_of(UyaginConnTaskSlot);
+    const slots: &UyaginConnTaskSlot = malloc(slots_bytes) as &UyaginConnTaskSlot;
+    if slots == null {
+        return error.AllocOutOfMemory;
+    }
+    defer {
+        var cleanup_idx: i32 = 0;
+        while cleanup_idx < slot_cap {
+            const slot: &UyaginConnTaskSlot = uyagin_conn_slot_ptr(slots, cleanup_idx, slot_cap);
+            if slot != null && slot.active != 0 {
+                if slot.fd >= 0 {
+                    _ = sys_shutdown(slot.fd, SHUT_WR) catch {};
+                    _ = sys_close(slot.fd) catch {};
+                }
+                uyagin_cleanup_slot(loop, slot);
+            }
+            cleanup_idx = cleanup_idx + 1;
+        }
+        free(slots as &void);
+    }
+
     var i: i32 = 0;
-    while i < UYAGIN_RUN_CONN_SLOT_CAP {
-        uyagin_init_slot(&slots[i as usize]);
+    while i < slot_cap {
+        const slot: &UyaginConnTaskSlot = uyagin_conn_slot_ptr(slots, i, slot_cap);
+        if slot != null {
+            uyagin_init_slot(slot);
+        }
         i = i + 1;
     }
 
     var accept_future: Future<!i32> = uyagin_accept_future(srv.listen_fd);
+    defer { accept_future.release(); }
     var accept_waker: Waker = Waker{ _io_fd: -1, _event_fd: -1 };
     var accept_registered_fd: i32 = -1;
     var served_total: i32 = 0;
@@ -1915,12 +2004,12 @@ fn uyagin_engine_run(engine: &Engine, srv: &HttpServer, loop: EventLoop, schedul
                         const fd: i32 = result.value;
                         var assigned: bool = false;
                         var sidx: i32 = 0;
-                        while sidx < UYAGIN_RUN_CONN_SLOT_CAP {
-                            const slot: &UyaginConnTaskSlot = &slots[sidx as usize];
-                            if slot.active == 0 {
+                        while sidx < slot_cap {
+                            const slot: &UyaginConnTaskSlot = uyagin_conn_slot_ptr(slots, sidx, slot_cap);
+                            if slot != null && slot.active == 0 {
                                 slot.active = 1;
                                 slot.fd = fd;
-                                slot.future = engine.serve_conn(fd, scheduler);
+                                uyagin_conn_slot_start(slot, engine, fd, scheduler, &options);
                                 slot.waker = Waker{ _io_fd: -1, _event_fd: -1 };
                                 slot.io_registered_fd = -1;
                                 slot.accepted_ms = now_ms;
@@ -1963,9 +2052,9 @@ fn uyagin_engine_run(engine: &Engine, srv: &HttpServer, loop: EventLoop, schedul
         }
 
         i = 0;
-        while i < UYAGIN_RUN_CONN_SLOT_CAP {
-            const slot: &UyaginConnTaskSlot = &slots[i as usize];
-            if slot.active == 0 {
+        while i < slot_cap {
+            const slot: &UyaginConnTaskSlot = uyagin_conn_slot_ptr(slots, i, slot_cap);
+            if slot == null || slot.active == 0 {
                 i = i + 1;
                 continue;
             }
@@ -1986,7 +2075,7 @@ fn uyagin_engine_run(engine: &Engine, srv: &HttpServer, loop: EventLoop, schedul
 
             slot.waker.reset();
             slot.waker.clear_io_interest();
-            const p: Poll<!i32> = slot.future.poll(&slot.waker);
+            const p: Poll<!i32> = uyagin_conn_slot_poll(slot, &slot.waker);
             match p {
                 .Ready(result) => {
                     var served: i32 = 0;
@@ -2392,6 +2481,9 @@ export @async_fn fn uyagin_write_context_response_async(ctx: &GinContext, status
 }
 
 fn uyagin_error_from_error_id_i32(err_id: u32) !i32 {
+    if err_id == @error_id(error.ConnectionClosed) {
+        return error.ConnectionClosed;
+    }
     if err_id == @error_id(error.InvalidRequest) {
         return error.InvalidRequest;
     }
@@ -3048,7 +3140,7 @@ struct UyaginConnReadParseFuture : Future<!ParseResult> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -3065,6 +3157,105 @@ fn uyagin_conn_read_parse_future(fd: i32, base: &byte, cap: usize, filled: &usiz
 /// 异步读到一个完整 HTTP 请求；返回 ParseResult，consumed 可用于 keep-alive 管线请求搬移。
 export fn uyagin_conn_read_parse_async(fd: i32, base: &byte, cap: usize, filled: &usize) Future<!ParseResult> {
     return uyagin_conn_read_parse_future(fd, base, cap, filled);
+}
+
+struct UyaginConnReadParseIntoFuture : Future<!usize> {
+    fd: i32,
+    base: &byte,
+    cap: usize,
+    filled: &usize,
+    out: &ParseResult,
+    err_out: &u32,
+    nonblocking_ready: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        if self.nonblocking_ready == 0 {
+            const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
+            const flags: i32 = flags_result catch {
+                *self.err_out = @error_id(error.ConnectionClosed);
+                return async_poll_ready_ok_usize(0);
+            };
+            if (flags & O_NONBLOCK) == 0 {
+                const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
+                _ = set_result catch {
+                    *self.err_out = @error_id(error.ConnectionClosed);
+                    return async_poll_ready_ok_usize(0);
+                };
+            }
+            self.nonblocking_ready = 1;
+        }
+
+        while true {
+            const cur: usize = *self.filled;
+            if cur > self.cap {
+                *self.err_out = @error_id(error.PayloadTooLarge);
+                return async_poll_ready_ok_usize(0);
+            }
+            const sl: &[byte] = self.base[0: cur];
+            const parsed: !void = http_parse_request_into(sl, self.out);
+            match parsed {
+                error.IncompleteRequest => {
+                    if cur >= self.cap {
+                        return Poll<!usize>.Ready(error.PayloadTooLarge);
+                    }
+                    var read_len: usize = self.cap - cur;
+                    if read_len > 8192 {
+                        read_len = 8192;
+                    }
+                    const read_dst: &byte = @ptr_from_usize(@usize_from_ptr(self.base as &void) + cur) as &byte;
+                    const read_result: !isize = sys_read(self.fd, read_dst as *byte, read_len);
+                    const n: isize = read_result catch |err| {
+                        const err_id: i32 = @error_id(err) as i32;
+                        if err_id == EINTR {
+                            continue;
+                        }
+                        if err_id == EAGAIN || err_id == EWOULDBLOCK {
+                            waker.wait_readable(self.fd);
+                            return Poll<!usize>.Pending({});
+                        }
+                        *self.err_out = @error_id(error.ConnectionClosed);
+                        return async_poll_ready_ok_usize(0);
+                    };
+                    if n <= 0 {
+                        *self.err_out = @error_id(error.ConnectionClosed);
+                        return async_poll_ready_ok_usize(0);
+                    }
+                    *self.filled = cur + (n as usize);
+                },
+                else => {
+                    _ = parsed catch |err| {
+                        *self.err_out = @error_id(err);
+                        return async_poll_ready_ok_usize(0);
+                    };
+                    if request_has_chunked_transfer_encoding(&self.out.request) {
+                        const decode_result: !usize = http_decode_chunked_body_inplace(self.out);
+                        _ = decode_result catch {
+                            *self.err_out = decode_result.error_id;
+                            return async_poll_ready_ok_usize(0);
+                        };
+                    }
+                    *self.err_out = 0u32;
+                    return async_poll_ready_ok_usize(self.out.consumed);
+                },
+            };
+        }
+    }
+
+    fn release(self: &Self) void {
+        async_box_free_current(self as &byte);
+    }
+}
+
+fn uyagin_conn_read_parse_into_future(fd: i32, base: &byte, cap: usize, filled: &usize, out: &ParseResult, err_out: &u32) Future<!usize> {
+    return UyaginConnReadParseIntoFuture{
+        fd: fd,
+        base: base,
+        cap: cap,
+        filled: filled,
+        out: out,
+        err_out: err_out,
+        nonblocking_ready: 0,
+    };
 }
 
 struct UyaginAcceptFuture : Future<!i32> {
@@ -3106,7 +3297,7 @@ struct UyaginAcceptFuture : Future<!i32> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -3122,61 +3313,99 @@ export @async_fn fn uyagin_accept_async(srv: &HttpServer) Future<!i32> {
     return fd;
 }
 
-/// 在单连接上运行 keep-alive 请求循环。调用者可用 scheduler + EventLoop 驱动该 Future。
-export @async_fn fn uyagin_serve_conn(engine: &Engine, fd: i32, scheduler: &Scheduler) Future<!i32> {
-    if engine == null || fd < 0 || scheduler == null {
+@align(8)
+@async_fn fn uyagin_serve_conn_slot_async(engine: &Engine, fd: i32, scheduler: &Scheduler, conn_state: &UyaginConnState) Future<!i32> {
+    if engine == null || fd < 0 || scheduler == null || conn_state == null {
         return error.InvalidRequest;
     }
     const run_options: EngineRunOptions = uyagin_run_options_normalize(engine.run_options);
     defer {
         _ = sys_close(fd) catch {};
     }
-    var buf: [byte: UYAGIN_IO_CAP] = [];
-    var request_arena_storage: [byte: UYAGIN_REQUEST_ARENA_CAP] = [];
-    var request_arena: RequestArena = RequestArena{};
-    request_arena.bind(&request_arena_storage[0] as &byte, run_options.request_arena_cap);
-    var filled: usize = 0;
-    var served: i32 = 0;
-    var http10_session_keep_alive: bool = false;
 
     while true {
-        request_arena.begin();
+        conn_state.request_arena.begin();
         var persist: bool = false;
         var aborted: bool = false;
-        var consumed: usize = 0;
-        var session_keep_alive: bool = http10_session_keep_alive;
+        var session_keep_alive: bool = conn_state.http10_session_keep_alive;
         {
             defer {
-                uyagin_collect_metrics(engine, scheduler, &request_arena);
-                request_arena.reset();
+                uyagin_collect_metrics(engine, scheduler, &conn_state.request_arena);
+                conn_state.request_arena.reset();
             }
-            const pr: ParseResult = try @await uyagin_conn_read_parse_async(fd, &buf[0] as &byte, run_options.buffer_cap, &filled);
-            persist = request_wants_persistent_with_session(&pr.request, http10_session_keep_alive);
-            var req_alloc: &IAllocator = request_arena.allocator();
+            conn_state.parse_error_id = 0u32;
+            const consumed: usize = try @await uyagin_conn_read_parse_into_future(
+                fd,
+                conn_state.io_buf_base(),
+                run_options.buffer_cap,
+                &conn_state.filled,
+                &conn_state.parse_result,
+                &conn_state.parse_error_id,
+            );
+            if conn_state.parse_error_id != 0u32 {
+                const parse_err_value: i32 = try uyagin_error_from_error_id_i32(conn_state.parse_error_id);
+                return parse_err_value;
+            }
+            persist = request_wants_persistent_with_session(&conn_state.parse_result.request, conn_state.http10_session_keep_alive);
+            var req_alloc: &IAllocator = conn_state.request_arena.allocator();
             if engine.allocator != null {
                 req_alloc = engine.allocator;
             }
-            var ctx: GinContext = uyagin_context_new_with_request_arena(fd, &pr.request, persist, req_alloc, &request_arena);
-            const handle_future: Future<!i32> = engine.handle(&ctx);
+            conn_state.ctx = uyagin_context_new_with_request_arena(fd, &conn_state.parse_result.request, persist, req_alloc, &conn_state.request_arena);
+            const handle_future: Future<!i32> = engine.handle(&conn_state.ctx);
             const handled: i32 = try @await handle_future;
             _ = handled;
-            served = served + 1;
-            aborted = uyagin_context_aborted(&ctx);
-            consumed = pr.consumed;
-            if !pr.request.http11 {
+            conn_state.served = conn_state.served + 1;
+            aborted = uyagin_context_aborted(&conn_state.ctx);
+            if !conn_state.parse_result.request.http11 {
                 session_keep_alive = true;
             }
+            if !persist || aborted {
+                break;
+            }
+            http_connbuf_shift(conn_state.io_buf_base(), &conn_state.filled, consumed);
         }
-        http10_session_keep_alive = session_keep_alive;
-
-        if !persist {
-            break;
-        }
-        if aborted {
-            break;
-        }
-        http_connbuf_shift(&buf[0] as &byte, &filled, consumed);
+        conn_state.http10_session_keep_alive = session_keep_alive;
     }
 
-    return served;
+    return conn_state.served;
+}
+
+/// 在单连接上运行 keep-alive 请求循环。调用者可用 scheduler + EventLoop 驱动该 Future。
+export @async_fn fn uyagin_serve_conn(engine: &Engine, fd: i32, scheduler: &Scheduler) Future<!i32> {
+    if engine == null || fd < 0 || scheduler == null {
+        return error.InvalidRequest;
+    }
+    const run_options: EngineRunOptions = uyagin_run_options_normalize(engine.run_options);
+    var state: UyaginConnState = UyaginConnState{};
+    state.prepare(run_options.request_arena_cap);
+    return try @await uyagin_serve_conn_slot_async(engine, fd, scheduler, &state);
+}
+
+fn uyagin_conn_slot_frame(slot: &UyaginConnTaskSlot) &@frame(uyagin_serve_conn_slot_async) {
+    return @ptr_from_usize(@usize_from_ptr(&slot.frame_storage[0] as &void)) as &@frame(uyagin_serve_conn_slot_async);
+}
+
+fn uyagin_conn_slot_release(slot: &UyaginConnTaskSlot) void {
+    if slot == null || slot.future_live == 0 {
+        return;
+    }
+    uyagin_conn_slot_frame(slot).stop();
+    slot.future_live = 0;
+}
+
+fn uyagin_conn_slot_start(slot: &UyaginConnTaskSlot, engine: &Engine, fd: i32, scheduler: &Scheduler, opts: &EngineRunOptions) void {
+    if slot == null || engine == null || scheduler == null || opts == null {
+        return;
+    }
+    slot.state.prepare(opts.request_arena_cap);
+    uyagin_conn_slot_frame(slot).start(engine, fd, scheduler, &slot.state);
+    slot.future_live = 1;
+}
+
+fn uyagin_conn_slot_poll(slot: &UyaginConnTaskSlot, waker: &Waker) Poll<!i32> {
+    if slot == null || slot.future_live == 0 {
+        return async_poll_ready_ok_i32(0);
+    }
+    return uyagin_conn_slot_frame(slot).poll(waker);
 }
