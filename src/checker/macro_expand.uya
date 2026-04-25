@@ -3705,11 +3705,13 @@ export fn build_from_json_reflect_body(checker: &TypeChecker, type_arg: &ASTNode
 
 // 递归展开宏调用（简化版本）
 fn expand_macros_in_node_simple(checker: &TypeChecker, node_ptr: & & ASTNode) void {
-    if checker == null || node_ptr == null || *node_ptr == null {
+    if checker == null || node_ptr == null {
         return;
     }
-    
-    const node: &ASTNode = *node_ptr;
+    const node: &ASTNode = node_ptr[0];
+    if @usize_from_ptr(node as &void) == 0usize {
+        return;
+    }
     
     // 如果是函数调用，检查是否为宏调用
     if node.type == ASTNodeType.AST_CALL_EXPR {

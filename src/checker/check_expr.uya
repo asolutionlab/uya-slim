@@ -1243,11 +1243,11 @@ fn checker_current_fn_returns_future_error_union(checker: &TypeChecker) i32 {
         return 1;
     }
     if ret.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret.type_error_union_payload_type != null {
-        const payload: &ASTNode = ret.type_error_union_payload_type;
-        if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_name != null &&
-            str_equals(payload.type_named_name, "Future" as *byte) != 0 &&
-            payload.type_named_type_arg_count == 1 && payload.type_named_type_args != null &&
-            payload.type_named_type_args[0] != null {
+        const future_payload_ast: &ASTNode = ret.type_error_union_payload_type;
+        if future_payload_ast.type == ASTNodeType.AST_TYPE_NAMED && future_payload_ast.type_named_name != null &&
+            str_equals(future_payload_ast.type_named_name, "Future" as *byte) != 0 &&
+            future_payload_ast.type_named_type_arg_count == 1 && future_payload_ast.type_named_type_args != null &&
+            future_payload_ast.type_named_type_args[0] != null {
             return 1;
         }
     }
@@ -1850,17 +1850,17 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             inner_err = operand_type.struct_type_args;
         } else if operand_type.kind == TypeKind.TYPE_ERROR_UNION && operand_type.error_union_payload_type != null {
             // !Future<T>：取出 payload Future<T>，@await 结果为 !T（先解包 ! 再 await，语义上等价）
-            const payload: Type = operand_type.error_union_payload_type[0];
-            if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
-                (str_equals(payload.interface_name, "Future" as *byte) != 0 ||
-                 (strlen(payload.interface_name as *byte) >= 6 && strncmp(payload.interface_name as *byte, "Future" as *byte, 6) == 0)) &&
-                payload.interface_type_arg_count == 1 && payload.interface_type_args != null {
-                inner_err = payload.interface_type_args;
-            } else if payload.kind == TypeKind.TYPE_STRUCT && payload.struct_name != null &&
-                (str_equals(payload.struct_name, "Future" as *byte) != 0 ||
-                 (strlen(payload.struct_name as *byte) >= 6 && strncmp(payload.struct_name as *byte, "Future" as *byte, 6) == 0)) &&
-                payload.struct_type_arg_count == 1 && payload.struct_type_args != null {
-                inner_err = payload.struct_type_args;
+            const awaited_payload_type: Type = operand_type.error_union_payload_type[0];
+            if awaited_payload_type.kind == TypeKind.TYPE_INTERFACE && awaited_payload_type.interface_name != null &&
+                (str_equals(awaited_payload_type.interface_name, "Future" as *byte) != 0 ||
+                 (strlen(awaited_payload_type.interface_name as *byte) >= 6 && strncmp(awaited_payload_type.interface_name as *byte, "Future" as *byte, 6) == 0)) &&
+                awaited_payload_type.interface_type_arg_count == 1 && awaited_payload_type.interface_type_args != null {
+                inner_err = awaited_payload_type.interface_type_args;
+            } else if awaited_payload_type.kind == TypeKind.TYPE_STRUCT && awaited_payload_type.struct_name != null &&
+                (str_equals(awaited_payload_type.struct_name, "Future" as *byte) != 0 ||
+                 (strlen(awaited_payload_type.struct_name as *byte) >= 6 && strncmp(awaited_payload_type.struct_name as *byte, "Future" as *byte, 6) == 0)) &&
+                awaited_payload_type.struct_type_arg_count == 1 && awaited_payload_type.struct_type_args != null {
+                inner_err = awaited_payload_type.struct_type_args;
             }
             if inner_err == null {
                 checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
@@ -2786,6 +2786,16 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         if union_name_for_lookup != null && checker != null && checker.program_node != null {
             const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, union_name_for_lookup);
             if union_decl != null {
+                var ctor_type_args: & & ASTNode = null;
+                var ctor_type_arg_count: i32 = 0;
+                if object != null && object.type == ASTNodeType.AST_TYPE_NAMED &&
+                    object.type_named_type_args != null && object.type_named_type_arg_count > 0 {
+                    ctor_type_args = object.type_named_type_args;
+                    ctor_type_arg_count = object.type_named_type_arg_count;
+                } else if expr.call_expr_type_args != null && expr.call_expr_type_arg_count > 0 {
+                    ctor_type_args = expr.call_expr_type_args;
+                    ctor_type_arg_count = expr.call_expr_type_arg_count;
+                }
                 const variant_name: &byte = callee.member_access_field_name;
                 if variant_name != null && union_decl.union_decl_variants != null {
                     var i: i32 = 0;
@@ -2803,10 +2813,36 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                                     allow_empty_block_arg = 1;
                                 }
                                 if expr.call_expr_arg_count == 0 || allow_empty_block_arg != 0 {
-                                    return make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
+                                    var result_void: Type = make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
+                                    if ctor_type_args != null && ctor_type_arg_count > 0 {
+                                        const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (ctor_type_arg_count as usize)) as &Type;
+                                        if ta != null {
+                                            var tai: i32 = 0;
+                                            while tai < ctor_type_arg_count {
+                                                ta[tai] = type_from_ast(checker, ctor_type_args[tai]);
+                                                tai = tai + 1;
+                                            }
+                                            result_void.union_type_args = ta;
+                                            result_void.union_type_arg_count = ctor_type_arg_count;
+                                        }
+                                    }
+                                    return result_void;
                                 }
                             } else if expr.call_expr_arg_count == 1 {
-                                return make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
+                                var result_val: Type = make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
+                                if ctor_type_args != null && ctor_type_arg_count > 0 {
+                                    const ta2: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (ctor_type_arg_count as usize)) as &Type;
+                                    if ta2 != null {
+                                        var tai2: i32 = 0;
+                                        while tai2 < ctor_type_arg_count {
+                                            ta2[tai2] = type_from_ast(checker, ctor_type_args[tai2]);
+                                            tai2 = tai2 + 1;
+                                        }
+                                        result_val.union_type_args = ta2;
+                                        result_val.union_type_arg_count = ctor_type_arg_count;
+                                    }
+                                }
+                                return result_val;
                             }
                         }
                         i = i + 1;

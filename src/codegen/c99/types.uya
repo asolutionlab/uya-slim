@@ -7073,7 +7073,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             if ptr_type == null {
                 return ("int32_t" as *byte) as &byte;
             }
-            const asterisk: *byte = strchr(ptr_type as *byte, 42);
+            const asterisk: *byte = strrchr(ptr_type as *byte, 42);
             if asterisk == null {
                 return ("int32_t" as *byte) as &byte;
             }

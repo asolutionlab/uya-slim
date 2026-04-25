@@ -1832,10 +1832,16 @@ fn parser_parse_function(parser: &Parser) &ASTNode {
     // 期望函数名称
     const fn_name_val: &byte = parser.current_token.value;
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        return null;
+        if parser_match(parser, TokenType.TOKEN_UNION) == 0 {
+            return null;
+        }
     }
     
-    const fn_name: &byte = arena_strdup(parser.arena, fn_name_val);
+    var fn_name_src: &byte = fn_name_val;
+    if parser_match(parser, TokenType.TOKEN_UNION) != 0 {
+        fn_name_src = "union" as &byte;
+    }
+    const fn_name: &byte = arena_strdup(parser.arena, fn_name_src);
     if fn_name == null {
         return null;
     }
@@ -2305,9 +2311,15 @@ fn parser_parse_extern_function_after_extern(parser: &Parser, extern_lib_name: &
         return null;
     }
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        return null;
+        if parser_match(parser, TokenType.TOKEN_UNION) == 0 {
+            return null;
+        }
     }
-    const fn_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    var fn_name_src: &byte = parser.current_token.value;
+    if parser_match(parser, TokenType.TOKEN_UNION) != 0 {
+        fn_name_src = "union" as &byte;
+    }
+    const fn_name: &byte = arena_strdup(parser.arena, fn_name_src);
     if fn_name == null {
         return null;
     }

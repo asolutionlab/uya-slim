@@ -789,18 +789,18 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             // 特殊处理：返回类型为 !T 且返回成功值：表达式类型与 !T 的载荷 T 一致，或结构体与接口同名（如 Future）
             if checker.current_return_type.kind == TypeKind.TYPE_ERROR_UNION &&
                 checker.current_return_type.error_union_payload_type != null {
-                const payload: Type = checker.current_return_type.error_union_payload_type[0];
-                if type_equals(expr_type, payload) != 0 {
+                const return_payload_type: Type = checker.current_return_type.error_union_payload_type[0];
+                if type_equals(expr_type, return_payload_type) != 0 {
                     return 1;
                 }
-                if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
+                if return_payload_type.kind == TypeKind.TYPE_INTERFACE && return_payload_type.interface_name != null &&
                     expr_type.kind == TypeKind.TYPE_STRUCT && expr_type.struct_name != null &&
-                    struct_implements_interface(checker, expr_type.struct_name, payload.interface_name) != 0 {
+                    struct_implements_interface(checker, expr_type.struct_name, return_payload_type.interface_name) != 0 {
                     return 1;
                 }
-                if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
+                if return_payload_type.kind == TypeKind.TYPE_INTERFACE && return_payload_type.interface_name != null &&
                     expr_type.kind == TypeKind.TYPE_STRUCT && expr_type.struct_name != null &&
-                    str_equals(payload.interface_name, expr_type.struct_name) != 0 {
+                    str_equals(return_payload_type.interface_name, expr_type.struct_name) != 0 {
                     return 1;
                 }
                 // @async_fn：允许 return T，
@@ -822,13 +822,13 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                         }
                     }
                     // 形式一：Future<!T> —— 此时 current_return_type 自身就是 Future<!T>，
-                    // payload.struct_type_args[0] 为 !T，比较 expr_type 是否等于其载荷类型。
-                    if payload.kind == TypeKind.TYPE_STRUCT &&
-                        payload.struct_name != null &&
-                        str_equals(payload.struct_name, "Future" as *byte) != 0 &&
-                        payload.struct_type_args != null &&
-                        payload.struct_type_arg_count >= 1 {
-                        const inner_err: Type = payload.struct_type_args[0];
+                    // return_payload_type.struct_type_args[0] 为 !T，比较 expr_type 是否等于其载荷类型。
+                    if return_payload_type.kind == TypeKind.TYPE_STRUCT &&
+                        return_payload_type.struct_name != null &&
+                        str_equals(return_payload_type.struct_name, "Future" as *byte) != 0 &&
+                        return_payload_type.struct_type_args != null &&
+                        return_payload_type.struct_type_arg_count >= 1 {
+                        const inner_err: Type = return_payload_type.struct_type_args[0];
                         if inner_err.kind == TypeKind.TYPE_ERROR_UNION &&
                             inner_err.error_union_payload_type != null {
                             const future_t: Type = inner_err.error_union_payload_type[0];
@@ -900,6 +900,13 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 if expr_type.kind == TypeKind.TYPE_STRUCT && checker.current_return_type.kind == TypeKind.TYPE_STRUCT &&
                     expr_type.struct_name != null && checker.current_return_type.struct_name != null &&
                     str_equals(expr_type.struct_name, checker.current_return_type.struct_name) != 0 {
+                    return 1;
+                }
+                // 兼容：同名联合体，但一侧丢失了泛型实参（如 return Option<Event>.Some(...)）
+                if expr_type.kind == TypeKind.TYPE_UNION && checker.current_return_type.kind == TypeKind.TYPE_UNION &&
+                    expr_type.union_name != null && checker.current_return_type.union_name != null &&
+                    str_equals(expr_type.union_name, checker.current_return_type.union_name) != 0 &&
+                    (expr_type.union_type_arg_count == 0 || checker.current_return_type.union_type_arg_count == 0) {
                     return 1;
                 }
                 // @async_fn（阶段 B）：允许 return T，自动包装为 Future<!T>（T 为 !T 的载荷）

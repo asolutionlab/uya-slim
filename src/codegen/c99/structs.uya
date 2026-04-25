@@ -160,6 +160,27 @@ fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
         }
         i = i + 1;
     }
+    i = 0;
+    while i < decl_count {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_UNION_DECL &&
+            decl.union_decl_name != null && is_generic_union_c99(decl) != 0 {
+            var mi: i32 = 0;
+            while mi < codegen.mono_instance_count {
+                if codegen.mono_instances[mi].generic_name != null &&
+                    strcmp(codegen.mono_instances[mi].generic_name as *byte, decl.union_decl_name as *byte) == 0 &&
+                    codegen.mono_instances[mi].is_function == 0 {
+                    const mono_name: &byte = get_mono_union_name(codegen, decl.union_decl_name,
+                        codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count);
+                    if mono_name != null && strcmp(mono_name as *byte, union_name as *byte) == 0 {
+                        return decl;
+                    }
+                }
+                mi = mi + 1;
+            }
+        }
+        i = i + 1;
+    }
     return null;
 }
 
@@ -679,6 +700,24 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     codegen.struct_type_param_count = union_decl.union_decl_type_param_count;
     codegen.struct_type_arg_count = type_arg_count;
     c99_type_to_c_reset_cache();
+
+    // 单态化后的变体字段可能依赖值类型结构体/联合体（如 Option<Event>.Some）。
+    // 这里必须在发出 union 体之前先把依赖类型补齐，否则宿主 C 会把字段视为不完整类型。
+    var di: i32 = 0;
+    while di < n {
+        const dv: &ASTNode = variants[di];
+        if dv != null && dv.type == ASTNodeType.AST_VAR_DECL && dv.var_decl_type != null {
+            var dep_type: &ASTNode = substitute_type_arg_explicit(codegen, dv.var_decl_type,
+                union_decl.union_decl_type_params, subst_buf, type_arg_count);
+            if dep_type == null {
+                dep_type = dv.var_decl_type;
+            }
+            ensure_value_type_deps_emitted(codegen, dep_type);
+            c99_emit_async_frame_forward_for_type(codegen, dep_type);
+        }
+        di = di + 1;
+    }
+
     c99_emit_indent(codegen);
     fprintf(codegen.emit_stream as *void, "union %s {\n" as *byte, union_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
@@ -1654,7 +1693,7 @@ fn emit_union_tagged_forward_decls(codegen: &C99CodeGenerator) void {
                         strcmp(codegen.mono_instances[j].generic_name as *byte, decl.union_decl_name as *byte) == 0 &&
                         codegen.mono_instances[j].is_function == 0 &&
                         has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
-                        const mono_name: &byte = get_mono_struct_name(codegen, decl.union_decl_name,
+                        const mono_name: &byte = get_mono_union_name(codegen, decl.union_decl_name,
                             codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
                         if mono_name != null {
                             const safe: &byte = get_safe_c_identifier(codegen, mono_name);
@@ -1662,7 +1701,6 @@ fn emit_union_tagged_forward_decls(codegen: &C99CodeGenerator) void {
                                 fprintf(codegen.emit_stream as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
                             }
                         }
-                        break;
                     }
                     j = j + 1;
                 }
@@ -2364,6 +2402,7 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
         const field_fwd: &ASTNode = struct_decl.struct_decl_fields[fi_fwd];
         if field_fwd != null && field_fwd.type == ASTNodeType.AST_VAR_DECL && field_fwd.var_decl_type != null {
             c99_emit_async_frame_forward_for_type(codegen, field_fwd.var_decl_type);
+            ensure_value_type_deps_emitted(codegen, field_fwd.var_decl_type);
         }
         fi_fwd = fi_fwd + 1;
     }
@@ -2903,6 +2942,48 @@ fn ensure_nested_generic_struct_defined(codegen: &C99CodeGenerator, type_node: &
     }
 }
 
+fn ensure_value_type_deps_emitted(codegen: &C99CodeGenerator, type_node: &ASTNode) void {
+    if codegen == null || type_node == null {
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_POINTER || type_node.type == ASTNodeType.AST_TYPE_SLICE {
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ARRAY && type_node.type_array_element_type != null {
+        ensure_value_type_deps_emitted(codegen, type_node.type_array_element_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_TUPLE && type_node.type_tuple_element_types != null {
+        var ti: i32 = 0;
+        while ti < type_node.type_tuple_element_count {
+            ensure_value_type_deps_emitted(codegen, type_node.type_tuple_element_types[ti]);
+            ti = ti + 1;
+        }
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ATOMIC && type_node.type_atomic_inner_type != null {
+        ensure_value_type_deps_emitted(codegen, type_node.type_atomic_inner_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && type_node.type_error_union_payload_type != null {
+        ensure_value_type_deps_emitted(codegen, type_node.type_error_union_payload_type);
+        return;
+    }
+    if type_node.type != ASTNodeType.AST_TYPE_NAMED || type_node.type_named_name == null {
+        return;
+    }
+    if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
+        var ai: i32 = 0;
+        while ai < type_node.type_named_type_arg_count {
+            ensure_value_type_deps_emitted(codegen, type_node.type_named_type_args[ai]);
+            ai = ai + 1;
+        }
+        ensure_nested_generic_struct_defined(codegen, type_node);
+    }
+    ensure_union_emitted_for_type_node(codegen, type_node);
+    ensure_struct_emitted_for_type_node(codegen, type_node);
+}
+
 fn substitute_type_arg_explicit(codegen: &C99CodeGenerator, type_node: &ASTNode,
     type_params: &TypeParam, type_args: & &ASTNode, type_arg_count: i32) &ASTNode {
     if codegen == null || type_node == null {
@@ -3052,13 +3133,13 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
     // 不完整类型字段，镜像 split-C 会直接编译失败。
     emit_struct_deps_for_struct(codegen, struct_decl);
     
-    // 先生成依赖的嵌套泛型结构体
+    // 先生成依赖的值类型定义（含泛型 union / 普通 union / 结构体）
     const field_count: i32 = struct_decl.struct_decl_field_count;
     var fi: i32 = 0;
     while fi < field_count {
         const field: &ASTNode = struct_decl.struct_decl_fields[fi];
         if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
-            ensure_nested_generic_struct_defined(codegen, field.var_decl_type);
+            ensure_value_type_deps_emitted(codegen, field.var_decl_type);
         }
         fi = fi + 1;
     }
@@ -3082,6 +3163,7 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
         const field_mono_fwd: &ASTNode = struct_decl.struct_decl_fields[fi_mono_fwd];
         if field_mono_fwd != null && field_mono_fwd.type == ASTNodeType.AST_VAR_DECL && field_mono_fwd.var_decl_type != null {
             c99_emit_async_frame_forward_for_type(codegen, field_mono_fwd.var_decl_type);
+            ensure_value_type_deps_emitted(codegen, field_mono_fwd.var_decl_type);
         }
         fi_mono_fwd = fi_mono_fwd + 1;
     }
@@ -3315,11 +3397,26 @@ fn ensure_union_emitted_for_type_node(codegen: &C99CodeGenerator, type_node: &AS
     if codegen == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_NAMED {
         return;
     }
-    if type_node.type_named_name == null || type_node.type_named_type_arg_count > 0 {
+    if type_node.type_named_name == null {
         return;
     }
     const union_decl: &ASTNode = find_union_decl_c99(codegen, type_node.type_named_name);
     if union_decl == null {
+        return;
+    }
+    if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null &&
+        is_generic_union_c99(union_decl) != 0 {
+        const mono_name: &byte = get_mono_union_name(codegen, type_node.type_named_name,
+            type_node.type_named_type_args, type_node.type_named_type_arg_count);
+        if mono_name == null {
+            return;
+        }
+        var tag_buf: [byte: 128] = [0: 128];
+        const tlen: i32 = snprintf(&tag_buf[0] as *byte, 128, "uya_tagged_%s" as *byte, get_safe_c_identifier(codegen, mono_name) as *byte);
+        if tlen > 0 && tlen < 128 && is_struct_defined(codegen, &tag_buf[0] as &byte) == 0 {
+            gen_mono_union_definition(codegen, union_decl,
+                type_node.type_named_type_args, type_node.type_named_type_arg_count);
+        }
         return;
     }
     emit_struct_deps_for_union(codegen, union_decl);

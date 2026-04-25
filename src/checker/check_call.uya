@@ -53,13 +53,13 @@ fn substitute_type_ast_for_mono(checker: &TypeChecker,
     }
     // !T / !Foo<T>
     if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && type_node.type_error_union_payload_type != null {
-        const payload: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_error_union_payload_type,
+        const payload_ast: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_error_union_payload_type,
             type_params, type_param_count, type_args, type_arg_count);
         const eu: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, type_node.line, type_node.column, checker.arena, type_node.filename);
         if eu == null {
             return type_node;
         }
-        eu.type_error_union_payload_type = payload;
+        eu.type_error_union_payload_type = payload_ast;
         return eu;
     }
     // 指针类型
@@ -71,7 +71,67 @@ fn substitute_type_ast_for_mono(checker: &TypeChecker,
             return type_node;
         }
         p.type_pointer_pointed_type = inner;
+        p.type_pointer_is_ffi_pointer = type_node.type_pointer_is_ffi_pointer;
+        p.type_pointer_is_const = type_node.type_pointer_is_const;
         return p;
+    }
+    // [N]T
+    if type_node.type == ASTNodeType.AST_TYPE_ARRAY && type_node.type_array_element_type != null {
+        const inner: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_array_element_type,
+            type_params, type_param_count, type_args, type_arg_count);
+        const a: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ARRAY, type_node.line, type_node.column, checker.arena, type_node.filename);
+        if a == null {
+            return type_node;
+        }
+        a.type_array_element_type = inner;
+        a.type_array_size_expr = type_node.type_array_size_expr;
+        return a;
+    }
+    // &[T]
+    if type_node.type == ASTNodeType.AST_TYPE_SLICE && type_node.type_slice_element_type != null {
+        const inner: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_slice_element_type,
+            type_params, type_param_count, type_args, type_arg_count);
+        const s: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_SLICE, type_node.line, type_node.column, checker.arena, type_node.filename);
+        if s == null {
+            return type_node;
+        }
+        s.type_slice_element_type = inner;
+        s.type_slice_size_expr = type_node.type_slice_size_expr;
+        s.type_slice_element_const = type_node.type_slice_element_const;
+        return s;
+    }
+    // atomic T
+    if type_node.type == ASTNodeType.AST_TYPE_ATOMIC && type_node.type_atomic_inner_type != null {
+        const inner: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_atomic_inner_type,
+            type_params, type_param_count, type_args, type_arg_count);
+        const a: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ATOMIC, type_node.line, type_node.column, checker.arena, type_node.filename);
+        if a == null {
+            return type_node;
+        }
+        a.type_atomic_inner_type = inner;
+        return a;
+    }
+    // (T1, T2, ...)
+    if type_node.type == ASTNodeType.AST_TYPE_TUPLE && type_node.type_tuple_element_types != null &&
+        type_node.type_tuple_element_count > 0 {
+        const cnt: i32 = type_node.type_tuple_element_count;
+        const elems: & & ASTNode = compiler_arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
+        if elems == null {
+            return type_node;
+        }
+        var i: i32 = 0;
+        while i < cnt {
+            elems[i] = substitute_type_ast_for_mono(checker, type_node.type_tuple_element_types[i],
+                type_params, type_param_count, type_args, type_arg_count);
+            i = i + 1;
+        }
+        const t: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_TUPLE, type_node.line, type_node.column, checker.arena, type_node.filename);
+        if t == null {
+            return type_node;
+        }
+        t.type_tuple_element_types = elems;
+        t.type_tuple_element_count = cnt;
+        return t;
     }
     return type_node;
 }
@@ -98,6 +158,12 @@ fn register_mono_from_return_type_ast(checker: &TypeChecker,
             i = i + 1;
         }
         register_mono_instance(checker, ret_type.type_named_name, new_args, cnt, 0);
+        var ri: i32 = 0;
+        while ri < cnt {
+            register_mono_from_return_type_ast(checker, new_args[ri],
+                type_params, type_param_count, type_args, type_arg_count);
+            ri = ri + 1;
+        }
     }
     // 递归处理 !Foo<...>
     if ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
@@ -108,6 +174,26 @@ fn register_mono_from_return_type_ast(checker: &TypeChecker,
     if ret_type.type == ASTNodeType.AST_TYPE_POINTER && ret_type.type_pointer_pointed_type != null {
         register_mono_from_return_type_ast(checker, ret_type.type_pointer_pointed_type,
             type_params, type_param_count, type_args, type_arg_count);
+    }
+    if ret_type.type == ASTNodeType.AST_TYPE_ARRAY && ret_type.type_array_element_type != null {
+        register_mono_from_return_type_ast(checker, ret_type.type_array_element_type,
+            type_params, type_param_count, type_args, type_arg_count);
+    }
+    if ret_type.type == ASTNodeType.AST_TYPE_SLICE && ret_type.type_slice_element_type != null {
+        register_mono_from_return_type_ast(checker, ret_type.type_slice_element_type,
+            type_params, type_param_count, type_args, type_arg_count);
+    }
+    if ret_type.type == ASTNodeType.AST_TYPE_ATOMIC && ret_type.type_atomic_inner_type != null {
+        register_mono_from_return_type_ast(checker, ret_type.type_atomic_inner_type,
+            type_params, type_param_count, type_args, type_arg_count);
+    }
+    if ret_type.type == ASTNodeType.AST_TYPE_TUPLE && ret_type.type_tuple_element_types != null {
+        var i: i32 = 0;
+        while i < ret_type.type_tuple_element_count {
+            register_mono_from_return_type_ast(checker, ret_type.type_tuple_element_types[i],
+                type_params, type_param_count, type_args, type_arg_count);
+            i = i + 1;
+        }
     }
 }
 
@@ -582,12 +668,12 @@ fn checker_async_frame_poll_return_type(checker: &TypeChecker, fn_decl: &ASTNode
         poll_payload = type_from_ast(checker, ret_type.type_named_type_args[0]);
     } else if ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
         ret_type.type_error_union_payload_type != null {
-        const payload: &ASTNode = ret_type.type_error_union_payload_type;
-        if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_name != null &&
-            str_equals(payload.type_named_name, "Future" as *byte) != 0 &&
-            payload.type_named_type_arg_count == 1 && payload.type_named_type_args != null &&
-            payload.type_named_type_args[0] != null {
-            poll_payload = type_from_ast(checker, payload.type_named_type_args[0]);
+        const future_payload_ast: &ASTNode = ret_type.type_error_union_payload_type;
+        if future_payload_ast.type == ASTNodeType.AST_TYPE_NAMED && future_payload_ast.type_named_name != null &&
+            str_equals(future_payload_ast.type_named_name, "Future" as *byte) != 0 &&
+            future_payload_ast.type_named_type_arg_count == 1 && future_payload_ast.type_named_type_args != null &&
+            future_payload_ast.type_named_type_args[0] != null {
+            poll_payload = type_from_ast(checker, future_payload_ast.type_named_type_args[0]);
         }
     }
     if poll_payload.kind == TypeKind.TYPE_VOID {
@@ -1261,6 +1347,16 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         if union_name_for_lookup != null && checker.program_node != null {
             const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, union_name_for_lookup);
             if union_decl != null && method_name != null {
+                var ctor_type_args: & & ASTNode = null;
+                var ctor_type_arg_count: i32 = 0;
+                if object != null && object.type == ASTNodeType.AST_TYPE_NAMED &&
+                    object.type_named_type_args != null && object.type_named_type_arg_count > 0 {
+                    ctor_type_args = object.type_named_type_args;
+                    ctor_type_arg_count = object.type_named_type_arg_count;
+                } else if node.call_expr_type_args != null && node.call_expr_type_arg_count > 0 {
+                    ctor_type_args = node.call_expr_type_args;
+                    ctor_type_arg_count = node.call_expr_type_arg_count;
+                }
                 var found_variant_name: i32 = 0;
                 var i: i32 = 0;
                 while i < union_decl.union_decl_variant_count {
@@ -1269,11 +1365,11 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         str_equals(v.var_decl_name, method_name) != 0 {
                         found_variant_name = 1;
                         var variant_type: Type = type_from_ast(checker, v.var_decl_type);
-                        if union_decl.union_decl_type_param_count > 0 && object != null && object.type == ASTNodeType.AST_TYPE_NAMED &&
-                            object.type_named_type_args != null && object.type_named_type_arg_count > 0 {
+                        if union_decl.union_decl_type_param_count > 0 &&
+                            ctor_type_args != null && ctor_type_arg_count > 0 {
                             variant_type = substitute_generic_type(checker, copy_type(&variant_type),
                                 union_decl.union_decl_type_params, union_decl.union_decl_type_param_count,
-                                object.type_named_type_args, object.type_named_type_arg_count);
+                                ctor_type_args, ctor_type_arg_count);
                         }
                         if variant_type.kind == TypeKind.TYPE_VOID {
                             var allow_empty_block_arg: i32 = 0;
@@ -1298,13 +1394,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                             }
                         }
                         result = make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
-                        if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_type_arg_count > 0 && object.type_named_type_args != null {
-                            const count: i32 = object.type_named_type_arg_count;
+                        if ctor_type_args != null && ctor_type_arg_count > 0 {
+                            const count: i32 = ctor_type_arg_count;
                             const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
                             if ta != null {
                                 var tai: i32 = 0;
                                 while tai < count {
-                                    ta[tai] = type_from_ast(checker, object.type_named_type_args[tai]);
+                                    ta[tai] = type_from_ast(checker, ctor_type_args[tai]);
                                     tai = tai + 1;
                                 }
                                 result.union_type_args = ta;

@@ -102,9 +102,96 @@ fn global_init_ctx_is_const_ptr_to_byte(ctx: &ASTNode) i32 {
     return 1;
 }
 
+const C99_GLOBAL_INIT_MAX_EXPAND_DEPTH: i32 = 32;
+var g_c99_global_init_expand_depth: i32 = 0;
+
+fn c99_find_top_level_const_init_expr(codegen: &C99CodeGenerator, name: &byte, out_type: &&ASTNode) &ASTNode {
+    if out_type != null {
+        out_type[0] = null;
+    }
+    if codegen == null || name == null || codegen.program_node == null || codegen.program_node.type != ASTNodeType.AST_PROGRAM {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < codegen.program_node.program_decl_count {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_name != null &&
+            strcmp(decl.var_decl_name as *byte, name as *byte) == 0 && decl.var_decl_is_const != 0 &&
+            decl.var_decl_init != null {
+            if out_type != null {
+                out_type[0] = decl.var_decl_type;
+            }
+            return decl.var_decl_init;
+        }
+        if decl != null && decl.type == ASTNodeType.AST_EXTERN_VAR_DECL && decl.extern_var_decl_name != null &&
+            strcmp(decl.extern_var_decl_name as *byte, name as *byte) == 0 && decl.extern_var_decl_is_const != 0 &&
+            decl.extern_var_decl_init_expr != null {
+            if out_type != null {
+                out_type[0] = decl.extern_var_decl_var_type;
+            }
+            return decl.extern_var_decl_init_expr;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn c99_find_struct_init_field_expr(struct_init: &ASTNode, field_name: &byte) &ASTNode {
+    if struct_init == null || struct_init.type != ASTNodeType.AST_STRUCT_INIT || field_name == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < struct_init.struct_init_field_count {
+        if struct_init.struct_init_field_names != null &&
+            struct_init.struct_init_field_names[i] != null &&
+            strcmp(struct_init.struct_init_field_names[i] as *byte, field_name as *byte) == 0 {
+            if struct_init.struct_init_field_values != null {
+                return struct_init.struct_init_field_values[i];
+            }
+            return null;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
 fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode, init_ctx_type: &ASTNode) void {
     if expr == null {
         return;
+    }
+
+    if g_c99_global_init_expand_depth < C99_GLOBAL_INIT_MAX_EXPAND_DEPTH &&
+        expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
+        var nested_type: &ASTNode = null;
+        const nested_init: &ASTNode = c99_find_top_level_const_init_expr(codegen, expr.identifier_name, &nested_type);
+        if nested_init != null && nested_init != expr {
+            g_c99_global_init_expand_depth = g_c99_global_init_expand_depth + 1;
+            var next_ctx: &ASTNode = init_ctx_type;
+            if next_ctx == null {
+                next_ctx = nested_type;
+            }
+            gen_global_init_expr(codegen, nested_init, next_ctx);
+            g_c99_global_init_expand_depth = g_c99_global_init_expand_depth - 1;
+            return;
+        }
+    }
+
+    if g_c99_global_init_expand_depth < C99_GLOBAL_INIT_MAX_EXPAND_DEPTH &&
+        expr.type == ASTNodeType.AST_MEMBER_ACCESS && expr.member_access_object != null &&
+        expr.member_access_field_name != null &&
+        expr.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
+        expr.member_access_object.identifier_name != null {
+        var nested_type_ma: &ASTNode = null;
+        const base_init: &ASTNode = c99_find_top_level_const_init_expr(codegen, expr.member_access_object.identifier_name, &nested_type_ma);
+        if base_init != null && base_init.type == ASTNodeType.AST_STRUCT_INIT {
+            const field_init: &ASTNode = c99_find_struct_init_field_expr(base_init, expr.member_access_field_name);
+            if field_init != null {
+                g_c99_global_init_expand_depth = g_c99_global_init_expand_depth + 1;
+                gen_global_init_expr(codegen, field_init, init_ctx_type);
+                g_c99_global_init_expand_depth = g_c99_global_init_expand_depth - 1;
+                return;
+            }
+        }
     }
     
     if expr.type == ASTNodeType.AST_STRUCT_INIT {

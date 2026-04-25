@@ -289,6 +289,26 @@ fn type_satisfies_constraint(checker: &TypeChecker, type: Type, constraint_name:
     if type_satisfies_builtin_constraint(type, constraint_name) != 0 {
         return 1;
     }
+
+    if type.kind == TypeKind.TYPE_GENERIC_PARAM && type.generic_param_name != null &&
+        checker != null && checker.current_type_params != null {
+        var gi: i32 = 0;
+        while gi < checker.current_type_param_count {
+            if checker.current_type_params[gi].name != null &&
+                str_equals(checker.current_type_params[gi].name, type.generic_param_name) != 0 {
+                var ci: i32 = 0;
+                while ci < checker.current_type_params[gi].constraint_count {
+                    const cur_constraint: &byte = checker.current_type_params[gi].constraints[ci];
+                    if cur_constraint != null && str_equals(cur_constraint, constraint_name) != 0 {
+                        return 1;
+                    }
+                    ci = ci + 1;
+                }
+                break;
+            }
+            gi = gi + 1;
+        }
+    }
     
     if type.kind == TypeKind.TYPE_STRUCT && type.struct_name != null && 
         checker != null && checker.program_node != null {
