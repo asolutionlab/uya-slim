@@ -1422,6 +1422,20 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
         collect_awaits_recursive(node.for_stmt_body, codegen, max_count, null, -1, enclosing_while, node);
     } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
         const init: &ASTNode = node.var_decl_init;
+        if init.type == ASTNodeType.AST_AWAIT_EXPR && init.await_expr_operand != null {
+            const collect_idx_plain: i32 = codegen.async_collect_count;
+            if collect_idx_plain >= 0 && collect_idx_plain < max_count && collect_idx_plain < C99_ASYNC_MAX_AWAITS {
+                codegen.async_collect_operands[collect_idx_plain] = init.await_expr_operand;
+                codegen.async_collect_names[collect_idx_plain] = node.var_decl_name;
+                codegen.async_collect_types[collect_idx_plain] = node.var_decl_type;
+                codegen.async_collect_blocks[collect_idx_plain] = parent_block;
+                codegen.async_collect_stmt_indices[collect_idx_plain] = parent_stmt_index;
+                codegen.async_collect_enclosing_while[collect_idx_plain] = enclosing_while;
+                codegen.async_collect_enclosing_for[collect_idx_plain] = enclosing_for;
+                codegen.async_collect_count = collect_idx_plain + 1;
+                return;
+            }
+        }
         if init.type == ASTNodeType.AST_TRY_EXPR && init.try_expr_operand != null {
             const op: &ASTNode = init.try_expr_operand;
             if op.type == ASTNodeType.AST_AWAIT_EXPR && op.await_expr_operand != null &&
@@ -1443,6 +1457,22 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
     } else if node.type == ASTNodeType.AST_RETURN_STMT {
         // Bug C fix: 检查 return try @await inner(...) 模式
         const ret_expr: &ASTNode = node.return_stmt_expr;
+        if ret_expr != null && ret_expr.type == ASTNodeType.AST_AWAIT_EXPR && ret_expr.await_expr_operand != null &&
+            codegen.async_collect_count < max_count && codegen.async_collect_count < C99_ASYNC_MAX_AWAITS {
+            const collect_idx_plain_ret: i32 = codegen.async_collect_count;
+            if collect_idx_plain_ret >= 0 && collect_idx_plain_ret < @len(codegen.async_collect_operands) {
+                codegen.async_collect_operands[collect_idx_plain_ret] = ret_expr.await_expr_operand;
+                codegen.async_collect_names[collect_idx_plain_ret] = null;
+                codegen.async_collect_types[collect_idx_plain_ret] = null;
+                codegen.async_collect_blocks[collect_idx_plain_ret] = parent_block;
+                codegen.async_collect_stmt_indices[collect_idx_plain_ret] = parent_stmt_index;
+                codegen.async_collect_enclosing_while[collect_idx_plain_ret] = enclosing_while;
+                codegen.async_collect_enclosing_for[collect_idx_plain_ret] = enclosing_for;
+                codegen.async_collect_count = collect_idx_plain_ret + 1;
+                codegen.async_collect_ret_expr = null;
+                return;
+            }
+        }
         if ret_expr != null && ret_expr.type == ASTNodeType.AST_TRY_EXPR && ret_expr.try_expr_operand != null {
             const ret_op: &ASTNode = ret_expr.try_expr_operand;
             if ret_op.type == ASTNodeType.AST_AWAIT_EXPR && ret_op.await_expr_operand != null &&
@@ -1522,10 +1552,13 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
     }
 }
 
-// try @await 形式的 var 声明由 async_collect_* 单独捕获，此处跳过
-fn c99_var_decl_init_is_try_await_bind(init: &ASTNode) i32 {
+// @await / try @await 形式的 var 声明由 async_collect_* 单独捕获，此处跳过
+fn c99_var_decl_init_is_await_bind(init: &ASTNode) i32 {
     if init == null {
         return 0;
+    }
+    if init.type == ASTNodeType.AST_AWAIT_EXPR && init.await_expr_operand != null {
+        return 1;
     }
     if init.type != ASTNodeType.AST_TRY_EXPR {
         return 0;
@@ -1539,9 +1572,13 @@ fn c99_var_decl_init_is_try_await_bind(init: &ASTNode) i32 {
     return 1;
 }
 
-fn c99_return_stmt_is_try_await_bind(stmt: &ASTNode) i32 {
+fn c99_return_stmt_is_await_bind(stmt: &ASTNode) i32 {
     if stmt == null || stmt.type != ASTNodeType.AST_RETURN_STMT || stmt.return_stmt_expr == null {
         return 0;
+    }
+    if stmt.return_stmt_expr.type == ASTNodeType.AST_AWAIT_EXPR &&
+        stmt.return_stmt_expr.await_expr_operand != null {
+        return 1;
     }
     if stmt.return_stmt_expr.type != ASTNodeType.AST_TRY_EXPR || stmt.return_stmt_expr.try_expr_operand == null {
         return 0;
@@ -2805,7 +2842,7 @@ fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTN
         return;
     }
     if node.type != ASTNodeType.AST_VAR_DECL || node.var_decl_name == null || node.var_decl_type == null ||
-        c99_var_decl_init_is_try_await_bind(node.var_decl_init) != 0 {
+        c99_var_decl_init_is_await_bind(node.var_decl_init) != 0 {
         return;
     }
     // @frame(...) 类型允许无初始化，但仍需提升到状态机结构体中
@@ -4151,7 +4188,7 @@ fn emit_async_segment(codegen: &C99CodeGenerator, block: &ASTNode, from_si: i32,
         }
         // try @await 绑定：这是分裂点
         if stmt.type == ASTNodeType.AST_VAR_DECL && stmt.var_decl_init != null &&
-            c99_var_decl_init_is_try_await_bind(stmt.var_decl_init) != 0 {
+            c99_var_decl_init_is_await_bind(stmt.var_decl_init) != 0 {
             const ai: i32 = c99_async_find_await_at(codegen, block, si);
             if ai >= 0 {
                 c99_emit_async_arm_and_fallthrough(codegen, ai);
@@ -4271,8 +4308,8 @@ fn emit_async_continuation(codegen: &C99CodeGenerator, cur_ai: i32) i32 {
         if c99_find_first_try_await_expr(cur_stmt, &nested_try[0]) != 0 && nested_try[0] != null &&
             nested_try[0].try_expr_operand != null && nested_try[0].try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
             nested_try[0].try_expr_operand.await_expr_operand != null &&
-            (cur_stmt.type != ASTNodeType.AST_VAR_DECL || c99_var_decl_init_is_try_await_bind(cur_stmt.var_decl_init) == 0) &&
-            c99_return_stmt_is_try_await_bind(cur_stmt) == 0 {
+            (cur_stmt.type != ASTNodeType.AST_VAR_DECL || c99_var_decl_init_is_await_bind(cur_stmt.var_decl_init) == 0) &&
+            c99_return_stmt_is_await_bind(cur_stmt) == 0 {
             const saved_subst_try_expr: &ASTNode = codegen.async_expr_subst_try_expr;
             const saved_subst_name: &byte = codegen.async_expr_subst_name;
             codegen.async_expr_subst_try_expr = nested_try[0];
@@ -5279,7 +5316,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             const cur_bind_type: &ASTNode = c99_async_bind_type_at(await_bind_types, state_idx);
             if cur_bind_name != null && cur_bind_type != null {
                 const bind_safe: &byte = get_safe_c_identifier(codegen, cur_bind_name);
-                fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = r.value;\n" as *byte, bind_safe as *byte);
+                if cur_bind_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                    fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = r;\n" as *byte, bind_safe as *byte);
+                } else {
+                    fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = r.value;\n" as *byte, bind_safe as *byte);
+                }
             }
             if concrete_future_safe != null && await_operand_is_err_future != 0 {
                 fputs("        if (s->await_fut.data != (void*)0 && s->await_fut.data != (void*)&s->_uya_await_storage) { if (s->await_fut.vtable != (void*)0) { void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1]; if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data); } }\n" as *byte, codegen.emit_stream as *void);
@@ -5289,8 +5330,25 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             fputs("        s->await_fut.data = (void*)0; s->await_fut.vtable = (void*)0;\n" as *byte, codegen.emit_stream as *void);
             // Bug C: "return try @await" — 无 bind name：直接 return Ready(r.value)
             if cur_bind_name == null && ret_expr == null {
-                fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = r.value } } };\n" as *byte,
-                    poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                const await_block_direct: &ASTNode = c99_async_await_block_at(await_blocks, state_idx);
+                const await_stmt_index_direct: i32 = c99_async_await_stmt_index_at(await_stmt_indices, state_idx);
+                var direct_return_await: i32 = 0;
+                if await_block_direct != null && await_stmt_index_direct >= 0 &&
+                    await_stmt_index_direct < await_block_direct.block_stmt_count {
+                    const cur_stmt_direct: &ASTNode = await_block_direct.block_stmts[await_stmt_index_direct];
+                    if cur_stmt_direct != null && cur_stmt_direct.type == ASTNodeType.AST_RETURN_STMT &&
+                        cur_stmt_direct.return_stmt_expr != null &&
+                        cur_stmt_direct.return_stmt_expr.type == ASTNodeType.AST_AWAIT_EXPR {
+                        direct_return_await = 1;
+                    }
+                }
+                if direct_return_await != 0 {
+                    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = r } };\n" as *byte,
+                        poll_ret_c as *byte, poll_union_c as *byte);
+                } else {
+                    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = r.value } } };\n" as *byte,
+                        poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                }
                 fputs("    }\n" as *byte, codegen.emit_stream as *void);
                 state_k = state_k + 1;
                 continue;

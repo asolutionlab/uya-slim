@@ -7750,6 +7750,19 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
         }
         i = i - 1;
     }
+    if codegen.async_state_var != null && codegen.async_bind_count > 0 {
+        var abi: i32 = 0;
+        while abi < codegen.async_bind_count && abi < C99_ASYNC_MAX_AWAITS {
+            if codegen.async_bind_names[abi] != null &&
+                strcmp(codegen.async_bind_names[abi] as *byte, name as *byte) == 0 {
+                if codegen.async_collect_types[abi] != null {
+                    return c99_type_to_c(codegen, codegen.async_collect_types[abi]);
+                }
+                return null;
+            }
+            abi = abi + 1;
+        }
+    }
     // @async_fn poll 内：顶层 const/var 已提升为 s->_uya_loc_*，须从 async_local_types 取 C 类型（否则切片/mem_base 等退化为 int32 slice）
     if codegen.async_state_var != null && codegen.async_local_count > 0 {
         var ali: i32 = 0;

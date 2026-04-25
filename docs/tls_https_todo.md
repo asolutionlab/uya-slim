@@ -40,7 +40,7 @@
 | TLS 1.2 握手 | 部分完成 | 已能和真实 `openssl s_client` / `curl` 完成本地 TLS 1.2 最小握手与应用数据往返；仍缺更完整消息覆盖与外站互操作 |
 | TLS 1.3 握手 | 部分完成 | 1-RTT、Finished、application traffic secret 已接通，仍缺更完整互操作 |
 | SNI / hostname 绑定 | 已完成 | `ssl_set_hostname`、hostname 校验与 ClientHello SNI 已接通 |
-| HTTP 层 | 部分完成 | 已有最小 `https_get`、本地 HTTPS loopback，以及可被 `curl` 访问的本地 HTTPS server；真实站点连通性当前通过 `curl` 桥接验证 |
+| HTTP 层 | 部分完成 | 已有最小 `https_get`、本地 HTTPS loopback、可被 `curl` 访问的本地 HTTPS server，以及 `https_server_serve_uyagin_once` 形式的 TLS -> UyaGin 最小桥接 |
 
 ---
 
@@ -167,6 +167,7 @@
 
 - [x] 实现最小 HTTP/1.1 `200 OK` 响应。
 - [x] 支持固定页面或简单动态响应。
+- [x] 支持将 TLS 握手后的最小 HTTP 请求桥接到 `std.http.uyagin.Engine`，用于复用现有异步框架 handler。
 
 ### 验收
 

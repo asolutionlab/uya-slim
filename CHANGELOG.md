@@ -1,5 +1,14 @@
 # Uya 变更日志
 
+## Unreleased
+
+### HTTP / UyaGin / 编译器 async lowering（2026-04-25）
+
+- `std.http.parse/types/server` 与 `std.http.uyagin` 完成 UyaGin P5 主链路：Header 小写/哈希缓存、8-byte word-at-a-time 扫描、chunked request 原地解码、显式 chunked response、`writev` 聚合写，以及 Linux x86_64 `sendfile` 优先文件发送。
+- `tls.https` 新增最小 `https_server_serve_uyagin_once` 桥接，可将 TLS 握手后的 HTTP 请求交给 `std.http.uyagin.Engine`。
+- C99 async lowering 修复 direct err-union await bind：`const r: !T = @await fut;` 现在能正确切段、恢复并在后续 `catch` / 表达式中保留错误联合类型。
+- 回归新增 / 扩展：`tests/test_async_await_direct_err_union.uya`、`tests/test_http_parse.uya`、`tests/test_http_server.uya`、`tests/test_http_uyagin.uya`、`tests/test_https_loopback.uya`。
+
 ## v0.9.4 - microapp 运行时收口、`@embed` / `@c_import` 与标准库扩展
 
 > 发布日期：2026-04-22

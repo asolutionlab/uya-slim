@@ -5252,6 +5252,17 @@ fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNo
     if codegen == null || name == null {
         return null;
     }
+    if codegen.async_state_var != null && codegen.async_bind_count > 0 {
+        var abi: i32 = 0;
+        while abi < codegen.async_bind_count && abi < C99_ASYNC_MAX_AWAITS {
+            if codegen.async_bind_names[abi] != null &&
+                str_equals(codegen.async_bind_names[abi], name) != 0 &&
+                codegen.async_collect_types[abi] != null {
+                return codegen.async_collect_types[abi];
+            }
+            abi = abi + 1;
+        }
+    }
     var local_i: i32 = codegen.local_variable_count - 1;
     while local_i >= 0 {
         if local_i >= C99_MAX_LOCAL_VARS {

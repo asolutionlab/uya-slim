@@ -207,6 +207,16 @@ BytesHandler {
     }
 }
 
+struct ChunkedHandler : AsyncHandler {}
+
+ChunkedHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.chunked(Status.OK, "text/plain", "chunked-body");
+    }
+}
+
 struct RedirectHandler : AsyncHandler {}
 
 RedirectHandler {
@@ -497,6 +507,21 @@ test "uyagin_query_form_bytes_redirect" {
     resp = rb[0: n as usize];
     if !slice_has(resp, "201 Created") { try assert_eq_i32(0, 1); }
     if !slice_has(resp, "Location: /next") { try assert_eq_i32(0, 1); }
+}
+
+test "uyagin_chunked_response" {
+    var engine: Engine = uyagin_new();
+    var ch: ChunkedHandler = ChunkedHandler{};
+    const handler: AsyncHandler = ch;
+    try engine.GET("/chunked", handler);
+
+    var rb: [byte: 512] = [];
+    const n: isize = try run_engine_request(&engine, Method.GET, "/chunked", &rb[0] as &byte, 512);
+    if n <= 0 { try assert_eq_i32(0, 1); }
+    const resp: &[byte] = rb[0: n as usize];
+    if !slice_has(resp, "Transfer-Encoding: chunked") { try assert_eq_i32(0, 1); }
+    if slice_has(resp, "Content-Length:") { try assert_eq_i32(0, 1); }
+    if !slice_has(resp, "c\r\nchunked-body\r\n0\r\n\r\n") { try assert_eq_i32(0, 1); }
 }
 
 test "uyagin_route_priority_static_param_wildcard" {

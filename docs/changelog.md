@@ -8,6 +8,17 @@
 
 **发布日期：** 待定
 
+### 标准库 HTTP / UyaGin P5 与 async lowering 收口（2026-04-25）
+
+- **`std.http.parse` / `std.http.types`**：HTTP/1.x 解析热路径补入 **8-byte word-at-a-time** 的 `CRLF` / `:` / 空格扫描；Header 名在解析时统一转小写、缓存 **hash** 与常见头 **kind**（`Content-Length` / `Connection` / `Transfer-Encoding` / `Content-Type` / `Host` / `Authorization`），并保留“无缓存元数据时按字节回退比较”的兼容路径。
+- **Chunked request**：`http_parse_request` 现在识别 **`Transfer-Encoding: chunked`**，并通过 `http_decode_chunked_body_inplace` 将 request body 在连接缓冲内原地解码；阻塞 `http_recv_parse_request` 与异步 `uyagin_conn_read_parse_async` 主链路已接通。
+- **UyaGin I/O**：`lib/std/http/uyagin.uya` 补入大响应 **`writev`** 聚合写与文件响应 **Linux x86_64 `sendfile` 优先 / 其它路径 nonblocking `read/write` 回退**；同时新增显式 `ctx.chunked(...)` API 与 `uyagin_send_context_chunked_response_*`。
+- **TLS server 适配**：`lib/tls/https.uya` 新增 `https_server_serve_uyagin_once`，可将 TLS 握手后的 HTTP 请求桥接到 `std.http.uyagin.Engine`；`tests/test_https_loopback.uya` 现同时覆盖“固定 body HTTPS server”与 “TLS -> UyaGin handler” 两条最小 loopback。
+- **C99 async lowering**：修复了“直接把 `@await` 结果绑定到 `!T` 变量”时的状态机漏切段 / 绑定变量类型丢失问题。`src/codegen/c99/function.uya`、`types.uya`、`expr.uya` 现支持：
+  - `const r: !i32 = @await fut;`
+  - 恢复后在后续表达式中正确识别 `r` 为错误联合类型
+- **测试**：新增 `tests/test_async_await_direct_err_union.uya`，并更新 `tests/test_http_parse.uya`、`tests/test_http_server.uya`、`tests/test_http_uyagin.uya`、`tests/test_https_loopback.uya` 覆盖 P5 主链路。
+
 ### 语言：静态方法 `Type.method(...)`（2026-04-25）
 
 - **语言 / Checker / C99**：结构体与联合体的方法现在支持“无 `self` 参数”的静态方法，公开调用语法为 **`Type.method(...)`**。

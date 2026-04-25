@@ -143,7 +143,15 @@ fn main() i32 {
 
 ## 标准库 HTTP（实验性）
 
-`lib/std/http/` 提供阻塞式解析、路由与最小服务器原语（`types` / `parse` / `router` / `server`）。示例见根目录 [`examples/http_server.uya`](examples/http_server.uya)。
+`lib/std/http/` 当前提供：
+
+- 阻塞式解析、路由与最小服务器原语（`types` / `parse` / `router` / `server`）
+- 实验性 Gin 风格异步框架 `std.http.uyagin`
+- HTTP/1.1 chunked request 原地解码、显式 chunked response
+- 响应 `writev` 聚合写，以及 Linux x86_64 文件响应 `sendfile` 优先路径
+- 通过 `tls.https` 适配的最小 HTTPS -> UyaGin 服务端桥接
+
+示例见根目录 [`examples/http_server.uya`](examples/http_server.uya)；UyaGin 路线图见 [`docs/uyagin_todo.md`](docs/uyagin_todo.md)。
 
 开发与回归要求：
 

@@ -55,13 +55,20 @@
 
 ## P5：HTTP 协议与 I/O 优化
 
-- [ ] 解析器 SIMD/word-at-a-time 扫描 CRLF、冒号、空格。
-- [ ] Header name 小写/哈希缓存，常见 header 快速路径。
-- [ ] 响应使用 `writev` 合并 header/body，避免大 body 复制。
-- [ ] 静态文件使用 `sendfile` / `splice`。
-- [ ] 支持 chunked request/response。
-- [ ] 支持 TLS accept/serve，复用现有 `tls` 模块。
-- [ ] 评估 HTTP/2：优先 h2c/TLS ALPN 设计，不影响 HTTP/1 热路径。
+- [x] 解析器 SIMD/word-at-a-time 扫描 CRLF、冒号、空格。
+  当前已落地为 8-byte word-at-a-time 扫描；暂未引入平台相关 SIMD 指令分支。
+- [x] Header name 小写/哈希缓存，常见 header 快速路径。
+- [x] 响应使用 `writev` 合并 header/body，避免大 body 复制。
+- [x] 静态文件使用 `sendfile` / `splice`。
+  当前 Linux x86_64 优先 `sendfile`，其它路径安全回退到 nonblocking `read/write`；`splice` 暂无额外收益，先不引入。
+- [x] 支持 chunked request/response。
+- [x] 支持 TLS accept/serve，复用现有 `tls` 模块。
+- [x] 评估 HTTP/2：优先 h2c/TLS ALPN 设计，不影响 HTTP/1 热路径。
+  结论：
+  1. `std.http` / `uyagin` 继续把 HTTP/1.1 parser 与 response builder 保持独立热路径，不在现有 `Request` / `GinContext` 上混入 h2 stream 状态。
+  2. TLS 路径优先走 ALPN，在 `tls.https` 握手完成后基于协商结果分派 `http/1.1` 与未来 `h2` server。
+  3. 明文路径若支持 HTTP/2，优先独立 h2c preface / upgrade 检测入口，不让 HTTP/1 parser 承担 frame 层分支。
+  4. 当前版本先冻结为“HTTP/1.1 热路径 + TLS/ALPN 预留”，不在 P5 内引入 HTTP/2 frame / HPACK 实现。
 
 ## P6：可观测性与生产配置
 
@@ -103,5 +110,5 @@
 - [ ] 迁移指南：Gin handler → UyaGin handler。
 - [ ] 示例：hello、JSON、JWT、multipart、static file、middleware。
 - [ ] 压测报告：包含命令、硬件、原始数据、火焰图。
-- [ ] 编译器边界清理：继续随着 Uya C 后端修复删除 UyaGin 中的兼容层 / workaround；当前状态见 `docs/compiler_bug_report_2026-04-24_uyagin_async.md`。
-  当前报告已同步到：Bug 1 / 2 / 4 已修复，Bug 3 仍建议保留防御性拆分并补专门回归。
+- [ ] 编译器边界清理：继续随着 Uya C 后端修复删除 UyaGin 中的兼容层 / workaround；当前状态见 [`compiler_bug_report_2026-04-25_uyagin_async.md`](./compiler_bug_report_2026-04-25_uyagin_async.md)。
+  当前报告已同步到：direct err-union await bind、文件发送路径 lowering 缺口、Header 缓存兼容回退均已修复；parser 对 `catch { ... }` 的假性“意外 token”诊断仍待清理。

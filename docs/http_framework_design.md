@@ -4,6 +4,8 @@
 **状态**：设计阶段  
 **参考**：[.cursor/plans/uya_高性能_http_框架_09efdaaa.plan.md](.cursor/plans/uya_高性能_http_框架_09efdaaa.plan.md)、[grammar_formal.md](grammar_formal.md)、[uya.md](uya.md)
 
+> 2026-04-25 注：当前仓库实现已经明显超出本页最初的 blocking-first 设计稿。`std.http.parse/types/server` 已具备 Header 缓存、chunked request 解码与 `writev`/`sendfile` 热路径；更贴近现状的框架层说明请优先参考 [`uyagin_design.md`](./uyagin_design.md) 与 [`uyagin_todo.md`](./uyagin_todo.md)。
+
 ---
 
 ## 1. 概述

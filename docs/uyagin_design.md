@@ -23,13 +23,16 @@ UyaGin 是 `std.http.uyagin` 中的 Gin 风格 HTTP 框架核心，目标是在 
 - `RouterGroup`：前缀拼接、group middleware 继承、分组路由注册。
 - `AsyncHandler`：异步 handler 接口，返回 `Future<!i32>`。
 - `GinContext`：请求上下文、path/query/header 访问、`DefaultQuery`、`PostForm`、`PostFormDefault`、`Multipart`、`status`、`header_set`、`abort`、响应写入。
-- `uyagin_send_response_async` / `uyagin_write_context_response_async` / `uyagin_send_context_response_async`：异步响应写入，小响应 header/body 合并。
+- `uyagin_send_response_async` / `uyagin_write_context_response_async` / `uyagin_send_context_response_*`：异步响应写入；小响应 header/body 合并，大响应走 `writev` 聚合写。
+- `ctx.chunked(...)` / `uyagin_send_context_chunked_response_*`：显式 chunked response。
+- `ctx.file(...)` / `uyagin_send_file_body_async`：文件响应；Linux x86_64 优先 `sendfile`，其它路径安全回退到 nonblocking `read/write`。
 - `uyagin_error_response` / `uyagin_run_chain_recover`：统一错误映射与 recovery 路径。
 - `uyagin_method_not_allowed` / `uyagin_auto_options`：`405` / `OPTIONS` 的 `Allow` 头自动生成。
-- `uyagin_conn_read_parse_async`：异步读取并解析一个 HTTP/1.x 请求。
+- `uyagin_conn_read_parse_async`：异步读取并解析一个 HTTP/1.x 请求；当前已支持 chunked request 线级解析与连接缓冲内原地解码。
 - `uyagin_accept_async`：异步 accept。
 - `uyagin_serve_conn`：单连接 keep-alive 请求循环。
 - `GinListener`：监听 socket 的 RAII 包装，`drop` 自动关闭。
+- `tls.https.https_server_serve_uyagin_once`：最小 HTTPS -> UyaGin handler 桥接。
 
 ## API 草图
 
@@ -73,7 +76,9 @@ export fn main() i32 {
 ### 2. 解析层
 
 - 复用 `http_parse_request`，请求 path、query、header、body 尽量是输入缓冲的切片视图。
+- header 名解析时统一转小写，并缓存 hash / 常见 header kind；`Content-Length` / `Transfer-Encoding` / `Connection` 等查找优先走缓存，手工构造 `Request` 时则按字节回退匹配。
 - `ParseResult.consumed` 用于 keep-alive pipeline 场景，处理完一个请求后调用 `http_connbuf_shift` 前移剩余字节。
+- `Transfer-Encoding: chunked` 请求体在 parser 侧先做线级完整性检查，再在连接缓冲中原地解码为连续 body 切片。
 - 请求体大小沿用 `HTTP_CONN_READ_CAP` 量级，避免无限读取。
 
 ### 3. 路由层
@@ -102,7 +107,9 @@ export fn main() i32 {
 ### 6. 响应层
 
 - 常见小响应直接在栈上 `hdr` 缓冲内拼出 header，再把 body 追加到同一缓冲，一次 `write_all`。
-- 大响应先写 header，再写 body，避免复制大 body。
+- 大响应优先走 `writev` 聚合写，避免把 body 复制进 header 缓冲。
+- 文件响应优先复用 `sendfile`；不满足平台条件时回退到 nonblocking `read/write` future。
+- 若调用方显式选择 `ctx.chunked(...)`，则输出 `Transfer-Encoding: chunked` 并按块 framing。
 - `Connection` 根据 `persist` 与 HTTP/1.0 keep-alive 规则输出。
 
 ## 性能设计
@@ -118,7 +125,8 @@ export fn main() i32 {
 
 - 小响应合并 header/body，减少一次写 syscall。
 - keep-alive 与 pipeline 避免频繁 TCP 建连。
-- 后续 TODO 会加入 writev/sendfile 路径，进一步减少复制和 syscall。
+- 当前大响应已走 `writev`，文件响应已接通 Linux x86_64 `sendfile` 优先路径。
+- 剩余可继续评估的是 `splice` 与更细粒度的零拷贝静态文件/代理链路，而不是继续维护纯 `read/write` 主路径。
 
 ### 调度与并发
 
@@ -195,8 +203,8 @@ fn GET_T<H: AsyncHandler>(engine: &Engine, pattern: &[const byte], h: H) !void
 当前代码里仍保留的保守实现主要是：
 
 - 继续优先使用 `Future<!i32>` / `Future<!usize>`，而不是把主链路改成 `Future<!void>`。
-- 响应发送仍拆成 `head-only` / `body` 两个 async helper，由外层同步分发；这是对历史早退 fallthrough 类问题的防御性保留。
+- 响应发送仍拆成 `head-only` / `body` / `chunked` 几个 async helper，由外层同步分发；这是对历史 codegen 漏发语句 / 早退 fallthrough 类问题的防御性保留。
 - `uyagin_ready_i32` / `uyagin_ready_usize` 这类 ready helper 仍在源码中；其中一部分历史错误包装辅助已经开始清理，但负值编码错误兼容层整体尚未完全收缩。
 - 数组索引和部分指针访问仍偏向显式边界 / helper 写法，以配合安全证明器和稳定 codegen。
 
-这些保守写法会随着编译器与回归继续完善逐步收缩；当前状态可参考 `docs/compiler_bug_report_2026-04-24_uyagin_async.md`。
+这些保守写法会随着编译器与回归继续完善逐步收缩；当前状态可参考 [`compiler_bug_report_2026-04-25_uyagin_async.md`](./compiler_bug_report_2026-04-25_uyagin_async.md)。
