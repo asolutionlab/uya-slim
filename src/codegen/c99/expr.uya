@@ -6548,7 +6548,14 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     const variant_name: &byte = std_cfg_current_value(field_name);
                     const builtin_enum_name: &byte = std_cfg_selector_enum_name(field_name);
                     if variant_name != null && builtin_enum_name != null {
-                        const safe_enum_name: &byte = get_safe_c_identifier(codegen, builtin_enum_name);
+                        var safe_enum_name: &byte = get_safe_c_identifier(codegen, builtin_enum_name);
+                        const builtin_enum_decl: &ASTNode = find_enum_decl_c99(codegen, builtin_enum_name);
+                        if builtin_enum_decl != null {
+                            const builtin_enum_c_name: &byte = c99_get_enum_c_name_from_decl(codegen, builtin_enum_decl);
+                            if builtin_enum_c_name != null {
+                                safe_enum_name = builtin_enum_c_name;
+                            }
+                        }
                         const safe_variant_name: &byte = get_safe_c_identifier(codegen, variant_name);
                         fputs(safe_enum_name as *byte, codegen.emit_stream as *void);
                         fputc(95, codegen.emit_stream as *void);
@@ -6599,7 +6606,14 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 const variant_name2: &byte = std_cfg_current_value(field_name);
                 const builtin_enum_name2: &byte = std_cfg_selector_enum_name(field_name);
                 if variant_name2 != null && builtin_enum_name2 != null {
-                    const safe_enum_name2: &byte = get_safe_c_identifier(codegen, builtin_enum_name2);
+                    var safe_enum_name2: &byte = get_safe_c_identifier(codegen, builtin_enum_name2);
+                    const builtin_enum_decl2: &ASTNode = find_enum_decl_c99(codegen, builtin_enum_name2);
+                    if builtin_enum_decl2 != null {
+                        const builtin_enum_c_name2: &byte = c99_get_enum_c_name_from_decl(codegen, builtin_enum_decl2);
+                        if builtin_enum_c_name2 != null {
+                            safe_enum_name2 = builtin_enum_c_name2;
+                        }
+                    }
                     const safe_variant_name2: &byte = get_safe_c_identifier(codegen, variant_name2);
                     fputs(safe_enum_name2 as *byte, codegen.emit_stream as *void);
                     fputc(95, codegen.emit_stream as *void);

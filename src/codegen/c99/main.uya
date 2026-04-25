@@ -443,6 +443,13 @@ fn precollect_codegen_decl(codegen: &C99CodeGenerator, decl: &ASTNode, collect_h
         return;
     }
     if collect_hosted_flags != 0 {
+        if decl.type == ASTNodeType.AST_INTERFACE_DECL {
+            // interface 值装箱在 hosted C 路径下可能需要堆分配；头文件需求必须在真正发出函数体前预收集。
+            codegen.needs_stdlib_h = 1;
+        }
+        if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_interface_count > 0 {
+            codegen.needs_stdlib_h = 1;
+        }
         if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
             if is_stdio_conflict_name(decl.fn_decl_name) != 0 {
                 codegen.has_stdio_conflicts = 1;
