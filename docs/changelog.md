@@ -8,6 +8,16 @@
 
 **发布日期：** 待定
 
+### 标准库 HTTP / UyaGin P7：Benchmark Harness（2026-04-25）
+
+- **Benchmark 服务端**：新增 **`benchmarks/uyagin_http_bench.uya`**，基于 `std.http.uyagin` 固化 P7 五个场景：**12B plaintext**、**100B JSON**、**`/users/:id`**、**middleware x3**（disabled logger + recovery + auth stub）以及 **64KiB body**。
+- **Gin 对照实现**：新增 **`benchmarks/uyagin_http_bench_gin/main.go`**，在相同路由与响应负载下提供 Gin baseline，构建时统一使用 **`go build -ldflags="-s -w"`**。
+- **统一 runner**：新增 **`benchmarks/run_uyagin_http_bench.py`** 与 shell 包装 **`benchmarks/run_uyagin_http_bench.sh`**；runner 负责统一编译、启动服务、执行 **5 次 wrk/wrk2** 采样、记录 **CPU governor / kernel / ulimit / somaxconn**、汇总 **median / p99**，并导出 **JSON/CSV** 报告。
+- **热路径指标采集**：runner 会读取 UyaGin **`heap_fallback_count`** / frame 指标，并在环境支持 `strace` 时对 hello 场景补充 **syscall/req** 统计；同时新增 **same-RPS keep-alive CPU probe**，对 `hello plaintext` 在相同目标 RPS 下比较 Uya/Gin 的 `user+sys` CPU。
+- **阈值判断**：报告现内置 P7 **RPS / p99 / alloc / syscall / CPU** 目标阈值，生成逐场景 pass/fail 字段，并支持 **`--fail-on-target`** 用于 CI / 回归门禁。
+- **核心热路径修正**：为避免 benchmark 走专用旁路，`std.async_scheduler` 现改为 **lazy eventfd**，`std.http.uyagin` 的 `uyagin_conn_read_parse_async` 改为手写 Future，`uyagin_engine_run` 也补入 “`Pending` 但未挂 fd 时立即重试” 逻辑；`benchmarks/uyagin_http_bench.uya` 已切回官方 **`engine.run_shards()`** 主链路。
+- **验证**：新增 **`tests/verify_uyagin_http_bench_runtime.sh`**，覆盖 benchmark 服务器的核心路由与 body 长度校验。
+
 ### 标准库 HTTP / UyaGin P6：可观测性与生产配置（2026-04-25）
 
 - **`std.http.uyagin`**：新增 **`UyaginMode`**、**`UyaginAccessLogOptions`**、**`UyaginConfig`**，并扩展 **`EngineRunOptions`** 支持 **`listen_backlog`**、**`buffer_cap`**、**`request_arena_cap`**、**`mode`**。

@@ -1,0 +1,292 @@
+// benchmarks/uyagin_http_bench.uya - UyaGin benchmark server for P7
+
+use std.async;
+use std.http.types;
+use std.http.uyagin;
+use std.runtime.get_argc;
+use std.runtime.get_argv;
+use libc.atoi;
+use libc.signal;
+use libc.stdio;
+use libc.string;
+
+const BENCH_DEFAULT_PORT: u16 = 18876;
+const BENCH_DEFAULT_THREADS: i32 = 4;
+const BENCH_MAX_THREADS: i32 = 32;
+const BENCH_MAIN_STACK_BYTES: u64 = 64u64 * 1024u64 * 1024u64;
+const BENCH_JSON_SMALL_RAW: [byte: 101] = "{\"ok\":true,\"msg\":\"uyagin-bench\",\"lang\":\"uya\",\"ver\":1,\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+const BENCH_LARGE_BODY_LEN: usize = 65536usize;
+
+var g_large_body: [byte: BENCH_LARGE_BODY_LEN] = [];
+
+struct PlaintextHandler : AsyncHandler {}
+
+PlaintextHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.string(Status.OK, "hello world!");
+    }
+}
+
+struct JsonSmallHandler : AsyncHandler {}
+
+JsonSmallHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.json_raw(Status.OK, bench_json_small());
+    }
+}
+
+struct PathParamHandler : AsyncHandler {}
+
+PathParamHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        const id: &[const byte] = try ctx.param("id");
+        return try @await ctx.string(Status.OK, id);
+    }
+}
+
+struct DisabledLoggerMiddleware : AsyncHandler {}
+
+DisabledLoggerMiddleware {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        _ = ctx;
+        return 0;
+    }
+}
+
+struct AuthStubMiddleware : AsyncHandler {}
+
+AuthStubMiddleware {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        _ = ctx.header("Authorization") catch {};
+        return 0;
+    }
+}
+
+var g_disabled_logger_middleware: DisabledLoggerMiddleware = DisabledLoggerMiddleware{};
+var g_auth_stub_middleware: AuthStubMiddleware = AuthStubMiddleware{};
+var g_plaintext_handler: PlaintextHandler = PlaintextHandler{};
+var g_json_small_handler: JsonSmallHandler = JsonSmallHandler{};
+var g_path_param_handler: PathParamHandler = PathParamHandler{};
+var g_large_body_handler: LargeBodyHandler = LargeBodyHandler{};
+var g_middleware_handler: MiddlewareHandler = MiddlewareHandler{};
+var g_metrics_handler: MetricsHandler = MetricsHandler{ engine: null };
+
+struct MiddlewareHandler : AsyncHandler {}
+
+MiddlewareHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.string(Status.OK, "authorized");
+    }
+}
+
+struct LargeBodyHandler : AsyncHandler {}
+
+LargeBodyHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        return try @await ctx.bytes(Status.OK, "application/octet-stream", bench_large_body());
+    }
+}
+
+struct MetricsHandler : AsyncHandler {
+    engine: &Engine,
+}
+
+MetricsHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        var body: [byte: 512] = [];
+        const metrics: &UyaginMetrics = uyagin_metrics(self.engine);
+        const n: i32 = snprintf(
+            &body[0] as &byte,
+            @len(body),
+            "{\"request_count\":%lu,\"heap_fallback_count\":%lu,\"frame_alloc_count\":%lu,\"frame_free_count\":%lu,\"accepted_connection_count\":%lu,\"closed_connection_count\":%lu,\"active_connection_count\":%d}\n",
+            metrics.request_count,
+            metrics.heap_fallback_count,
+            metrics.frame_alloc_count,
+            metrics.frame_free_count,
+            metrics.accepted_connection_count,
+            metrics.closed_connection_count,
+            metrics.active_connection_count,
+        );
+        if n <= 0 {
+            return try @await ctx.string(Status.InternalServerError, "metrics-error");
+        }
+        const body_base: &byte = &body[0] as &byte;
+        return try @await ctx.bytes(Status.OK, "application/json", body_base[0: n as usize]);
+    }
+}
+
+fn bench_fill_large_body() void {
+    var i: usize = 0;
+    while i < BENCH_LARGE_BODY_LEN {
+        g_large_body[i] = 'a' as byte;
+        i = i + 1;
+    }
+}
+
+fn bench_json_small() &[const byte] {
+    const base: &const byte = &BENCH_JSON_SMALL_RAW[0] as &const byte;
+    return base[0: 100];
+}
+
+fn bench_large_body() &[const byte] {
+    const base: &const byte = &g_large_body[0] as &const byte;
+    return base[0: BENCH_LARGE_BODY_LEN];
+}
+
+fn bench_error_name(err_id: u32) &const byte {
+    if err_id == @error_id(error.ConnectionClosed) {
+        return "ConnectionClosed" as &const byte;
+    }
+    if err_id == @error_id(error.InvalidRequest) {
+        return "InvalidRequest" as &const byte;
+    }
+    if err_id == @error_id(error.HandlerMissing) {
+        return "HandlerMissing" as &const byte;
+    }
+    if err_id == @error_id(error.HeaderTooLarge) {
+        return "HeaderTooLarge" as &const byte;
+    }
+    if err_id == @error_id(error.ValueTooLong) {
+        return "ValueTooLong" as &const byte;
+    }
+    if err_id == @error_id(error.TooManyParams) {
+        return "TooManyParams" as &const byte;
+    }
+    if err_id == @error_id(error.PayloadTooLarge) {
+        return "PayloadTooLarge" as &const byte;
+    }
+    if err_id == @error_id(error.URITooLong) {
+        return "URITooLong" as &const byte;
+    }
+    if err_id == @error_id(error.MethodNotAllowed) {
+        return "MethodNotAllowed" as &const byte;
+    }
+    if err_id == @error_id(error.WriteZero) {
+        return "WriteZero" as &const byte;
+    }
+    if err_id == @error_id(error.UnexpectedEof) {
+        return "UnexpectedEof" as &const byte;
+    }
+    return "Unknown" as &const byte;
+}
+
+fn bench_parse_port() u16 {
+    var port: i32 = BENCH_DEFAULT_PORT as i32;
+    var i: i32 = 1;
+    while i < get_argc() {
+        const arg: &byte = get_argv(i);
+        if arg != null && strcmp(arg as *const byte, "--port" as *const byte) == 0 {
+            if i + 1 < get_argc() {
+                const parsed: i32 = atoi(get_argv(i + 1) as &const byte);
+                if parsed > 0 && parsed < 65536 {
+                    port = parsed;
+                }
+                i = i + 2;
+                continue;
+            }
+        }
+        i = i + 1;
+    }
+    return port as u16;
+}
+
+fn bench_parse_threads() i32 {
+    var threads: i32 = BENCH_DEFAULT_THREADS;
+    var i: i32 = 1;
+    while i < get_argc() {
+        const arg: &byte = get_argv(i);
+        if arg != null && strcmp(arg as *const byte, "--threads" as *const byte) == 0 {
+            if i + 1 < get_argc() {
+                const parsed: i32 = atoi(get_argv(i + 1) as &const byte);
+                if parsed > 0 {
+                    threads = parsed;
+                }
+                i = i + 2;
+                continue;
+            }
+        }
+        i = i + 1;
+    }
+    if threads <= 0 {
+        return BENCH_DEFAULT_THREADS;
+    }
+    if threads > BENCH_MAX_THREADS {
+        return BENCH_MAX_THREADS;
+    }
+    return threads;
+}
+
+fn bench_register_routes(engine: &Engine) !void {
+    if engine == null {
+        return error.InvalidRequest;
+    }
+    g_metrics_handler.engine = engine;
+    const plaintext_handler: AsyncHandler = g_plaintext_handler;
+    const json_small_handler: AsyncHandler = g_json_small_handler;
+    const path_param_handler: AsyncHandler = g_path_param_handler;
+    const large_body_handler: AsyncHandler = g_large_body_handler;
+    const metrics_handler: AsyncHandler = g_metrics_handler;
+    try engine.GET("/plaintext", plaintext_handler);
+    try engine.GET("/json", json_small_handler);
+    try engine.GET("/users/:id", path_param_handler);
+    try engine.GET("/blob64k", large_body_handler);
+    try engine.GET("/__uyagin/metrics", metrics_handler);
+
+    const disabled_logger_handler: AsyncHandler = g_disabled_logger_middleware;
+    const auth_stub_handler: AsyncHandler = g_auth_stub_middleware;
+    const middleware_route_handler: AsyncHandler = g_middleware_handler;
+    var middleware_group: RouterGroup = try engine.Group("/middleware");
+    try middleware_group.Use(disabled_logger_handler);
+    try middleware_group.Use(auth_stub_handler);
+    try middleware_group.GET("/ping", middleware_route_handler);
+}
+
+export fn main() i32 {
+    _ = BENCH_MAIN_STACK_BYTES;
+    _ = signal(SIGPIPE, SIG_IGN as &void);
+    bench_fill_large_body();
+
+    const port: u16 = bench_parse_port();
+    const threads: i32 = bench_parse_threads();
+    var cfg: UyaginConfig = uyagin_config_default();
+    cfg.run_options.mode = UyaginMode.Release;
+    cfg.run_options.shard_count = threads;
+    cfg.run_options.reuse_port = threads > 1;
+    cfg.run_options.max_connections = UYAGIN_RUN_CONN_SLOT_CAP;
+    cfg.run_options.accept_batch = 16;
+    cfg.access_log.enabled = false;
+
+    var engine: Engine = uyagin_new_with_config(cfg);
+    _ = bench_register_routes(&engine) catch {
+        fprintf(stderr, "uyagin_http_bench: failed to build engine\n");
+        return 1;
+    };
+
+    var listener: GinListener = uyagin_listen_loopback_with_options(port, &engine.run_options) catch {
+        fprintf(stderr, "uyagin_http_bench: failed to listen on 127.0.0.1:%d\n", port);
+        return 2;
+    };
+
+    fprintf(stderr, "uyagin_http_bench: listening on http://127.0.0.1:%d threads=%d\n", port, threads);
+    const served: i32 = engine.run_shards(&listener) catch {
+        fprintf(stderr, "uyagin_http_bench: serve failed\n");
+        return 3;
+    };
+    fprintf(stderr, "uyagin_http_bench: stopped served=%d\n", served);
+    return 0;
+}

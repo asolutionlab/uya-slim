@@ -21,6 +21,7 @@ error TimedOut;
 export const TASK_QUEUE_CAPACITY: i32 = 64;
 export const TASK_QUEUE_I32_CAPACITY: i32 = TASK_QUEUE_CAPACITY;
 const SCHEDULER_INLINE_REPOLL_LIMIT: i32 = 1024;
+const SCHEDULER_FRAME_STACK_BUFFER_BYTES: usize = 262144;
 
 // 本地时间辅助函数（避免跨模块 time.xxx 调用在泛型函数中的编译器 bug）
 fn sched_now_ms() !u64 {
@@ -256,6 +257,7 @@ export fn task_queue_usize_new() TaskQueue_usize {
 /// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
 export struct Scheduler {
     _frame_pool: AsyncFramePool,
+    _frame_stack_buffer: [byte: SCHEDULER_FRAME_STACK_BUFFER_BYTES],
     _metrics_frame_alloc_seen: u64,
     _metrics_frame_free_seen: u64,
     _metrics_heap_fallback_seen: u64,
@@ -269,7 +271,14 @@ fn scheduler_pool_to_allocator(pool: AsyncFramePool) IAllocator {
 /// 创建调度器并初始化其 async frame pool。
 export fn scheduler_new() Scheduler {
     var s: Scheduler = Scheduler{};
-    async_frame_pool_init(&s._frame_pool, 0, 65536);
+    const stack_limit: usize = async_frame_runtime_default_stack_limit();
+    async_frame_pool_init_with_buffer(
+        &s._frame_pool,
+        &s._frame_stack_buffer[0] as &byte,
+        SCHEDULER_FRAME_STACK_BUFFER_BYTES,
+        1,
+        stack_limit,
+    );
     s._metrics_frame_alloc_seen = 0u64;
     s._metrics_frame_free_seen = 0u64;
     s._metrics_heap_fallback_seen = 0u64;
@@ -328,10 +337,6 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
     var inline_repoll_count: i32 = 0;
-    const prepare_result: !i32 = scheduler_prepare_waker(&w);
-    _ = prepare_result catch {
-        return prepare_result as! T;
-    };
     defer { scheduler_cleanup_waker(loop, &w, &io_registered_fd, &event_registered_fd); }
 
     while true {
@@ -350,6 +355,12 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
                     continue;
                 }
                 inline_repoll_count = 0;
+                if !w.has_io_interest() && !w.has_event_fd() {
+                    const prepare_result: !i32 = scheduler_prepare_waker(&w);
+                    _ = prepare_result catch {
+                        return prepare_result as! T;
+                    };
+                }
                 const sync_result: !i32 = scheduler_sync_waker_registrations(loop, &w, &io_registered_fd, &event_registered_fd);
                 const registered: i32 = sync_result catch {
                     return sync_result as! T;
@@ -615,10 +626,6 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
     var inline_repoll_count: i32 = 0;
-    const prepare_result: !i32 = scheduler_prepare_waker(&w);
-    _ = prepare_result catch {
-        return prepare_result as! T;
-    };
     defer { scheduler_cleanup_waker(loop, &w, &io_registered_fd, &event_registered_fd); }
 
     while true {
@@ -637,6 +644,12 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
                     continue;
                 }
                 inline_repoll_count = 0;
+                if !w.has_io_interest() && !w.has_event_fd() {
+                    const prepare_result: !i32 = scheduler_prepare_waker(&w);
+                    _ = prepare_result catch {
+                        return prepare_result as! T;
+                    };
+                }
                 const sync_result: !i32 = scheduler_sync_waker_registrations(loop, &w, &io_registered_fd, &event_registered_fd);
                 const registered: i32 = sync_result catch {
                     return sync_result as! T;
@@ -666,10 +679,6 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
     var inline_repoll_count: i32 = 0;
-    const prepare_result: !i32 = scheduler_prepare_waker(&w);
-    _ = prepare_result catch {
-        return prepare_result as! T;
-    };
     defer { scheduler_cleanup_waker(loop, &w, &io_registered_fd, &event_registered_fd); }
 
     while true {
@@ -706,6 +715,12 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
                     continue;
                 }
                 inline_repoll_count = 0;
+                if !w.has_io_interest() && !w.has_event_fd() {
+                    const prepare_result: !i32 = scheduler_prepare_waker(&w);
+                    _ = prepare_result catch {
+                        return prepare_result as! T;
+                    };
+                }
                 const sync_result: !i32 = scheduler_sync_waker_registrations(loop, &w, &io_registered_fd, &event_registered_fd);
                 const registered: i32 = sync_result catch {
                     return sync_result as! T;

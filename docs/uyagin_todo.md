@@ -82,19 +82,19 @@
 
 ### 基准场景
 
-- [ ] `hello plaintext`：固定 12B body，keep-alive。
-- [ ] `json small`：100B JSON。
-- [ ] `path param`：`/users/:id`。
-- [ ] `middleware x3`：logger disabled + recovery + auth stub。
-- [ ] `large body`：64KiB 响应。
+- [x] `hello plaintext`：固定 12B body，keep-alive。
+- [x] `json small`：100B JSON。
+- [x] `path param`：`/users/:id`。
+- [x] `middleware x3`：logger disabled + recovery + auth stub。
+- [x] `large body`：64KiB 响应。
 
 ### 对照条件
 
-- [ ] 同一台 Linux x86_64 机器。
-- [ ] 同一编译级别：Uya `-O2/-O3`，Gin 使用 `go build -ldflags="-s -w"`。
-- [ ] 同一工具：`wrk` 或 `wrk2`，固定线程/连接/持续时间。
-- [ ] 记录 CPU governor、内核版本、ulimit、somaxconn。
-- [ ] 每项至少 5 次，取 median 与 p99。
+- [x] 同一台 Linux x86_64 机器。
+- [x] 同一编译级别：Uya `-O2/-O3`，Gin 使用 `go build -ldflags="-s -w"`。
+- [x] 同一工具：`wrk` 或 `wrk2`，固定线程/连接/持续时间。
+- [x] 记录 CPU governor、内核版本、ulimit、somaxconn。
+- [x] 每项至少 5 次，取 median 与 p99。
 
 ### 达标指标
 
@@ -103,6 +103,9 @@
 - [ ] alloc/op：热路径 0 heap allocation。
 - [ ] syscall/req：hello keep-alive 接近 1 write + 摊销 read/epoll。
 - [ ] CPU：同 RPS 下 user+sys CPU 低于 Gin。
+
+2026-04-25：已新增 `benchmarks/uyagin_http_bench.uya`、`benchmarks/uyagin_http_bench_gin/main.go`、`benchmarks/run_uyagin_http_bench.py` 与 `tests/verify_uyagin_http_bench_runtime.sh`。
+当前 runner 会固定 5 次采样，导出 median / p99、环境信息、Uya heap fallback 指标，并在可用时追加 hello 场景 `strace` syscall 统计；同时新增 same-RPS CPU probe（内置 keep-alive paced client），可直接在报告里给出 `rps/p99/alloc/syscall/cpu` 的 pass/fail 字段，并支持 `--fail-on-target`。注意：当前 benchmark server 已切回官方 `engine.run_shards()` 主链路，后续性能收敛只接受 core 路径优化，不接受 benchmark 专用快路径。上述“达标指标”是否满足，仍以当次实测报告为准，不在代码提交时预先勾选。
 
 ## P8：兼容性与文档
 
