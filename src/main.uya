@@ -4310,74 +4310,115 @@ fn dirent_may_be_regular_file(entry_ptr: &byte) i32 {
     return 0;
 }
 
-// 默认中间 C 路径：$TMPDIR/uya_output_<pid>.c，否则 /tmp/uya_output_<pid>.c（Darwin/Linux 通用）
-fn host_fill_temp_c_compile_path(buf: &byte, cap: usize) i32 {
-    if buf == null || cap < 24 {
+fn host_append_temp_path_byte(buf: &byte, cap: usize, pos: &usize, value: byte) i32 {
+    if buf == null || pos == null || *pos + 1 >= cap {
         return -1;
     }
-    const pid: i32 = getpid();
-    const tmpdir: *byte = getenv("TMPDIR" as *byte);
-    if tmpdir != null && tmpdir[0] != 0 {
-        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_output_%d.c" as *byte, tmpdir, pid);
-        if w > 0 && (w as usize) < cap {
-            return 0;
-        }
-        return -1;
-    }
-    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_output_%d.c" as *byte, pid);
-    if w2 > 0 && (w2 as usize) < cap {
+    buf[*pos] = value;
+    *pos = *pos + 1;
+    return 0;
+}
+
+fn host_append_temp_path_bytes(buf: &byte, cap: usize, pos: &usize, text: &byte) i32 {
+    if text == null {
         return 0;
     }
-    return -1;
+    var i: usize = 0;
+    while text[i] != 0 {
+        if host_append_temp_path_byte(buf, cap, pos, text[i]) != 0 {
+            return -1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn host_append_temp_path_i32(buf: &byte, cap: usize, pos: &usize, value: i32) i32 {
+    var digits: [byte: 16] = [];
+    var v: i32 = value;
+    if v < 0 {
+        if host_append_temp_path_byte(buf, cap, pos, 45 as byte) != 0 {
+            return -1;
+        }
+        v = 0 - v;
+    }
+    var n: usize = 0;
+    if v == 0 {
+        digits[0] = 48 as byte;
+        n = 1;
+    } else {
+        while v > 0 && n < 16 {
+            digits[n] = (48 + (v % 10)) as byte;
+            v = v / 10;
+            n = n + 1;
+        }
+    }
+    while n > 0 {
+        n = n - 1;
+        if host_append_temp_path_byte(buf, cap, pos, digits[n]) != 0 {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+// 默认临时路径：$TMPDIR/<prefix>_<pid>[_<extra_index>]<suffix>，否则 /tmp/...（Darwin/Linux 通用）
+fn host_fill_temp_path(buf: &byte, cap: usize, prefix: &byte, suffix: &byte, extra_index: i32) i32 {
+    if buf == null || cap < 32 || prefix == null {
+        return -1;
+    }
+    var suf: &byte = suffix;
+    if suf == null {
+        suf = "" as *byte;
+    }
+    var tmpdir: &byte = getenv("TMPDIR" as *byte);
+    if tmpdir == null || tmpdir[0] == 0 {
+        tmpdir = "/tmp" as *byte;
+    }
+    var pos: usize = 0;
+    if host_append_temp_path_bytes(buf, cap, &pos, tmpdir) != 0 {
+        return -1;
+    }
+    if pos == 0 { return -1; }
+    if buf[pos - 1] != 47 as byte {
+        if host_append_temp_path_byte(buf, cap, &pos, 47 as byte) != 0 {
+            return -1;
+        }
+    }
+    if host_append_temp_path_bytes(buf, cap, &pos, prefix) != 0 {
+        return -1;
+    }
+    if host_append_temp_path_byte(buf, cap, &pos, 95 as byte) != 0 {
+        return -1;
+    }
+    if host_append_temp_path_i32(buf, cap, &pos, getpid()) != 0 {
+        return -1;
+    }
+    if extra_index >= 0 {
+        if host_append_temp_path_byte(buf, cap, &pos, 95 as byte) != 0 ||
+            host_append_temp_path_i32(buf, cap, &pos, extra_index) != 0 {
+            return -1;
+        }
+    }
+    if host_append_temp_path_bytes(buf, cap, &pos, suf) != 0 {
+        return -1;
+    }
+    if pos >= cap { return -1; }
+    buf[pos] = 0 as byte;
+    return 0;
+}
+
+fn host_fill_temp_c_compile_path(buf: &byte, cap: usize) i32 {
+    return host_fill_temp_path(buf, cap, "uya_output" as *byte, ".c" as *byte, -1);
 }
 
 // run/test 临时可执行路径：$TMPDIR/uya_out_<pid><suffix> 或 /tmp/uya_out_<pid><suffix>
 fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
-    if buf == null || cap < 32 {
-        return -1;
-    }
-    var suf: &byte = exe_suffix;
-    if suf == null {
-        suf = "" as *byte;
-    }
-    const pid: i32 = getpid();
-    const tmpdir: *byte = getenv("TMPDIR" as *byte);
-    if tmpdir != null && tmpdir[0] != 0 {
-        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_out_%d%s" as *byte, tmpdir, pid, suf as *byte);
-        if w > 0 && (w as usize) < cap {
-            return 0;
-        }
-        return -1;
-    }
-    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_out_%d%s" as *byte, pid, suf as *byte);
-    if w2 > 0 && (w2 as usize) < cap {
-        return 0;
-    }
-    return -1;
+    return host_fill_temp_path(buf, cap, "uya_out" as *byte, exe_suffix, -1);
 }
 
 fn host_fill_temp_microapp_loader_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
-    if buf == null || cap < 48 {
-        return -1;
-    }
-    var suf: &byte = exe_suffix;
-    if suf == null {
-        suf = "" as *byte;
-    }
-    const pid: i32 = getpid();
-    const tmpdir: *byte = getenv("TMPDIR" as *byte);
-    if tmpdir != null && tmpdir[0] != 0 {
-        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_microapp_loader_%d%s" as *byte, tmpdir, pid, suf as *byte);
-        if w > 0 && (w as usize) < cap {
-            return 0;
-        }
-        return -1;
-    }
-    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_microapp_loader_%d%s" as *byte, pid, suf as *byte);
-    if w2 > 0 && (w2 as usize) < cap {
-        return 0;
-    }
-    return -1;
+    return host_fill_temp_path(buf, cap, "uya_microapp_loader" as *byte, exe_suffix, -1);
 }
 
 fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte, payload_exe_path: &byte) i32 {
@@ -6226,34 +6267,7 @@ fn host_fill_temp_c_import_object_path(buf: &byte, cap: usize, stem: &byte, inde
     if buf == null || cap < 32 || stem == null {
         return -1;
     }
-    const pid: i32 = getpid();
-    const tmpdir: *byte = getenv("TMPDIR" as *byte);
-    if tmpdir != null && tmpdir[0] != 0 {
-        if index >= 0 {
-            const w: i32 = snprintf(buf as *byte, cap, "%s/%s_%d_%d.o" as *byte, tmpdir, stem as *byte, pid, index);
-            if w > 0 && (w as usize) < cap {
-                return 0;
-            }
-        } else {
-            const w2: i32 = snprintf(buf as *byte, cap, "%s/%s_%d.o" as *byte, tmpdir, stem as *byte, pid);
-            if w2 > 0 && (w2 as usize) < cap {
-                return 0;
-            }
-        }
-        return -1;
-    }
-    if index >= 0 {
-        const w3: i32 = snprintf(buf as *byte, cap, "/tmp/%s_%d_%d.o" as *byte, stem as *byte, pid, index);
-        if w3 > 0 && (w3 as usize) < cap {
-            return 0;
-        }
-        return -1;
-    }
-    const w4: i32 = snprintf(buf as *byte, cap, "/tmp/%s_%d.o" as *byte, stem as *byte, pid);
-    if w4 > 0 && (w4 as usize) < cap {
-        return 0;
-    }
-    return -1;
+    return host_fill_temp_path(buf, cap, stem, ".o" as *byte, index);
 }
 
 fn shell_cmd_append_raw(cmd: &byte, cap: i32, len: &i32, text: &byte) i32 {
