@@ -4584,6 +4584,22 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         c99_async_hoist_for_with_await_vars_rec(codegen, fn_decl, body);
         async_cut_root = c99_async_root_stmt_index_of_first_await(body, await_blocks, await_stmt_indices, await_count);
     }
+    const param_count: i32 = fn_decl.fn_decl_param_count;
+    const params: & & ASTNode = fn_decl.fn_decl_params;
+    var async_param_type_nodes: [&ASTNode: 16] = [];
+    var async_param_type_cs: [&byte: 16] = [];
+    {
+        var pre_pi: i32 = 0;
+        while pre_pi < param_count && pre_pi < 16 {
+            const param_pre: &ASTNode = params[pre_pi];
+            if param_pre != null && param_pre.type == ASTNodeType.AST_VAR_DECL && param_pre.var_decl_type != null {
+                const substituted_param_type: &ASTNode = substitute_type_arg(codegen, param_pre.var_decl_type);
+                async_param_type_nodes[pre_pi] = substituted_param_type;
+                async_param_type_cs[pre_pi] = c99_type_to_c_async_method_opt(codegen, substituted_param_type);
+            }
+            pre_pi = pre_pi + 1;
+        }
+    }
     // 编译期计算状态机字节大小（使用真实类型大小）
     // - state = 4 字节
     // - await_fut（vtable+data 接口）= 16 字节
@@ -4614,11 +4630,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         // 参数：按实际类型大小
         {
-            var pc: i32 = fn_decl.fn_decl_param_count;
+            var pc: i32 = param_count;
             if pc > 16 { pc = 16; }
             var pi2: i32 = 0;
             while pi2 < pc {
-                const param: &ASTNode = fn_decl.fn_decl_params[pi2];
+                const param: &ASTNode = params[pi2];
                 if param != null && param.type == ASTNodeType.AST_VAR_DECL {
                     const sz: i32 = get_type_node_size_bytes(codegen, param.var_decl_type);
                     if sz > 0 {
@@ -4979,8 +4995,6 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             loc_i = loc_i + 1;
         }
     }
-    const param_count: i32 = fn_decl.fn_decl_param_count;
-    const params: & & ASTNode = fn_decl.fn_decl_params;
     var pi: i32 = 0;
     if is_struct_defined(codegen, async_struct) == 0 {
         while pi < param_count && pi < 16 {
@@ -4988,7 +5002,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
                 if pname != null {
-                    c99_emit_struct_field_decl_fragment(codegen, param.var_decl_type, null, pname);
+                    var param_field_type: &ASTNode = async_param_type_nodes[pi];
+                    if param_field_type == null {
+                        param_field_type = param.var_decl_type;
+                    }
+                    c99_emit_struct_field_decl_fragment(codegen, param_field_type, null, pname);
                 }
             }
             pi = pi + 1;
@@ -5177,7 +5195,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             codegen.async_param_count = codegen.async_param_count + 1;
             // 将捕获参数注册为 local_variables，使 get_identifier_type_c 能找到类型（用于 reader.read 等接口/方法调用）
             if param.var_decl_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
+                var ptype_c: &byte = async_param_type_cs[pi];
+                if ptype_c == null {
+                    var fallback_param_type: &ASTNode = async_param_type_nodes[pi];
+                    if fallback_param_type == null {
+                        fallback_param_type = param.var_decl_type;
+                    }
+                    ptype_c = c99_type_to_c_async_method_opt(codegen, fallback_param_type);
+                }
                 if ptype_c != null {
                     c99_push_local_variable(codegen, param.var_decl_name, ptype_c, param.var_decl_type, codegen.current_depth);
                 }
@@ -5585,7 +5610,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         while pi < param_count && pi < 16 {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
-                const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
+                var ptype_c: &byte = async_param_type_cs[pi];
+                if ptype_c == null {
+                    var fallback_param_type2: &ASTNode = async_param_type_nodes[pi];
+                    if fallback_param_type2 == null {
+                        fallback_param_type2 = param.var_decl_type;
+                    }
+                    ptype_c = c99_type_to_c_async_method_opt(codegen, fallback_param_type2);
+                }
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
                 if ptype_c != null && pname != null {
                     fputs(", " as *byte, codegen.emit_stream as *void);
@@ -5619,7 +5651,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         while pi < param_count && pi < 16 {
             const param_old: &ASTNode = params[pi];
             if param_old != null && param_old.type == ASTNodeType.AST_VAR_DECL && param_old.var_decl_type != null && param_old.var_decl_name != null {
-                const ptype_old: &byte = c99_type_to_c_async_method_opt(codegen, param_old.var_decl_type);
+                var ptype_old: &byte = async_param_type_cs[pi];
+                if ptype_old == null {
+                    var fallback_param_type3: &ASTNode = async_param_type_nodes[pi];
+                    if fallback_param_type3 == null {
+                        fallback_param_type3 = param_old.var_decl_type;
+                    }
+                    ptype_old = c99_type_to_c_async_method_opt(codegen, fallback_param_type3);
+                }
                 const pname_old: &byte = get_safe_c_identifier(codegen, param_old.var_decl_name);
                 if ptype_old != null && pname_old != null {
                     fputs(", " as *byte, codegen.emit_stream as *void);
@@ -5741,7 +5780,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fputs(", " as *byte, codegen.emit_stream as *void);
             }
             first_param = 0;
-            const ptype_c: &byte = c99_type_to_c_async_method_opt(codegen, param.var_decl_type);
+            var ptype_c: &byte = async_param_type_cs[pi];
+            if ptype_c == null {
+                var fallback_param_type4: &ASTNode = async_param_type_nodes[pi];
+                if fallback_param_type4 == null {
+                    fallback_param_type4 = param.var_decl_type;
+                }
+                ptype_c = c99_type_to_c_async_method_opt(codegen, fallback_param_type4);
+            }
             const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
             if ptype_c != null && pname != null {
                 fprintf(codegen.emit_stream as *void, "%s %s" as *byte, ptype_c as *byte, pname as *byte);

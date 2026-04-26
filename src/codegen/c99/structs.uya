@@ -2551,9 +2551,18 @@ fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode,
     
     var i: i32 = 0;
     while i < type_arg_count {
-        var arg: &ASTNode = type_args[i];
+        const original_arg: &ASTNode = type_args[i];
+        var arg: &ASTNode = original_arg;
+        var allow_err_void_mono: i32 = 0;
         // 递归剥离外层包装：!T / ptr T
         if arg != null && arg.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+            if arg.type_error_union_payload_type != null &&
+                arg.type_error_union_payload_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                arg.type_error_union_payload_type.type_named_name != null &&
+                strcmp(arg.type_error_union_payload_type.type_named_name as *byte, "void" as *byte) == 0 {
+                // Future<!void>/Poll<!void> 这类实例是有效单态；不能在剥离后把 payload `void` 误判成“未解析实参”。
+                allow_err_void_mono = 1;
+            }
             arg = arg.type_error_union_payload_type;
         }
         if arg != null && arg.type == ASTNodeType.AST_TYPE_POINTER {
@@ -2562,7 +2571,11 @@ fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode,
         if arg != null && arg.type == ASTNodeType.AST_TYPE_NAMED && arg.type_named_name != null {
             const name: &byte = arg.type_named_name;
             if strcmp(name as *byte, "void" as *byte) == 0 {
-                return 1;  // void 不作为有效单态化实参
+                if allow_err_void_mono == 0 {
+                    return 1;  // plain void 仍不作为有效单态化实参
+                }
+                i = i + 1;
+                continue;
             }
             var j: i32 = 0;
             while j < type_param_count && j < 64 {

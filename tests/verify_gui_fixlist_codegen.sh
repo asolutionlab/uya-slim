@@ -65,6 +65,18 @@ CC=gcc "$LINKER" "$TMP/option_struct.c" "$TMP/option_struct"
 "$COMPILER" build "$ROOT/tests/test_option_struct.uya" --split-c-dir "$TMP/split" -o "$TMP/split_option" --c99
 "$TMP/split_option" >/dev/null
 
+"$COMPILER" build "$ROOT/tests/test_async_future_void_codegen.uya" --no-split-c -o "$TMP/async_future_void" --c99
+"$TMP/async_future_void" >/dev/null
+
+"$COMPILER" build "$ROOT/tests/test_async_future_void_codegen.uya" --split-c-dir "$TMP/async_future_void_split" -o "$TMP/async_future_void_split_bin" --c99
+"$TMP/async_future_void_split_bin" >/dev/null
+
+"$COMPILER" build "$ROOT/tests/test_generic_async_function_codegen.uya" --no-split-c -o "$TMP/generic_async_function" --c99
+"$TMP/generic_async_function" >/dev/null
+
+"$COMPILER" build "$ROOT/tests/test_method_call_in_callback_codegen.uya" --no-split-c -o "$TMP/method_call_in_callback" --c99
+"$TMP/method_call_in_callback" >/dev/null
+
 "$COMPILER" --c99 --nostdlib "$ROOT/tests/test_const_receiver_codegen.uya" -o "$TMP/const_receiver.c"
 gcc --std=c99 -Werror=discarded-qualifiers -c "$TMP/const_receiver.c" -o "$TMP/const_receiver.o"
 
