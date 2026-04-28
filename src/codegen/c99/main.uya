@@ -2181,30 +2181,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.emit_stream as *void);
     mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);
     fputs("#ifdef __APPLE__\n" as *byte, codegen.emit_stream as *void);
+    fputs("#define stat uya_host_stat_hidden\n#define mkdir uya_host_mkdir_hidden\n#define time_t uya_host_time_t_hidden\n#define timespec uya_host_timespec_hidden\n#define tv_sec uya_host_tv_sec_hidden\n#define tv_nsec uya_host_tv_nsec_hidden\n#include <sys/stat.h>\n#undef stat\n#undef mkdir\n#undef time_t\n#undef timespec\n#undef tv_sec\n#undef tv_nsec\n#ifdef st_atime\n#undef st_atime\n#endif\n#ifdef st_mtime\n#undef st_mtime\n#endif\n#ifdef st_ctime\n#undef st_ctime\n#endif\n#ifdef S_IFMT\n#undef S_IFMT\n#endif\n#ifdef S_IFDIR\n#undef S_IFDIR\n#endif\n#ifdef S_IFREG\n#undef S_IFREG\n#endif\n" as *byte, codegen.emit_stream as *void);
     fputs("struct Stat;\n" as *byte, codegen.emit_stream as *void);
     fputs("struct TimeSpec;\n" as *byte, codegen.emit_stream as *void);
     fputs("struct uya_macos_native_timespec { int64_t tv_sec; int64_t tv_nsec; };\n" as *byte, codegen.emit_stream as *void);
     fputs("struct uya_macos_uya_timespec { int64_t tv_sec; int64_t tv_nsec; };\n" as *byte, codegen.emit_stream as *void);
-    fputs("struct uya_macos_native_stat {\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int32_t st_dev;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint16_t st_mode;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint16_t st_nlink;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint64_t st_ino;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint32_t st_uid;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint32_t st_gid;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int32_t st_rdev;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_timespec st_atimespec;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_timespec st_mtimespec;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_timespec st_ctimespec;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_timespec st_birthtimespec;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int64_t st_size;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int64_t st_blocks;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int32_t st_blksize;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint32_t st_flags;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    uint32_t st_gen;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int32_t st_lspare;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    int64_t st_qspare[2];\n" as *byte, codegen.emit_stream as *void);
-    fputs("};\n" as *byte, codegen.emit_stream as *void);
     fputs("struct uya_macos_uya_stat {\n" as *byte, codegen.emit_stream as *void);
     fputs("    int64_t st_dev;\n" as *byte, codegen.emit_stream as *void);
     fputs("    int64_t st_ino;\n" as *byte, codegen.emit_stream as *void);
@@ -2237,11 +2218,19 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("extern int uya_host_chdir(const char *) __asm__(\"_chdir\");\n" as *byte, codegen.emit_stream as *void);
     fputs("extern char *uya_host_getcwd(char *, size_t) __asm__(\"_getcwd\");\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int uya_host_system(const char *) __asm__(\"_system\");\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern void *uya_host_opendir(const char *) __asm__(\"_opendir\");\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern void *uya_host_readdir(void *) __asm__(\"_readdir\");\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int uya_host_closedir(void *) __asm__(\"_closedir\");\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int fstat(int, struct uya_macos_native_stat *);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int fstatat(int, const char *, struct uya_macos_native_stat *, int);\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_socket(int, int, int) __asm__(\"_socket\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_bind(int, const void *, uint32_t) __asm__(\"_bind\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_listen(int, int) __asm__(\"_listen\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_accept(int, void *, uint32_t *) __asm__(\"_accept\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_connect(int, const void *, uint32_t) __asm__(\"_connect\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern intptr_t uya_host_sendto(int, const void *, size_t, int, const void *, uint32_t) __asm__(\"_sendto\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern intptr_t uya_host_recvfrom(int, void *, size_t, int, void *, uint32_t *) __asm__(\"_recvfrom\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_shutdown(int, int) __asm__(\"_shutdown\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_setsockopt(int, int, int, const void *, uint32_t) __asm__(\"_setsockopt\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern void *uya_host_dlsym(void *, const char *) __asm__(\"_dlsym\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("typedef void *(*uya_host_opendir_fn)(const char *);\n" as *byte, codegen.emit_stream as *void);
+    fputs("typedef void *(*uya_host_readdir_fn)(void *);\n" as *byte, codegen.emit_stream as *void);
+    fputs("typedef int (*uya_host_closedir_fn)(void *);\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int fcntl(int, int, ...);\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int uya_host_dup2(int, int) __asm__(\"_dup2\");\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int uya_host_pipe(int *) __asm__(\"_pipe\");\n" as *byte, codegen.emit_stream as *void);
@@ -2284,33 +2273,33 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
     fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static void uya_macos_copy_stat(struct Stat *dst, const struct uya_macos_native_stat *src) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("static void uya_macos_copy_stat(struct Stat *dst, const struct uya_host_stat_hidden *src) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    struct uya_macos_uya_stat *dst_stat = (struct uya_macos_uya_stat *)dst;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    if (dst_stat == (struct uya_macos_uya_stat *)0 || src == (const struct uya_macos_native_stat *)0) return;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (dst_stat == (struct uya_macos_uya_stat *)0 || src == (const struct uya_host_stat_hidden *)0) return;\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst_stat->st_dev = (int64_t)src->st_dev; dst_stat->st_ino = (int64_t)src->st_ino; dst_stat->st_nlink = (int64_t)src->st_nlink;\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst_stat->st_mode = (int32_t)src->st_mode; dst_stat->st_uid = (int32_t)src->st_uid; dst_stat->st_gid = (int32_t)src->st_gid; dst_stat->_pad0 = 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst_stat->st_rdev = (int64_t)src->st_rdev; dst_stat->st_size = src->st_size; dst_stat->st_blksize = (int64_t)src->st_blksize; dst_stat->st_blocks = src->st_blocks;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    dst_stat->st_atime = src->st_atimespec.tv_sec; dst_stat->st_atime_nsec = src->st_atimespec.tv_nsec;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    dst_stat->st_mtime = src->st_mtimespec.tv_sec; dst_stat->st_mtime_nsec = src->st_mtimespec.tv_nsec;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    dst_stat->st_ctime = src->st_ctimespec.tv_sec; dst_stat->st_ctime_nsec = src->st_ctimespec.tv_nsec;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    dst_stat->st_atime = src->st_atime; dst_stat->st_atime_nsec = src->st_atimensec;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    dst_stat->st_mtime = src->st_mtime; dst_stat->st_mtime_nsec = src->st_mtimensec;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    dst_stat->st_ctime = src->st_ctime; dst_stat->st_ctime_nsec = src->st_ctimensec;\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst_stat->_unused0 = 0; dst_stat->_unused1 = 0; dst_stat->_unused2 = 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("struct err_union_int32_t uya_macos_stat(const char *pathname, struct Stat *statbuf) {\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_stat native_stat;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    struct uya_host_stat_hidden native_stat;\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (pathname == (const char *)0 || statbuf == (struct Stat *)0) return uya_macos_err_i32(22);\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (fstatat(-2, pathname, &native_stat, 0) != 0) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
     fputs("    uya_macos_copy_stat(statbuf, &native_stat);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return uya_macos_ok_i32(0);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("struct err_union_int32_t uya_macos_fstat(int32_t fd, struct Stat *statbuf) {\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_stat native_stat;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    struct uya_host_stat_hidden native_stat;\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (statbuf == (struct Stat *)0) return uya_macos_err_i32(22);\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (fstat((int)fd, &native_stat) != 0) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
     fputs("    uya_macos_copy_stat(statbuf, &native_stat);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return uya_macos_ok_i32(0);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("struct err_union_int32_t uya_macos_lstat(const char *pathname, struct Stat *statbuf) {\n" as *byte, codegen.emit_stream as *void);
-    fputs("    struct uya_macos_native_stat native_stat;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    struct uya_host_stat_hidden native_stat;\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (pathname == (const char *)0 || statbuf == (struct Stat *)0) return uya_macos_err_i32(22);\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (fstatat(-2, pathname, &native_stat, 0x0020) != 0) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
     fputs("    uya_macos_copy_stat(statbuf, &native_stat);\n" as *byte, codegen.emit_stream as *void);
@@ -2398,8 +2387,55 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
     fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_socket(int32_t domain, int32_t type, int32_t protocol) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_socket((int)domain, (int)type, (int)protocol);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_bind(int32_t sockfd, void *addr, uint32_t addrlen) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_bind((int)sockfd, (const void *)addr, addrlen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_listen(int32_t sockfd, int32_t backlog) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_listen((int)sockfd, (int)backlog);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_accept(int32_t sockfd, void *addr, uint32_t *addrlen) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_accept((int)sockfd, addr, addrlen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_connect(int32_t sockfd, void *addr, uint32_t addrlen) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_connect((int)sockfd, (const void *)addr, addrlen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int64_t uya_macos_sendto(int32_t sockfd, const char *buf, size_t len, int32_t flags, void *dest, uint32_t destlen) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    intptr_t ret = uya_host_sendto((int)sockfd, (const void *)buf, len, (int)flags, (const void *)dest, destlen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i64(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i64((int64_t)ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int64_t uya_macos_recvfrom(int32_t sockfd, char *buf, size_t len, int32_t flags, void *src, uint32_t *srclen) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    intptr_t ret = uya_host_recvfrom((int)sockfd, (void *)buf, len, (int)flags, src, srclen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i64(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i64((int64_t)ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_shutdown(int32_t sockfd, int32_t how) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_shutdown((int)sockfd, (int)how);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_setsockopt(int32_t sockfd, int32_t level, int32_t optname, void *optval, uint32_t optlen) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_setsockopt((int)sockfd, (int)level, (int)optname, (const void *)optval, optlen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("void *uya_macos_host_opendir(const char *path) {\n" as *byte, codegen.emit_stream as *void);
-    fputs("    return uya_host_opendir(path);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    uya_host_opendir_fn fn = (uya_host_opendir_fn)uya_host_dlsym((void *)-1, \"opendir\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (fn == (uya_host_opendir_fn)0) return (void *)0;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return fn(path);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("int32_t uya_macos_host_readdir_fill(void *dirp, void *out) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    unsigned char *src = (unsigned char *)0;\n" as *byte, codegen.emit_stream as *void);
@@ -2407,7 +2443,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("    size_t clear_idx = 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    size_t name_len = 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (dirp == (void *)0 || out == (void *)0) return -1;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    src = (unsigned char *)uya_host_readdir(dirp);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    { uya_host_readdir_fn fn = (uya_host_readdir_fn)uya_host_dlsym((void *)-1, \"readdir\"); if (fn == (uya_host_readdir_fn)0) return -1; src = (unsigned char *)fn(dirp); }\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (src == (unsigned char *)0) return 0;\n" as *byte, codegen.emit_stream as *void);
     fputs("    dst = (unsigned char *)out;\n" as *byte, codegen.emit_stream as *void);
     fputs("    while (clear_idx < 275u) {\n" as *byte, codegen.emit_stream as *void);
@@ -2424,7 +2460,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("int32_t uya_macos_host_closedir(void *dirp) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (dirp == (void *)0) return -1;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    return uya_host_closedir(dirp);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    uya_host_closedir_fn fn = (uya_host_closedir_fn)uya_host_dlsym((void *)-1, \"closedir\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (fn == (uya_host_closedir_fn)0) return -1;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return fn(dirp);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("#endif\n" as *byte, codegen.emit_stream as *void);
     c99_emit_newline(codegen);
@@ -4134,7 +4172,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    return uya_main();\n" as *byte, codegen.emit_stream as *void);
         c99_emit_close_brace_newline(codegen);
     }
-    
+
     // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器
     // std.runtime.entry 的 main 会调用 main_main()
     if has_user_main == 0 && test_count > 0 {
@@ -4162,10 +4200,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    return _test_failed;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_close_brace_newline(codegen);
     }
-    
+
     // 输出宏展开等阶段才加入的字符串常量（如 encode_to_to_json 中的 "id"/"name"）
     emit_pending_string_constants(codegen);
-    
+
     // 生成 async frame descriptor 静态表（供统一 AsyncFramePool 运行时查表）
     emit_async_frame_descriptors(codegen);
     
