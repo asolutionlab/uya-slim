@@ -6838,14 +6838,47 @@ fn c99_slice_struct_type_from_elem_c(codegen: &C99CodeGenerator, elem_c: &byte) 
     return result;
 }
 
+fn c99_slice_element_type_c_from_struct_c(codegen: &C99CodeGenerator, slice_type_c: &byte) &byte {
+    if codegen == null || slice_type_c == null {
+        return null;
+    }
+    const slice_name_pos: *byte = strstr(slice_type_c as *byte, "uya_slice_" as *byte);
+    if slice_name_pos == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < codegen.slice_struct_count {
+        const slice_name: &byte = codegen.slice_struct_names[i];
+        const elem_type: &ASTNode = codegen.slice_struct_element_types[i];
+        if slice_name != null && elem_type != null {
+            const slice_name_len: i32 = strlen(slice_name as *byte);
+            if slice_name_len > 0 && strncmp(slice_name_pos, slice_name as *byte, slice_name_len as usize) == 0 {
+                const next_ptr: *byte = slice_name_pos + slice_name_len;
+                const next: byte = next_ptr[0];
+                if next == 0 as byte || next == 32 as byte || next == 42 as byte {
+                    return c99_type_to_c(codegen, elem_type);
+                }
+            }
+        }
+        i = i + 1;
+    }
+    if strncmp(slice_name_pos, "uya_slice_uint8_t" as *byte, 17 as usize) == 0 ||
+        strncmp(slice_name_pos, "uya_slice_byte" as *byte, 14 as usize) == 0 {
+        return ("uint8_t" as *byte) as &byte;
+    }
+    if strncmp(slice_name_pos, "uya_slice_int8_t" as *byte, 16 as usize) == 0 {
+        return ("int8_t" as *byte) as &byte;
+    }
+    if strncmp(slice_name_pos, "uya_slice_int32_t" as *byte, 18 as usize) == 0 {
+        return ("int32_t" as *byte) as &byte;
+    }
+    return null;
+}
+
 // 从切片表达式推断切片结构体 C 类型（struct uya_slice_X）
 fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &byte {
     if codegen == null || slice_expr == null || slice_expr.type != ASTNodeType.AST_SLICE_EXPR {
         return ("struct uya_slice_int32_t" as *byte) as &byte;
-    }
-    const inferred_slice_c: &byte = c99_get_inferred_expr_type_c(codegen, slice_expr);
-    if inferred_slice_c != null && strstr(inferred_slice_c as *byte, "uya_slice_" as *byte) != null {
-        return inferred_slice_c;
     }
     const base: &ASTNode = slice_expr.slice_expr_base;
     if base.type == ASTNodeType.AST_SLICE_EXPR {
@@ -6884,6 +6917,9 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
     if base.type == ASTNodeType.AST_MEMBER_ACCESS {
         const base_type_c_array: &byte = get_c_type_of_expr(codegen, base);
         if base_type_c_array != null {
+            if strstr(base_type_c_array as *byte, "uya_slice_" as *byte) != null {
+                return base_type_c_array;
+            }
             const first_bracket: *byte = strchr(base_type_c_array as *byte, 91);
             if first_bracket != null {
                 const elem_len: i32 = ptr_diff(first_bracket, base_type_c_array as *byte);
@@ -6924,6 +6960,10 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
                 }
             }
         }
+    }
+    const inferred_slice_c: &byte = c99_get_inferred_expr_type_c(codegen, slice_expr);
+    if inferred_slice_c != null && strstr(inferred_slice_c as *byte, "uya_slice_" as *byte) != null {
+        return inferred_slice_c;
     }
     return ("struct uya_slice_int32_t" as *byte) as &byte;
 }
@@ -7070,6 +7110,23 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                 return inferred_type_c1;
             }
             return ("int32_t" as *byte) as &byte;
+        }
+        if strstr(base_type_c as *byte, "uya_slice_" as *byte) != null {
+            if strcmp(field_name as *byte, "len" as *byte) == 0 {
+                return ("size_t" as *byte) as &byte;
+            }
+            if strcmp(field_name as *byte, "ptr" as *byte) == 0 {
+                const elem_type_c: &byte = c99_slice_element_type_c_from_struct_c(codegen, base_type_c);
+                if elem_type_c != null {
+                    const ptr_type_len: i32 = strlen(elem_type_c as *byte) + 4;
+                    const ptr_type: &byte = compiler_arena_alloc(codegen.arena, ptr_type_len as usize) as &byte;
+                    if ptr_type != null {
+                        snprintf(ptr_type as *byte, ptr_type_len, "%s *" as *byte, elem_type_c as *byte);
+                        return ptr_type;
+                    }
+                }
+                return ("uint8_t *" as *byte) as &byte;
+            }
         }
         const struct_decl: &ASTNode = find_struct_decl_from_type_c(codegen, base_type_c);
         if struct_decl == null {
