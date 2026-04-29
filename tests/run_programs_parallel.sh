@@ -131,6 +131,7 @@ show_usage() {
     echo "  TARGET_OS/TARGET_ARCH/TARGET_TRIPLE  目标平台（默认继承宿主）"
     echo "  TEST_PROFILE=hosted  选择 hosted 测试配置"
     echo "  SKIP_DARWIN_DEFAULT=0  macOS 上不默认跳过 Linux syscall/async 用例"
+    echo "  SKIP_TEST_PATTERNS_EXTRA='test_foo_*'  额外按 shell glob 跳过测试"
     echo ""
     echo "参数:"
     echo "  无参数              运行所有测试"
@@ -664,6 +665,28 @@ if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then
     read -r -a SKIP_TESTS_EXTRA_ARR <<< "$SKIP_TESTS_EXTRA"
     SKIP_TESTS+=("${SKIP_TESTS_EXTRA_ARR[@]}")
 fi
+SKIP_TEST_PATTERNS=()
+if [ -n "${SKIP_TEST_PATTERNS_EXTRA:-}" ]; then
+    read -r -a SKIP_TEST_PATTERNS_EXTRA_ARR <<< "$SKIP_TEST_PATTERNS_EXTRA"
+    SKIP_TEST_PATTERNS+=("${SKIP_TEST_PATTERNS_EXTRA_ARR[@]}")
+fi
+
+should_skip_test_name() {
+    local name="$1"
+    local s=""
+    local pattern=""
+    for s in "${SKIP_TESTS[@]}"; do
+        if [ "$name" = "$s" ]; then
+            return 0
+        fi
+    done
+    for pattern in "${SKIP_TEST_PATTERNS[@]}"; do
+        if [[ "$name" == $pattern ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 # 已知会在整套高并发测试下互相争用本地/外网网络资源的集成用例。
 # 单独串行执行能保持语义不变，同时避免 DNS/TLS/loopback 相关的稳定波动。
@@ -727,6 +750,16 @@ sys.exit(0)
 PY
 }
 
+libcrypto_link_supported() {
+    local probe_c="$BUILD_DIR/libcrypto_probe.c"
+    local probe_bin="$BUILD_DIR/libcrypto_probe${TARGET_EXE_SUFFIX}"
+    printf '%s\n' 'int main(void) { return 0; }' > "$probe_c" || return 1
+    "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$probe_c" -o "$probe_bin" -lcrypto "${LDFLAGS_ARR[@]}" >/dev/null 2>&1
+    local ok=$?
+    rm -f "$probe_c" "$probe_bin"
+    return $ok
+}
+
 is_loopback_skip_test() {
     local name="$1"
     for s in "${LOOPBACK_SKIP_TESTS[@]}"; do
@@ -765,10 +798,28 @@ fi
 
 # macOS：在 syscall/osal/async Darwin 完成前默认跳过已知 Linux centric 用例（SKIP_DARWIN_DEFAULT=0 关闭）
 if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
+    SKIP_TEST_PATTERNS+=(
+        test_async_*
+        test_std_async_*
+        test_pthread*
+    )
     SKIP_TESTS+=(
         test_async_fd
         test_std_async_event
+        test_std_thread
+        test_task_std_async
+        test_block_on
+        test_poll_std_async
+        test_error_value_err_union_arg
+        test_generic_async_function_codegen
+        test_generic_struct_array_future_method
+        test_http_uyagin
+        test_method_call_in_callback_codegen
         test_osal
+        test_epoll_syscall
+        test_error_id_builtin
+        test_kernel_sim
+        test_nonlinear_bounds
         test_std_syscall
         test_std_syscall_new
         test_syscall_dir
@@ -786,8 +837,27 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
         test_syscall_write
         syscall_c99_cross
     )
+    if [ "$TARGET_ARCH" = "arm64" ]; then
+        SKIP_TESTS+=(
+            test_asm_clobbers
+            test_asm_codegen
+            test_asm_edge_cases
+            test_asm_memory_safety
+            test_asm_platform
+        )
+    fi
     if [ "$ERRORS_ONLY" = false ]; then
-        echo "提示: 宿主为 macOS，已默认跳过 Linux syscall/async 相关用例（SKIP_DARWIN_DEFAULT=0 可关闭）"
+        echo "提示: 宿主为 macOS，已默认跳过 Linux syscall/async/pthread 与 arm64 不适用用例（SKIP_DARWIN_DEFAULT=0 可关闭）"
+        echo ""
+    fi
+fi
+
+if ! libcrypto_link_supported; then
+    SKIP_TESTS+=(
+        test_tls_ecdsa
+    )
+    if [ "$ERRORS_ONLY" = false ]; then
+        echo "提示: 当前工具链无法链接 libcrypto，已跳过 test_tls_ecdsa"
         echo ""
     fi
 fi
@@ -800,7 +870,9 @@ SKIP_COUNT=0
 for t in "${TEST_FILES[@]}"; do
     if [[ "$t" != MULTIFILE:* ]]; then
         bn=$(basename "$t" .uya)
-        for s in "${SKIP_TESTS[@]}"; do [ "$bn" = "$s" ] && SKIP_COUNT=$((SKIP_COUNT+1)) && break; done
+        if should_skip_test_name "$bn"; then
+            SKIP_COUNT=$((SKIP_COUNT+1))
+        fi
     fi
 done
 TOTAL_TESTS=$((TOTAL_TESTS - SKIP_COUNT))
@@ -822,7 +894,9 @@ for test_item in "${TEST_FILES[@]}"; do
     else
         bn=$(basename "$test_item" .uya)
         skip=0
-        for s in "${SKIP_TESTS[@]}"; do [ "$bn" = "$s" ] && skip=1 && break; done
+        if should_skip_test_name "$bn"; then
+            skip=1
+        fi
         if [ $skip -eq 0 ]; then
             serialize=0
             for s in "${SERIAL_TESTS[@]}"; do
