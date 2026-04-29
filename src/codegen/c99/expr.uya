@@ -7369,6 +7369,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     codegen.local_variables[local_idx].name = expr.match_expr_arms[i].var_name;
                                     codegen.local_variables[local_idx].type_c = vtype;
                                     codegen.local_variables[local_idx].type_node = null;
+                                    codegen.local_variables[local_idx].is_error_value = 0;
                                     codegen.local_variable_count = local_idx + 1;
                                 }
                             }
@@ -7488,6 +7489,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             codegen.local_variables[local_idx2].name = expr.match_expr_arms[i].var_name;
                             codegen.local_variables[local_idx2].type_c = bind_payload;
                             codegen.local_variables[local_idx2].type_node = null;
+                            codegen.local_variables[local_idx2].is_error_value = 0;
                             codegen.local_variable_count = local_idx2 + 1;
                         }
                     }
@@ -7499,6 +7501,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             codegen.local_variables[local_idx3].name = expr.match_expr_arms[i].var_name;
                             codegen.local_variables[local_idx3].type_c = m_type;
                             codegen.local_variables[local_idx3].type_node = null;
+                            codegen.local_variables[local_idx3].is_error_value = 0;
                             codegen.local_variable_count = local_idx3 + 1;
                         }
                     }
@@ -7756,6 +7759,7 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     codegen.local_variables[local_idx4].name = err_name;
                     codegen.local_variables[local_idx4].type_c = "const uint32_t" as *byte;
                     codegen.local_variables[local_idx4].type_node = null;
+                    codegen.local_variables[local_idx4].is_error_value = 1;
                     codegen.local_variable_count = local_idx4 + 1;
                 }
             }
