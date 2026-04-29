@@ -38,6 +38,7 @@ tests/data/json/*.json
 build/
 .codex
 a.out
+*.dSYM/
 # make install BINDIR=out 等本地安装前缀
 out/
 .uyacache/

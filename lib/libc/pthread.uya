@@ -672,7 +672,7 @@ export extern "libc" fn pthread_once(once_control: &pthread_once_t, init_routine
     var expected: i32 = 0;
     if __atomic_compare_exchange_n((&once_control.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         std.cfg(std.target_os == .tos_macos, {
-            _ = _uya_init_async_frame_allocator_key(null);
+            _pthread_call_start(init_routine, null);
         }, {
             _pthread_call_start(init_routine, null);
             sys_futex((&once_control.state) as &i32, FUTEX_WAKE, 2147483647, null);

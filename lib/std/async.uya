@@ -16,6 +16,9 @@ use std.string.strlen;
 var _uya_async_frame_allocator_once: pthread_once_t = pthread_once_t{ state: 0 };
 var _uya_async_frame_allocator_key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
 
+/// 初始化当前进程的 async frame allocator 线程本地 key。
+/// 参数：_unused - pthread_once 兼容占位参数，当前实现忽略。
+/// 返回值：始终返回 null，仅用于兼容 pthread 启动例程签名。
 fn _uya_init_async_frame_allocator_key(_unused: &void) &void {
     _ = _unused;
     _ = pthread_key_create(&_uya_async_frame_allocator_key, null as &void);

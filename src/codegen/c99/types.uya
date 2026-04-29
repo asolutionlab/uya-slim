@@ -6131,61 +6131,63 @@ fn emit_simd_runtime_helpers_i32_u32_f32_reduce_min_max_arm_neon(codegen: &C99Co
     if codegen == null || codegen.emit_stream == null {
         return;
     }
-    // reduce_min i32x2
+    // reduce_min i32x2. The expression emitter calls the historical
+    // uya_simd_sse_* helper names; on NEON we keep those public names and
+    // provide NEON-backed implementations under the ARM preprocessor branch.
     if codegen.simd_emit_reduce_min_i32x2 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_min_i32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_min_i32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x2_t p = vld1_s32((const int32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x2_t s = vpmin_s32(p, p);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(int32_t *)r = vget_lane_s32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_min_u32x2 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_min_u32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_min_u32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x2_t p = vld1_u32((const uint32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x2_t s = vpmin_u32(p, p);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(uint32_t *)r = vget_lane_u32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_min_f32x2 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_min_f32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_min_f32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x2_t p = vld1_f32((const float *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x2_t s = vpmin_f32(p, p);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(float *)r = vget_lane_f32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     // reduce_max i32x2
     if codegen.simd_emit_reduce_max_i32x2 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_max_i32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_max_i32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x2_t p = vld1_s32((const int32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x2_t s = vpmax_s32(p, p);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(int32_t *)r = vget_lane_s32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_max_u32x2 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_max_u32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_max_u32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x2_t p = vld1_u32((const uint32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x2_t s = vpmax_u32(p, p);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(uint32_t *)r = vget_lane_u32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_max_f32x2 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_max_f32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_max_f32x2(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x2_t p = vld1_f32((const float *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x2_t s = vpmax_f32(p, p);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(float *)r = vget_lane_f32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     // reduce_min i32x4
     if codegen.simd_emit_reduce_min_i32x4 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_min_i32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_min_i32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x4_t p = vld1q_s32((const int32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x2_t s = vpmin_s32(vget_low_s32(p), vget_high_s32(p));\n" as *byte, codegen.emit_stream as *void);
         fputs("  s = vpmin_s32(s, s);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(int32_t *)r = vget_lane_s32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_min_u32x4 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_min_u32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_min_u32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x4_t p = vld1q_u32((const uint32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x2_t s = vpmin_u32(vget_low_u32(p), vget_high_u32(p));\n" as *byte, codegen.emit_stream as *void);
         fputs("  s = vpmin_u32(s, s);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(uint32_t *)r = vget_lane_u32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_min_f32x4 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_min_f32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_min_f32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x4_t p = vld1q_f32((const float *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x2_t s = vpmin_f32(vget_low_f32(p), vget_high_f32(p));\n" as *byte, codegen.emit_stream as *void);
         fputs("  s = vpmin_f32(s, s);\n" as *byte, codegen.emit_stream as *void);
@@ -6193,22 +6195,21 @@ fn emit_simd_runtime_helpers_i32_u32_f32_reduce_min_max_arm_neon(codegen: &C99Co
     }
     // reduce_max i32x4
     if codegen.simd_emit_reduce_max_i32x4 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_max_i32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_max_i32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x4_t p = vld1q_s32((const int32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  int32x2_t s = vpmax_s32(vget_low_s32(p), vget_high_s32(p));\n" as *byte, codegen.emit_stream as *void);
         fputs("  s = vpmax_s32(s, s);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(int32_t *)r = vget_lane_s32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_max_u32x4 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_max_u32x4(void *r, const void *v) {
-n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_max_u32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x4_t p = vld1q_u32((const uint32_t *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  uint32x2_t s = vpmax_u32(vget_low_u32(p), vget_high_u32(p));\n" as *byte, codegen.emit_stream as *void);
         fputs("  s = vpmax_u32(s, s);\n" as *byte, codegen.emit_stream as *void);
         fputs("  *(uint32_t *)r = vget_lane_u32(s, 0);\n}\n" as *byte, codegen.emit_stream as *void);
     }
     if codegen.simd_emit_reduce_max_f32x4 != 0 {
-        fputs("static inline void uya_simd_neon_reduce_max_f32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline void uya_simd_sse_reduce_max_f32x4(void *r, const void *v) {\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x4_t p = vld1q_f32((const float *)v);\n" as *byte, codegen.emit_stream as *void);
         fputs("  float32x2_t s = vpmax_f32(vget_low_f32(p), vget_high_f32(p));\n" as *byte, codegen.emit_stream as *void);
         fputs("  s = vpmax_f32(s, s);\n" as *byte, codegen.emit_stream as *void);

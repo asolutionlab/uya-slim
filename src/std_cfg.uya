@@ -56,8 +56,26 @@ fn std_cfg_map_target_os_token(tok: &byte) &byte {
     return ("tos_unknown" as *byte) as &byte;
 }
 
+fn std_cfg_default_target_os_name() &byte {
+    const host: &byte = std_cfg_host_os_name();
+    if strcmp(host as *byte, "hos_linux" as *byte) == 0 {
+        return ("tos_linux" as *byte) as &byte;
+    }
+    if strcmp(host as *byte, "hos_macos" as *byte) == 0 {
+        return ("tos_macos" as *byte) as &byte;
+    }
+    if strcmp(host as *byte, "hos_windows" as *byte) == 0 {
+        return ("tos_windows" as *byte) as &byte;
+    }
+    return ("tos_unknown" as *byte) as &byte;
+}
+
 fn std_cfg_target_os_name() &byte {
-    const raw: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    const raw_env: *byte = getenv("TARGET_OS" as *byte);
+    if raw_env == null || raw_env[0] == 0 {
+        return std_cfg_default_target_os_name();
+    }
+    const raw: &byte = raw_env as &byte;
     const norm: &byte = std_cfg_normalize_os_name(raw);
     if strcmp(norm as *byte, "macos" as *byte) == 0 {
         return ("tos_macos" as *byte) as &byte;
@@ -65,8 +83,26 @@ fn std_cfg_target_os_name() &byte {
     return std_cfg_map_target_os_token(norm);
 }
 
+fn std_cfg_default_target_arch_name() &byte {
+    const host: &byte = std_cfg_host_arch_name();
+    if strcmp(host as *byte, "ha_x86_64" as *byte) == 0 {
+        return ("ta_x86_64" as *byte) as &byte;
+    }
+    if strcmp(host as *byte, "ha_arm64" as *byte) == 0 {
+        return ("ta_arm64" as *byte) as &byte;
+    }
+    if strcmp(host as *byte, "ha_riscv64" as *byte) == 0 {
+        return ("ta_riscv64" as *byte) as &byte;
+    }
+    return ("ta_unknown" as *byte) as &byte;
+}
+
 fn std_cfg_target_arch_name() &byte {
-    const tok: &byte = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
+    const raw_env: *byte = getenv("TARGET_ARCH" as *byte);
+    if raw_env == null || raw_env[0] == 0 {
+        return std_cfg_default_target_arch_name();
+    }
+    const tok: &byte = raw_env as &byte;
     if tok == null {
         return ("ta_unknown" as *byte) as &byte;
     }
