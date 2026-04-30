@@ -3599,8 +3599,17 @@ fn paths_equal(path1: &byte, path2: &byte) i32 {
         return 1;
     }
     
-    // 如果直接比较失败，提取文件名进行比较
-    // 如果文件名相同，使用 stat 检查是否是同一个文件（相同的 inode）
+    // 直接比较失败后先用 stat 判定真实文件身份；macOS 常见大小写不敏感卷上，
+    // std.io.File 与 std.io.file 可能解析到同一 inode，但文件名字符串大小写不同。
+    var st1: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+    var st2: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+    if stat(path1 as *byte, &st1) == 0 && stat(path2 as *byte, &st2) == 0 {
+        if st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino {
+            return 1;
+        }
+    }
+
+    // stat 失败时再提取文件名快速排除，避免明显不同的路径继续做额外判断。
     var name1: &byte = strrchr(path1 as *byte, 47);  // '/'
     var name2: &byte = strrchr(path2 as *byte, 47);  // '/'
     if name1 == null {
@@ -3617,16 +3626,6 @@ fn paths_equal(path1: &byte, path2: &byte) i32 {
     // 如果文件名不同，肯定不是同一个文件
     if strcmp(name1 as *byte, name2 as *byte) != 0 {
         return 0;
-    }
-    
-    // 文件名相同，使用 stat 检查是否是同一个文件
-    var st1: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
-    var st2: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
-    if stat(path1 as *byte, &st1) == 0 && stat(path2 as *byte, &st2) == 0 {
-        // 检查是否是同一个文件（相同的设备和 inode）
-        if st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino {
-            return 1;
-        }
     }
     
     // stat 失败或不是同一个文件，返回0
@@ -3741,17 +3740,15 @@ fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
         return -1;
     }
     
-    // 如果是绝对路径，直接提取目录
-    if argv0[0] == 47 {
-        const last_slash: *byte = strrchr(argv0 as *byte, 47);
-        if last_slash != null {
-            const dir_len: usize = ptr_diff(last_slash, argv0);
-            if dir_len + 1 < buffer_size {
-                memcpy(buffer as *void, argv0 as *void, dir_len);
-                buffer[dir_len] = 47 as byte;
-                buffer[dir_len + 1] = 0 as byte;
-                return 0;
-            }
+    // 如果 argv0 自带目录（绝对或相对路径），直接提取目录。
+    const argv_slash: *byte = strrchr(argv0 as *byte, 47);
+    if argv_slash != null {
+        const dir_len: usize = ptr_diff(argv_slash, argv0);
+        if dir_len + 1 < buffer_size {
+            memcpy(buffer as *void, argv0 as *void, dir_len);
+            buffer[dir_len] = 47 as byte;
+            buffer[dir_len + 1] = 0 as byte;
+            return 0;
         }
     }
     
@@ -4311,11 +4308,11 @@ fn dirent_may_be_regular_file(entry_ptr: &byte) i32 {
 }
 
 fn host_append_temp_path_byte(buf: &byte, cap: usize, pos: &usize, value: byte) i32 {
-    if buf == null || pos == null || *pos + 1 >= cap {
+    if buf == null || pos == null || pos[0] + 1 >= cap {
         return -1;
     }
-    buf[*pos] = value;
-    *pos = *pos + 1;
+    buf[pos[0]] = value;
+    pos[0] = pos[0] + 1;
     return 0;
 }
 
@@ -4391,7 +4388,11 @@ fn host_fill_temp_path(buf: &byte, cap: usize, prefix: &byte, suffix: &byte, ext
     if host_append_temp_path_byte(buf, cap, &pos, 95 as byte) != 0 {
         return -1;
     }
-    if host_append_temp_path_i32(buf, cap, &pos, getpid()) != 0 {
+    var pid: i32 = getpid();
+    if pid <= 0 {
+        pid = 1;
+    }
+    if host_append_temp_path_i32(buf, cap, &pos, pid) != 0 {
         return -1;
     }
     if extra_index >= 0 {
@@ -4840,24 +4841,12 @@ fn collect_module_dependencies(
         return -1;
     }
 
-    var lexer: Lexer = Lexer {
-        buffer: [],
-        buffer_size: 0 as usize,
-        position: 0 as usize,
-        line: 1,
-        column: 1,
-        filename: null,
-        has_error: 0,
-        string_mode: 0,
-        raw_string_mode: 0,
-        interp_depth: 0,
-        pending_interp_open: 0,
-        reading_spec: 0,
-        has_seen_interp_in_string: 0,
-        string_text_buffer: [],
-        string_text_len: 0,
-    };
-    if lexer_init(&lexer, &file_buffer[0], file_size as usize, filename, arena) != 0 {
+    const lexer: &Lexer = compiler_arena_alloc(arena, @size_of(Lexer)) as &Lexer;
+    if lexer == null {
+        compiler_arena_restore(arena, arena_save_offset);
+        return -1;
+    }
+    if lexer_init(lexer, &file_buffer[0], file_size as usize, filename, arena) != 0 {
         compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
@@ -4870,7 +4859,7 @@ fn collect_module_dependencies(
         pending_greater_token: null,
         saw_use_std: 0,
     };
-    if parser_init(&parser, &lexer, arena) != 0 {
+    if parser_init(&parser, lexer, arena) != 0 {
         compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
@@ -5132,15 +5121,15 @@ fn collect_module_dependencies(
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
                         // 先把所有文件添加到 file_list（防止递归时重复添加）
-                        var idx: i32 = 0;
-                        while idx < pending_count {
-                            file_list[current_size] = pending[idx];
+                        var added_count: i32 = 0;
+                        while added_count < pending_count && current_size < max_files {
+                            file_list[current_size] = pending[added_count];
                             current_size = current_size + 1;
-                            idx = idx + 1;
+                            added_count = added_count + 1;
                         }
                         // 然后递归处理每个文件的依赖
-                        idx = 0;
-                        while idx < pending_count {
+                        var idx: i32 = 0;
+                        while idx < added_count {
                             const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
@@ -5218,15 +5207,15 @@ fn collect_module_dependencies(
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
                         // 先把所有文件添加到 file_list（防止递归时重复添加）
-                        var idx: i32 = 0;
-                        while idx < pending_count {
-                            file_list[current_size] = pending[idx];
+                        var added_count: i32 = 0;
+                        while added_count < pending_count && current_size < max_files {
+                            file_list[current_size] = pending[added_count];
                             current_size = current_size + 1;
-                            idx = idx + 1;
+                            added_count = added_count + 1;
                         }
                         // 然后递归处理每个文件的依赖
-                        idx = 0;
-                        while idx < pending_count {
+                        var idx: i32 = 0;
+                        while idx < added_count {
                             const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
@@ -5291,14 +5280,14 @@ fn collect_module_dependencies(
                     closedir(dir);
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
-                        var idx: i32 = 0;
-                        while idx < pending_count {
-                            file_list[current_size] = pending[idx];
+                        var added_count: i32 = 0;
+                        while added_count < pending_count && current_size < max_files {
+                            file_list[current_size] = pending[added_count];
                             current_size = current_size + 1;
-                            idx = idx + 1;
+                            added_count = added_count + 1;
                         }
-                        idx = 0;
-                        while idx < pending_count {
+                        var idx: i32 = 0;
+                        while idx < added_count {
                             const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
@@ -5384,15 +5373,15 @@ fn collect_module_dependencies(
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
                         // 先把所有文件添加到 file_list（防止递归时重复添加）
-                        var idx: i32 = 0;
-                        while idx < pending_count {
-                            file_list[current_size] = pending[idx];
+                        var added_count: i32 = 0;
+                        while added_count < pending_count && current_size < max_files {
+                            file_list[current_size] = pending[added_count];
                             current_size = current_size + 1;
-                            idx = idx + 1;
+                            added_count = added_count + 1;
                         }
                         // 然后递归处理每个文件的依赖
-                        idx = 0;
-                        while idx < pending_count {
+                        var idx: i32 = 0;
+                        while idx < added_count {
                             const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
@@ -5486,7 +5475,7 @@ fn collect_module_dependencies(
                 if pending_count > 0 {
                     sort_paths(&pending[0] as &(&byte), pending_count);
                     var idx: i32 = 0;
-                    while idx < pending_count {
+                    while idx < pending_count && current_size < max_files {
                         const path_copy: &byte = pending[idx];
                         file_list[current_size] = path_copy;
                         current_size = current_size + 1;
@@ -6367,6 +6356,91 @@ fn get_env_or_default(name: &byte, fallback: &byte) &byte {
     return fallback;
 }
 
+fn main_detect_host_os_name() &byte {
+    const platform_tmp: !i32 = @asm_target() as! i32;
+    const platform: i32 = platform_tmp.value;
+    if platform == 0 || platform == 3 || platform == 6 {
+        return ("linux" as *byte) as &byte;
+    }
+    if platform == 1 || platform == 4 {
+        return ("macos" as *byte) as &byte;
+    }
+    if platform == 2 || platform == 5 {
+        return ("windows" as *byte) as &byte;
+    }
+    return ("unknown" as *byte) as &byte;
+}
+
+fn main_detect_host_arch_name() &byte {
+    const platform_tmp: !i32 = @asm_target() as! i32;
+    const platform: i32 = platform_tmp.value;
+    if platform == 0 || platform == 1 || platform == 2 {
+        return ("x86_64" as *byte) as &byte;
+    }
+    if platform == 3 || platform == 4 || platform == 5 {
+        return ("arm64" as *byte) as &byte;
+    }
+    if platform == 6 {
+        return ("riscv64" as *byte) as &byte;
+    }
+    return ("unknown" as *byte) as &byte;
+}
+
+fn main_normalize_os_name(name: &byte) &byte {
+    if name == null {
+        return ("unknown" as *byte) as &byte;
+    }
+    if strcmp(name as *byte, "darwin" as *byte) == 0 {
+        return ("macos" as *byte) as &byte;
+    }
+    return name;
+}
+
+fn main_normalize_arch_name(name: &byte) &byte {
+    if name == null {
+        return ("unknown" as *byte) as &byte;
+    }
+    if strcmp(name as *byte, "amd64" as *byte) == 0 {
+        return ("x86_64" as *byte) as &byte;
+    }
+    if strcmp(name as *byte, "aarch64" as *byte) == 0 {
+        return ("arm64" as *byte) as &byte;
+    }
+    return name;
+}
+
+fn main_get_host_os_name() &byte {
+    const host_env: *byte = getenv("HOST_OS" as *byte);
+    if host_env != null && host_env[0] != 0 {
+        return main_normalize_os_name(host_env as &byte);
+    }
+    return main_detect_host_os_name();
+}
+
+fn main_get_host_arch_name() &byte {
+    const host_env: *byte = getenv("HOST_ARCH" as *byte);
+    if host_env != null && host_env[0] != 0 {
+        return main_normalize_arch_name(host_env as &byte);
+    }
+    return main_detect_host_arch_name();
+}
+
+fn main_get_target_os_name() &byte {
+    const target_env: *byte = getenv("TARGET_OS" as *byte);
+    if target_env != null && target_env[0] != 0 {
+        return main_normalize_os_name(target_env as &byte);
+    }
+    return main_get_host_os_name();
+}
+
+fn main_get_target_arch_name() &byte {
+    const target_env: *byte = getenv("TARGET_ARCH" as *byte);
+    if target_env != null && target_env[0] != 0 {
+        return main_normalize_arch_name(target_env as &byte);
+    }
+    return main_get_host_arch_name();
+}
+
 fn sync_test_network_skip_marker() void {
     const allow: *byte = getenv("ALLOW_SKIP_NETWORK" as *byte);
     if allow != null && allow[0] == '1' as byte && allow[1] == 0 {
@@ -6421,10 +6495,10 @@ fn hosted_cflags_add_clang_compat(cflags: &byte, cc_driver: &byte, buffer: &byte
 }
 
 fn target_matches_host_platform() i32 {
-    const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
-    const target_arch: &byte = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
-    const host_os: &byte = get_env_or_default("HOST_OS" as *byte, target_os);
-    const host_arch: &byte = get_env_or_default("HOST_ARCH" as *byte, target_arch);
+    const target_os: &byte = main_get_target_os_name();
+    const target_arch: &byte = main_get_target_arch_name();
+    const host_os: &byte = main_get_host_os_name();
+    const host_arch: &byte = main_get_host_arch_name();
     if strcmp(target_os as *byte, host_os as *byte) != 0 {
         return 0;
     }
@@ -6435,7 +6509,7 @@ fn target_matches_host_platform() i32 {
 }
 
 fn get_target_exe_suffix() &byte {
-    const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    const target_os: &byte = main_get_target_os_name();
     if strcmp(target_os as *byte, "windows" as *byte) == 0 {
         const suffix: &byte = ".exe" as *byte;
         return suffix;
@@ -6515,7 +6589,7 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
         return 1;
     }
     if is_nostdlib != 0 {
-        const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+        const target_os: &byte = main_get_target_os_name();
         if strcmp(target_os as *byte, "linux" as *byte) != 0 {
             fprintf(libc.stderr, "错误：--nostdlib 多文件链接仅支持 Linux 目标，当前 TARGET_OS=%s\n" as *byte, target_os as *byte);
             return 1;
@@ -6679,7 +6753,7 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
         }
     }
     const ldflags: &byte = get_env_or_default("LDFLAGS" as *byte, "" as *byte);
-    const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    const target_os: &byte = main_get_target_os_name();
     const target_triple: &byte = get_env_or_default("TARGET_TRIPLE" as *byte, "" as *byte);
     var target_flags: &byte = get_env_or_default("CC_TARGET_FLAGS" as *byte, "" as *byte);
     var target_flags_buffer: [byte: 256] = [];
@@ -7189,25 +7263,13 @@ fn compile_files(
             fprintf(libc.stderr, "错误: 无法读取文件 '%s' (可能文件太大或不存在)\n" as *byte, input_path);
             return 1;
         }
-        var lexer: Lexer = Lexer {
-            buffer: [],
-            buffer_size: 0 as usize,
-            position: 0 as usize,
-            line: 0,
-            column: 0,
-            filename: null,
-            has_error: 0,
-            string_mode: 0,
-            raw_string_mode: 0,
-            interp_depth: 0,
-            pending_interp_open: 0,
-            reading_spec: 0,
-            has_seen_interp_in_string: 0,
-            string_text_buffer: [],
-            string_text_len: 0,
-        };
+        const lexer: &Lexer = compiler_arena_alloc(&arena, @size_of(Lexer)) as &Lexer;
+        if lexer == null {
+            fprintf(libc.stderr, "错误: Lexer 分配失败: %s\n" as *byte, input_path);
+            return 1;
+        }
         const input_path_ref: &byte = input_path as &byte;
-        if lexer_init(&lexer, &file_buffer[0], file_size as usize, input_path_ref, &arena) != 0 {
+        if lexer_init(lexer, &file_buffer[0], file_size as usize, input_path_ref, &arena) != 0 {
             fprintf(libc.stderr, "错误: Lexer 初始化失败: %s\n" as *byte, input_path);
             return 1;
         }
@@ -7219,7 +7281,7 @@ fn compile_files(
             pending_greater_token: null,
             saw_use_std: 0,
         };
-        if parser_init(&parser, &lexer, &arena) != 0 {
+        if parser_init(&parser, lexer, &arena) != 0 {
             fprintf(libc.stderr, "错误: Parser 初始化失败: %s\n" as *byte, input_path);
             return 1;
         }
@@ -7286,96 +7348,17 @@ fn compile_files(
         union_type_args: null,
         union_type_arg_count: 0,
     };
-    var checker: TypeChecker = TypeChecker {
-        arena: null,
-        symbol_table: SymbolTable { slots: [], count: 0 },
-        function_table: FunctionTable { slots: [], count: 0 },
-        module_table: ModuleTable { slots: [], count: 0 },
-        import_table: ImportTable { slots: [], count: 0 },
-        string_pool: StringPool { buckets: [], count: 0 },
-        scope_level: 0,
-        loop_depth: 0,
-        program_node: null,
-        error_count: 0,
-        last_reported_error_filename: null,
-        last_reported_error_message: null,
-        last_reported_error_line: 0,
-        last_reported_error_column: 0,
-        default_filename: null,
-        current_return_type: Type {
-            kind: TypeKind.TYPE_VOID,
-            data: TypeData.named(null as &byte),
-            enum_name: null,
-            interface_name: null,
-            interface_type_args: null,
-            interface_type_arg_count: 0,
-            struct_name: null,
-            union_name: null,
-            pointer_to: null,
-            is_ffi_pointer: 0,
-            element_type: null,
-            array_size: 0,
-            slice_element_type: null,
-            slice_len: 0,
-            slice_element_is_const: 0,
-            tuple_element_types: null,
-            tuple_count: 0,
-            error_union_payload_type: null,
-            error_error_id: 0,
-            atomic_inner_type: null,
-            generic_param_name: null,
-            struct_type_args: null,
-            struct_type_arg_count: 0,
-            union_type_args: null,
-            union_type_arg_count: 0,
-        },
-        in_function: 0,
-        in_defer_or_errdefer: 0,
-        current_function_decl: null,
-        error_names: [],
-        error_hashes: [],
-        error_name_count: 0,
-        moved_names: [],
-        moved_count: 0,
-        project_root_dir: null,
-        uya_root_dir: null,
-        current_type_params: null,
-        current_type_param_count: 0,
-        mono_instances: [],
-        mono_instance_count: 0,
-        constraint_var_names: [],
-        constraint_ops: [],
-        constraint_values: [],
-        constraint_count: 0,
-        pointer_nonnull_names: [],
-        pointer_nonnull_count: 0,
-        pointer_nullable_names: [],
-        pointer_nullable_count: 0,
-        enable_safety_proof: 0,
-        container_mode: 0,
-        proof_step_limit: 0,
-        proof_step_count: 0,
-        scope_heads: [],
-        async_call_edge_from: [],
-        async_call_edge_to: [],
-        async_call_edge_count: 0,
-        fn_call_edge_from: [],
-        fn_call_edge_to: [],
-        fn_call_edge_count: 0,
-        fn_root_decls: [],
-        fn_root_count: 0,
-        reachable_fn_decls: [],
-        reachable_fn_decl_count: 0,
-        reachability_visit_count: 0,
-        reachability_visit_cache: [],
-        async_frame_metas: [],
-        async_frame_meta_count: 0,
-    };
+    const checker: &TypeChecker = compiler_arena_alloc(&arena, @size_of(TypeChecker)) as &TypeChecker;
+    if checker == null {
+        fprintf(libc.stderr, "错误: TypeChecker 分配失败\n" as *byte);
+        return 1;
+    }
+    _ = memset(checker as *byte, 0, @size_of(TypeChecker));
     var default_filename: *byte = "(unknown)" as *byte;
     if all_file_count > 0 {
         default_filename = all_files[0] as *byte;
     }
-    if checker_init(&checker, &arena, default_filename as &byte) != 0 {
+    if checker_init(checker, &arena, default_filename as &byte) != 0 {
         fprintf(libc.stderr, "错误: TypeChecker 初始化失败\n" as *byte);
         return 1;
     }
@@ -7408,16 +7391,16 @@ fn compile_files(
     checker.enable_safety_proof = enable_safety_proof;
     checker.container_mode = g_container_mode;
 
-    if checker_check(&checker, merged_ast) != 0 {
-        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
+    if checker_check(checker, merged_ast) != 0 {
+        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(checker));
         const err_msg: &byte = get_last_checker_error();
         if err_msg != null {
             fprintf(libc.stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
         }
         return 1;
     }
-    if checker_get_error_count(&checker) > 0 {
-        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
+    if checker_get_error_count(checker) > 0 {
+        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(checker));
         const err_msg: &byte = get_last_checker_error();
         if err_msg != null {
             fprintf(libc.stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
@@ -7434,9 +7417,9 @@ fn compile_files(
             return 1;
         }
     }
-    checker_reset_reachability_visit_cache(&checker);
-    seed_function_reachability_roots(&checker, merged_ast);
-    checker_compute_function_reachability(&checker);
+    checker_reset_reachability_visit_cache(checker);
+    seed_function_reachability_roots(checker, merged_ast);
+    checker_compute_function_reachability(checker);
     const debug_reach_env: *byte = getenv("UYA_DEBUG_REACHABILITY" as *byte);
     if debug_reach_env != null && debug_reach_env[0] != 0 as byte {
         fprintf(libc.stderr, "可达性调试: roots=%d, reachable=%d, edges=%d\n" as *byte,
@@ -7450,18 +7433,18 @@ fn compile_files(
             }
             dbg_i = dbg_i + 1;
         }
-        const dbg_parse_args: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "parse_args" as *byte);
-        const dbg_generate_libc: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "generate_libc" as *byte);
-        const dbg_align_size: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "align_size" as *byte);
-        const dbg_next_macro_hygiene_expansion_id: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "next_macro_hygiene_expansion_id" as *byte);
-        const dbg_c99_utils_cache_ensure: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "c99_utils_cache_ensure" as *byte);
-        fprintf(libc.stderr, "  query parse_args reachable=%d\n" as *byte, checker_is_function_reachable(&checker, dbg_parse_args));
-        fprintf(libc.stderr, "  query generate_libc reachable=%d\n" as *byte, checker_is_function_reachable(&checker, dbg_generate_libc));
-        fprintf(libc.stderr, "  query align_size reachable=%d\n" as *byte, checker_is_function_reachable(&checker, dbg_align_size));
+        const dbg_parse_args: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, "parse_args" as *byte);
+        const dbg_generate_libc: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, "generate_libc" as *byte);
+        const dbg_align_size: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, "align_size" as *byte);
+        const dbg_next_macro_hygiene_expansion_id: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, "next_macro_hygiene_expansion_id" as *byte);
+        const dbg_c99_utils_cache_ensure: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, "c99_utils_cache_ensure" as *byte);
+        fprintf(libc.stderr, "  query parse_args reachable=%d\n" as *byte, checker_is_function_reachable(checker, dbg_parse_args));
+        fprintf(libc.stderr, "  query generate_libc reachable=%d\n" as *byte, checker_is_function_reachable(checker, dbg_generate_libc));
+        fprintf(libc.stderr, "  query align_size reachable=%d\n" as *byte, checker_is_function_reachable(checker, dbg_align_size));
         fprintf(libc.stderr, "  query next_macro_hygiene_expansion_id reachable=%d\n" as *byte,
-            checker_is_function_reachable(&checker, dbg_next_macro_hygiene_expansion_id));
+            checker_is_function_reachable(checker, dbg_next_macro_hygiene_expansion_id));
         fprintf(libc.stderr, "  query c99_utils_cache_ensure reachable=%d\n" as *byte,
-            checker_is_function_reachable(&checker, dbg_c99_utils_cache_ensure));
+            checker_is_function_reachable(checker, dbg_c99_utils_cache_ensure));
     }
 
     // ===== 优化阶段（v0.7.3 新增）=====
@@ -7475,7 +7458,7 @@ fn compile_files(
         fprintf(libc.stderr, "\n=== 优化阶段 (级别: %d) ===\n" as *byte, opt_level);
         
         // 执行优化
-        const optimized_ast: &ASTNode = optimize_program(&checker, merged_ast, opt_config);
+        const optimized_ast: &ASTNode = optimize_program(checker, merged_ast, opt_config);
         opt_end_time = clock();
         
         // 打印优化统计
@@ -7501,7 +7484,15 @@ fn compile_files(
             return 1;
         }
     }
-    var c99_codegen: C99CodeGenerator = C99CodeGenerator { };
+    const c99_codegen: &C99CodeGenerator = compiler_arena_alloc(&arena, @size_of(C99CodeGenerator)) as &C99CodeGenerator;
+    if c99_codegen == null {
+        fprintf(libc.stderr, "错误: C99CodeGenerator 分配失败\n" as *byte);
+        if out_file != null {
+            fclose(out_file);
+        }
+        return 1;
+    }
+    _ = memset(c99_codegen as *byte, 0, @size_of(C99CodeGenerator));
     var split_mirror_flag: i32 = 0;
     if split_c_dir != null && split_c_dir[0] != 0 as byte {
         split_mirror_flag = 1;
@@ -7515,7 +7506,7 @@ fn compile_files(
             }
         }
     }
-    if c99_codegen_new(&c99_codegen, &arena, out_file as &void, module_name as &byte, emit_line_directives, is_nostdlib, stack_size, split_c_dir, split_mirror_flag, async_frame_heap_fallback) != 0 {
+    if c99_codegen_new(c99_codegen, &arena, out_file as &void, module_name as &byte, emit_line_directives, is_nostdlib, stack_size, split_c_dir, split_mirror_flag, async_frame_heap_fallback) != 0 {
         fprintf(libc.stderr, "错误: C99CodeGenerator 初始化失败\n" as *byte);
         if out_file != null {
             fclose(out_file);
@@ -7523,24 +7514,24 @@ fn compile_files(
         return 1;
     }
     // 设置单态化实例（从 TypeChecker 传入）
-    c99_codegen_set_mono_instances(&c99_codegen, &checker);
-    c99_codegen_set_reachable_functions(&c99_codegen, &checker);
+    c99_codegen_set_mono_instances(c99_codegen, checker);
+    c99_codegen_set_reachable_functions(c99_codegen, checker);
     if out_artifacts != null {
-        c99_codegen_set_c_import_plan(&c99_codegen, &out_artifacts.c_import_plan);
+        c99_codegen_set_c_import_plan(c99_codegen, &out_artifacts.c_import_plan);
     } else {
-        c99_codegen_set_c_import_plan(&c99_codegen, null);
+        c99_codegen_set_c_import_plan(c99_codegen, null);
     }
     c99_codegen.container_mode = g_container_mode;
     c99_codegen.microapp_softvm_mode = g_microapp_softvm_mode;
-    if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
+    if c99_codegen_generate(c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
-        c99_codegen_free(&c99_codegen);
+        c99_codegen_free(c99_codegen);
         if out_file != null {
             fclose(out_file);
         }
         return 1;
     }
-    c99_codegen_free(&c99_codegen);
+    c99_codegen_free(c99_codegen);
     if out_file != null {
         fclose(out_file);
     }
@@ -8004,7 +7995,7 @@ export fn main() i32 {
         if command == CommandType.COMMAND_TEST {
             sync_test_network_skip_marker();
             run_cmd_len = snprintf(&run_cmd[0], 4096,
-                "/bin/sh -c 'ulimit -s %d && exec \"$1\"' sh \"%s\"" as *byte,
+                "/bin/sh -c 'ulimit -s %d 2>/dev/null || true; exec \"$1\"' sh \"%s\"" as *byte,
                 eff_run_stack_kb,
                 &run_output[0] as *byte);
         } else {

@@ -1459,11 +1459,44 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
 }
 
 // 生成错误联合返回值
+fn gen_return_error_union_error_value(codegen: &C99CodeGenerator, expr: &ASTNode, payload_node: &ASTNode, ret_c: &byte, payload_void: i32) i32 {
+    if codegen == null || expr == null || ret_c == null {
+        return 0;
+    }
+    if expr.type != ASTNodeType.AST_IDENTIFIER || expr.identifier_name == null {
+        return 0;
+    }
+    if c99_identifier_is_error_value(codegen, expr.identifier_name) == 0 {
+        return 0;
+    }
+
+    c99_emit_indent(codegen);
+    fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = " as *byte, ret_c as *byte, ret_c as *byte);
+    gen_expr(codegen, expr);
+    if payload_void != 0 {
+        fputs(" };\n" as *byte, codegen.emit_stream as *void);
+    } else {
+        const payload_c: &byte = c99_mono_type_to_c(codegen, payload_node);
+        fputs(", .value = " as *byte, codegen.emit_stream as *void);
+        if payload_c != null && (strncmp(payload_c as *byte, "struct " as *byte, 7) == 0 || strncmp(payload_c as *byte, "union " as *byte, 6) == 0) {
+            fprintf(codegen.emit_stream as *void, "(%s){0}" as *byte, payload_c as *byte);
+        } else {
+            fputs("0" as *byte, codegen.emit_stream as *void);
+        }
+        fputs(" };\n" as *byte, codegen.emit_stream as *void);
+    }
+    return 1;
+}
+
 fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &ASTNode, ret_c: &byte) void {
     const payload_node: &ASTNode = return_type.type_error_union_payload_type;
     var payload_void: i32 = 0;
     if payload_node == null || (payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null && strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0) {
         payload_void = 1;
+    }
+
+    if gen_return_error_union_error_value(codegen, expr, payload_node, ret_c, payload_void) != 0 {
+        return;
     }
     
     // 检查 expr 是否已经是错误联合类型
@@ -3290,6 +3323,7 @@ fn gen_var_decl_void_type(codegen: &C99CodeGenerator, init_expr: &ASTNode) i32 {
                     fprintf(codegen.emit_stream as *void, "const uint32_t %s = _uya_catch_tmp.error_id;\n" as *byte, safe as *byte);
                     if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                         c99_push_local_variable(codegen, err_name, "const uint32_t" as *byte, null, codegen.current_depth);
+                        c99_mark_local_variable_error_value(codegen, err_name);
                     }
                 }
                 var i: i32 = 0;

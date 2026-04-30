@@ -120,7 +120,8 @@ struct LocalVariable {
     name: &byte,  // 变量名称
     type_c: &byte,  // C 类型字符串
     type_node: &ASTNode,  // 原始 AST 类型节点（用于 codegen 侧类型判定）
-    depth: i32  // 嵌套深度
+    depth: i32,  // 嵌套深度
+    is_error_value: i32  // catch |err| 绑定的错误值，不是普通 u32 payload
 }
 
 // 循环栈项
