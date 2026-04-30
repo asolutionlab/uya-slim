@@ -35,6 +35,8 @@ std.cfg(std.target_os == .tos_macos, {
 extern "libc" fn uya_macos_system(cmd: &const byte) !i32;
 extern "libc" fn uya_macos_getpid() i32;
 extern "libc" fn uya_macos_getppid() i32;
+extern "libc" fn uya_macos_fork() !i64;
+extern "libc" fn uya_macos_waitpid(pid: i32, status: &i32, options: i32) !i32;
 extern "libc" fn uya_macos_exit(status: i32) void;
 }, {})
 
@@ -139,12 +141,21 @@ export extern "libc" fn getppid() i32 {
 
 // fork - 创建子进程
 export extern "libc" fn fork() i32 {
-    const result: !i64 = @syscall(SYS_fork);
-    const ret: i64 = result catch {
-        errno = ENOMEM;
-        return 0 - 1;
-    };
-    return ret as i32;
+    std.cfg(std.target_os == .tos_macos, {
+        const result: !i64 = uya_macos_fork();
+        const ret: i64 = result catch {
+            errno = ENOMEM;
+            return 0 - 1;
+        };
+        return ret as i32;
+    }, {
+        const result: !i64 = @syscall(SYS_fork);
+        const ret: i64 = result catch {
+            errno = ENOMEM;
+            return 0 - 1;
+        };
+        return ret as i32;
+    })
 }
 
 // execve - 执行程序
@@ -170,12 +181,21 @@ export extern "libc" fn _exit(status: i32) void {
 
 // waitpid - 等待子进程状态（Linux x86_64：syscall 61 为 wait4，须传 rusage=NULL）
 export extern "libc" fn waitpid(pid: i32, status: &i32, options: i32) i32 {
-    const result: !i64 = @syscall(SYS_waitpid, pid as i64, status as i64, options as i64, 0 as i64);
-    const ret: i64 = result catch {
-        errno = ECHILD;
-        return 0 - 1;
-    };
-    return ret as i32;
+    std.cfg(std.target_os == .tos_macos, {
+        const result: !i32 = uya_macos_waitpid(pid, status, options);
+        const ret: i32 = result catch {
+            errno = ECHILD;
+            return 0 - 1;
+        };
+        return ret;
+    }, {
+        const result: !i64 = @syscall(SYS_waitpid, pid as i64, status as i64, options as i64, 0 as i64);
+        const ret: i64 = result catch {
+            errno = ECHILD;
+            return 0 - 1;
+        };
+        return ret as i32;
+    })
 }
 
 // system - 执行 shell 命令（0 依赖实现）

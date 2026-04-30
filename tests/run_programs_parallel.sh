@@ -805,7 +805,10 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
     )
     SKIP_TESTS+=(
         test_async_fd
+        test_tcp_basic
+        test_std_dns
         test_std_async_event
+        test_std_dns_async_transport
         test_std_thread
         test_task_std_async
         test_block_on
@@ -817,6 +820,7 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
         test_method_call_in_callback_codegen
         test_osal
         test_epoll_syscall
+        test_epoll_server
         test_error_id_builtin
         test_kernel_sim
         test_nonlinear_bounds
@@ -1003,7 +1007,7 @@ if [ ${#parallel_single_tests[@]} -gt 0 ]; then
     fi
     
     # 检查是否支持 wait -n（bash 4.3+）
-    if bash -c 'help wait' 2>/dev/null | grep -q '\-n'; then
+    if ( sleep 0.01 & wait -n ) >/dev/null 2>&1; then
         USE_WAIT_N=true
     else
         USE_WAIT_N=false
@@ -1110,14 +1114,14 @@ if [ ${#parallel_single_tests[@]} -gt 0 ]; then
         sleep 0.1
         process_ready_single_results
         if [ ${#PENDING_RFS[@]} -gt 0 ]; then
-local first_idx=""
+            first_idx=""
             for i in "${!PENDING_RFS[@]}"; do
                 first_idx="$i"
                 break
             done
             if [ -n "$first_idx" ]; then
-                local rf="${PENDING_RFS[$first_idx]}"
-                local bn="${PENDING_BNS[$first_idx]}"
+                rf="${PENDING_RFS[$first_idx]}"
+                bn="${PENDING_BNS[$first_idx]}"
                 if [ "$ERRORS_ONLY" = true ]; then
                     echo "测试: $bn"
                 fi

@@ -71,7 +71,10 @@ fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
             @asm {
                 "mov x16, %1\n\tmov x0, %2\n\tblr x16\n\tmov %0, x0"
                 (start_fn, start_arg, -> r);
-            } clobbers = ["x16", "x17", "memory"];
+            } clobbers = [
+                "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
+                "x8", "x9", "x10", "x16", "x17", "x30", "cc", "memory"
+            ];
         }, {
             std.cfg(std.target_arch == .ta_arm, {
                 @asm {

@@ -1960,11 +1960,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         var has_decl_realloc: i32 = 0;
         var has_decl_calloc: i32 = 0;
         var has_decl_clock: i32 = 0;
+        var has_decl_read: i32 = 0;
+        var has_decl_write: i32 = 0;
         var has_impl_malloc: i32 = 0;
         var has_impl_free: i32 = 0;
         var has_impl_realloc: i32 = 0;
         var has_impl_calloc: i32 = 0;
         var has_impl_clock: i32 = 0;
+        var has_impl_read: i32 = 0;
+        var has_impl_write: i32 = 0;
         var di: i32 = 0;
         while di < decl_count {
             const d: &ASTNode = ast.program_decls[di];
@@ -1986,6 +1990,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     } else if strcmp(n as *byte, "clock" as *byte) == 0 {
                         has_decl_clock = 1;
                         if d.fn_decl_body != null { has_impl_clock = 1; }
+                    } else if strcmp(n as *byte, "read" as *byte) == 0 {
+                        has_decl_read = 1;
+                        if d.fn_decl_body != null { has_impl_read = 1; }
+                    } else if strcmp(n as *byte, "write" as *byte) == 0 {
+                        has_decl_write = 1;
+                        if d.fn_decl_body != null { has_impl_write = 1; }
                     } else if d.fn_decl_body != null && strcmp(n as *byte, "opendir" as *byte) == 0 {
                         has_own_opendir = 1;
                     } else if d.fn_decl_body != null && strcmp(n as *byte, "readdir" as *byte) == 0 {
@@ -2012,6 +2022,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             if has_decl_clock != 0 && has_impl_clock == 0 {
                 fputs("extern int64_t clock(void);\n" as *byte, codegen.emit_stream as *void);
+            }
+            if has_decl_read != 0 && has_impl_read == 0 {
+                fputs("extern ssize_t read(int, void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+            }
+            if has_decl_write != 0 && has_impl_write == 0 {
+                fputs("extern ssize_t write(int, const void *, size_t);\n" as *byte, codegen.emit_stream as *void);
             }
         }
         if has_own_opendir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
@@ -2299,6 +2315,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("extern intptr_t uya_host_recvfrom(int, void *, size_t, int, void *, uint32_t *) __asm__(\"_recvfrom\");\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int uya_host_shutdown(int, int) __asm__(\"_shutdown\");\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int uya_host_setsockopt(int, int, int, const void *, uint32_t) __asm__(\"_setsockopt\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_fork(void) __asm__(\"_fork\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int uya_host_waitpid(int, int *, int) __asm__(\"_waitpid\");\n" as *byte, codegen.emit_stream as *void);
     fputs("extern void *uya_host_dlsym(void *, const char *) __asm__(\"_dlsym\");\n" as *byte, codegen.emit_stream as *void);
     fputs("typedef void *(*uya_host_opendir_fn)(const char *);\n" as *byte, codegen.emit_stream as *void);
     fputs("typedef void *(*uya_host_readdir_fn)(void *);\n" as *byte, codegen.emit_stream as *void);
@@ -2530,6 +2548,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("struct err_union_int32_t uya_macos_setsockopt(int32_t sockfd, int32_t level, int32_t optname, void *optval, uint32_t optlen) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    int ret = uya_host_setsockopt((int)sockfd, (int)level, (int)optname, (const void *)optval, optlen);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int64_t uya_macos_fork(void) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_fork();\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (ret == -1) return uya_macos_err_i64(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return uya_macos_ok_i64((int64_t)ret);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int32_t uya_macos_waitpid(int32_t pid, int32_t *status, int32_t options) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    int ret = uya_host_waitpid((int)pid, (int *)status, (int)options);\n" as *byte, codegen.emit_stream as *void);
     fputs("    if (ret == -1) return uya_macos_err_i32(uya_macos_errno_value());\n" as *byte, codegen.emit_stream as *void);
     fputs("    return uya_macos_ok_i32(ret);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);

@@ -195,13 +195,32 @@ fn should_use_raw_libc_symbol_name(codegen: &C99CodeGenerator, fn_decl: &ASTNode
     if fn_decl.fn_decl_body == null {
         return 1;
     }
+    const name: &byte = fn_decl.fn_decl_name;
+
+    // Darwin 下 fork/waitpid 需要走宿主 libc 包装；生成裸符号会覆盖宿主入口，导致包装递归或
+    // 退回原始 syscall 返回约定。
+    if name != null {
+        if strcmp(name as *byte, "fork" as *byte) == 0 ||
+            strcmp(name as *byte, "waitpid" as *byte) == 0 {
+            return 0;
+        }
+    }
+
     // --nostdlib 下保留原始 libc 名。
     if codegen != null && codegen.is_nostdlib != 0 {
         return 1;
     }
 
+    // hosted 模式下，libc.pthread 的 Linux/NPTL-lite 实现不能导出为裸 pthread_* 符号；
+    // 否则会抢占 macOS/libSystem 等宿主 libc 内部使用的 pthread_once/pthread_mutex_*。
+    if fn_decl.filename != null {
+        if strstr(fn_decl.filename as *byte, "/lib/libc/pthread.uya" as *byte) != null ||
+            strstr(fn_decl.filename as *byte, "lib/libc/pthread.uya" as *byte) != null {
+            return 0;
+        }
+    }
+
     // hosted 模式：仅对与系统 stdlib 原型冲突的符号改为模块前缀名。
-    const name: &byte = fn_decl.fn_decl_name;
     if name != null {
         if strcmp(name as *byte, "atol" as *byte) == 0 ||
             strcmp(name as *byte, "strtod" as *byte) == 0 ||
@@ -756,11 +775,19 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         pi_fwd = pi_fwd + 1;
     }
     const should_emit_static: i32 = c99_should_emit_static_top_level_function(codegen, fn_decl);
+    var force_noinline: i32 = 0;
+    if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "_pthread_call_start" as *byte) == 0 {
+        force_noinline = 1;
+    }
     // 顶层 helper 可能在定义前被调用；若定义是内部链接，则原型也必须保持 static，避免 single-file C 里出现
     // “non-static declaration” 与后续 static 定义冲突。
     if is_extern == 0 {
         if should_emit_static != 0 {
-            fprintf(codegen.emit_stream, "static __attribute__((used)) %s %s(" as *byte, return_c as *byte, func_name as *byte);
+            if force_noinline != 0 {
+                fprintf(codegen.emit_stream, "static __attribute__((used,noinline)) %s %s(" as *byte, return_c as *byte, func_name as *byte);
+            } else {
+                fprintf(codegen.emit_stream, "static __attribute__((used)) %s %s(" as *byte, return_c as *byte, func_name as *byte);
+            }
         } else {
             fprintf(codegen.emit_stream, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
         }
@@ -987,7 +1014,11 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             fprintf(codegen.emit_stream, "__attribute__((naked)) " as *byte);
         }
         if is_static != 0 {
-            fprintf(codegen.emit_stream, "static __attribute__((used)) " as *byte);
+            if orig_name != null && strcmp(orig_name as *byte, "_pthread_call_start" as *byte) == 0 {
+                fprintf(codegen.emit_stream, "static __attribute__((used,noinline)) " as *byte);
+            } else {
+                fprintf(codegen.emit_stream, "static __attribute__((used)) " as *byte);
+            }
         } else if fn_decl.fn_decl_extern_lib_name != null {
             // extern "libc" 等函数可能在 @asm 中被引用，LTO + --gc-sections 下需要 used 防止被回收
             fprintf(codegen.emit_stream, "__attribute__((used)) " as *byte);
