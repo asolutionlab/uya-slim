@@ -1466,12 +1466,41 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                         str_equals(v.var_decl_name, method_name) != 0 {
                         found_variant_name = 1;
+                        const saved_type_params: &TypeParam = checker.current_type_params;
+                        const saved_type_param_count: i32 = checker.current_type_param_count;
+                        checker.current_type_params = union_decl.union_decl_type_params;
+                        checker.current_type_param_count = union_decl.union_decl_type_param_count;
                         var variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                        checker.current_type_params = saved_type_params;
+                        checker.current_type_param_count = saved_type_param_count;
                         if union_decl.union_decl_type_param_count > 0 &&
                             ctor_type_args != null && ctor_type_arg_count > 0 {
                             variant_type = substitute_generic_type(checker, copy_type(&variant_type),
                                 union_decl.union_decl_type_params, union_decl.union_decl_type_param_count,
                                 ctor_type_args, ctor_type_arg_count);
+                            var tp_i: i32 = 0;
+                            while tp_i < union_decl.union_decl_type_param_count && tp_i < ctor_type_arg_count {
+                                const tp_name: &byte = union_decl.union_decl_type_params[tp_i].name;
+                                var match_tp: i32 = 0;
+                                if tp_name != null {
+                                    if variant_type.kind == TypeKind.TYPE_GENERIC_PARAM &&
+                                        variant_type.generic_param_name != null &&
+                                        str_equals(variant_type.generic_param_name, tp_name) != 0 {
+                                        match_tp = 1;
+                                    } else if v.var_decl_type != null &&
+                                        v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                        v.var_decl_type.type_named_name != null &&
+                                        (v.var_decl_type.type_named_type_arg_count == 0 || v.var_decl_type.type_named_type_args == null) &&
+                                        str_equals(v.var_decl_type.type_named_name, tp_name) != 0 {
+                                        match_tp = 1;
+                                    }
+                                }
+                                if match_tp != 0 {
+                                    variant_type = type_from_ast(checker, ctor_type_args[tp_i]);
+                                    break;
+                                }
+                                tp_i = tp_i + 1;
+                            }
                         }
                         if variant_type.kind == TypeKind.TYPE_VOID {
                             var allow_empty_block_arg: i32 = 0;
@@ -2241,7 +2270,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         while gi < fn_decl_for_generic_early.fn_decl_param_count {
             const param: &ASTNode = fn_decl_for_generic_early.fn_decl_params[gi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL {
+                const saved_type_params: &TypeParam = checker.current_type_params;
+                const saved_type_param_count: i32 = checker.current_type_param_count;
+                checker.current_type_params = type_params;
+                checker.current_type_param_count = type_param_count;
                 var param_type: Type = type_from_ast(checker, param.var_decl_type);
+                checker.current_type_params = saved_type_params;
+                checker.current_type_param_count = saved_type_param_count;
                 // 替换泛型参数为具体类型
                 param_type = substitute_generic_type(checker, copy_type(&param_type),
                     type_params, type_param_count,
@@ -2256,7 +2291,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
         
         // 返回替换后的返回类型
+        const saved_type_params2: &TypeParam = checker.current_type_params;
+        const saved_type_param_count2: i32 = checker.current_type_param_count;
+        checker.current_type_params = type_params;
+        checker.current_type_param_count = type_param_count;
         const return_type: Type = type_from_ast(checker, fn_decl_for_generic_early.fn_decl_return_type);
+        checker.current_type_params = saved_type_params2;
+        checker.current_type_param_count = saved_type_param_count2;
         return substitute_generic_type(checker, return_type,
             type_params, type_param_count,
             type_args, type_arg_count);

@@ -337,6 +337,57 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
             return result;
         }
     }
+
+    if type.kind == TypeKind.TYPE_INTERFACE && type.interface_type_args != null && type.interface_type_arg_count > 0 {
+        const count: i32 = type.interface_type_arg_count;
+        const new_args: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+        if new_args != null {
+            var i: i32 = 0;
+            while i < count {
+                new_args[i] = substitute_generic_type(checker, type.interface_type_args[i],
+                    type_params, type_param_count, type_args, type_arg_count);
+                i = i + 1;
+            }
+            var result: Type = copy_type(&type);
+            result.interface_type_args = new_args;
+            result.interface_type_arg_count = count;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_STRUCT && type.struct_type_args != null && type.struct_type_arg_count > 0 {
+        const count: i32 = type.struct_type_arg_count;
+        const new_args: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+        if new_args != null {
+            var i: i32 = 0;
+            while i < count {
+                new_args[i] = substitute_generic_type(checker, type.struct_type_args[i],
+                    type_params, type_param_count, type_args, type_arg_count);
+                i = i + 1;
+            }
+            var result: Type = copy_type(&type);
+            result.struct_type_args = new_args;
+            result.struct_type_arg_count = count;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_UNION && type.union_type_args != null && type.union_type_arg_count > 0 {
+        const count: i32 = type.union_type_arg_count;
+        const new_args: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+        if new_args != null {
+            var i: i32 = 0;
+            while i < count {
+                new_args[i] = substitute_generic_type(checker, type.union_type_args[i],
+                    type_params, type_param_count, type_args, type_arg_count);
+                i = i + 1;
+            }
+            var result: Type = copy_type(&type);
+            result.union_type_args = new_args;
+            result.union_type_arg_count = count;
+            return result;
+        }
+    }
     
     return type;
 }

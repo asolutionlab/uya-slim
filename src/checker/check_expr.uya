@@ -2439,6 +2439,52 @@ fn checker_simd_prep_expr_with_expected_vector(checker: &TypeChecker, expr: &AST
     }
 }
 
+fn checker_seed_union_ctor_type_args_from_expected(checker: &TypeChecker, expr: &ASTNode, expected_type: Type) void {
+    if checker == null || expr == null || checker.arena == null {
+        return;
+    }
+    if expr.type != ASTNodeType.AST_CALL_EXPR || expr.call_expr_callee == null {
+        return;
+    }
+    if expr.call_expr_type_args != null || expr.call_expr_type_arg_count != 0 {
+        return;
+    }
+    if expected_type.kind != TypeKind.TYPE_UNION || expected_type.union_name == null ||
+        expected_type.union_type_args == null || expected_type.union_type_arg_count <= 0 {
+        return;
+    }
+    const callee: &ASTNode = expr.call_expr_callee;
+    if callee.type != ASTNodeType.AST_MEMBER_ACCESS || callee.member_access_object == null {
+        return;
+    }
+    const object: &ASTNode = callee.member_access_object;
+    var union_name_for_lookup: &byte = null;
+    if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
+        union_name_for_lookup = object.identifier_name;
+    } else if object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_name != null {
+        union_name_for_lookup = object.type_named_name;
+    }
+    if union_name_for_lookup == null || str_equals(union_name_for_lookup, expected_type.union_name) == 0 {
+        return;
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, union_name_for_lookup);
+    if union_decl == null || union_decl.union_decl_type_param_count <= 0 {
+        return;
+    }
+    const count: i32 = expected_type.union_type_arg_count;
+    const args_ast: & & ASTNode = compiler_arena_alloc(checker.arena, @size_of(&ASTNode) * (count as usize)) as & & ASTNode;
+    if args_ast == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < count {
+        args_ast[i] = type_to_ast(checker, &expected_type.union_type_args[i], expr.line, expr.column, expr.filename);
+        i = i + 1;
+    }
+    expr.call_expr_type_args = args_ast;
+    expr.call_expr_type_arg_count = count;
+}
+
 // 检查表达式类型是否匹配预期类型
 // 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
 // 返回：1 表示类型匹配，0 表示类型不匹配
@@ -2476,6 +2522,7 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
     if simd_sel_resolved < 0 {
         return 0;
     }
+    checker_seed_union_ctor_type_args_from_expected(checker, expr, copy_type(&expected_copy));
     // 字符串字面量 -> [byte:N] 初始化/赋值；-> &[const byte] / &[const byte:N] 切片赋值（重指向）
     if expr.type == ASTNodeType.AST_STRING && expr.string_literal_value != null {
         if expected_copy.kind == TypeKind.TYPE_ARRAY && expected_copy.element_type != null &&
@@ -2811,7 +2858,42 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                         const v: &ASTNode = union_decl.union_decl_variants[i];
                         if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                             str_equals(v.var_decl_name, variant_name) != 0 {
+                            const saved_type_params: &TypeParam = checker.current_type_params;
+                            const saved_type_param_count: i32 = checker.current_type_param_count;
+                            checker.current_type_params = union_decl.union_decl_type_params;
+                            checker.current_type_param_count = union_decl.union_decl_type_param_count;
                             var variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                            checker.current_type_params = saved_type_params;
+                            checker.current_type_param_count = saved_type_param_count;
+                            if union_decl.union_decl_type_param_count > 0 &&
+                                ctor_type_args != null && ctor_type_arg_count > 0 {
+                                variant_type = substitute_generic_type(checker, copy_type(&variant_type),
+                                    union_decl.union_decl_type_params, union_decl.union_decl_type_param_count,
+                                    ctor_type_args, ctor_type_arg_count);
+                                var tp_i: i32 = 0;
+                                while tp_i < union_decl.union_decl_type_param_count && tp_i < ctor_type_arg_count {
+                                    const tp_name: &byte = union_decl.union_decl_type_params[tp_i].name;
+                                    var match_tp: i32 = 0;
+                                    if tp_name != null {
+                                        if variant_type.kind == TypeKind.TYPE_GENERIC_PARAM &&
+                                            variant_type.generic_param_name != null &&
+                                            str_equals(variant_type.generic_param_name, tp_name) != 0 {
+                                            match_tp = 1;
+                                        } else if v.var_decl_type != null &&
+                                            v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                            v.var_decl_type.type_named_name != null &&
+                                            (v.var_decl_type.type_named_type_arg_count == 0 || v.var_decl_type.type_named_type_args == null) &&
+                                            str_equals(v.var_decl_type.type_named_name, tp_name) != 0 {
+                                            match_tp = 1;
+                                        }
+                                    }
+                                    if match_tp != 0 {
+                                        variant_type = type_from_ast(checker, ctor_type_args[tp_i]);
+                                        break;
+                                    }
+                                    tp_i = tp_i + 1;
+                                }
+                            }
                             if variant_type.kind == TypeKind.TYPE_VOID {
                                 var allow_empty_block_arg: i32 = 0;
                                 if expr.call_expr_arg_count == 1 && expr.call_expr_args != null &&

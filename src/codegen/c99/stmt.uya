@@ -65,6 +65,20 @@ fn is_expr_type(node_type: ASTNodeType) i32 {
     return 0;
 }
 
+fn stmt_expr_needs_error_void_propagation(codegen: &C99CodeGenerator, stmt: &ASTNode) i32 {
+    if codegen == null || stmt == null || codegen.checker == null || codegen.current_function_return_type == null {
+        return 0;
+    }
+    if codegen.current_function_return_type.type != ASTNodeType.AST_TYPE_ERROR_UNION {
+        return 0;
+    }
+    const stmt_type: Type = checker_infer_type(codegen.checker, stmt);
+    if stmt_type.kind != TypeKind.TYPE_ERROR_UNION || stmt_type.error_union_payload_type == null {
+        return 0;
+    }
+    return (stmt_type.error_union_payload_type[0].kind == TypeKind.TYPE_VOID) as i32;
+}
+
 // 收集作为 @va_start 第一个参数的标识符名称（用于生成 va_list 而非 void*）
 fn is_va_list_var_name(codegen: &C99CodeGenerator, block: &ASTNode, var_name: &byte) i32 {
     if codegen == null || block == null || var_name == null || codegen.current_function_decl == null {
@@ -621,6 +635,28 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if stmt.type == ASTNodeType.AST_ASM {
                 gen_expr(codegen, stmt);
             } else {
+                if stmt_expr_needs_error_void_propagation(codegen, stmt) != 0 {
+                    const stmt_type: Type = checker_infer_type(codegen.checker, stmt);
+                    const stmt_type_ast: &ASTNode = type_to_ast(codegen.checker, &stmt_type, stmt.line, stmt.column, stmt.filename);
+                    const stmt_union_c: &byte = c99_type_to_c(codegen, stmt_type_ast);
+                    const ret_union_c: &byte = c99_type_to_c(codegen, codegen.current_function_return_type);
+                    if stmt_union_c != null && ret_union_c != null {
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.emit_stream as *void, "%s _uya_stmt_tmp = " as *byte, stmt_union_c as *byte);
+                        gen_expr(codegen, stmt);
+                        fputs(";\n" as *byte, codegen.emit_stream as *void);
+                        c99_emit_indent(codegen);
+                        fputs("if (_uya_stmt_tmp.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
+                        codegen.indent_level = codegen.indent_level + 1;
+                        emit_all_active_scope_cleanup(codegen, 1);
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.emit_stream as *void, "return (%s){ .error_id = _uya_stmt_tmp.error_id };\n" as *byte, ret_union_c as *byte);
+                        codegen.indent_level = codegen.indent_level - 1;
+                        c99_emit_indent(codegen);
+                        fputs("}\n" as *byte, codegen.emit_stream as *void);
+                        return;
+                    }
+                }
                 c99_emit(codegen, "(void)(" as *byte);
                 gen_expr(codegen, stmt);
                 c99_emit(codegen, ");\n" as *byte);

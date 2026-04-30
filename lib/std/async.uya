@@ -283,9 +283,7 @@ export fn ok<T>(value: T) !T {
 
 /// 构造 Poll<!T>.Ready(ok(value))，供自定义 `Future<!T>` 的 Ready 路径复用。
 export fn poll_ready_ok<T>(value: T) Poll<!T> {
-    const ok_value: !T = ok<T>(value);
-    const p: Poll<!T> = Poll<!T>.Ready(ok_value);
-    return p;
+    return Poll<!T>.Ready(ok<T>(value));
 }
 
 /// 构造已就绪的 `Future<!T>`。
