@@ -11,4 +11,4 @@ error: 类型转换可能有精度损失
    |
    = note: f64 -> f32 转换可能损失精度
    = help: 如果确实需要此转换，请使用 'as!' 强转语法
-   = help: 例如: const y: f32 = x as! f32;
+   = help: 例如: const y: f32 = try (x as! f32);

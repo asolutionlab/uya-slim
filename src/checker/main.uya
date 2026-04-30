@@ -418,7 +418,15 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                 }
                 // 检查语句，但不报告错误（放宽检查）
+                const prev_errors: i32 = checker.error_count;
                 checker_check_node(checker, stmt);
+                if checker.error_count == prev_errors {
+                    const stmt_type: Type = checker_infer_type(checker, stmt);
+                    if stmt_type.kind == TypeKind.TYPE_ERROR_UNION {
+                        checker_report_error(checker, stmt,
+                            "错误联合类型 !T 不能作为裸表达式语句；请使用 try 或 catch 处理" as *byte);
+                    }
+                }
             }
             i = i + 1;
         }

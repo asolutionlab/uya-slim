@@ -2518,6 +2518,14 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
         }
     }
     const actual_type: Type = checker_infer_type(checker, expr);
+    if actual_type.kind == TypeKind.TYPE_ERROR && expected_copy.kind == TypeKind.TYPE_ERROR_UNION {
+        return 1;
+    }
+    if actual_type.kind == TypeKind.TYPE_ERROR_UNION && expected_copy.kind != TypeKind.TYPE_ERROR_UNION {
+        checker_report_error(checker, expr,
+            "错误联合类型 !T 不能隐式用于普通类型上下文；请使用 try 或 catch 处理" as *byte);
+        return 0;
+    }
     if type_equals(copy_type(&actual_type), copy_type(&expected_copy)) != 0 {
         return 1;
     }

@@ -149,7 +149,9 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             // 注意：如果表达式包含赋值（如 node.field = null），可能会报告错误，但我们应该继续
             checker_check_node(checker, node.var_decl_init);
             // 用期望类型检查并解析（如 max/min 从 var_type 推断）
-            checker_check_expr_type(checker, node.var_decl_init, copy_type(&var_type));
+            if checker_check_expr_type(checker, node.var_decl_init, copy_type(&var_type)) == 0 {
+                return 0;
+            }
             // 然后推断类型并比较
             const init_type: Type = checker_infer_type(checker, node.var_decl_init);
 
