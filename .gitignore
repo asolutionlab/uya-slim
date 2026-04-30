@@ -47,3 +47,4 @@ src/.uyacache-macos/
 src/.uyacache-macos-new/
 src/.uyacache-macos-x86_64/
 src/.uyacache-native-refresh/
+.mcp.json
