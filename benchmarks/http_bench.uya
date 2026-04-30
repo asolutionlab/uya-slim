@@ -921,7 +921,10 @@ fn bench_slot_try_read(srv: &EpollServer, slot: usize, rt: &Router) void {
             bench_slot_continue_write(srv, slot, rt);
             return;
         }
-        pr => {
+        else => {
+            var pr: ParseResult = st catch {
+                return;
+            };
             const p: bool = request_wants_persistent_with_session(&pr.request, bench_http10_sess_get(slot));
             bench_slot_after_parse_success(srv, slot, rt, pr, base, filled, p);
             return;
@@ -1007,7 +1010,10 @@ fn bench_on_listen(srv: &EpollServer) void {
             error.AcceptFailed => {
                 return;
             }
-            slot => {
+            else => {
+                const slot: usize = acc catch {
+                    return;
+                };
                 bench_init_connection_slot(slot);
             }
         }
@@ -1066,7 +1072,10 @@ fn bench_epoll_main_loop(srv: &EpollServer, rt: &Router) void {
             error._ => {
                 continue;
             }
-            cnt => {
+            else => {
+                const cnt: i32 = nw catch {
+                    0;
+                };
                 n = cnt;
             }
         }
@@ -1082,14 +1091,11 @@ fn bench_epoll_main_loop(srv: &EpollServer, rt: &Router) void {
                 if epoll_server_event_is_listen(srv, ev) {
                     listen_pending = true;
                 } else {
-                    var cfd: i32 = 0;
-                    match u64_to_i32(ev.data) {
-                        error._ => {
-                            continue;
-                        }
-                        v => {
-                            cfd = v;
-                        }
+                    const cfd: i32 = u64_to_i32(ev.data) catch {
+                        0 - 1;
+                    };
+                    if cfd < 0 {
+                        continue;
                     }
                     const sidx: i32 = epoll_server_slot_for_fd(srv, cfd);
                     if sidx >= 0 {

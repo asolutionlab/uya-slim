@@ -2320,16 +2320,25 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
             struct_init.struct_init_field_count = field_count;
             return parser_parse_postfix_expr_tail(parser, struct_init);
         } else {
-            // 普通标识符
-            const node: &ASTNode = ast_new_node(ASTNodeType.AST_IDENTIFIER, line, column, parser.arena, parser_get_filename(parser));
-            if node == null {
-                return null;
+            // 普通标识符；若后面继续走 .field/[index]/(...) 链，仍需保留前面的类型实参（如 Foo<i32>.bar()）
+            var result: &ASTNode = null;
+            if call_type_arg_count > 0 && call_type_args != null {
+                const type_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, parser.arena, parser_get_filename(parser));
+                if type_node != null {
+                    type_node.type_named_name = name;
+                    type_node.type_named_type_args = call_type_args;
+                    type_node.type_named_type_arg_count = call_type_arg_count;
+                    result = type_node;
+                }
             }
-            
-            node.identifier_name = name;
-            
-            // 字段访问和数组访问可能跟在标识符后面（例如：obj.field 或 arr[0]）
-            var result: &ASTNode = node;
+            if result == null {
+                const node: &ASTNode = ast_new_node(ASTNodeType.AST_IDENTIFIER, line, column, parser.arena, parser_get_filename(parser));
+                if node == null {
+                    return null;
+                }
+                node.identifier_name = name;
+                result = node;
+            }
             
             // 处理字段访问和数组访问链（.field 或元组 .0/.1、[index]）
             while parser.current_token != null {

@@ -162,7 +162,8 @@ export extern "libc" fn _exit(status: i32) void {
     std.cfg(std.target_os == .tos_macos, {
         uya_macos_exit(status);
     }, {
-        @syscall(SYS_exit, status as i64) catch {};
+        const exit_result: !i64 = @syscall(SYS_exit, status as i64);
+        _ = exit_result catch {};
     })
     while true {}
 }
