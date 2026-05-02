@@ -18,6 +18,7 @@ jobs:
       TARGET_OS: macos
       TARGET_ARCH: arm64
       UYA_ROOT: ${{ github.workspace }}/lib/
+      LC_ALL: C
 
     steps:
     - uses: actions/checkout@v4
