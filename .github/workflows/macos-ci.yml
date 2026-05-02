@@ -47,6 +47,7 @@ jobs:
       run: |
         echo "TARGET_GCC=$(xcrun --find clang)" >> "$GITHUB_ENV"
         echo "OBJCOPY=$(xcrun --find llvm-objcopy)" >> "$GITHUB_ENV"
+        echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
 
     - name: Run microapp hosted smoke
       run: make microapp-hosted-smoke
