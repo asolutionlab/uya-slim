@@ -1919,14 +1919,9 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
             }
         }
         
-        // 语法糖：stmt 返回类型 - 最后一个语句自动作为输出
+        // 语法糖：stmt 返回类型 - 宏体运行期语句整体作为输出块
         if return_tag != null && strcmp(return_tag as *byte, "stmt" as *byte) == 0 {
-            // 跳过变量声明语句
-            if stmt.type == ASTNodeType.AST_VAR_DECL {
-                i = i - 1;
-                continue;
-            }
-            return deep_copy_ast_with_params(stmt, &merged_ctx, filename);
+            return extract_stmt_macro_body(body_to_use, &merged_ctx, filename);
         }
         
         // 语法糖：struct 返回类型 - 方法定义作为输出
@@ -1965,6 +1960,71 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
 }
 
 // 从宏体提取输出表达式（简化版本，仅支持 @mc_code(@mc_ast(expr))）
+fn stmt_macro_is_compile_time_binding(stmt: &ASTNode) i32 {
+    if stmt == null || stmt.type != ASTNodeType.AST_VAR_DECL || stmt.var_decl_is_const == 0 || stmt.var_decl_init == null {
+        return 0;
+    }
+    if stmt.var_decl_init.type == ASTNodeType.AST_MC_EVAL || stmt.var_decl_init.type == ASTNodeType.AST_MC_TYPE {
+        return 1;
+    }
+    return 0;
+}
+
+fn extract_stmt_macro_body(body: &ASTNode, ctx: &MacroExpandContext, filename: &byte) &ASTNode {
+    if body == null || body.type != ASTNodeType.AST_BLOCK || body.block_stmts == null || ctx == null || ctx.arena == null {
+        return null;
+    }
+
+    var emit_count: i32 = 0;
+    var i: i32 = 0;
+    while i < body.block_stmt_count {
+        const stmt: &ASTNode = body.block_stmts[i];
+        if stmt != null && stmt_macro_is_compile_time_binding(stmt) == 0 && stmt.type != ASTNodeType.AST_MC_ERROR {
+            emit_count = emit_count + 1;
+        }
+        i = i + 1;
+    }
+
+    if emit_count <= 0 {
+        return null;
+    }
+
+    if emit_count == 1 {
+        i = 0;
+        while i < body.block_stmt_count {
+            const one_stmt: &ASTNode = body.block_stmts[i];
+            if one_stmt != null && stmt_macro_is_compile_time_binding(one_stmt) == 0 && one_stmt.type != ASTNodeType.AST_MC_ERROR {
+                return deep_copy_ast_with_params(one_stmt, ctx, filename);
+            }
+            i = i + 1;
+        }
+        return null;
+    }
+
+    const block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, body.line, body.column, ctx.arena, filename);
+    if block == null {
+        return null;
+    }
+    block.block_stmt_count = emit_count;
+    block.block_stmts = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * emit_count) as & & ASTNode;
+    if block.block_stmts == null {
+        return null;
+    }
+
+    var out_i: i32 = 0;
+    i = 0;
+    while i < body.block_stmt_count {
+        const stmt2: &ASTNode = body.block_stmts[i];
+        if stmt2 != null && stmt_macro_is_compile_time_binding(stmt2) == 0 && stmt2.type != ASTNodeType.AST_MC_ERROR {
+            block.block_stmts[out_i] = stmt2;
+            out_i = out_i + 1;
+        }
+        i = i + 1;
+    }
+
+    return deep_copy_ast_with_params(block, ctx, filename);
+}
+
 fn extract_macro_output_simple(body: &ASTNode, arena: &CompilerArena, filename: &byte) &ASTNode {
     if body == null || body.type != ASTNodeType.AST_BLOCK {
         return null;

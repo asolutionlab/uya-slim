@@ -615,6 +615,17 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             }
         }
     }
+    // 普通局部变量与参数：直接返回安全名，避免被全局函数前缀解析覆盖
+    if codegen.local_variable_count > 0 {
+        var li: i32 = 0;
+        while li < codegen.local_variable_count && li < C99_MAX_LOCAL_VARS {
+            if codegen.local_variables[li].name != null &&
+                strcmp(codegen.local_variables[li].name as *byte, name as *byte) == 0 {
+                return get_safe_c_identifier(codegen, name);
+            }
+            li = li + 1;
+        }
+    }
     c99_ident_ref_cache_ensure(codegen);
     const slot: i32 = c99_ident_ref_cache_slot(codegen, name);
     if slot < 0 {
@@ -684,7 +695,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
         }
     }
     if result == null {
-        result = get_safe_c_identifier(codegen, name);
+        result = get_c_name_for_global_function(codegen, name, 0);
     }
     g_c99_ident_ref_keys[slot] = name;
     g_c99_ident_ref_values[slot] = result;

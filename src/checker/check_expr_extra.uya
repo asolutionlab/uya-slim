@@ -281,8 +281,10 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
                 const fd: &ASTNode = find_fn_decl_from_program(checker.program_node, frame_operand.identifier_name);
                 if fd != null {
                     const meta: &AsyncFrameMeta = checker_async_frame_meta_for_fn(checker, fd);
-                    if meta != null {
+                    if meta != null && meta.frame_align > 0 {
                         frame_align_val = meta.frame_align as i32;
+                    } else if fd.fn_decl_align > 0 {
+                        frame_align_val = fd.fn_decl_align;
                     }
                 }
             }
@@ -1023,6 +1025,38 @@ fn checker_maybe_add_direct_address_root(checker: &TypeChecker, expr: &ASTNode) 
     }
 }
 
+fn checker_maybe_add_frame_type_root(checker: &TypeChecker, type_node: &ASTNode) void {
+    if checker == null || type_node == null {
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_FRAME {
+        const operand: &ASTNode = type_node.type_frame_operand;
+        if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
+            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, operand.identifier_name);
+            if fn_decl != null {
+                _ = checker_add_function_root_decl(checker, fn_decl);
+            }
+        }
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_POINTER && type_node.type_pointer_pointed_type != null {
+        checker_maybe_add_frame_type_root(checker, type_node.type_pointer_pointed_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ARRAY && type_node.type_array_element_type != null {
+        checker_maybe_add_frame_type_root(checker, type_node.type_array_element_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_SLICE && type_node.type_slice_element_type != null {
+        checker_maybe_add_frame_type_root(checker, type_node.type_slice_element_type);
+        return;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && type_node.type_error_union_payload_type != null {
+        checker_maybe_add_frame_type_root(checker, type_node.type_error_union_payload_type);
+        return;
+    }
+}
+
 fn checker_walk_reachability_expr_impl(checker: &TypeChecker, expr: &ASTNode) void {
     if checker == null || expr == null {
         return;
@@ -1228,6 +1262,7 @@ fn checker_walk_reachability_node(checker: &TypeChecker, node: &ASTNode) void {
         return;
     }
     if node.type == ASTNodeType.AST_VAR_DECL {
+        checker_maybe_add_frame_type_root(checker, node.var_decl_type);
         checker_walk_reachability_node(checker, node.var_decl_init);
         return;
     }
@@ -1547,6 +1582,7 @@ fn checker_walk_reachability_node_uncached(checker: &TypeChecker, node: &ASTNode
         return;
     }
     if node.type == ASTNodeType.AST_VAR_DECL {
+        checker_maybe_add_frame_type_root(checker, node.var_decl_type);
         checker_walk_reachability_node_uncached(checker, node.var_decl_init);
         return;
     }

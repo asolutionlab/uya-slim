@@ -105,6 +105,40 @@ fn c99_emit_async_frame_forward_for_type(codegen: &C99CodeGenerator, type_node: 
     }
 }
 
+fn c99_emit_async_frame_forwards_in_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if codegen == null || node == null {
+        return;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_type != null {
+        c99_emit_async_frame_forward_for_type(codegen, node.var_decl_type);
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            c99_emit_async_frame_forwards_in_node(codegen, node.block_stmts[i]);
+            i = i + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        c99_emit_async_frame_forwards_in_node(codegen, node.if_stmt_then_branch);
+        c99_emit_async_frame_forwards_in_node(codegen, node.if_stmt_else_branch);
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        c99_emit_async_frame_forwards_in_node(codegen, node.while_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        c99_emit_async_frame_forwards_in_node(codegen, node.for_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_TEST_STMT {
+        c99_emit_async_frame_forwards_in_node(codegen, node.test_stmt_body);
+        return;
+    }
+}
+
 // 统一扫描 program 中所有函数签名的返回类型与参数类型，为其中出现的 @frame 类型生成 struct 前向声明。
 // 用于 split-C 的 uya_split_protos.h 等头文件统一发射阶段，避免某些原型生成路径遗漏前向声明。
 export fn c99_emit_all_async_frame_forwards(codegen: &C99CodeGenerator, program: &ASTNode) void {
@@ -124,6 +158,7 @@ export fn c99_emit_all_async_frame_forwards(codegen: &C99CodeGenerator, program:
                 }
                 pi = pi + 1;
             }
+            c99_emit_async_frame_forwards_in_node(codegen, decl.fn_decl_body);
         } else if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
             var mi: i32 = 0;
             while mi < decl.method_block_method_count {
@@ -138,6 +173,7 @@ export fn c99_emit_all_async_frame_forwards(codegen: &C99CodeGenerator, program:
                         }
                         pi = pi + 1;
                     }
+                    c99_emit_async_frame_forwards_in_node(codegen, m.fn_decl_body);
                 }
                 mi = mi + 1;
             }

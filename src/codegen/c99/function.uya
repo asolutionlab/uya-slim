@@ -5565,6 +5565,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     codegen.async_param_count = 0;
     codegen.async_bind_count = 0;
     codegen.async_local_count = 0;
+    codegen.async_inline_temp_var_count = 0;
     codegen.async_loop_var_name = null;
     codegen.async_loop_var_c = null;
     codegen.async_fn_decl = null;
@@ -5576,6 +5577,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     pi = 0;
     while pi < 16 {
         codegen.async_param_names[pi] = null;
+        pi = pi + 1;
+    }
+    pi = 0;
+    while pi < 32 {
+        codegen.async_inline_temp_var_names[pi] = null;
         pi = pi + 1;
     }
 
@@ -6905,7 +6911,7 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
     
     // 构建单态化方法名
     var mono_name_buf: [byte: C99_TYPE_ARG_BUF_SIZE] = [];
-    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "%s_%s" as *byte, struct_name as *byte, method_name as *byte);
+    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "uya_%s_%s" as *byte, struct_name as *byte, method_name as *byte);
     var ti: i32 = 0;
     while ti < type_arg_count && pos < C99_TYPE_ARG_BUF_LIMIT {
         pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "_" as *byte);
@@ -6986,7 +6992,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     
     // 构建单态化方法名
     var mono_name_buf: [byte: C99_TYPE_ARG_BUF_SIZE] = [];
-    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "%s_%s" as *byte, struct_name as *byte, method_name as *byte);
+    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "uya_%s_%s" as *byte, struct_name as *byte, method_name as *byte);
     var ti: i32 = 0;
     while ti < type_arg_count && pos < C99_TYPE_ARG_BUF_LIMIT {
         pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "_" as *byte);

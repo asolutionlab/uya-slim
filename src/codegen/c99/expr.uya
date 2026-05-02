@@ -464,6 +464,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputs("\"\"" as *byte, codegen.emit_stream as *void);
         }
     } else if expr.type == ASTNodeType.AST_EMBED {
+        if codegen.checker != null && (expr.embed_resolved_path == null || expr.embed_data == null) {
+            _ = checker_infer_type(codegen.checker, expr);
+        }
         c99_register_embed_slice_types(codegen, 0);
         const embed_name: &byte = add_embed_constant(codegen, expr.embed_resolved_path, expr.embed_data, expr.embed_size);
         fputs("((struct uya_slice_uint8_t){ .ptr = " as *byte, codegen.emit_stream as *void);
@@ -474,6 +477,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d })" as *byte, expr.embed_size);
     } else if expr.type == ASTNodeType.AST_EMBED_DIR {
+        if codegen.checker != null && (expr.embed_resolved_path == null || expr.embed_dir_paths == null) {
+            _ = checker_infer_type(codegen.checker, expr);
+        }
         c99_register_embed_slice_types(codegen, 1);
         const table_name: &byte = add_embed_dir_table(codegen, expr);
         fputs("((struct uya_slice_EmbedDirEntry){ .ptr = " as *byte, codegen.emit_stream as *void);
@@ -1482,6 +1488,33 @@ fn c99_emit_method_receiver_arg(codegen: &C99CodeGenerator, param_decl: &ASTNode
         gen_expr(codegen, arg_expr);
         return;
     }
+    var arg_is_lvalue: i32 = 0;
+    if arg_expr.type == ASTNodeType.AST_IDENTIFIER || arg_expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        arg_is_lvalue = 1;
+    } else if arg_expr.type == ASTNodeType.AST_ARRAY_ACCESS && arg_expr.array_access_array != null &&
+        arg_expr.array_access_array.type != ASTNodeType.AST_ARRAY_LITERAL {
+        arg_is_lvalue = 1;
+    }
+    if arg_is_lvalue == 0 {
+        var temp_value_type_c2: &byte = null;
+        if codegen.checker != null {
+            const inferred_arg_type: Type = checker_infer_type(codegen.checker, arg_expr);
+            temp_value_type_c2 = c99_type_to_c_from_inferred_type(codegen, inferred_arg_type, arg_expr.line, arg_expr.column, arg_expr.filename);
+        }
+        if temp_value_type_c2 == null && arg_type_c != null {
+            temp_value_type_c2 = arg_type_c;
+        }
+        if temp_value_type_c2 == null && param_type.type_pointer_pointed_type != null {
+            temp_value_type_c2 = c99_type_to_c(codegen, param_type.type_pointer_pointed_type);
+        }
+        const temp_name2: &byte = c99_make_temp_name(codegen, "__uya_recv_" as &byte);
+        if temp_value_type_c2 != null && temp_name2 != null {
+            fprintf(codegen.emit_stream as *void, "({ %s %s = " as *byte, temp_value_type_c2 as *byte, temp_name2 as *byte);
+            gen_expr(codegen, arg_expr);
+            fprintf(codegen.emit_stream as *void, "; &%s; })" as *byte, temp_name2 as *byte);
+            return;
+        }
+    }
     fputc(38, codegen.emit_stream as *void);  // '&'
     gen_expr(codegen, arg_expr);
 }
@@ -1574,6 +1607,288 @@ fn c99_async_frame_helper_name(codegen: &C99CodeGenerator, async_struct_name: &b
     strcpy(result as *byte, base_name as *byte);
     strcat(result as *byte, suffix as *byte);
     return result;
+}
+
+fn c99_materialize_type_arg_asts(codegen: &C99CodeGenerator, type_args: &Type, type_arg_count: i32, line: i32, column: i32, filename: &byte) & & ASTNode {
+    if codegen == null || codegen.checker == null || type_args == null || type_arg_count <= 0 {
+        return null;
+    }
+    const args_ast: & & ASTNode = compiler_arena_alloc(codegen.arena, (@size_of(&ASTNode) as i32 * type_arg_count) as usize) as & & ASTNode;
+    if args_ast == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < type_arg_count {
+        args_ast[i] = type_to_ast(codegen.checker, &type_args[i], line, column, filename);
+        if args_ast[i] == null {
+            return null;
+        }
+        i = i + 1;
+    }
+    return args_ast;
+}
+
+fn c99_mono_owner_name_from_struct_type(codegen: &C99CodeGenerator, object_type: &Type, line: i32, column: i32, filename: &byte) &byte {
+    const struct_name: &byte = type_get_struct_name(object_type);
+    if codegen == null || object_type == null || object_type.kind != TypeKind.TYPE_STRUCT || struct_name == null {
+        return null;
+    }
+    if object_type.struct_type_args == null || object_type.struct_type_arg_count <= 0 {
+        return struct_name;
+    }
+    const args_ast: & & ASTNode = c99_materialize_type_arg_asts(codegen, object_type.struct_type_args, object_type.struct_type_arg_count, line, column, filename);
+    if args_ast == null {
+        return struct_name;
+    }
+    const mono_name: &byte = get_mono_struct_name(codegen, struct_name, args_ast, object_type.struct_type_arg_count);
+    if mono_name != null {
+        return mono_name;
+    }
+    return struct_name;
+}
+
+fn c99_mono_owner_name_from_union_type(codegen: &C99CodeGenerator, object_type: &Type, line: i32, column: i32, filename: &byte) &byte {
+    const union_name: &byte = type_get_union_name(object_type);
+    if codegen == null || object_type == null || object_type.kind != TypeKind.TYPE_UNION || union_name == null {
+        return null;
+    }
+    if object_type.union_type_args == null || object_type.union_type_arg_count <= 0 {
+        return union_name;
+    }
+    const args_ast: & & ASTNode = c99_materialize_type_arg_asts(codegen, object_type.union_type_args, object_type.union_type_arg_count, line, column, filename);
+    if args_ast == null {
+        return union_name;
+    }
+    const mono_name: &byte = get_mono_union_name(codegen, union_name, args_ast, object_type.union_type_arg_count);
+    if mono_name != null {
+        return mono_name;
+    }
+    return union_name;
+}
+
+fn c99_try_emit_method_call_from_inferred_type(codegen: &C99CodeGenerator, expr: &ASTNode, obj: &ASTNode, method_name: &byte) i32 {
+    if codegen == null || expr == null || obj == null || method_name == null || codegen.checker == null {
+        return 0;
+    }
+    var object_type: Type = checker_infer_type(codegen.checker, obj);
+    const object_was_pointer: i32 = (object_type.kind == TypeKind.TYPE_POINTER) as i32;
+    const object_type_c_hint: &byte = get_c_type_of_expr(codegen, obj);
+    if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+        object_type = object_type.pointer_to[0];
+    }
+    const inferred_struct_name: &byte = type_get_struct_name(&object_type);
+    const inferred_union_name: &byte = type_get_union_name(&object_type);
+    const inferred_interface_name: &byte = type_get_interface_name(&object_type);
+
+    if checker_is_async_frame_type(codegen.checker, &object_type) != 0 && inferred_struct_name != null {
+        const frame_helper_name: &byte = c99_async_frame_helper_name(codegen, inferred_struct_name, method_name);
+        if frame_helper_name == null {
+            return 0;
+        }
+        const async_fn_decl: &ASTNode = c99_async_frame_fn_decl_from_expr(codegen, obj);
+        var prefix: &byte = "&" as *byte;
+        const obj_type_c: &byte = get_c_type_of_expr(codegen, obj);
+        if obj_type_c != null && strchr(obj_type_c as *byte, 42) != null {
+            prefix = "" as *byte;
+        }
+        fprintf(codegen.emit_stream as *void, "%s(%s(" as *byte, frame_helper_name as *byte, prefix);
+        gen_expr(codegen, obj);
+        fputs(")" as *byte, codegen.emit_stream as *void);
+        var frame_ai: i32 = 0;
+        while frame_ai < expr.call_expr_arg_count {
+            c99_emit_comma_space(codegen);
+            if codegen.interp_arg_temp_names[frame_ai] != null {
+                fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                fputs(codegen.interp_arg_temp_names[frame_ai] as *byte, codegen.emit_stream as *void);
+            } else if async_fn_decl != null && strcmp(method_name as *byte, "start" as *byte) == 0 {
+                if expr.call_expr_args[frame_ai] != null && expr.call_expr_args[frame_ai].type == ASTNodeType.AST_STRING {
+                    if c99_string_literal_passes_as_const_byte_slice_value(async_fn_decl, frame_ai, expr.call_expr_args[frame_ai]) == 0 {
+                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    }
+                }
+                c99_emit_call_arg_expr(codegen, async_fn_decl, frame_ai, expr.call_expr_args[frame_ai]);
+            } else {
+                gen_expr(codegen, expr.call_expr_args[frame_ai]);
+            }
+            frame_ai = frame_ai + 1;
+        }
+        fputc(41, codegen.emit_stream as *void);
+        return 1;
+    }
+
+    if object_type.kind == TypeKind.TYPE_UNION && inferred_union_name != null {
+        const owner_union_name: &byte = c99_mono_owner_name_from_union_type(codegen, &object_type, expr.line, expr.column, expr.filename);
+        const method_fn: &ASTNode = find_instance_method_in_union_c99(codegen, owner_union_name, method_name);
+        const cname: &byte = get_method_c_name(codegen, owner_union_name, method_name);
+        if method_fn != null && cname != null {
+            fprintf(codegen.emit_stream as *void, "%s(" as *byte, cname as *byte);
+            if method_fn.fn_decl_params != null && method_fn.fn_decl_param_count > 0 && method_fn.fn_decl_params[0] != null {
+                c99_emit_method_receiver_arg(codegen, method_fn.fn_decl_params[0], obj);
+            } else {
+                gen_expr(codegen, obj);
+            }
+            var i: i32 = 0;
+            while i < expr.call_expr_arg_count {
+                c99_emit_comma_space(codegen);
+                if codegen.interp_arg_temp_names[i] != null {
+                    fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.emit_stream as *void);
+                } else {
+                    if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
+                        if c99_string_literal_passes_as_const_byte_slice_value(method_fn, i + 1, expr.call_expr_args[i]) == 0 {
+                            fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                        }
+                    }
+                    c99_emit_call_arg_expr(codegen, method_fn, i + 1, expr.call_expr_args[i]);
+                }
+                i = i + 1;
+            }
+            fputc(41, codegen.emit_stream as *void);
+            return 1;
+        }
+    }
+
+    if object_type.kind == TypeKind.TYPE_STRUCT && inferred_struct_name != null {
+        const owner_struct_name: &byte = c99_mono_owner_name_from_struct_type(codegen, &object_type, expr.line, expr.column, expr.filename);
+        const method_fn: &ASTNode = find_instance_method_in_struct_c99(codegen, owner_struct_name, method_name);
+        if method_fn != null {
+            var cname: &byte = null;
+            if expr.call_expr_type_arg_count > 0 && expr.call_expr_type_args != null && method_fn.fn_decl_type_param_count > 0 {
+                var mono_method_name: [byte: NAME_BUF_SIZE] = [];
+                var pos: i32 = 0;
+                pos = pos + snprintf(&mono_method_name[0] as *byte, NAME_BUF_SIZE, "uya_%s_%s" as *byte, owner_struct_name as *byte, method_name as *byte);
+                var ti: i32 = 0;
+                while ti < expr.call_expr_type_arg_count && pos < NAME_BUF_SIZE - 6 {
+                    pos = pos + snprintf(&mono_method_name[pos] as *byte, NAME_BUF_SIZE - pos, "_" as *byte);
+                    const type_arg: &ASTNode = expr.call_expr_type_args[ti];
+                    if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
+                        pos = pos + snprintf(&mono_method_name[pos] as *byte, NAME_BUF_SIZE - pos, "%s" as *byte, type_arg.type_named_name as *byte);
+                    }
+                    ti = ti + 1;
+                }
+                cname = get_safe_c_identifier(codegen, &mono_method_name[0]);
+            } else {
+                cname = get_method_c_name(codegen, owner_struct_name, method_name);
+            }
+            if cname != null {
+                fprintf(codegen.emit_stream as *void, "%s(" as *byte, cname as *byte);
+                if method_fn.fn_decl_params != null && method_fn.fn_decl_param_count > 0 && method_fn.fn_decl_params[0] != null {
+                    c99_emit_method_receiver_arg(codegen, method_fn.fn_decl_params[0], obj);
+                } else {
+                    gen_expr(codegen, obj);
+                }
+                var i: i32 = 0;
+                while i < expr.call_expr_arg_count {
+                    c99_emit_comma_space(codegen);
+                    if codegen.interp_arg_temp_names[i] != null {
+                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                        fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.emit_stream as *void);
+                    } else {
+                        if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
+                            if c99_string_literal_passes_as_const_byte_slice_value(method_fn, i + 1, expr.call_expr_args[i]) == 0 {
+                                fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                            }
+                        }
+                        c99_emit_call_arg_expr(codegen, method_fn, i + 1, expr.call_expr_args[i]);
+                    }
+                    i = i + 1;
+                }
+                fputc(41, codegen.emit_stream as *void);
+                return 1;
+            }
+        }
+    }
+
+    if object_type.kind == TypeKind.TYPE_INTERFACE && inferred_interface_name != null {
+        var iface_mono_name: &byte = inferred_interface_name;
+        if object_type.interface_type_args != null && object_type.interface_type_arg_count > 0 {
+            const iface_args_ast: & & ASTNode = c99_materialize_type_arg_asts(codegen, object_type.interface_type_args, object_type.interface_type_arg_count, expr.line, expr.column, expr.filename);
+            if iface_args_ast != null {
+                const mono_iface: &byte = get_mono_struct_name(codegen, inferred_interface_name, iface_args_ast, object_type.interface_type_arg_count);
+                if mono_iface != null {
+                    iface_mono_name = mono_iface;
+                }
+            }
+        }
+        const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono_name);
+        const safe_method: &byte = get_safe_c_identifier(codegen, method_name);
+        if safe_iface != null && safe_method != null {
+            const is_ptr_iface: i32 = object_was_pointer;
+            fputs("((struct uya_vtable_" as *byte, codegen.emit_stream as *void);
+            fputs(safe_iface as *byte, codegen.emit_stream as *void);
+            if is_ptr_iface != 0 {
+                fputs(" *)(" as *byte, codegen.emit_stream as *void);
+                fputc(40, codegen.emit_stream as *void);
+                gen_expr(codegen, obj);
+                fprintf(codegen.emit_stream as *void, ")->vtable))->%s((" as *byte, safe_method as *byte);
+            } else {
+                fputs(" *)((" as *byte, codegen.emit_stream as *void);
+                gen_expr(codegen, obj);
+                fprintf(codegen.emit_stream as *void, ").vtable))->%s((" as *byte, safe_method as *byte);
+            }
+            gen_expr(codegen, obj);
+            if is_ptr_iface != 0 {
+                fputs(")->data" as *byte, codegen.emit_stream as *void);
+            } else {
+                fputs(").data" as *byte, codegen.emit_stream as *void);
+            }
+            var iface_i: i32 = 0;
+            while iface_i < expr.call_expr_arg_count {
+                c99_emit_comma_space(codegen);
+                if codegen.interp_arg_temp_names[iface_i] != null {
+                    fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    fputs(codegen.interp_arg_temp_names[iface_i] as *byte, codegen.emit_stream as *void);
+                } else {
+                    if expr.call_expr_args[iface_i] != null && expr.call_expr_args[iface_i].type == ASTNodeType.AST_STRING {
+                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    }
+                    gen_expr(codegen, expr.call_expr_args[iface_i]);
+                }
+                iface_i = iface_i + 1;
+            }
+            fputc(41, codegen.emit_stream as *void);
+            return 1;
+        }
+    }
+    if object_type_c_hint != null && strstr(object_type_c_hint as *byte, "uya_interface_" as *byte) != null {
+        const p: *byte = strstr(object_type_c_hint as *byte, "uya_interface_" as *byte);
+        const iface_start: &byte = &p[14] as &byte;
+        const safe_method2: &byte = get_safe_c_identifier(codegen, method_name);
+        if safe_method2 != null {
+            fputs("((struct uya_vtable_" as *byte, codegen.emit_stream as *void);
+            var k: i32 = 0;
+            while iface_start[k] != 0 && iface_start[k] != 32 && iface_start[k] != 42 {
+                fputc(iface_start[k], codegen.emit_stream as *void);
+                k = k + 1;
+            }
+            if object_was_pointer != 0 {
+                fputs(" *)(" as *byte, codegen.emit_stream as *void);
+                fputc(40, codegen.emit_stream as *void);
+                gen_expr(codegen, obj);
+                fprintf(codegen.emit_stream as *void, ")->vtable))->%s((" as *byte, safe_method2 as *byte);
+            } else {
+                fputs(" *)((" as *byte, codegen.emit_stream as *void);
+                gen_expr(codegen, obj);
+                fprintf(codegen.emit_stream as *void, ").vtable))->%s((" as *byte, safe_method2 as *byte);
+            }
+            gen_expr(codegen, obj);
+            if object_was_pointer != 0 {
+                fputs(")->data" as *byte, codegen.emit_stream as *void);
+            } else {
+                fputs(").data" as *byte, codegen.emit_stream as *void);
+            }
+            var iface_i2: i32 = 0;
+            while iface_i2 < expr.call_expr_arg_count {
+                c99_emit_comma_space(codegen);
+                gen_expr(codegen, expr.call_expr_args[iface_i2]);
+                iface_i2 = iface_i2 + 1;
+            }
+            fputc(41, codegen.emit_stream as *void);
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 // 生成调用表达式
@@ -1722,6 +2037,45 @@ fn c99_emit_static_method_call(codegen: &C99CodeGenerator, expr: &ASTNode,
             }
         }
     }
+    if instance_method_fn != null && expr.call_expr_args != null && expr.call_expr_arg_count > 0 && codegen.checker != null {
+        var receiver_type: Type = checker_infer_type(codegen.checker, expr.call_expr_args[0]);
+        if receiver_type.kind == TypeKind.TYPE_POINTER && receiver_type.pointer_to != null {
+            receiver_type = receiver_type.pointer_to[0];
+        }
+        if owner_is_union != 0 {
+            const inferred_union_owner: &byte = c99_mono_owner_name_from_union_type(codegen, &receiver_type, expr.line, expr.column, expr.filename);
+            if inferred_union_owner != null {
+                owner_mono_name = inferred_union_owner;
+            }
+        } else {
+            const inferred_struct_owner: &byte = c99_mono_owner_name_from_struct_type(codegen, &receiver_type, expr.line, expr.column, expr.filename);
+            if inferred_struct_owner != null {
+                owner_mono_name = inferred_struct_owner;
+            }
+        }
+        const receiver_type_c: &byte = get_c_type_of_expr(codegen, expr.call_expr_args[0]);
+        if receiver_type_c != null {
+            var base: *byte = receiver_type_c as *byte;
+            if strncmp(base, "const " as *byte, 6) == 0 { base = base + 6; }
+            if strncmp(base, "struct " as *byte, 7) == 0 {
+                const start: *byte = base + 7;
+                var end: *byte = strchr(start, 32);
+                if end == null { end = start + strlen(start); }
+                const asterisk: *byte = strchr(start, 42);
+                if asterisk != null && asterisk < end { end = asterisk; }
+                if end > start {
+                    const mono_len: i32 = ptr_diff(end, start);
+                    const mono_buf: &byte = compiler_arena_alloc(codegen.arena, (mono_len + 1) as usize) as &byte;
+                    if mono_buf != null {
+                        memcpy(mono_buf as *void, start as *void, mono_len as usize);
+                        const mono_end: &byte = mono_buf + mono_len as usize;
+                        mono_end[0] = 0;
+                        owner_mono_name = mono_buf;
+                    }
+                }
+            }
+        }
+    }
 
     var target_method_fn: &ASTNode = method_fn;
     if target_method_fn == null {
@@ -1730,7 +2084,7 @@ fn c99_emit_static_method_call(codegen: &C99CodeGenerator, expr: &ASTNode,
     var cname: &byte = null;
     if expr.call_expr_type_arg_count > 0 && expr.call_expr_type_args != null && target_method_fn.fn_decl_type_param_count > 0 {
         var mono_method_name: [byte: NAME_BUF_SIZE] = [];
-        var pos: i32 = snprintf(&mono_method_name[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, owner_mono_name as *byte, method_name as *byte);
+        var pos: i32 = snprintf(&mono_method_name[0] as *byte, NAME_BUF_SIZE, "uya_%s_%s" as *byte, owner_mono_name as *byte, method_name as *byte);
         var ti: i32 = 0;
         while ti < expr.call_expr_type_arg_count && pos < NAME_BUF_SIZE - 6 {
             pos = pos + snprintf(&mono_method_name[pos] as *byte, NAME_BUF_SIZE - pos, "_" as *byte);
@@ -2249,27 +2603,58 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 c99_emit_static_method_call(codegen, expr, owner_name, owner_is_union, owner_type_args, owner_type_arg_count, method_name) != 0 {
                 return;
             }
-            const obj_type_c: &byte = get_c_type_of_expr(codegen, obj);
+            if c99_try_emit_method_call_from_inferred_type(codegen, expr, obj, method_name) != 0 {
+                return;
+            }
+            var obj_type_c: &byte = get_c_type_of_expr(codegen, obj);
+            var inferred_is_interface: i32 = 0;
+            var inferred_is_pointer: i32 = 0;
+            if codegen.checker != null {
+                const inferred_obj_type_old: Type = checker_infer_type(codegen.checker, obj);
+                inferred_is_pointer = (inferred_obj_type_old.kind == TypeKind.TYPE_POINTER) as i32;
+                if inferred_obj_type_old.kind == TypeKind.TYPE_INTERFACE {
+                    inferred_is_interface = 1;
+                } else if inferred_is_pointer != 0 &&
+                    inferred_obj_type_old.pointer_to != null &&
+                    inferred_obj_type_old.pointer_to[0].kind == TypeKind.TYPE_INTERFACE {
+                    inferred_is_interface = 1;
+                }
+                if obj_type_c == null || inferred_is_interface != 0 {
+                    obj_type_c = c99_type_to_c_from_inferred_type(codegen, inferred_obj_type_old, obj.line, obj.column, obj.filename);
+                }
+            }
             if obj_type_c != null && strstr(obj_type_c as *byte, "uya_interface_" as *byte) != null {
                 const p: *byte = strstr(obj_type_c as *byte, "uya_interface_" as *byte);
                 const iface_start: &byte = &p[14] as &byte;
                 const safe_method: &byte = get_safe_c_identifier(codegen, method_name);
-                const is_ptr: bool = (strchr(obj_type_c as *byte, 42) != null);
+                var is_ptr: i32 = (strchr(obj_type_c as *byte, 42) != null) as i32;
+                if is_ptr == 0 && inferred_is_pointer != 0 {
+                    is_ptr = 1;
+                }
+                if is_ptr == 0 && obj.type == ASTNodeType.AST_IDENTIFIER && obj.identifier_name != null {
+                    const safe_obj_name: &byte = get_safe_c_identifier(codegen, obj.identifier_name);
+                    if safe_obj_name != null && is_identifier_pointer_type(codegen, safe_obj_name) != 0 {
+                        is_ptr = 1;
+                    }
+                }
                 fputs("((struct uya_vtable_" as *byte, codegen.emit_stream as *void);
                 var k: i32 = 0;
                 while iface_start[k] != 0 && iface_start[k] != 32 && iface_start[k] != 42 {
                     fputc(iface_start[k], codegen.emit_stream as *void);
                     k = k + 1;
                 }
-                fputs(" *)(" as *byte, codegen.emit_stream as *void);
-                gen_expr(codegen, obj);
-                if is_ptr {
-                    fprintf(codegen.emit_stream as *void, ")->vtable)->%s((" as *byte, safe_method as *byte);
+                if is_ptr != 0 {
+                    fputs(" *)(" as *byte, codegen.emit_stream as *void);
+                    fputc(40, codegen.emit_stream as *void);
+                    gen_expr(codegen, obj);
+                    fprintf(codegen.emit_stream as *void, ")->vtable))->%s((" as *byte, safe_method as *byte);
                 } else {
-                    fprintf(codegen.emit_stream as *void, ").vtable)->%s((" as *byte, safe_method as *byte);
+                    fputs(" *)((" as *byte, codegen.emit_stream as *void);
+                    gen_expr(codegen, obj);
+                    fprintf(codegen.emit_stream as *void, ").vtable))->%s((" as *byte, safe_method as *byte);
                 }
                 gen_expr(codegen, obj);
-                if is_ptr {
+                if is_ptr != 0 {
                     fputs(")->data" as *byte, codegen.emit_stream as *void);
                 } else {
                     fputs(").data" as *byte, codegen.emit_stream as *void);
@@ -2326,6 +2711,22 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         struct_name_buf[p2] = 0;
                         if p2 > 0 {
                             slen = p2;
+                        }
+                    } else {
+                        const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, base as &byte);
+                        if alias_decl != null && alias_decl.type_alias_target_type != null &&
+                            alias_decl.type_alias_target_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                            alias_decl.type_alias_target_type.type_named_name != null {
+                            const alias_target: &byte = alias_decl.type_alias_target_type.type_named_name;
+                            var p3: i32 = 0;
+                            while alias_target[p3] != 0 && p3 < STRUCT_NAME_BUF_SIZE - 1 {
+                                struct_name_buf[p3] = alias_target[p3];
+                                p3 = p3 + 1;
+                            }
+                            struct_name_buf[p3] = 0;
+                            if p3 > 0 {
+                                slen = p3;
+                            }
                         }
                     }
                 }
@@ -2405,7 +2806,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                         // 格式：StructName_method_name_TypeArg1_TypeArg2...
                                         var mono_method_name: [byte: NAME_BUF_SIZE] = [];
                                         var pos: i32 = 0;
-                                        pos = pos + snprintf(&mono_method_name[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, &struct_name_buf[0] as *byte, method_name as *byte);
+                                        pos = pos + snprintf(&mono_method_name[0] as *byte, NAME_BUF_SIZE, "uya_%s_%s" as *byte, &struct_name_buf[0] as *byte, method_name as *byte);
                                         
                                         // 添加类型参数后缀
                                         var ti: i32 = 0;
@@ -6983,6 +7384,50 @@ fn gen_len_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         fputs(")[0])" as *byte, codegen.emit_stream as *void);
 }
 
+fn c99_struct_array_field_typed_init_value(value: &ASTNode) &ASTNode {
+        if value == null {
+            return null;
+        }
+        var left: &ASTNode = null;
+        var right: &ASTNode = null;
+        if value.type == ASTNodeType.AST_ASSIGN {
+            left = value.assign_dest;
+            right = value.assign_src;
+        } else if value.type == ASTNodeType.AST_BINARY_EXPR {
+            const op_tmp: !TokenType = value.binary_expr_op as! TokenType;
+            const op: TokenType = op_tmp.value;
+            if op != TokenType.TOKEN_ASSIGN {
+                return null;
+            }
+            left = value.binary_expr_left;
+            right = value.binary_expr_right;
+        } else {
+            return null;
+        }
+        if left == null || right == null {
+            return null;
+        }
+        if left.type != ASTNodeType.AST_ARRAY_LITERAL || right.type != ASTNodeType.AST_ARRAY_LITERAL {
+            return null;
+        }
+        if left.array_literal_repeat_count_expr == null {
+            return null;
+        }
+        return right;
+}
+
+fn c99_emit_array_field_literal_init(codegen: &C99CodeGenerator, field_type: &ASTNode, value: &ASTNode) void {
+        if value == null {
+            if array_element_is_aggregate_c99(codegen, field_type) != 0 {
+                fputs("{{0}}" as *byte, codegen.emit_stream as *void);
+            } else {
+                fputs("{0}" as *byte, codegen.emit_stream as *void);
+            }
+            return;
+        }
+        gen_expr(codegen, value);
+}
+
 // 生成结构体初始化
 fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const orig_name: &byte = expr.struct_init_struct_name;
@@ -7142,6 +7587,10 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     }
                     if did_interface_field_box != 0 {
                         // 接口字段保存具体实现时，需要在表达式上下文里稳定装箱，避免把 concrete struct 直接塞进 void* 聚合。
+                    } else if field.var_decl_type != null &&
+                        field.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY &&
+                        c99_struct_array_field_typed_init_value(user_value) != null {
+                        c99_emit_array_field_literal_init(codegen, field.var_decl_type, c99_struct_array_field_typed_init_value(user_value));
                     } else if struct_init_needs_memcpy != 0 && field.var_decl_type != null &&
                         field.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY &&
                         user_value.type == ASTNodeType.AST_IDENTIFIER {
@@ -7793,6 +8242,20 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
 fn gen_array_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const array: &ASTNode = expr.array_access_array;
         const index: &ASTNode = expr.array_access_index;
+
+        if array.type == ASTNodeType.AST_ARRAY_LITERAL {
+            const array_type_c: &byte = get_c_type_of_expr(codegen, array);
+            if array_type_c != null {
+                fputs("((" as *byte, codegen.emit_stream as *void);
+                fprintf(codegen.emit_stream as *void, "%s" as *byte, array_type_c as *byte);
+                fputs("){" as *byte, codegen.emit_stream as *void);
+                gen_array_literal_contents(codegen, array);
+                fputs("})[" as *byte, codegen.emit_stream as *void);
+                gen_expr(codegen, index);
+                fputs("])" as *byte, codegen.emit_stream as *void);
+                return;
+            }
+        }
         
         if array.type == ASTNodeType.AST_SLICE_EXPR {
             if c99_microapp_needs_softvm(codegen) != 0 {
@@ -7964,6 +8427,44 @@ fn c99_asbang_err_success_allows_value_cast(codegen: &C99CodeGenerator, src_expr
 }
 
 // 生成类型转换表达式
+fn c99_expr_string_literal_visible_len(s: &byte) i32 {
+        if s == null {
+            return 0;
+        }
+        var n: i32 = 0;
+        while s[n] != 0 {
+            n = n + 1;
+        }
+        return n;
+}
+
+fn c99_type_slice_is_byte_like(type_node: &ASTNode) i32 {
+        if type_node == null || type_node.type != ASTNodeType.AST_TYPE_SLICE || type_node.type_slice_element_type == null {
+            return 0;
+        }
+        const elem: &ASTNode = type_node.type_slice_element_type;
+        if elem.type == ASTNodeType.AST_TYPE_NAMED && elem.type_named_name != null {
+            if strcmp(elem.type_named_name as *byte, "byte" as *byte) == 0 || strcmp(elem.type_named_name as *byte, "u8" as *byte) == 0 {
+                return 1;
+            }
+        }
+        return 0;
+}
+
+fn c99_emit_string_to_slice_cast(codegen: &C99CodeGenerator, src_expr: &ASTNode, target_type: &ASTNode, type_c: &byte) i32 {
+        if codegen == null || src_expr == null || target_type == null || type_c == null {
+            return 0;
+        }
+        if src_expr.type != ASTNodeType.AST_STRING || c99_type_slice_is_byte_like(target_type) == 0 {
+            return 0;
+        }
+        fprintf(codegen.emit_stream as *void, "(%s){ .ptr = " as *byte, type_c as *byte);
+        gen_expr(codegen, src_expr);
+        fputs(", .len = (size_t)" as *byte, codegen.emit_stream as *void);
+        fprintf(codegen.emit_stream as *void, "%d }" as *byte, c99_expr_string_literal_visible_len(src_expr.string_literal_value));
+        return 1;
+}
+
 fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const src_expr: &ASTNode = expr.cast_expr_expr;
         const target_type: &ASTNode = expr.cast_expr_target_type;
@@ -8064,6 +8565,8 @@ fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
             if is_null_to_byte_ptr_ptr != 0 {
                 fputs("(const uint8_t **)NULL" as *byte, codegen.emit_stream as *void);
+            } else if c99_emit_string_to_slice_cast(codegen, src_expr, target_type, type_c) != 0 {
+                // 已生成字符串字面量到 byte slice 的聚合转换。
             } else {
                 fputc(40, codegen.emit_stream as *void);  // '('
                 fprintf(codegen.emit_stream as *void, "%s)" as *byte, type_c as *byte);

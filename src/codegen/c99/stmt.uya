@@ -1235,6 +1235,9 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     }
     
     // 有返回值的 return expr：规范要求先计算返回值，再执行 defer，最后返回
+    c99_emit_indent(codegen);
+    c99_emit(codegen, "{\n" as *byte);
+    codegen.indent_level = codegen.indent_level + 1;
     var is_array_return: i32 = 0;
     if return_type != null && return_type.type == ASTNodeType.AST_TYPE_ARRAY {
         is_array_return = 1;
@@ -1286,6 +1289,9 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     emit_all_active_scope_cleanup(codegen, 0);
     // 3. 返回临时变量
     c99_emit(codegen, "return _uya_ret;\n" as *byte);
+    codegen.indent_level = codegen.indent_level - 1;
+    c99_emit_indent(codegen);
+    c99_emit(codegen, "}\n" as *byte);
 }
 
 // 无 await 且函数返回 !Future<T>：包装器须在 malloc 状态机之前执行同步前言（如 if b==0 { return error }）。
@@ -2210,6 +2216,38 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 // 生成变量声明语句
 
 // 生成变量声明语句
+fn c99_expr_is_undefined_identifier(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_IDENTIFIER || expr.identifier_name == null {
+        return 0;
+    }
+    if strcmp(expr.identifier_name as *byte, "undefined" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_emit_zero_init_for_decl_type(codegen: &C99CodeGenerator, var_type: &ASTNode) void {
+    if var_type != null && var_type.type == ASTNodeType.AST_TYPE_ARRAY {
+        fputs("{0}" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    if var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null {
+        const struct_decl: &ASTNode = find_struct_decl_c99(codegen, var_type.type_named_name);
+        if struct_decl != null {
+            const type_c: &byte = c99_mono_type_to_c(codegen, var_type);
+            fprintf(codegen.emit_stream as *void, "(%s){0}" as *byte, type_c as *byte);
+            return;
+        }
+        const union_decl: &ASTNode = find_union_decl_c99(codegen, var_type.type_named_name);
+        if union_decl != null {
+            const type_c2: &byte = c99_mono_type_to_c(codegen, var_type);
+            fprintf(codegen.emit_stream as *void, "(%s){0}" as *byte, type_c2 as *byte);
+            return;
+        }
+    }
+    fputs("0" as *byte, codegen.emit_stream as *void);
+}
+
 fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         if codegen != null && codegen.async_inline_temp_var_count > 0 && stmt.var_decl_name != null {
             if c99_var_is_inline_temp(codegen, stmt.var_decl_name) != 0 {
@@ -2770,6 +2808,15 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 
                 fputs(" = " as *byte, codegen.emit_stream as *void);
+                if c99_expr_is_undefined_identifier(init_expr) != 0 {
+                    c99_emit_zero_init_for_decl_type(codegen, var_type);
+                    c99_emit_semi_newline(codegen);
+                    if need_pragma_missing_braces != 0 {
+                        fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
+                    }
+                    codegen.expected_type = saved_expected_type;
+                    return;
+                }
                 
                 // 检查是否是字符串常量（@func_name、@src_name、@src_path）赋值给指针类型
                 // 字符串常量是 const char * 类型，但变量可能是 uint8_t * const，需要类型转换

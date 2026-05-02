@@ -340,6 +340,12 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         if target == null { return -1; }
         var t: Type = checker_infer_type(checker, target);
         if expr.alignof_expr_is_type != 0 {
+            if target.type == ASTNodeType.AST_TYPE_FRAME {
+                const frame_align: i32 = get_async_frame_align_bytes(checker, target);
+                if frame_align > 0 {
+                    return frame_align;
+                }
+            }
             t = type_from_ast(checker, target);
         }
         return get_type_align_bytes(&t);
@@ -405,6 +411,12 @@ fn get_async_frame_size_bytes(checker: &TypeChecker, type_node: &ASTNode) i32 {
 
 // 根据 Type 计算对齐（字节），仅支持基础类型
 fn get_type_align_bytes(t: &Type) i32 {
+    if t == null {
+        return -1;
+    }
+    if t.kind == TypeKind.TYPE_ARRAY && t.element_type != null {
+        return get_type_align_bytes(t.element_type);
+    }
     const sz: i32 = get_type_size_bytes(t);
     if sz <= 0 {
         return -1;
@@ -419,6 +431,31 @@ fn get_type_align_bytes(t: &Type) i32 {
         return 4;
     }
     return 8;
+}
+
+fn get_async_frame_align_bytes(checker: &TypeChecker, type_node: &ASTNode) i32 {
+    if checker == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_FRAME {
+        return -1;
+    }
+    const operand: &ASTNode = type_node.type_frame_operand;
+    if operand == null || operand.type != ASTNodeType.AST_IDENTIFIER || operand.identifier_name == null {
+        return -1;
+    }
+    const fd: &ASTNode = find_fn_decl_from_program(checker.program_node, operand.identifier_name);
+    if fd == null || fd.fn_decl_is_async == 0 {
+        return -1;
+    }
+    const meta: &AsyncFrameMeta = checker_async_frame_meta_for_fn(checker, fd);
+    if meta != null && meta.frame_align > 0 {
+        if meta.frame_align > 2147483647 as usize {
+            return -1;
+        }
+        return meta.frame_align as i32;
+    }
+    if fd.fn_decl_align > 0 {
+        return fd.fn_decl_align;
+    }
+    return -1;
 }
 
 // 在 block 内查找变量/const 的声明节点（用于 @len 等获取类型）
@@ -590,6 +627,12 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
         if target == null { return -1; }
         var t: Type = checker_infer_type(checker, target);
         if expr.alignof_expr_is_type != 0 {
+            if target.type == ASTNodeType.AST_TYPE_FRAME {
+                const frame_align: i32 = get_async_frame_align_bytes(checker, target);
+                if frame_align > 0 {
+                    return frame_align;
+                }
+            }
             t = type_from_ast(checker, target);
         }
         return get_type_align_bytes(&t);

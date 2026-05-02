@@ -706,6 +706,14 @@ SERIAL_TESTS=(
     # kernel.sim 端到端测试会生成/链接很大的宿主程序；
     # 在整套 28 线程并行下偶发链接抖动，串行执行可稳定语义且不影响覆盖面。
     test_kernel_sim
+    # 这两个用例当前在大并行矩阵下偶发误判失败，但单独运行稳定通过；
+    # 先串行化，避免并行环境噪声影响回归结果。
+    test_union_variant_generic_method
+    test_struct_method_chain
+    # test_std_thread 使用 fork/pipe/mmap 创建线程池 worker；
+    # 在 28 线程并行矩阵下偶发因系统资源竞争导致 worker 创建失败或调度延迟，
+    # 进而触发断言失败。单独运行时稳定通过，故串行化。
+    test_std_thread
 )
 if [ -n "${SERIAL_TESTS_EXTRA:-}" ]; then
     read -r -a SERIAL_TESTS_EXTRA_ARR <<< "$SERIAL_TESTS_EXTRA"
