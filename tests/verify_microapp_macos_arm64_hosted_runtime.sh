@@ -56,7 +56,21 @@ if [ -z "$TARGET_GCC_BIN" ]; then
     exit 0
 fi
 
+OBJCOPY_BIN="${OBJCOPY:-}"
+if [ -z "$OBJCOPY_BIN" ] && command -v xcrun >/dev/null 2>&1; then
+    OBJCOPY_BIN="$(xcrun --find llvm-objcopy 2>/dev/null || true)"
+fi
+if [ -z "$OBJCOPY_BIN" ]; then
+    OBJCOPY_BIN="$(pick_first_available llvm-objcopy gobjcopy objcopy || true)"
+fi
+
+if [ -z "$OBJCOPY_BIN" ]; then
+    echo "microapp macos arm64 hosted runtime skipped (missing objcopy)"
+    exit 0
+fi
+
 export TARGET_GCC="$TARGET_GCC_BIN"
+export OBJCOPY="$OBJCOPY_BIN"
 
 build_case_uapp() {
     local name="$1"
@@ -64,9 +78,16 @@ build_case_uapp() {
     local uapp="$TMP_DIR/${name}.uapp"
     local build_log="$TMP_DIR/${name}.build.log"
 
+    local status=0
     rm -f "$uapp"
+    set +e
     "$ROOT_DIR/bin/uya" build --app microapp --microapp-profile macos_arm64_hardvm \
         "$ROOT_DIR/$source_rel" -o "$uapp" >"$build_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        dump_log_and_fail "macos arm64 $name build 失败: $status" "$build_log"
+    fi
     printf '%s\n' "$uapp"
 }
 
@@ -78,9 +99,16 @@ run_case_ok() {
     local loader_log="$TMP_DIR/${name}.loader.log"
     local uapp=""
 
+    local status=0
     echo "==> macos arm64 runtime: $name"
+    set +e
     "$ROOT_DIR/bin/uya" run --app microapp --microapp-profile macos_arm64_hardvm \
         "$ROOT_DIR/$source_rel" >"$run_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        dump_log_and_fail "macos arm64 $name run 异常退出: $status" "$run_log"
+    fi
 
     grep -a -q "$expected_text" "$run_log" || dump_log_and_fail "macos arm64 $name run 未输出期望文本: $expected_text" "$run_log"
     grep -a -q "\[microapp loader\] executed mapped payload" "$run_log" || dump_log_and_fail "macos arm64 $name run 未命中 mapped payload 执行分支" "$run_log"
