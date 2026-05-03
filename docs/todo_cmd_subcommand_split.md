@@ -1,8 +1,20 @@
-# Uya 子命令外置化 TODO
+# Uya 编译器入口瘦身 TODO
 
-**状态**: executable TODO
+**状态**: executable TODO, implementation pending
 **更新日期**: 2026-05-03
 **配套设计**: `docs/cmd_subcommand_split_design.md`
+
+---
+
+## 当前基线
+
+当前仓库仍处于设计待实现状态：
+
+- `src/main.uya` 仍约 8400 行，`parse_args()` 与 `main()` 仍直接处理 `build`/`run`/`test`/`fmt` 等业务。
+- `src/cmd/*/main.uya` 尚未创建。
+- `Makefile` 尚未提供 `make cmds` 与 `cmd-*` 目标。
+- `src/main.uya` 尚未实现 `dispatch_external_cmd`。
+- `tests/test_cmd_dispatch.sh` 尚未创建。
 
 ---
 
@@ -10,10 +22,11 @@
 
 - 先读 `docs/cmd_subcommand_split_design.md`、`docs/uya_ai_prompt.md` 和相邻测试。
 - 不臆造 Uya 语法；不确定时先搜索 `src/`、`lib/`、`tests/` 的既有写法。
-- 按 TDD 推进：先加调度测试，再改实现。
-- 保留 `uya <file.uya> ...` 隐式编译入口，避免自举死锁。
+- 按 TDD 推进：先加相关测试，再做最小实现。
+- 保留 `uya <file.uya> ...` 隐式编译入口，直到 `cmd/build` seed 或等价 bootstrap 编译器来源稳定。
 - 最终目标是 `src/main.uya` 只负责命令分发；编译器业务归属 `cmd/build` 和共享 compiler driver。
-- 公开 `uya build/run/test/fmt/upm` 必须走 `cmd/xxx`，不要静默回退内部实现。
+- 公开 `uya build/run/test/fmt/upm` 完成外置化后必须走 `cmd/xxx`，不要静默回退内部实现。
+- `cmd/run` 与 `cmd/test` 由 compiler driver 完成编译、链接、执行和退出码映射，不在 wrapper 里另写一套执行逻辑。
 
 ---
 
@@ -22,7 +35,7 @@
 - [ ] 查看工作树，确认没有未预期改动：`git status --short`。
 - [ ] 阅读当前入口：`src/main.uya` 的 `CommandType`、`print_usage()`、`parse_args()`、`export fn main()`。
 - [ ] 阅读 fmt 独立入口：`src/fmt.uya` 的 `fmt_main()` 与 `uyafmt_main()`。
-- [ ] 阅读构建脚本：`Makefile` 的 `uya`、`from-c`、`install`、`clean` 目标，以及 `src/compile.sh` 的主文件选择逻辑。
+- [ ] 阅读构建脚本：`Makefile` 的 `uya`、`from-c`、`from-c-native`、`install`、`clean` 目标，以及 `src/compile.sh` 的主文件选择逻辑。
 - [ ] 跑最小基线，记录当前行为：
 
 ```bash
@@ -30,11 +43,70 @@
 ./bin/uya build tests/test_errno.uya -o /tmp/uya_baseline_errno --no-split-c
 ./bin/uya test tests/test_errno.uya
 ./bin/uya fmt tests/test_errno.uya >/tmp/uya_baseline_fmt.out
+./bin/uya tests/test_errno.uya -o /tmp/uya_baseline_implicit --no-split-c
 ```
 
 ---
 
-## Phase 1：先补测试
+## Phase A：提取 Compiler Driver
+
+- [ ] 新建 `src/compiler_driver.uya`，作为编译器 CLI 业务的唯一共享实现。
+- [ ] 将 `parse_args()` 改造成可指定默认命令和起始参数的 driver 解析函数，例如：
+
+```text
+compiler_driver_parse_args(default_command, argv_start, allow_optional_subcommand, args_out)
+```
+
+- [ ] 将当前 `export fn main()` 中 `build/run/test` 共享流程提取到 driver，例如：
+
+```text
+compiler_driver_main(command, argv_start) -> exit_code
+compiler_driver_compile(command, argv_start, result_out) -> exit_code
+```
+
+- [ ] 明确 driver 语义：
+  - [ ] `COMMAND_BUILD` 完成完整 build CLI 语义并返回退出码。
+  - [ ] `COMMAND_RUN` 完成编译、链接、执行目标程序和退出码映射。
+  - [ ] `COMMAND_TEST` 完成测试编译、执行、摘要输出和退出码映射。
+- [ ] 将链接工具链函数移入 driver：`link_with_toolchain`、`compile_c_source_to_object`、`link_split_with_make` 等。
+- [ ] 将 C import 处理移入 driver：`collect_c_import_plan`、`write_c_import_sidecar` 等。
+- [ ] 将通用编译工具移入 driver：路径处理、模块查找、`detect_main`、依赖收集排序等。
+- [ ] `src/main.uya` 过渡期 `use compiler_driver;`，隐式入口改为调用 `compiler_driver_main(COMMAND_BUILD, 1)`。
+- [ ] 保持 `build`、`run`、`test` 原有语义：默认 C99 后端、`run/test` 单文件 C、`run -- <args>`、test 默认栈、microapp 特殊路径、`@c_import` 链接计划。
+- [ ] 暂不移动 `pack-image`、`inspect-image`、`verify-image`、`--outlibc`。
+- [ ] 所有新增公共 `export fn` 前写 `///` 注释，说明功能、参数和返回值。
+- [ ] 提取后验证隐式入口仍能工作：
+
+```bash
+./bin/uya tests/test_errno.uya -o /tmp/uya_implicit_errno --no-split-c
+./tests/run_programs_parallel.sh
+make tests-uya
+```
+
+---
+
+## Phase B：提取 Microapp 逻辑
+
+- [ ] 新建 `src/microapp.uya`（或按设计选择 `lib/microapp/driver.uya`，但本轮推荐 `src/microapp.uya`）。
+- [ ] 将 `build_microapp_text_from_c` 移入 microapp 模块。
+- [ ] 将 `pack_microapp_pobj_to_uapp` 移入 microapp 模块。
+- [ ] 将 `inspect_microapp_image` / `inspect_microapp_pobj` / `inspect_microapp_uapp` 移入 microapp 模块。
+- [ ] 将 `verify_microapp_image` / `verify_microapp_pobj` 移入 microapp 模块。
+- [ ] 将 ELF64/Mach-O 解析、提取、重定位辅助函数移入 microapp 模块。
+- [ ] `src/main.uya` 过渡期 `use microapp;`，`pack-image`/`inspect-image`/`verify-image` 改为调用 `microapp_*` 导出函数。
+- [ ] `src/compiler_driver.uya` 若仍需 `--app microapp` 编译流程，也 `use microapp;`。
+- [ ] 验证 microapp 与 hosted 路线：
+
+```bash
+make microapp-check
+make check-hosted
+```
+
+---
+
+## Phase C：独立子命令与调度器
+
+### C1：先补调度测试
 
 - [ ] 新增 `tests/test_cmd_dispatch.sh`，脚本开头使用 `set -euo pipefail`。
 - [ ] 测试开始时确认 `bin/uya` 存在；若 `bin/cmd/*` 不存在，提示先运行 `make cmds`。
@@ -45,56 +117,55 @@
 ./bin/cmd/build tests/test_errno.uya -o /tmp/uya_cmd_build_direct --no-split-c
 ```
 
-- [ ] 覆盖 `uya test` 与直调 `cmd/test` 退出码一致：
-
-```bash
-./bin/uya test tests/test_errno.uya
-./bin/cmd/test tests/test_errno.uya
-```
-
-- [ ] 覆盖 `uya fmt` 与直调 `cmd/fmt` 输出一致：
-
-```bash
-./bin/uya fmt tests/test_errno.uya >/tmp/uya_cmd_fmt_a.out
-./bin/cmd/fmt tests/test_errno.uya >/tmp/uya_cmd_fmt_b.out
-cmp /tmp/uya_cmd_fmt_a.out /tmp/uya_cmd_fmt_b.out
-```
-
+- [ ] 覆盖 `uya run ... -- ...` 的运行时参数 argv 原样保留。
+- [ ] 覆盖 `uya test` 与直调 `cmd/test` 摘要和退出码一致。
+- [ ] 覆盖 `uya fmt` 与直调 `cmd/fmt` 输出一致。
 - [ ] 覆盖 `uya upm --help` 与直调 `cmd/upm --help` 均退出 0。
 - [ ] 覆盖缺失命令的错误路径：临时重命名 `bin/cmd/build`，确认 `./bin/uya build ...` 返回非 0，错误信息包含 `cmd/build` 和 `make cmds`。
-- [ ] 将该脚本接入合适的 Makefile 快速目标，例如 `tests-uya` 或新增 `cmd-dispatch-check`，避免扩大默认慢路径前先本地验证。
 
----
+### C2：新增 `src/cmd/*` 入口
 
-## Phase 2：拆出共享编译驱动
+- [ ] 创建 `src/cmd/build/main.uya`，入口调用 `compiler_driver_main(COMMAND_BUILD, 1)`。
+- [ ] 创建 `src/cmd/run/main.uya`，入口调用 `compiler_driver_main(COMMAND_RUN, 1)`，由 driver 完成编译、链接和执行。
+- [ ] 创建 `src/cmd/test/main.uya`，入口调用 `compiler_driver_main(COMMAND_TEST, 1)`，由 driver 完成测试执行和摘要输出。
+- [ ] 三个命令入口都支持可选重复子命令名，例如 `cmd/build build file.uya`。
+- [ ] 创建 `src/cmd/fmt/main.uya`：
+  - [ ] 默认调用 `uyafmt_main()`。
+  - [ ] 若 `argv[1] == "fmt"`，跳过该参数或调用兼容入口。
+- [ ] 创建 `src/cmd/upm/main.uya`：
+  - [ ] `--help` / `-h` 打印用法并退出 0。
+  - [ ] `--version` / `-v` 打印版本并退出 0。
+  - [ ] 未实现命令打印提示并退出 2。
+- [ ] 每个公开入口前写 `///` 注释，符合仓库 Uya 代码风格。
 
-- [ ] 明确边界：`src/main.uya` 不再解析公开 `build/run/test/fmt/upm` 的业务参数，只保留 dispatcher 和 bootstrap/compat 路径。
-- [ ] 在 `src/` 或 `src/cmd/common/` 创建共享驱动模块，避免复制 `src/main.uya` 的大段逻辑。
-- [ ] 将编译器命令业务归属到 `cmd/build`：`cmd/build` 是真实编译器 CLI，不是再调用 `uya build` 的包装。
-- [ ] 将当前 `parse_args()` 改造成可指定默认命令和起始参数的函数，例如：
+### C3：改造 Makefile 生成 `bin/cmd/*`
+
+- [ ] 在 `Makefile` 增加 `UYA_CMD_NAMES := build run test fmt upm`。
+- [ ] 增加 `cmds`、`cmd-build`、`cmd-run`、`cmd-test`、`cmd-fmt`、`cmd-upm` 目标。
+- [ ] 过渡期用 `UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/uya` 构建命令程序。
+- [ ] `bin/cmd/%` 规则包含 `--project-root src/`：
+
+```make
+bin/cmd/%: src/cmd/%/main.uya $(UYA_CMD_BOOTSTRAP_COMPILER)
+	@mkdir -p bin/cmd
+	$(UYA_CMD_BOOTSTRAP_COMPILER) $< -o $@ --c99 --no-split-c --project-root src/
+```
+
+- [ ] `make cmds` 生成：
 
 ```text
-parse_args_from(default_command, argv_start, allow_optional_subcommand, ...)
+bin/cmd/build
+bin/cmd/run
+bin/cmd/test
+bin/cmd/fmt
+bin/cmd/upm
 ```
 
-- [ ] 将当前 `export fn main()` 中 `build/run/test` 共享流程提取为可复用函数，并从主入口业务分支中移除，例如：
+- [ ] `make clean` 清理 `bin/cmd/` 和 `src/build/cmd/`，但不清理 `src/cmd/*` 源码。
+- [ ] `make install` 依赖或检查 `cmds`，并复制 `bin/cmd/*` 到 `$(INSTALL_BINDIR)/cmd/`。
+- [ ] `make help` 增加 `make cmds` 和安装布局说明。
 
-```text
-compiler_driver_main(default_command, argv_start)
-```
-
-- [ ] 保持 `build`、`run`、`test` 的原有语义：默认 C99 后端、`run/test` 单文件 C、`run -- <args>`、test 默认栈、microapp 特殊路径、`@c_import` 链接计划。
-- [ ] 保持 `pack-image`、`inspect-image`、`verify-image`、`--outlibc` 暂由主程序处理，不要在本阶段移动。
-- [ ] 所有新增 `export fn` 前写 `///` 注释，说明功能、参数和返回值。
-- [ ] 提取后先用隐式入口验证编译器仍能工作：
-
-```bash
-./bin/uya tests/test_errno.uya -o /tmp/uya_implicit_errno --no-split-c
-```
-
----
-
-## Phase 3：实现主程序调度器
+### C4：实现主程序调度器
 
 - [ ] 在 `src/main.uya` 新增 `is_external_cmd(name)`，识别 `build/run/test/fmt/upm`。
 - [ ] 新增 `build_external_cmd_path(cmd_name, out, out_cap)`，基于 `get_compiler_dir(get_argv(0), ...)` 生成 `cmd/<name>` 路径，Windows 目标补 `.exe`。
@@ -108,64 +179,63 @@ compiler_driver_main(default_command, argv_start)
 - [ ] 在 `export fn main()` 开头做分流：
   - [ ] `argv[1]` 是外置命令：立即 `dispatch_external_cmd(argv[1], 1)`，不再进入 `parse_args()`。
   - [ ] `argv[1]` 是 `--version` / `-v`：保持当前版本输出。
-  - [ ] 其他显式内部命令保持原路径。
+  - [ ] `pack-image` / `inspect-image` / `verify-image` 继续走过渡期内部路径。
   - [ ] 非命令参数继续走隐式编译入口。
-- [ ] 可选新增调试环境变量 `UYA_CMD_TRACE=1`，打印实际调度路径，便于测试确认没有走内部实现。
 - [ ] 不要使用 `system()` 拼接公开子命令调用。
-
----
-
-## Phase 4：新增 `src/cmd/xxx` 入口
-
-- [ ] 创建 `src/cmd/build/main.uya`，入口调用共享驱动的 `COMMAND_BUILD`，并独立处理 build 参数。
-- [ ] 创建 `src/cmd/run/main.uya`，入口调用共享驱动的 `COMMAND_RUN`。
-- [ ] 创建 `src/cmd/test/main.uya`，入口调用共享驱动的 `COMMAND_TEST`。
-- [ ] 三个命令入口都支持可选重复子命令名，例如 `cmd/build build file.uya`。
-- [ ] 创建 `src/cmd/fmt/main.uya`：
-  - [ ] 默认调用 `uyafmt_main()`。
-  - [ ] 若 `argv[1] == "fmt"`，跳过该参数或调用兼容入口。
-- [ ] 创建 `src/cmd/upm/main.uya`：
-  - [ ] `--help` / `-h` 打印用法并退出 0。
-  - [ ] `--version` / `-v` 打印版本并退出 0。
-  - [ ] 未实现命令打印提示并退出 2。
-- [ ] 每个公开入口前写 `///` 注释，符合仓库 Uya 代码风格。
-
----
-
-## Phase 5：改造构建系统生成 `bin/cmd/*`
-
-- [ ] 在 `Makefile` 增加 `UYA_CMD_NAMES := build run test fmt upm`。
-- [ ] 增加 `cmds`、`cmd-build`、`cmd-run`、`cmd-test`、`cmd-fmt`、`cmd-upm` 目标。
-- [ ] `make cmds` 生成：
-
-```text
-bin/cmd/build
-bin/cmd/run
-bin/cmd/test
-bin/cmd/fmt
-bin/cmd/upm
-```
-
-- [ ] 命令构建优先使用隐式编译入口，避免循环依赖：
+- [ ] 验证 Phase C：
 
 ```bash
-./bin/uya src/cmd/build/main.uya -o bin/cmd/build --c99 --no-split-c
+make cmds
+./tests/test_cmd_dispatch.sh
+make check
 ```
-
-- [ ] 若 `src/cmd/xxx/main.uya` 的 `use` 解析受项目根影响，优先增强 `src/compile.sh`：
-  - [ ] 新增 `--entry <相对 src 的入口>`，默认仍是 `main.uya`。
-  - [ ] 新增 `--project-root <目录>` 或等价内部变量，命令入口编译时设为 `src/`。
-  - [ ] 输出名含 `/` 时创建 `src/build/cmd/` 和 `bin/cmd/`。
-- [ ] `make uya` 成功生成 `bin/uya` 后调用或提示 `make cmds`；推荐默认自动生成，确保公开子命令可用。
-- [ ] `make from-c` / `make from-c-native` 完成 `bin/uya` 后也应生成 `cmds`，否则冷启动后 `uya build` 会缺命令。
-- [ ] 若要进入纯 dispatcher 目标态，补齐冷启动方案：从备份 C seed 同时生成 `bin/cmd/build`，或为 `cmd/build` 建立独立 seed；确认后再删除 `src/main.uya` 的隐式编译依赖。
-- [ ] `make clean` 清理 `bin/cmd/` 和 `src/build/cmd/`。
-- [ ] `make install` 依赖 `cmds`，并复制 `bin/cmd/*` 到 `$(INSTALL_BINDIR)/cmd/`。
-- [ ] `make help` 增加 `make cmds` 和安装布局说明。
 
 ---
 
-## Phase 6：文档同步
+## Phase D 准备：补齐 `cmd/build` 自举来源
+
+- [ ] 设计 `cmd/build` seed 布局，例如 `backup/cmd-build.c` 及必要 host/arch 变体。
+- [ ] 更新 `make backup-all` / `backup-all-seed`，确保 `cmd/build` seed 与编译器 seed 同步更新。
+- [ ] 更新 `make from-c` / `make from-c-native`，先由 seed 生成 `bin/uya` 与 `bin/cmd/build`。
+- [ ] 修改 `make cmds` 目标态默认编译器为 `UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/cmd/build`。
+- [ ] 保留过渡期逃生口：仅在 Phase D 前允许显式覆盖 `UYA_CMD_BOOTSTRAP_COMPILER=./bin/uya`。
+- [ ] 验证清理后冷启动：
+
+```bash
+make clean
+make from-c-native
+ls -l bin/uya bin/cmd/build
+make cmds
+```
+
+---
+
+## Phase D：移除隐式入口，纯调度器收口
+
+- [ ] 确认 Phase D 准备已完成，`make clean && make from-c` 可生成 `bin/uya` 和 `bin/cmd/build`。
+- [ ] 移除 `src/main.uya` 中的隐式编译入口，非命令 `.uya` 输入应提示使用 `uya build`。
+- [ ] 如果 `pack-image` / `inspect-image` / `verify-image` 已外置，删除 `src/main.uya` 中的 `use compiler_driver;` 和 `use microapp;`。
+- [ ] 更新 `src/compile.sh`，显式区分“构建调度器 `bin/uya`”与“使用 `bin/cmd/build` 编译普通入口”。
+- [ ] 验证隐式入口已移除：
+
+```bash
+bin/uya tests/test_errno.uya -o /tmp/implicit_should_fail
+```
+
+- [ ] 完整验证：
+
+```bash
+make clean
+make from-c-native
+make uya
+make cmds
+make check
+make backup-all
+```
+
+---
+
+## 文档同步
 
 - [ ] 更新 `docs/UYA_BUILD_RUN.md`：说明 `uya build/run/test` 由 `cmd/build`、`cmd/run`、`cmd/test` 执行。
 - [ ] 更新 `docs/TESTING.md`：加入 `make cmds` 和 `tests/test_cmd_dispatch.sh`。
@@ -174,68 +244,10 @@ bin/cmd/upm
 
 ---
 
-## Phase 7：验证与收口
-
-- [ ] 格式/空白检查：
-
-```bash
-git diff --check
-```
-
-- [ ] 生成命令程序：
-
-```bash
-make cmds
-ls -l bin/cmd/build bin/cmd/run bin/cmd/test bin/cmd/fmt bin/cmd/upm
-```
-
-- [ ] 跑新增调度测试：
-
-```bash
-./tests/test_cmd_dispatch.sh
-```
-
-- [ ] 跑快速编译/测试路径：
-
-```bash
-./bin/uya build tests/test_errno.uya -o /tmp/uya_cmd_errno --no-split-c
-./bin/uya test tests/test_errno.uya
-./bin/uya fmt tests/test_errno.uya >/tmp/uya_cmd_errno_fmt.out
-./bin/uya upm --help
-```
-
-- [ ] 检查主入口边界，确认公开小命令不会继续走内部业务解析：
-
-```bash
-rg "fmt_main\(|COMMAND_FMT|COMMAND_RUN|COMMAND_TEST|COMMAND_BUILD" src/main.uya
-```
-
-- [ ] 验证安装布局：
-
-```bash
-make install PREFIX=/tmp/uya-cmd-install
-/tmp/uya-cmd-install/bin/uya upm --help
-/tmp/uya-cmd-install/bin/uya build tests/test_errno.uya -o /tmp/uya_installed_errno --no-split-c
-```
-
-- [ ] 跑自举快速验证：
-
-```bash
-make tests-uya
-```
-
-- [ ] 收口或准备提交前运行完整规则：
-
-```bash
-make clean
-make backup-all
-```
-
----
-
 ## 回滚策略
 
+- [ ] 如果 driver 提取失败，回退到 `src/main.uya` 内部路径，但保留已新增测试。
 - [ ] 如果 `cmd/xxx` 构建失败，先保持 `src/main.uya` 的隐式编译入口可用，不要破坏 `make uya`。
 - [ ] 如果公开调度失败，可临时只让 `fmt/upm` 外置，`build/run/test` 保持内部，但测试中标记未完成项。
-- [ ] 不要删除旧逻辑；先抽成共享驱动，再由主程序和命令入口共用。
+- [ ] 不要复制旧逻辑；先抽成共享 driver，再由主程序和命令入口共用。
 - [ ] 不要提交 `bin/cmd/*` 生成物，除非仓库策略后来明确要求跟踪这些产物。
