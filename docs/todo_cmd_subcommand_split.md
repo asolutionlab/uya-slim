@@ -12,6 +12,7 @@
 - 不臆造 Uya 语法；不确定时先搜索 `src/`、`lib/`、`tests/` 的既有写法。
 - 按 TDD 推进：先加调度测试，再改实现。
 - 保留 `uya <file.uya> ...` 隐式编译入口，避免自举死锁。
+- 最终目标是 `src/main.uya` 只负责命令分发；编译器业务归属 `cmd/build` 和共享 compiler driver。
 - 公开 `uya build/run/test/fmt/upm` 必须走 `cmd/xxx`，不要静默回退内部实现。
 
 ---
@@ -67,14 +68,16 @@ cmp /tmp/uya_cmd_fmt_a.out /tmp/uya_cmd_fmt_b.out
 
 ## Phase 2：拆出共享编译驱动
 
+- [ ] 明确边界：`src/main.uya` 不再解析公开 `build/run/test/fmt/upm` 的业务参数，只保留 dispatcher 和 bootstrap/compat 路径。
 - [ ] 在 `src/` 或 `src/cmd/common/` 创建共享驱动模块，避免复制 `src/main.uya` 的大段逻辑。
+- [ ] 将编译器命令业务归属到 `cmd/build`：`cmd/build` 是真实编译器 CLI，不是再调用 `uya build` 的包装。
 - [ ] 将当前 `parse_args()` 改造成可指定默认命令和起始参数的函数，例如：
 
 ```text
 parse_args_from(default_command, argv_start, allow_optional_subcommand, ...)
 ```
 
-- [ ] 将当前 `export fn main()` 中 `build/run/test` 共享流程提取为可复用函数，例如：
+- [ ] 将当前 `export fn main()` 中 `build/run/test` 共享流程提取为可复用函数，并从主入口业务分支中移除，例如：
 
 ```text
 compiler_driver_main(default_command, argv_start)
@@ -103,7 +106,7 @@ compiler_driver_main(default_command, argv_start)
   - [ ] 使用 `execve(cmd_path, argv, saved_envp)` 或同等 argv API。
   - [ ] `execve` 失败时根据 errno 打印 `cmd_path`、原因和 `make cmds` 提示。
 - [ ] 在 `export fn main()` 开头做分流：
-  - [ ] `argv[1]` 是外置命令：立即 `dispatch_external_cmd(argv[1], 1)`。
+  - [ ] `argv[1]` 是外置命令：立即 `dispatch_external_cmd(argv[1], 1)`，不再进入 `parse_args()`。
   - [ ] `argv[1]` 是 `--version` / `-v`：保持当前版本输出。
   - [ ] 其他显式内部命令保持原路径。
   - [ ] 非命令参数继续走隐式编译入口。
@@ -114,7 +117,7 @@ compiler_driver_main(default_command, argv_start)
 
 ## Phase 4：新增 `src/cmd/xxx` 入口
 
-- [ ] 创建 `src/cmd/build/main.uya`，入口调用共享驱动的 `COMMAND_BUILD`。
+- [ ] 创建 `src/cmd/build/main.uya`，入口调用共享驱动的 `COMMAND_BUILD`，并独立处理 build 参数。
 - [ ] 创建 `src/cmd/run/main.uya`，入口调用共享驱动的 `COMMAND_RUN`。
 - [ ] 创建 `src/cmd/test/main.uya`，入口调用共享驱动的 `COMMAND_TEST`。
 - [ ] 三个命令入口都支持可选重复子命令名，例如 `cmd/build build file.uya`。
@@ -155,6 +158,7 @@ bin/cmd/upm
   - [ ] 输出名含 `/` 时创建 `src/build/cmd/` 和 `bin/cmd/`。
 - [ ] `make uya` 成功生成 `bin/uya` 后调用或提示 `make cmds`；推荐默认自动生成，确保公开子命令可用。
 - [ ] `make from-c` / `make from-c-native` 完成 `bin/uya` 后也应生成 `cmds`，否则冷启动后 `uya build` 会缺命令。
+- [ ] 若要进入纯 dispatcher 目标态，补齐冷启动方案：从备份 C seed 同时生成 `bin/cmd/build`，或为 `cmd/build` 建立独立 seed；确认后再删除 `src/main.uya` 的隐式编译依赖。
 - [ ] `make clean` 清理 `bin/cmd/` 和 `src/build/cmd/`。
 - [ ] `make install` 依赖 `cmds`，并复制 `bin/cmd/*` 到 `$(INSTALL_BINDIR)/cmd/`。
 - [ ] `make help` 增加 `make cmds` 和安装布局说明。
@@ -198,6 +202,12 @@ ls -l bin/cmd/build bin/cmd/run bin/cmd/test bin/cmd/fmt bin/cmd/upm
 ./bin/uya test tests/test_errno.uya
 ./bin/uya fmt tests/test_errno.uya >/tmp/uya_cmd_errno_fmt.out
 ./bin/uya upm --help
+```
+
+- [ ] 检查主入口边界，确认公开小命令不会继续走内部业务解析：
+
+```bash
+rg "fmt_main\(|COMMAND_FMT|COMMAND_RUN|COMMAND_TEST|COMMAND_BUILD" src/main.uya
 ```
 
 - [ ] 验证安装布局：
