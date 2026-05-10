@@ -59,6 +59,7 @@
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`
 - 推荐本地用 `make microapp-check` 运行当前 microapp 回归集
+- `make microapp-check` 现在包含 Linux x86_64 payload object 符号审计：显式检查 `.uapp` 构建不回退中间 ELF 链路、payload object 无 undefined 宿主符号、无裸 libc/helper 符号，并由 mapped payload 真执行输出统一 `payload result=ok`
 - 在 hosted 平台上做轻量 smoke test 时，可用 `make microapp-hosted-smoke`
 - 若只想单独触发 arm64-host-gated 的 aarch64 runtime 回归，可用 `make microapp-aarch64-runtime-check`
 - 若只想单独触发 macOS arm64-host-gated 的 runtime 回归，可用 `make microapp-macos-runtime-check`

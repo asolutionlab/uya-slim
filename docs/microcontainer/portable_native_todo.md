@@ -160,12 +160,16 @@
 - [~] 收敛 [main.uya](/home/winger/uya/uya/src/codegen/c99/main.uya) 中现有 `uya_microapp_syscall*` helper
   - [x] `lib/std/microapp/*` 内部 `@syscall` 已强制走 microapp bridge
   - [x] 生成 C 已改成正式 `uya_microapp_bridge_dispatch*` ABI 命名
-  - [~] x86_64 call-gate 已经通过 runtime bridge ABI slot 进入宿主 runtime
+  - [x] x86_64 call-gate 已经通过 runtime bridge ABI slot 进入宿主 runtime
   - [ ] 仍待把其他 bridge/backend 也切到同一 ABI
 - [~] 把宿主 helper 符号依赖升级为正式 bridge ABI
   - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
-  - [ ] 仍未切到真正 runtime call-gate / trap bridge
-- [ ] `microapp` payload 不再直接依赖宿主 libc 普通符号
+  - [x] Linux x86_64 call-gate payload 已通过 runtime bridge ABI slot 进入宿主 runtime
+  - [x] `tests/verify_microapp_payload_symbols.sh` 已用 payload object 符号表锁定无 undefined 宿主符号、无裸 libc/helper 符号
+  - [ ] 其他 bridge/backend 仍待切到同一 runtime bridge ABI
+- [~] `microapp` payload 不再直接依赖宿主 libc 普通符号
+  - [x] Linux x86_64 hard-vm P0 已完成符号级验收
+  - [ ] 其他 profile 仍待补同等级符号审计
 
 ### 6.2 Source ABI
 
@@ -174,7 +178,7 @@
   - [x] `std.microapp.mem`
   - [x] `std.microapp.task`
   - [x] `std.microapp.time`
-- [ ] 审计并限制直接宿主 libc API 使用
+- [x] 审计并限制直接宿主 libc API 使用
 
 验收标准：
 
@@ -186,7 +190,8 @@
 - [x] kernel/runtime 侧 syscall ABI 已补齐 `SYS_TIME`
 - [~] payload 中不再出现 `write_stdout_bytes` / `posix_memalign` / `sched_yield` 这类宿主 helper 符号耦合
   - [x] 当前 codegen 回归已覆盖 `posix_memalign / sched_yield / gettimeofday` 不直接出现在 microapp payload 里
-  - [ ] 仍未切到真正 runtime call-gate / trap bridge
+  - [x] Linux x86_64 payload object 回归已覆盖无 undefined 宿主符号与无裸 libc/helper 符号
+  - [ ] 其他 profile 仍待补同等级验收
 
 ---
 
