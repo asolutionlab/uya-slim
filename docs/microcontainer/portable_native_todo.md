@@ -166,10 +166,10 @@
   - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
   - [x] Linux x86_64 call-gate payload 已通过 runtime bridge ABI slot 进入宿主 runtime
   - [x] Linux aarch64 hosted call-gate 与 RV32 trap runtime 路径已共用 `sim_microapp_bridge_dispatch2`
-  - [x] `tests/verify_microapp_payload_symbols.sh` 已用 payload object 符号表锁定无 undefined 宿主符号、无裸 libc/helper 符号
+  - [x] `tests/verify_microapp_payload_symbols.sh` 已用 payload object 符号表锁定无 undefined 宿主符号、无裸 libc/helper 符号，并补成显式符号白名单
   - [x] 其他已接线 bridge/backend 已切到同一 runtime bridge ABI；未真执行 profile 仍显式输出 `unwired`
 - [~] `microapp` payload 不再直接依赖宿主 libc 普通符号
-  - [x] Linux x86_64 hard-vm P0 已完成符号级验收
+  - [x] Linux x86_64 hard-vm P1 已完成符号白名单级验收
   - [ ] 其他 profile 仍待补同等级符号审计
 
 ### 6.2 Source ABI
@@ -243,6 +243,8 @@
   - [x] `linux_x86_64_hardvm` 已覆盖 fault/error 路径的可观测信号退出状态
   - [~] 崩溃/故障到统一错误模型仍待继续细化
     - [x] x86_64 hosted 路径已统一到 `fault_class / fault_code / fault_signal`
+    - [x] Linux loader 的 mapped / native fallback / trap / unwired / validated 分支已统一到单行 `payload result=...` 结果面
+    - [x] `tests/verify_microapp_result_surface.sh` 已锁定 native fallback、unwired 与 fault 不再输出旧式 `payload fault class=...`
     - [x] sim/recovery 路径已把 structured fault 写入 crash log
     - [x] unwired profile 路径已显式输出 `payload result=unwired ...`
     - [ ] 其他后端 / bridge 仍待接入同一结果模型
@@ -253,8 +255,8 @@
   不再依赖 `.text.bin.elf`
   - [x] x86_64 hard-vm 运行时已不再依赖对照 ELF
   - [x] x86_64 hosted `call-gate` 构建期已不再依赖 `objdump/nm/readelf/objcopy`，也不再依赖“先链接出中间 ELF”这一步
+  - [x] 默认 Linux profile / 无外部 ELF 工具 / 不回退 ELF / 符号白名单 已由 `tests/verify_microapp_payload_symbols.sh` 硬测试锁定
   - [x] aarch64 hosted `call-gate` 构建期已不再依赖 `objdump/nm/readelf/objcopy`
-  - [ ] aarch64 构建期仍依赖“先链接出中间 ELF”这一步
 - [x] `hello microapp` 能由 `.uapp` 真执行输出
 - [x] `alloc + yield` 能在 x86_64 mapped payload 路径中执行
 - [x] `time` 能在 x86_64 mapped payload 路径中执行
@@ -371,6 +373,7 @@
   - [x] 当前已补 `reloc64` 官方样例运行回归
   - [x] trap bridge 已补充 `validated` 结果面 smoke
   - [x] trap bridge 已补充最小 RV32 `print/yield/exit` runtime bridge 回归
+  - [x] Linux runtime result surface 已补 mapped fault / native fallback / unwired 单行结果面回归
   - [~] aarch64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke / macOS CI
   - [~] macOS arm64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke
   - [ ] 其余 profile 真执行仍待补齐

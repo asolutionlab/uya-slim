@@ -372,6 +372,16 @@ payload 不应再直接依赖：
 - `validated`：当前只完成镜像/ABI 校验，没有 native 执行
 - `unwired`：当前 profile / bridge 没有执行路径
 
+loader 对外稳定输出一行机器可依赖的结果面：
+
+- `[microapp loader] payload result=ok`
+- `[microapp loader] payload result=exit code=<n>`
+- `[microapp loader] payload result=fault class=<name> code=<n> signal=<n>`
+- `[microapp loader] payload result=validated bridge=<name> target=<arch>`
+- `[microapp loader] payload result=unwired bridge=<name> target=<arch>`
+
+同一次 payload 运行不应再额外输出旧式 `payload fault class=...` 这类第二套结果面；其他日志只能作为人类诊断，不作为稳定 ABI。
+
 稳定 `fault_class` 最小集合：
 
 - `none`

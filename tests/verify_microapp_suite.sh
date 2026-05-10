@@ -34,6 +34,7 @@ SCRIPTS=(
     "tests/verify_microapp_reloc_data_runtime.sh"
     "tests/verify_microapp_exit_code_runtime.sh"
     "tests/verify_microapp_fault_runtime.sh"
+    "tests/verify_microapp_result_surface.sh"
     "tests/verify_microapp_trap_bridge_result.sh"
     "tests/verify_microapp_trap_runtime.sh"
     "tests/verify_microapp_aarch64_hosted_runtime.sh"

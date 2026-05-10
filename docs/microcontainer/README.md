@@ -52,14 +52,14 @@
 - aarch64 的 hosted `call-gate` 构建链现在也已改成编译器直接从 `gcc -c` 产出的 `.o` 提取 section/symbol/rela，不再需要先链接中间 `.elf`
 - trap bridge 除了 `validated` 结果面之外，现在还补了一条手工 RV32 `.uapp` 的最小真执行链路（`print/yield/exit`），ECALL 会通过 `sim_microapp_bridge_dispatch2` 进入同一 runtime bridge ABI
 - 当前 x86_64 真执行回归也已经覆盖 fault/error 路径（通过子进程隔离把崩溃收口为可观测信号退出状态）
-- 当前统一 fault 结果模型已经在 x86_64 hosted loader 与 sim/recovery 链路落地，统一输出/记录 `fault_class / fault_code / fault_signal`
+- 当前统一 fault/result 模型已经在 Linux hosted loader 与 sim/recovery 链路落地；每次 payload 运行只输出一行稳定的 `[microapp loader] payload result=...`，fault 统一携带 `fault_class / fault_code / fault_signal`
 - trap bridge 的极小/不可执行 smoke 仍保留显式 `payload result=validated bridge=trap target=...` 结果面；RV32 runtime 路径不再停在 validated-only
 - 尚未接线的 hosted profile 现在也会显式输出 `payload result=unwired bridge=... target=...`，不再只靠单独错误文案表达
 - `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`
 - 推荐本地用 `make microapp-check` 运行当前 microapp 回归集
-- `make microapp-check` 现在包含 Linux x86_64 payload object 符号审计：显式检查 `.uapp` 构建不回退中间 ELF 链路、payload object 无 undefined 宿主符号、无裸 libc/helper 符号，并由 mapped payload 真执行输出统一 `payload result=ok`
+- `make microapp-check` 现在包含 Linux x86_64 profile/toolchain 契约审计：默认 profile 必须解析为 `linux_x86_64_hardvm`，`.uapp` 构建必须在 `READELF/OBJDUMP/NM/OBJCOPY=false` 下成功，不回退中间 ELF 链路，并通过 payload object 符号白名单与 runtime result surface 回归
 - 在 hosted 平台上做轻量 smoke test 时，可用 `make microapp-hosted-smoke`
 - 若只想单独触发 arm64-host-gated 的 aarch64 runtime 回归，可用 `make microapp-aarch64-runtime-check`
 - 若只想单独触发 macOS arm64-host-gated 的 runtime 回归，可用 `make microapp-macos-runtime-check`
@@ -67,6 +67,7 @@
 - 若只想检查 crash/recovery/update 链路，可用 `make microapp-recovery-check`
 - `make microapp-recovery-check` 当前会覆盖 `test_kernel_update.uya` 与 `test_kernel_sim.uya`，并检查 crash log 的 structured fault 字段
 - `make microapp-check` 现在同时包含手工 `.uapp` 的 trap bridge validated smoke 和 RV32 trap runtime bridge 回归
+- `make microapp-check` 现在还包含 native fallback / unwired / mapped fault 的单一 result surface 回归，防止重新出现旧的 `payload fault class=...` 诊断面
 - 默认 profile 推导优先级是：`--microapp-profile` > `MICROAPP_TARGET_PROFILE` > `MICROAPP_TARGET_ARCH(+TARGET_OS)` > `TARGET_OS/TARGET_ARCH` > `HOST_OS/HOST_ARCH` > `linux_x86_64_hardvm`
 - `MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；若未覆盖，则走当前 profile 自带的默认 gcc
 - `MICROAPP_TARGET_CFLAGS` / `MICROAPP_TARGET_LDFLAGS` 现在也是按 profile 给默认值：
