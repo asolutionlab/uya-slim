@@ -131,6 +131,9 @@ PY
 grep -a -q "trap runtime ok" "$RUN_LOG" || dump_log_and_fail "trap runtime 未输出预期文本" "$RUN_LOG"
 grep -a -q "\[microapp loader\] executed trap payload" "$RUN_LOG" || dump_log_and_fail "trap runtime 未命中 trap payload 执行分支" "$RUN_LOG"
 grep -a -q "\[microapp loader\] payload result=ok" "$RUN_LOG" || dump_log_and_fail "trap runtime 未输出统一 ok result" "$RUN_LOG"
+if grep -a -q "\[microapp loader\] payload result=validated" "$RUN_LOG"; then
+    dump_log_and_fail "trap runtime 真执行路径不应停在 validated-only 结果面" "$RUN_LOG"
+fi
 
 set +e
 "$ROOT_DIR/bin/uya" run lib/std/runtime/microapp/loader_main.uya -- "$EXIT_UAPP" >"$EXIT_LOG" 2>&1
@@ -141,5 +144,8 @@ if [ "$exit_status" -ne 7 ]; then
 fi
 grep -a -q "\[microapp loader\] executed trap payload" "$EXIT_LOG" || dump_log_and_fail "trap runtime non-zero exit 未命中 trap payload 执行分支" "$EXIT_LOG"
 grep -a -q "\[microapp loader\] payload result=exit code=7" "$EXIT_LOG" || dump_log_and_fail "trap runtime non-zero exit 未输出统一 exit result" "$EXIT_LOG"
+if grep -a -q "\[microapp loader\] payload result=validated" "$EXIT_LOG"; then
+    dump_log_and_fail "trap runtime non-zero exit 真执行路径不应停在 validated-only 结果面" "$EXIT_LOG"
+fi
 
 echo "microapp trap runtime ok"

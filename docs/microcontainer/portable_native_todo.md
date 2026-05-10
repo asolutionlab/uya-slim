@@ -161,12 +161,13 @@
   - [x] `lib/std/microapp/*` 内部 `@syscall` 已强制走 microapp bridge
   - [x] 生成 C 已改成正式 `uya_microapp_bridge_dispatch*` ABI 命名
   - [x] x86_64 call-gate 已经通过 runtime bridge ABI slot 进入宿主 runtime
-  - [ ] 仍待把其他 bridge/backend 也切到同一 ABI
+  - [x] aarch64 hosted call-gate 与 RV32 trap runtime ECALL 已切到同一 bridge dispatch ABI
 - [~] 把宿主 helper 符号依赖升级为正式 bridge ABI
   - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
   - [x] Linux x86_64 call-gate payload 已通过 runtime bridge ABI slot 进入宿主 runtime
+  - [x] Linux aarch64 hosted call-gate 与 RV32 trap runtime 路径已共用 `sim_microapp_bridge_dispatch2`
   - [x] `tests/verify_microapp_payload_symbols.sh` 已用 payload object 符号表锁定无 undefined 宿主符号、无裸 libc/helper 符号
-  - [ ] 其他 bridge/backend 仍待切到同一 runtime bridge ABI
+  - [x] 其他已接线 bridge/backend 已切到同一 runtime bridge ABI；未真执行 profile 仍显式输出 `unwired`
 - [~] `microapp` payload 不再直接依赖宿主 libc 普通符号
   - [x] Linux x86_64 hard-vm P0 已完成符号级验收
   - [ ] 其他 profile 仍待补同等级符号审计
@@ -228,8 +229,8 @@
 
 - [~] 把 `sim_exec_loaded()` 从“校验入口”升级为“跳转入口执行”
   - [x] `linux_x86_64_hardvm + ibk_call_gate` 已跳转执行 mapped payload
-  - [~] trap bridge / 其他架构仍停留在校验或过渡态
-    - [~] RV32 trap 已接入最小 `print/yield/exit` 真执行链路
+  - [~] trap bridge / 其他架构仍处于真执行收口过渡态
+    - [x] RV32 trap 已通过 runtime bridge ABI 接入最小 `print/yield/exit` 真执行链路
     - [x] trap bridge validated 路径已显式写入 `validated` 结果面，不再隐式折叠为 `exit 0`
     - [ ] 其他架构仍待补齐真正执行路径
 - [~] 入口调用前应用 relocation
@@ -369,7 +370,7 @@
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
   - [x] 当前已补 `reloc64` 官方样例运行回归
   - [x] trap bridge 已补充 `validated` 结果面 smoke
-  - [~] trap bridge 已补充最小 RV32 `print/yield/exit` runtime 回归
+  - [x] trap bridge 已补充最小 RV32 `print/yield/exit` runtime bridge 回归
   - [~] aarch64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke / macOS CI
   - [~] macOS arm64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke
   - [ ] 其余 profile 真执行仍待补齐

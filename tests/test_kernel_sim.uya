@@ -896,6 +896,7 @@ test "sim_load_image_rv32_trap_executes_print_yield_exit" {
     if st0 == ContainerState.cs_ready { is_ready = 1; }
     try assert_eq_i32(is_ready, 1);
     try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_NONE as i32);
+    try assert_eq_i32(k.loaded_bridge_dispatch_count[0] as i32, 2);
 
     const cid1: u32 = try sim_tick_loaded(&k);
     try assert_eq_i32(cid1 as i32, 0);
@@ -905,6 +906,7 @@ test "sim_load_image_rv32_trap_executes_print_yield_exit" {
     try assert_eq_i32(is_empty, 1);
     try assert_eq_i32(k.loaded_result_kind[0] as i32, SIM_LOADED_RESULT_EXIT as i32);
     try assert_eq_i32(k.loaded_exit_code[0], 0);
+    try assert_eq_i32(k.loaded_bridge_dispatch_count[0] as i32, 2);
 }
 
 test "sim_load_image_rv32_trap_records_nonzero_exit_code" {

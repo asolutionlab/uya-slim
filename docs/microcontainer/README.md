@@ -47,13 +47,13 @@
 - 当前还额外补上了最小 `aarch64 call-gate trampoline` helper；在 arm64 宿主上，compiler helper 也已支持切到私有栈后再调用 payload
 - 仓库里现在还带有一个 arm64-host-gated 的 `linux_aarch64_hardvm` runtime 脚本；非 arm64 宿主会自动跳过；在 macOS arm64 CI 上会优先用 `xcrun clang + llvm-objcopy`
 - microapp 生成 C 里的 bridge helper 现在已经从过渡的 `uya_microapp_syscall*` 收成 `uya_microapp_bridge_dispatch*`
-- x86_64 call-gate payload 现在已通过 runtime bridge ABI slot 进入宿主 runtime，不再直接内嵌 `UYA_HOST_SYS_*` shim
+- x86_64/aarch64 hosted call-gate payload 现在已通过 runtime bridge ABI slot 进入宿主 runtime，不再直接内嵌 `UYA_HOST_SYS_*` shim；aarch64 真执行回归仍按宿主架构 gate
 - x86_64 的 hosted `call-gate` 构建链现在已改成编译器直接从 `gcc -c` 产出的 `.o` 提取 section/symbol/rela，不再需要先链接中间 `.elf`
 - aarch64 的 hosted `call-gate` 构建链现在也已改成编译器直接从 `gcc -c` 产出的 `.o` 提取 section/symbol/rela，不再需要先链接中间 `.elf`
-- trap bridge 除了 `validated` 结果面之外，现在还补了一条手工 RV32 `.uapp` 的最小真执行链路（`print/yield/exit`）
+- trap bridge 除了 `validated` 结果面之外，现在还补了一条手工 RV32 `.uapp` 的最小真执行链路（`print/yield/exit`），ECALL 会通过 `sim_microapp_bridge_dispatch2` 进入同一 runtime bridge ABI
 - 当前 x86_64 真执行回归也已经覆盖 fault/error 路径（通过子进程隔离把崩溃收口为可观测信号退出状态）
 - 当前统一 fault 结果模型已经在 x86_64 hosted loader 与 sim/recovery 链路落地，统一输出/记录 `fault_class / fault_code / fault_signal`
-- trap bridge 路径当前仍是“validated-only” 过渡态，但已经有显式 `payload result=validated bridge=trap target=...` 结果面
+- trap bridge 的极小/不可执行 smoke 仍保留显式 `payload result=validated bridge=trap target=...` 结果面；RV32 runtime 路径不再停在 validated-only
 - 尚未接线的 hosted profile 现在也会显式输出 `payload result=unwired bridge=... target=...`，不再只靠单独错误文案表达
 - `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
@@ -66,7 +66,7 @@
 - 若只想检查 `.uapp v1/v2` 兼容链路，可用 `make microapp-compat-check`
 - 若只想检查 crash/recovery/update 链路，可用 `make microapp-recovery-check`
 - `make microapp-recovery-check` 当前会覆盖 `test_kernel_update.uya` 与 `test_kernel_sim.uya`，并检查 crash log 的 structured fault 字段
-- `make microapp-check` 现在也包含一个手工 `.uapp` 的 trap bridge smoke，用来验证 `validated` 结果面
+- `make microapp-check` 现在同时包含手工 `.uapp` 的 trap bridge validated smoke 和 RV32 trap runtime bridge 回归
 - 默认 profile 推导优先级是：`--microapp-profile` > `MICROAPP_TARGET_PROFILE` > `MICROAPP_TARGET_ARCH(+TARGET_OS)` > `TARGET_OS/TARGET_ARCH` > `HOST_OS/HOST_ARCH` > `linux_x86_64_hardvm`
 - `MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；若未覆盖，则走当前 profile 自带的默认 gcc
 - `MICROAPP_TARGET_CFLAGS` / `MICROAPP_TARGET_LDFLAGS` 现在也是按 profile 给默认值：
