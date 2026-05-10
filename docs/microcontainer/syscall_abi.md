@@ -69,6 +69,7 @@ syscall(number: u32, arg1: u32, arg2: u32) !u32
 - `SYS_ALLOC = 2`
 - `SYS_IO = 3`
 - `SYS_YIELD = 4`
+- `SYS_TIME = 5`
 
 ### 4.2 `SYS_PRINT`
 
@@ -118,6 +119,15 @@ syscall(number: u32, arg1: u32, arg2: u32) !u32
 
 - 仅允许访问 capability 中声明的设备。
 - 仅允许白名单操作码。
+- `.uapp` 头部 `required_caps_bitmap` 会在加载期映射为当前槽位的 `SYS_IO` 白名单；未声明时默认拒绝。
+- 当前最小位定义：
+  - bit 0：`io.uart`，映射 `device_id = 0`
+  - bit 1：`io.gpio`，映射 `device_id = 1`
+  - bit 2：`io.timer`，映射 `device_id = 2`
+- 当前最小操作白名单：
+  - `operation = 0`：read
+  - `operation = 1`：write
+- 未知 capability 位必须拒绝加载/授权，不允许静默忽略。
 
 失败返回：
 
@@ -136,6 +146,17 @@ syscall(number: u32, arg1: u32, arg2: u32) !u32
 
 - 当前容器主动放弃剩余时间片。
 - 重新入队到同优先级可运行队列尾部。
+
+### 4.6 `SYS_TIME`
+
+参数约定：
+
+- `arg1 = 0`
+- `arg2 = 0`
+
+行为：
+
+- 返回当前宿主时间的毫秒值低 32 位。
 
 ---
 
@@ -161,6 +182,7 @@ syscall(number: u32, arg1: u32, arg2: u32) !u32
 - `SYS_ALLOC`: 非阻塞，立即返回
 - `SYS_IO`: 默认非阻塞；仅当设备明确支持同步模式时允许阻塞
 - `SYS_YIELD`: 立即让出，不阻塞
+- `SYS_TIME`: 非阻塞，立即返回
 
 ### 6.2 超时语义
 

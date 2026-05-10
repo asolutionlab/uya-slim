@@ -6,6 +6,7 @@
 // and issue syscalls via kernel_syscall(). The scheduler calls these in round-robin.
 
 use kernel.container;
+use kernel.capability;
 use kernel.dispatch;
 use kernel.errors;
 use kernel.image;
@@ -970,6 +971,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         return error.NoMemory;
     }
     const hdr: ImageHeader = try image_validate(image_bytes);
+    try kernel_required_caps_validate(hdr.required_caps);
     const min_va: u32 = sim_loaded_min_va(&hdr);
     const max_end: u32 = sim_loaded_max_end(&hdr);
     const base_vpn: u32 = min_va / PAGE_SIZE;
@@ -1041,6 +1043,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         try sim_apply_hosted_call_gate_relative_relocs(k, cid, &hdr, image_bytes);
         try sim_patch_hosted_call_gate_bridge_dispatch(k, cid, &hdr);
     }
+    try kernel_host_apply_required_caps(&k.host_ctx, cid, hdr.required_caps);
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
         _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, hdr.entry_va, 4u32, ACCESS_X);

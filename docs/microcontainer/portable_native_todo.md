@@ -212,6 +212,7 @@
   - [x] 已按 `code_va/rodata_va/data_va` 建立段级页权限映射
   - [x] `.bss` 已作为 `data_va + data_size` 之后的零初始化 RW 区域参与映射
   - [x] 已记录 `base_vpn/page_count` 级别的运行时加载元数据
+  - [x] `.uapp required_caps` 已在加载期映射为当前槽位的 `SYS_IO` 设备/操作白名单，默认无声明即拒绝
 - [~] 用 `mmap/mprotect` 建立 `RX/R/RW` 映射
   - [x] hosted loader 已分配可执行 backing，并由页表保留 `RX/R/RW` 语义
   - [x] x86_64 hosted loader 已按页表权限对宿主页执行 `mprotect`
