@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- 暂无
+
+## v0.9.6 - microapp 结果面 / 能力契约收口与 CLI 设计同步
+
+> 发布日期：2026-05-12
+
+### 概要
+
+**v0.9.6** 在 **v0.9.5** 的 microapp hosted 多平台闭环基础上，继续做补丁线收口：
+
+1. **runtime / trap 结果面统一**：hosted loader、native fallback 与 unwired 路径统一到单一 bridge ABI 与 `payload result=` 输出口径。
+2. **`.uapp required_caps` 正式生效**：镜像声明的能力位图现在会映射为 `SYS_IO` 设备与操作白名单，宿主桩对未知 capability bit 明确拒绝。
+3. **发布契约继续锁定**：Linux toolchain / payload symbol 合约与 microapp 文档继续收口，同时同步 `cmd` 子命令拆分设计文档，给后续 CLI 重构提供稳定基线。
+
+详见 [docs/releases/RELEASE_v0.9.6.md](./docs/releases/RELEASE_v0.9.6.md)。
+
+### microapp / 运行时契约
+
+- `lib/kernel/sim.uya`、`lib/std/runtime/microapp/loader.uya` 统一 trap runtime bridge ABI 与 loader 结果输出；hosted loader / native fallback / unwired 路径统一使用单行 `payload result=` 结果面。
+- 新增 / 扩展 `tests/verify_microapp_result_surface.sh`、`tests/verify_microapp_trap_runtime.sh`、`tests/verify_microapp_trap_bridge_result.sh`、`tests/verify_microapp_loader_unwired_profile.sh`，锁定 `ok / exit / fault / validated / unwired` 结果口径。
+- 新增 `tests/verify_microapp_payload_symbols.sh`，继续拒绝 payload 直接泄漏宿主 libc 普通符号，并锁定 Linux microapp runtime P0 合约。
+
+### 能力模型 / SYS_IO
+
+- 新增 `lib/kernel/capability.uya`，定义 `KERNEL_CAP_IO_*` 与已知能力位校验。
+- `lib/kernel/dispatch.uya` 根据 `.uapp` 头部 `required_caps` 建立 `SYS_IO` 设备与操作白名单，未知能力位直接拒绝。
+- 新增 `tests/test_kernel_dispatch.uya`，扩展 `tests/test_kernel_sim.uya`，覆盖 capability validate、device/op 授权与宿主桩行为。
+
+### 文档与后续 CLI 收口
+
+- `docs/microcontainer/README.md`、`docs/microcontainer/microapp_profiles.md`、`docs/microcontainer/portable_native_design.md`、`docs/microcontainer/syscall_abi.md` 同步当前 bridge / result / capability 契约。
+- `docs/cmd_subcommand_split_design.md` 与 `docs/todo_cmd_subcommand_split.md` 对齐当前 CLI 拆分设计与待办，作为下一阶段 `build/run/test` / image 子命令收口基线。
+
+## v0.9.5 - microapp hosted 多平台真执行闭环
+
+> 发布日期：2026-05-02
+
+### 概要
+
+**v0.9.5** 将 **v0.9.0 - v0.9.4** 已经铺开的 microapp / 微容器链路推进到 hosted 多平台真执行闭环，同时收口同期落地的 HTTP / UyaGin 与编译器修复：
+
+1. **Portable MicroApp ABI / `.uapp v2` / Profile / bridge / result model 规格冻结**：微容器镜像、profile 与结果面不再继续频繁改名或改字段。
+2. **发布闸门与 CI 口径统一**：`make microapp-check`、`make microapp-hosted-smoke` 与平台专属 runtime 检查形成稳定组合，`linux_x86_64_hardvm` 真执行链路成立，`linux_aarch64_hardvm` 与 `macos_arm64_hardvm` 具备 host-gated 回归入口。
+3. **同期功能面并入发行线**：纳入 UyaGin P5、最小 HTTPS -> UyaGin 桥接，以及 direct err-union await bind 的 async lowering 修复。
+
+详见 [docs/releases/RELEASE_v0.9.5.md](./docs/releases/RELEASE_v0.9.5.md)。
+
 ### HTTP / UyaGin / 编译器 async lowering（2026-04-25）
 
 - `std.http.parse/types/server` 与 `std.http.uyagin` 完成 UyaGin P5 主链路：Header 小写/哈希缓存、8-byte word-at-a-time 扫描、chunked request 原地解码、显式 chunked response、`writev` 聚合写，以及 Linux x86_64 `sendfile` 优先文件发送。
