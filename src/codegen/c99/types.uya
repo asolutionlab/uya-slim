@@ -7085,6 +7085,73 @@ fn c99_get_inferred_expr_type_c(codegen: &C99CodeGenerator, expr: &ASTNode) &byt
     return c99_type_to_c_from_inferred_type(codegen, inferred, expr.line, expr.column, expr.filename);
 }
 
+fn c99_find_interface_decl_from_value_type_c(codegen: &C99CodeGenerator, interface_type_c: &byte,
+    out_type_args: &&&ASTNode, out_type_arg_count: &i32) &ASTNode {
+    if out_type_args != null {
+        out_type_args[0] = null;
+    }
+    if out_type_arg_count != null {
+        out_type_arg_count[0] = 0;
+    }
+    if codegen == null || interface_type_c == null {
+        return null;
+    }
+
+    const iface_marker: *byte = strstr(interface_type_c as *byte, "uya_interface_" as *byte);
+    if iface_marker == null {
+        return null;
+    }
+    const iface_name_start: &byte = &iface_marker[14] as &byte;
+    var iface_name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+    var iface_name_len: i32 = 0;
+    while iface_name_start[iface_name_len] != 0 &&
+        iface_name_start[iface_name_len] != 32 &&
+        iface_name_start[iface_name_len] != 42 &&
+        iface_name_len < STRUCT_NAME_BUF_SIZE - 1 {
+        iface_name_buf[iface_name_len] = iface_name_start[iface_name_len];
+        iface_name_len = iface_name_len + 1;
+    }
+    iface_name_buf[iface_name_len] = 0;
+
+    var mi: i32 = 0;
+    while mi < codegen.mono_instance_count {
+        const inst: &MonoInstanceCodegen = &codegen.mono_instances[mi];
+        if inst != null && inst.generic_name != null && inst.type_args != null && inst.type_arg_count > 0 {
+            const iface_decl_mono: &ASTNode = find_interface_decl_c99(codegen, inst.generic_name);
+            if iface_decl_mono != null && iface_decl_mono.interface_decl_type_param_count > 0 {
+                const mono_name: &byte = get_mono_struct_name(codegen, inst.generic_name, inst.type_args, inst.type_arg_count);
+                if mono_name != null && strcmp(mono_name as *byte, &iface_name_buf[0] as *byte) == 0 {
+                    if out_type_args != null {
+                        out_type_args[0] = inst.type_args;
+                    }
+                    if out_type_arg_count != null {
+                        out_type_arg_count[0] = inst.type_arg_count;
+                    }
+                    return iface_decl_mono;
+                }
+            }
+        }
+        mi = mi + 1;
+    }
+
+    if codegen.program_node == null {
+        return null;
+    }
+    const decl_count: i32 = codegen.program_node.program_decl_count;
+    var i: i32 = 0;
+    while i < decl_count {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL && decl.interface_decl_name != null {
+            const safe_iface: &byte = get_safe_c_identifier(codegen, decl.interface_decl_name);
+            if safe_iface != null && strcmp(safe_iface as *byte, &iface_name_buf[0] as *byte) == 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
 fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     if codegen == null || expr == null {
         return ("int32_t" as *byte) as &byte;
@@ -7348,17 +7415,12 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         const callee: &ASTNode = expr.call_expr_callee;
         const type_args: & & ASTNode = expr.call_expr_type_args;
         const type_arg_count: i32 = expr.call_expr_type_arg_count;
-        if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
-            callee.member_access_object != null {
-            var owner_is_union: i32 = 0;
-            const owner_name: &byte = c99_type_namespace_owner_name(codegen, callee.member_access_object, &owner_is_union);
-            if owner_name != null {
-                const inferred_call: Type = checker_infer_type(codegen.checker, expr);
-                if inferred_call.kind != TypeKind.TYPE_VOID {
-                    const inferred_c: &byte = c99_type_to_c_from_inferred_type(codegen, inferred_call, expr.line, expr.column, expr.filename);
-                    if inferred_c != null {
-                        return inferred_c;
-                    }
+        if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+            const inferred_call: Type = checker_infer_type(codegen.checker, expr);
+            if inferred_call.kind != TypeKind.TYPE_VOID {
+                const inferred_c: &byte = c99_type_to_c_from_inferred_type(codegen, inferred_call, expr.line, expr.column, expr.filename);
+                if inferred_c != null {
+                    return inferred_c;
                 }
             }
         }
@@ -7418,6 +7480,44 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             }
             // 无法推断，返回默认类型
             return ("int32_t" as *byte) as &byte;
+        }
+
+        if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+            callee.member_access_object != null && callee.member_access_field_name != null {
+            const obj_type_c_iface: &byte = get_c_type_of_expr(codegen, callee.member_access_object);
+            if obj_type_c_iface != null {
+                var iface_type_args: & & ASTNode = null;
+                var iface_type_arg_count: i32 = 0;
+                const iface_decl: &ASTNode = c99_find_interface_decl_from_value_type_c(codegen, obj_type_c_iface,
+                    &iface_type_args, &iface_type_arg_count);
+                if iface_decl != null && iface_decl.interface_decl_name != null {
+                    const saved_type_params: &TypeParam = codegen.current_type_params;
+                    const saved_type_param_count: i32 = codegen.current_type_param_count;
+                    const saved_type_args: & & ASTNode = codegen.current_type_args;
+                    const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+                    if iface_type_args != null && iface_type_arg_count > 0 && iface_decl.interface_decl_type_param_count > 0 {
+                        codegen.current_type_params = iface_decl.interface_decl_type_params;
+                        codegen.current_type_param_count = iface_decl.interface_decl_type_param_count;
+                        codegen.current_type_args = iface_type_args;
+                        codegen.current_type_arg_count = iface_type_arg_count;
+                    }
+                    const iface_method: &ASTNode = c99_find_interface_method_sig(codegen, iface_decl.interface_decl_name, callee.member_access_field_name);
+                    if iface_method != null && iface_method.fn_decl_return_type != null {
+                        const iface_ret_c: &byte = c99_mono_type_to_c(codegen, iface_method.fn_decl_return_type);
+                        codegen.current_type_params = saved_type_params;
+                        codegen.current_type_param_count = saved_type_param_count;
+                        codegen.current_type_args = saved_type_args;
+                        codegen.current_type_arg_count = saved_type_arg_count;
+                        if iface_ret_c != null {
+                            return iface_ret_c;
+                        }
+                    }
+                    codegen.current_type_params = saved_type_params;
+                    codegen.current_type_param_count = saved_type_param_count;
+                    codegen.current_type_args = saved_type_args;
+                    codegen.current_type_arg_count = saved_type_arg_count;
+                }
+            }
         }
         
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {

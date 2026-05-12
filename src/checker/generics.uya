@@ -391,3 +391,125 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
     
     return type;
 }
+
+// 替换泛型类型参数为具体 Type，供接口实例等已经完成类型推断的场景复用。
+fn substitute_generic_type_with_types(checker: &TypeChecker, type: Type,
+                                      type_params: &TypeParam, type_param_count: i32,
+                                      type_args: &Type, type_arg_count: i32) Type {
+    if type.kind == TypeKind.TYPE_GENERIC_PARAM && type.generic_param_name != null {
+        var i: i32 = 0;
+        while i < type_param_count && i < type_arg_count {
+            if type_params[i].name != null &&
+                str_equals(type_params[i].name, type.generic_param_name) != 0 {
+                return copy_type(&type_args[i]);
+            }
+            i = i + 1;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_POINTER && type.pointer_to != null {
+        const inner: Type = substitute_generic_type_with_types(checker, type.pointer_to[0],
+            type_params, type_param_count, type_args, type_arg_count);
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if inner_ptr != null {
+            inner_ptr[0] = copy_type(&inner);
+            var result: Type = copy_type(&type);
+            result.pointer_to = inner_ptr;
+            var pd: PointerData = PointerData {
+                pointee: inner_ptr,
+                is_ffi: type.is_ffi_pointer,
+            };
+            result.data = TypeData.pointer(pd);
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_ARRAY && type.element_type != null {
+        const inner: Type = substitute_generic_type_with_types(checker, type.element_type[0],
+            type_params, type_param_count, type_args, type_arg_count);
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if inner_ptr != null {
+            inner_ptr[0] = copy_type(&inner);
+            var result: Type = copy_type(&type);
+            result.element_type = inner_ptr;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_SLICE && type.slice_element_type != null {
+        const inner: Type = substitute_generic_type_with_types(checker, type.slice_element_type[0],
+            type_params, type_param_count, type_args, type_arg_count);
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if inner_ptr != null {
+            inner_ptr[0] = copy_type(&inner);
+            var result: Type = copy_type(&type);
+            result.slice_element_type = inner_ptr;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_ERROR_UNION && type.error_union_payload_type != null {
+        const inner: Type = substitute_generic_type_with_types(checker, type.error_union_payload_type[0],
+            type_params, type_param_count, type_args, type_arg_count);
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if inner_ptr != null {
+            inner_ptr[0] = copy_type(&inner);
+            var result: Type = copy_type(&type);
+            result.error_union_payload_type = inner_ptr;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_INTERFACE && type.interface_type_args != null && type.interface_type_arg_count > 0 {
+        const count: i32 = type.interface_type_arg_count;
+        const new_args: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+        if new_args != null {
+            var i: i32 = 0;
+            while i < count {
+                new_args[i] = substitute_generic_type_with_types(checker, type.interface_type_args[i],
+                    type_params, type_param_count, type_args, type_arg_count);
+                i = i + 1;
+            }
+            var result: Type = copy_type(&type);
+            result.interface_type_args = new_args;
+            result.interface_type_arg_count = count;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_STRUCT && type.struct_type_args != null && type.struct_type_arg_count > 0 {
+        const count: i32 = type.struct_type_arg_count;
+        const new_args: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+        if new_args != null {
+            var i: i32 = 0;
+            while i < count {
+                new_args[i] = substitute_generic_type_with_types(checker, type.struct_type_args[i],
+                    type_params, type_param_count, type_args, type_arg_count);
+                i = i + 1;
+            }
+            var result: Type = copy_type(&type);
+            result.struct_type_args = new_args;
+            result.struct_type_arg_count = count;
+            return result;
+        }
+    }
+
+    if type.kind == TypeKind.TYPE_UNION && type.union_type_args != null && type.union_type_arg_count > 0 {
+        const count: i32 = type.union_type_arg_count;
+        const new_args: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+        if new_args != null {
+            var i: i32 = 0;
+            while i < count {
+                new_args[i] = substitute_generic_type_with_types(checker, type.union_type_args[i],
+                    type_params, type_param_count, type_args, type_arg_count);
+                i = i + 1;
+            }
+            var result: Type = copy_type(&type);
+            result.union_type_args = new_args;
+            result.union_type_arg_count = count;
+            return result;
+        }
+    }
+
+    return type;
+}

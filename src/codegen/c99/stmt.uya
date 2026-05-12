@@ -2840,6 +2840,15 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     if init_union_c != null {
                         codegen.expected_block_union_type = init_union_c;
                     }
+                } else if var_type != null && init_expr != null && init_expr.type == ASTNodeType.AST_TRY_EXPR {
+                    const init_err_union_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, stmt.line, stmt.column, codegen.arena, stmt.filename);
+                    if init_err_union_type != null {
+                        init_err_union_type.type_error_union_payload_type = var_type;
+                        const init_try_union_c: &byte = c99_type_to_c(codegen, init_err_union_type);
+                        if init_try_union_c != null {
+                            codegen.expected_block_union_type = init_try_union_c;
+                        }
+                    }
                 }
 
                 // 装箱：当变量类型是接口，且初始化表达式是实现了该接口的结构体值时，生成 vtable+data

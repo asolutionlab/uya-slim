@@ -3035,9 +3035,17 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
 
         if object_type.kind == TypeKind.TYPE_INTERFACE && object_type.interface_name != null &&
             method_name != null && checker.program_node != null {
+            const iface_decl: &ASTNode = find_interface_decl_from_program(checker.program_node, object_type.interface_name);
             const msig: &ASTNode = find_interface_method_sig(checker.program_node, object_type.interface_name, method_name);
             if msig != null {
-                return type_from_ast(checker, msig.fn_decl_return_type);
+                const iface_return_type: Type = type_from_ast(checker, msig.fn_decl_return_type);
+                if iface_decl != null && iface_decl.interface_decl_type_param_count > 0 &&
+                    object_type.interface_type_args != null && object_type.interface_type_arg_count > 0 {
+                    return substitute_generic_type_with_types(checker, copy_type(&iface_return_type),
+                        iface_decl.interface_decl_type_params, iface_decl.interface_decl_type_param_count,
+                        object_type.interface_type_args, object_type.interface_type_arg_count);
+                }
+                return iface_return_type;
             }
         }
 
