@@ -160,12 +160,17 @@
 - [~] 收敛 [main.uya](/home/winger/uya/uya/src/codegen/c99/main.uya) 中现有 `uya_microapp_syscall*` helper
   - [x] `lib/std/microapp/*` 内部 `@syscall` 已强制走 microapp bridge
   - [x] 生成 C 已改成正式 `uya_microapp_bridge_dispatch*` ABI 命名
-  - [~] x86_64 call-gate 已经通过 runtime bridge ABI slot 进入宿主 runtime
-  - [ ] 仍待把其他 bridge/backend 也切到同一 ABI
+  - [x] x86_64 call-gate 已经通过 runtime bridge ABI slot 进入宿主 runtime
+  - [x] aarch64 hosted call-gate 与 RV32 trap runtime ECALL 已切到同一 bridge dispatch ABI
 - [~] 把宿主 helper 符号依赖升级为正式 bridge ABI
   - [x] 当前 hosted helper 已不再依赖仓库私有 `write_stdout_bytes`
-  - [ ] 仍未切到真正 runtime call-gate / trap bridge
-- [ ] `microapp` payload 不再直接依赖宿主 libc 普通符号
+  - [x] Linux x86_64 call-gate payload 已通过 runtime bridge ABI slot 进入宿主 runtime
+  - [x] Linux aarch64 hosted call-gate 与 RV32 trap runtime 路径已共用 `sim_microapp_bridge_dispatch2`
+  - [x] `tests/verify_microapp_payload_symbols.sh` 已用 payload object 符号表锁定无 undefined 宿主符号、无裸 libc/helper 符号，并补成显式符号白名单
+  - [x] 其他已接线 bridge/backend 已切到同一 runtime bridge ABI；未真执行 profile 仍显式输出 `unwired`
+- [~] `microapp` payload 不再直接依赖宿主 libc 普通符号
+  - [x] Linux x86_64 hard-vm P1 已完成符号白名单级验收
+  - [ ] 其他 profile 仍待补同等级符号审计
 
 ### 6.2 Source ABI
 
@@ -174,7 +179,7 @@
   - [x] `std.microapp.mem`
   - [x] `std.microapp.task`
   - [x] `std.microapp.time`
-- [ ] 审计并限制直接宿主 libc API 使用
+- [x] 审计并限制直接宿主 libc API 使用
 
 验收标准：
 
@@ -186,7 +191,8 @@
 - [x] kernel/runtime 侧 syscall ABI 已补齐 `SYS_TIME`
 - [~] payload 中不再出现 `write_stdout_bytes` / `posix_memalign` / `sched_yield` 这类宿主 helper 符号耦合
   - [x] 当前 codegen 回归已覆盖 `posix_memalign / sched_yield / gettimeofday` 不直接出现在 microapp payload 里
-  - [ ] 仍未切到真正 runtime call-gate / trap bridge
+  - [x] Linux x86_64 payload object 回归已覆盖无 undefined 宿主符号与无裸 libc/helper 符号
+  - [ ] 其他 profile 仍待补同等级验收
 
 ---
 
@@ -206,6 +212,7 @@
   - [x] 已按 `code_va/rodata_va/data_va` 建立段级页权限映射
   - [x] `.bss` 已作为 `data_va + data_size` 之后的零初始化 RW 区域参与映射
   - [x] 已记录 `base_vpn/page_count` 级别的运行时加载元数据
+  - [x] `.uapp required_caps` 已在加载期映射为当前槽位的 `SYS_IO` 设备/操作白名单，默认无声明即拒绝
 - [~] 用 `mmap/mprotect` 建立 `RX/R/RW` 映射
   - [x] hosted loader 已分配可执行 backing，并由页表保留 `RX/R/RW` 语义
   - [x] x86_64 hosted loader 已按页表权限对宿主页执行 `mprotect`
@@ -223,8 +230,8 @@
 
 - [~] 把 `sim_exec_loaded()` 从“校验入口”升级为“跳转入口执行”
   - [x] `linux_x86_64_hardvm + ibk_call_gate` 已跳转执行 mapped payload
-  - [~] trap bridge / 其他架构仍停留在校验或过渡态
-    - [~] RV32 trap 已接入最小 `print/yield/exit` 真执行链路
+  - [~] trap bridge / 其他架构仍处于真执行收口过渡态
+    - [x] RV32 trap 已通过 runtime bridge ABI 接入最小 `print/yield/exit` 真执行链路
     - [x] trap bridge validated 路径已显式写入 `validated` 结果面，不再隐式折叠为 `exit 0`
     - [ ] 其他架构仍待补齐真正执行路径
 - [~] 入口调用前应用 relocation
@@ -237,6 +244,8 @@
   - [x] `linux_x86_64_hardvm` 已覆盖 fault/error 路径的可观测信号退出状态
   - [~] 崩溃/故障到统一错误模型仍待继续细化
     - [x] x86_64 hosted 路径已统一到 `fault_class / fault_code / fault_signal`
+    - [x] Linux loader 的 mapped / native fallback / trap / unwired / validated 分支已统一到单行 `payload result=...` 结果面
+    - [x] `tests/verify_microapp_result_surface.sh` 已锁定 native fallback、unwired 与 fault 不再输出旧式 `payload fault class=...`
     - [x] sim/recovery 路径已把 structured fault 写入 crash log
     - [x] unwired profile 路径已显式输出 `payload result=unwired ...`
     - [ ] 其他后端 / bridge 仍待接入同一结果模型
@@ -247,8 +256,8 @@
   不再依赖 `.text.bin.elf`
   - [x] x86_64 hard-vm 运行时已不再依赖对照 ELF
   - [x] x86_64 hosted `call-gate` 构建期已不再依赖 `objdump/nm/readelf/objcopy`，也不再依赖“先链接出中间 ELF”这一步
+  - [x] 默认 Linux profile / 无外部 ELF 工具 / 不回退 ELF / 符号白名单 已由 `tests/verify_microapp_payload_symbols.sh` 硬测试锁定
   - [x] aarch64 hosted `call-gate` 构建期已不再依赖 `objdump/nm/readelf/objcopy`
-  - [ ] aarch64 构建期仍依赖“先链接出中间 ELF”这一步
 - [x] `hello microapp` 能由 `.uapp` 真执行输出
 - [x] `alloc + yield` 能在 x86_64 mapped payload 路径中执行
 - [x] `time` 能在 x86_64 mapped payload 路径中执行
@@ -364,7 +373,8 @@
   - [x] 当前已覆盖 x86_64 `hello/alloc_yield/time/bss/reloc/exit-code/fault` 真执行回归
   - [x] 当前已补 `reloc64` 官方样例运行回归
   - [x] trap bridge 已补充 `validated` 结果面 smoke
-  - [~] trap bridge 已补充最小 RV32 `print/yield/exit` runtime 回归
+  - [x] trap bridge 已补充最小 RV32 `print/yield/exit` runtime bridge 回归
+  - [x] Linux runtime result surface 已补 mapped fault / native fallback / unwired 单行结果面回归
   - [~] aarch64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke / macOS CI
   - [~] macOS arm64 hosted runtime 已补 host-gated 回归入口，并接入 hosted smoke
   - [ ] 其余 profile 真执行仍待补齐

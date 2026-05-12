@@ -187,6 +187,22 @@
 - `TARGET_OS=macos TARGET_ARCH=arm64` 会默认推到 `macos_arm64_hardvm`
 - `rv32` 会默认推到 `rv32_baremetal_softvm`
 
+### 7.1 Linux x86_64 Toolchain 契约
+
+`linux_x86_64_hardvm` 是默认 profile，也是当前 Linux hosted 真执行样板。它的构建契约是：
+
+- 未显式指定 profile 时，默认解析到 `linux_x86_64_hardvm`
+- `.uapp` 构建从目标 `gcc -c` 产出的 `.o` 直接提取 section / symbol / rela
+- 构建不能依赖 `objdump` / `readelf` / `nm` / `objcopy`
+- 构建不能回退到“先链接中间 ELF，再导出 `.text/.rodata`”的旧链路
+- payload object 不能带 undefined 宿主符号，也不能出现裸 libc/helper 符号；允许符号由 `tests/verify_microapp_payload_symbols.sh` 的白名单固定
+
+上述契约已纳入 `make microapp-check`。本地单跑入口：
+
+```bash
+./tests/verify_microapp_payload_symbols.sh
+```
+
 ---
 
 ## 8. 当前推荐用法
