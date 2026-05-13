@@ -1,10 +1,31 @@
 # Uya `std.http.websocket` 详细设计
 
-**版本**：v0.1  
-**状态**：设计阶段  
+**版本**：v0.2
+**状态**：部分实现（协议层与 async 会话核心已落地）
 **定位**：放在 `std.http` 下的 WebSocket 能力层，优先服务 `uyagin`，同时保持可脱离框架单独复用
 
 **实现拆解**：见 [todo_http_websocket.md](./todo_http_websocket.md)
+
+**当前实现进度（截至 2026-05-13）**：
+
+- 已落地：
+  - `websocket_types.uya`
+  - `websocket_handshake.uya`
+  - `websocket_frame.uya`
+  - `websocket_async.uya`
+  - `std.crypto.sha1`
+- 已验证：
+  - `Sec-WebSocket-Accept`
+  - HTTP/1.1 Upgrade 请求校验
+  - frame 编解码 / mask / continuation 基础规则
+  - loopback async 会话收发、消息聚合、auto pong、close 失败语义、最小 send queue
+- 仍待实现：
+  - 裸 HTTP upgrade 接管
+  - `uyagin` 桥接
+  - TLS / WSS
+  - JSON helper
+  - reconnect / heartbeat 主动任务
+  - HTTP/2 RFC 8441 与 HTTP/3 / QUIC 路线
 
 ## 1. 设计目标
 
@@ -190,13 +211,15 @@ export struct WebSocketFrameView {
     fin: bool,
     opcode: WebSocketOpcode,
     masked: bool,
-    payload: &[byte],
+    payload_ptr: &byte,
+    payload_len: usize,
     mask_key: [byte: 4],
 }
 
 export struct WebSocketMessageView {
     opcode: WebSocketOpcode,
-    payload: &[byte],
+    payload_ptr: &byte,
+    payload_len: usize,
 }
 ```
 
@@ -204,28 +227,41 @@ export struct WebSocketMessageView {
 
 - `FrameView` 更贴近协议，可用于调试、测试、低层代理。
 - `MessageView` 更贴近业务，可隐藏 continuation 拼接细节。
-- `payload` 仍然是借用切片，生命周期绑定到调用方提供的缓冲区。
+- 当前实现使用 `ptr + len`，而不是直接把 `&[byte]` 放进 view。
+- 这样做不是语义退化，而是为了避开当前编译器在 “复杂 view struct 穿过多次 `@await`” 场景下的 lowering 不稳定点。
+- `payload_ptr/payload_len` 的生命周期仍然绑定到调用方提供的缓冲区。
 
 ### 4.4 握手配置
 
 建议提供可复用的配置结构体，而不是只暴露一个大函数。
 
 ```uya
+export struct WebSocketHeartbeatConfig {
+    ping_interval_ms: u32 = 0,
+    pong_timeout_ms: u32 = 0,
+    idle_timeout_ms: u32 = 0,
+}
+
 export struct WebSocketAcceptOptions {
-    subprotocols: &[const byte] = [],
+    subprotocols: &const byte = null,
     subprotocol_count: i32 = 0,
     allow_extensions: bool = false,
     max_frame_size: usize = 65536,
     max_message_size: usize = 1048576,
     auto_pong: bool = true,
+    send_queue_capacity: i32 = 16,
+    heartbeat: WebSocketHeartbeatConfig = WebSocketHeartbeatConfig{},
 }
 ```
 
 说明：
 
-- `subprotocols` 是服务端愿意接受的协议列表。
+- `subprotocols` 当前实现是“指向 C 风格字符串数组首元素的头指针”，不是 `&[const byte]`。
+- 这样做是为了保持当前编译器下接口与握手 helper 的稳定性；后续若类型系统路径更稳，可再回到更高层切片表示。
 - `allow_extensions` 首期只是配置位，实际默认不协商 `permessage-deflate`。
 - `max_frame_size` 与 `max_message_size` 分开，便于后续做聚合消息限制。
+- `send_queue_capacity` 控制连接内 owned queue 容量；当前实现还会再被固定上限 32 截断。
+- `heartbeat` 当前已进入配置结构，但主动定时任务仍待补。
 
 ### 4.5 连接状态结构体
 
@@ -233,19 +269,20 @@ export struct WebSocketAcceptOptions {
 
 ```uya
 export struct WebSocketConn {
-    transport: WebSocketFdTransport,
+    io: WebSocketFdTransport,
     role: WebSocketRole,
-    closed: bool,
     auto_pong: bool,
     max_frame_size: usize,
     max_message_size: usize,
-    fragmented_opcode: WebSocketOpcode,
-    fragmented_active: bool,
-    send_queue_enabled: bool,
-    tx_buf: &byte,
-    tx_cap: usize,
-    rx_buf: &byte,
-    rx_cap: usize,
+    heartbeat: WebSocketHeartbeatConfig,
+    last_activity_ms: u64,
+    last_ping_ms: u64,
+    last_pong_ms: u64,
+    waiting_pong: bool,
+    close_sent: bool,
+    close_received: bool,
+    closed: bool,
+    // 连接内 fixed queue：当前实现为 owned payload + 固定槽位
 }
 ```
 
@@ -253,7 +290,8 @@ export struct WebSocketConn {
 
 - 连接对象长期复用，承载会话状态与策略。
 - 结构体方法就是主要 API 面。
-- 连接对象内部预留自持缓冲与队列能力，避免后续为了背压/后台发送而推翻 API。
+- 当前实现已经内置一个 fixed-slot owned queue，而不是只预留空位。
+- 这样先把背压与 flush 语义真正跑起来，再决定是否升级为 channel / pump / 多生产者模型。
 - 后续可在不破坏调用面的前提下增加 deadline、metrics、subprotocol、close 状态。
 
 ## 5. transport 与接口设计
@@ -291,9 +329,9 @@ export struct WebSocketTlsTransport : AsyncReader, AsyncWriter {
 ```uya
 export interface AsyncWebSocketConn {
     @async_fn
-    fn read_frame(self: &Self, rx: &byte, rx_cap: usize) Future<!WebSocketFrameView>;
+    fn read_frame(self: &Self, rx: &byte, rx_cap: usize, opcode_out: &WebSocketOpcode, fin_out: &bool, payload_len_out: &usize) Future<!usize>;
     @async_fn
-    fn read_message(self: &Self, rx: &byte, rx_cap: usize, msg: &byte, msg_cap: usize) Future<!WebSocketMessageView>;
+    fn read_message(self: &Self, rx: &byte, rx_cap: usize, msg: &byte, msg_cap: usize, opcode_out: &WebSocketOpcode) Future<!usize>;
     @async_fn
     fn write_frame(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
     @async_fn
@@ -311,11 +349,12 @@ export interface AsyncWebSocketConn {
 
 要点：
 
-- `read_frame` 提供底层能力。
-- `read_message` 聚合 continuation，给业务更优雅的入口。
+- `read_frame` 提供底层能力，并把 payload 压紧到 `rx[0: payload_len]`。
+- `read_message` 聚合 continuation，把整条消息写进 caller-owned `msg` 缓冲区，并通过 `opcode_out` 返回消息类型。
 - `write_frame` / `write_message` 同时保留，避免 API 过早锁死。
 - `ping` / `close_with_code` 是 WebSocket 语义动作，值得成为一等方法。
 - `enqueue_message` / `flush_pending` 负责给后台发送、背压与自动重连后的恢复留稳定接口。
+- 当前 async read API 之所以不直接返回 `WebSocketFrameView` / `WebSocketMessageView`，是为了避开现阶段编译器在 “复杂 view struct + 多次 `@await`” 路径上的 lowering 缺陷。
 
 ### 5.3 直接写与排队写双层 API
 
@@ -337,8 +376,8 @@ export interface AsyncWebSocketConn {
 因此本设计明确分成两层：
 
 1. 直接 I/O 层  
-   - `read_frame(rx, rx_cap)`
-   - `read_message(rx, rx_cap, msg, msg_cap)`
+   - `read_frame(rx, rx_cap, opcode_out, fin_out, payload_len_out)`
+   - `read_message(rx, rx_cap, msg, msg_cap, opcode_out)`
    - `write_frame(..., tx, tx_cap)`
    - `write_message(..., tx, tx_cap)`
 
@@ -352,6 +391,7 @@ export interface AsyncWebSocketConn {
 - caller-owned buffer API 不跨 await 长期持有调用方栈缓冲；
 - 队列层只接受“复制进连接内 owned queue”的消息；
 - 需要背压时，以队列层语义为准，而不是直接写语义。
+- 当前 `flush_pending()` 已落地，但还是“显式 drain + 立即写出”，后台 pump 仍待补。
 
 ## 6. 握手 API 设计
 
@@ -362,8 +402,9 @@ export interface AsyncWebSocketConn {
 ```uya
 export fn websocket_request_is_upgrade(req: &Request) bool;
 export fn websocket_validate_upgrade_request(req: &Request) !void;
-export fn websocket_compute_accept(key: &[const byte], out: &byte, out_cap: usize) !usize;
-export fn websocket_pick_subprotocol(req: &Request, supported: &[const byte], supported_count: i32) !&[const byte];
+export fn websocket_compute_accept(key: &[byte], out: &byte, out_cap: usize) !usize;
+export fn websocket_pick_subprotocol(req: &Request, supported: &&const byte, supported_count: i32) !&[const byte];
+export fn websocket_build_upgrade_response(out: &byte, out_cap: usize, accept: &[byte], subprotocol: &[const byte]) !usize;
 ```
 
 ### 6.2 与 `uyagin` 的集成入口
@@ -418,8 +459,9 @@ export fn websocket_accept_from_http(
 
 ```uya
 const ws: WebSocketConn = try @await uyagin_websocket_upgrade(ctx, &opts);
-const msg: WebSocketMessageView = try @await ws.read_message(&rx[0], 4096, &msg_buf[0], 4096);
-_ = try @await ws.write_message(WebSocketOpcode.Text, msg.payload.ptr, msg.payload.len, &tx[0], 4096);
+var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+const n: usize = try @await ws.read_message(&rx[0], 4096, &msg_buf[0], 4096, &opcode);
+_ = try @await ws.write_message(opcode, &msg_buf[0] as &const byte, n, &tx[0], 4096);
 ```
 
 这就是本设计最核心的“更优美”标准：
@@ -471,12 +513,13 @@ export fn websocket_encode_frame_header(
     fin: bool,
     opcode: WebSocketOpcode,
     payload_len: usize,
-    mask_key: &[const byte],
+    mask_key: [byte: 4],
     out: &byte,
     out_cap: usize
 ) !usize;
 
-export fn websocket_apply_mask(dst: &byte, src: &const byte, n: usize, mask_key: &[const byte]) void;
+export fn websocket_apply_mask_inplace(data: &byte, payload_len: usize, mask_key: [byte: 4]) void;
+export fn websocket_encode_frame_raw(role: WebSocketRole, fin: bool, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, mask_key: [byte: 4], out: &byte, out_cap: usize) !usize;
 ```
 
 ### 8.2 解析函数
@@ -484,10 +527,10 @@ export fn websocket_apply_mask(dst: &byte, src: &const byte, n: usize, mask_key:
 ```uya
 export fn websocket_parse_frame_from_buffer(
     role: WebSocketRole,
-    src: &[byte],
-    out: &WebSocketFrameView,
-    consumed: &usize
-) !void;
+    raw: &byte,
+    raw_len: usize,
+    continuation_active: bool
+) !WebSocketFrameView;
 ```
 
 解析规则：
@@ -504,13 +547,13 @@ export fn websocket_parse_frame_from_buffer(
 
 首期建议：
 
-- `write_message` 默认只发单 frame 消息
+- `write_message` 在 `tx` 缓冲区装不下整条消息时，自动切成 continuation 分片
 - `read_message` 支持把多 frame continuation 聚合进 `msg` 缓冲区
 
 原因：
 
 - 读路径比写路径更需要兼容外部客户端
-- 写路径先保持简单，避免 API 过重
+- 写路径当前也已经覆盖“固定 caller buffer 下的大消息发送”，避免业务方手工切 continuation
 
 ### 9.2 后续扩展
 
@@ -563,10 +606,11 @@ export struct ChatHandler : AsyncHandler {
         var rx: [byte: 4096] = [0: 4096];
         var msg: [byte: 4096] = [0: 4096];
         var tx: [byte: 4096] = [0: 4096];
+        var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
 
         while true {
-            const m: WebSocketMessageView = try @await ws.read_message(&rx[0], 4096, &msg[0], 4096);
-            _ = try @await ws.write_message(WebSocketOpcode.Text, m.payload.ptr, m.payload.len, &tx[0], 4096);
+            const n: usize = try @await ws.read_message(&rx[0], 4096, &msg[0], 4096, &opcode);
+            _ = try @await ws.write_message(opcode, &msg[0] as &const byte, n, &tx[0], 4096);
         }
         return 0;
     }
@@ -593,8 +637,8 @@ export struct ChatHandler : AsyncHandler {
 
 ### 11.2 缓冲区生命周期
 
-- `read_frame` 返回的 `payload` 绑定到 `rx` 缓冲区
-- `read_message` 返回的 `payload` 绑定到 `msg` 聚合缓冲区
+- `read_frame` 返回的 payload 信息绑定到 `rx` 缓冲区；当前实现会把 payload 压到 `rx[0: n]`
+- `read_message` 返回的 payload 信息绑定到 `msg` 聚合缓冲区；当前实现直接返回长度并通过 `opcode_out` 告知类型
 - 调用下一次 `read_*` 之前，若业务还要保留数据，必须自己复制
 - `enqueue_message` 必须在进入队列前完成复制，不能悬挂外部栈上 payload
 
@@ -660,12 +704,14 @@ fn drop(self: WebSocketConn) void
 - `WebSocketFdTransport`
 - `WebSocketConn`
 - `read_frame` / `write_frame`
+- 最小 send queue / close 状态机
 
 ### Phase 4：message 聚合与控制帧策略
 
 - `read_message`
 - auto pong
 - continuation 聚合
+- close frame 后失败语义
 
 ### Phase 5：`uyagin` 集成
 
@@ -777,25 +823,29 @@ export enum WebSocketRole {
 }
 
 export struct WebSocketAcceptOptions {
-    subprotocols: &[const byte] = [],
+    subprotocols: &const byte = null,
     subprotocol_count: i32 = 0,
     allow_extensions: bool = false,
     max_frame_size: usize = 65536,
     max_message_size: usize = 1048576,
     auto_pong: bool = true,
+    send_queue_capacity: i32 = 16,
+    heartbeat: WebSocketHeartbeatConfig = WebSocketHeartbeatConfig{},
 }
 
 export struct WebSocketFrameView {
     fin: bool,
     opcode: WebSocketOpcode,
     masked: bool,
-    payload: &[byte],
+    payload_ptr: &byte,
+    payload_len: usize,
     mask_key: [byte: 4],
 }
 
 export struct WebSocketMessageView {
     opcode: WebSocketOpcode,
-    payload: &[byte],
+    payload_ptr: &byte,
+    payload_len: usize,
 }
 
 export struct WebSocketFdTransport : AsyncReader, AsyncWriter {
@@ -803,26 +853,22 @@ export struct WebSocketFdTransport : AsyncReader, AsyncWriter {
 }
 
 export struct WebSocketConn : AsyncWebSocketConn {
-    transport: WebSocketFdTransport,
+    io: WebSocketFdTransport,
     role: WebSocketRole,
-    closed: bool,
     auto_pong: bool,
     max_frame_size: usize,
     max_message_size: usize,
-    fragmented_opcode: WebSocketOpcode,
-    fragmented_active: bool,
-    send_queue_enabled: bool,
-    tx_buf: &byte,
-    tx_cap: usize,
-    rx_buf: &byte,
-    rx_cap: usize,
+    heartbeat: WebSocketHeartbeatConfig,
+    close_sent: bool,
+    close_received: bool,
+    closed: bool,
 }
 
 export interface AsyncWebSocketConn {
     @async_fn
-    fn read_frame(self: &Self, rx: &byte, rx_cap: usize) Future<!WebSocketFrameView>;
+    fn read_frame(self: &Self, rx: &byte, rx_cap: usize, opcode_out: &WebSocketOpcode, fin_out: &bool, payload_len_out: &usize) Future<!usize>;
     @async_fn
-    fn read_message(self: &Self, rx: &byte, rx_cap: usize, msg: &byte, msg_cap: usize) Future<!WebSocketMessageView>;
+    fn read_message(self: &Self, rx: &byte, rx_cap: usize, msg: &byte, msg_cap: usize, opcode_out: &WebSocketOpcode) Future<!usize>;
     @async_fn
     fn write_frame(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
     @async_fn
@@ -839,7 +885,9 @@ export interface AsyncWebSocketConn {
 
 export fn websocket_request_is_upgrade(req: &Request) bool;
 export fn websocket_validate_upgrade_request(req: &Request) !void;
-export fn websocket_compute_accept(key: &[const byte], out: &byte, out_cap: usize) !usize;
+export fn websocket_compute_accept(key: &[byte], out: &byte, out_cap: usize) !usize;
+export fn websocket_pick_subprotocol(req: &Request, supported: &&const byte, supported_count: i32) !&[const byte];
+export fn websocket_build_upgrade_response(out: &byte, out_cap: usize, accept: &[byte], subprotocol: &[const byte]) !usize;
 export fn websocket_accept_from_http(fd: i32, req: &Request, options: &WebSocketAcceptOptions) !WebSocketConn;
 
 export @async_fn fn uyagin_websocket_upgrade(ctx: &GinContext, options: &WebSocketAcceptOptions) Future<!WebSocketConn>;

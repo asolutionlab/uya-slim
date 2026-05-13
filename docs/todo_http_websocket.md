@@ -5,6 +5,24 @@
 实现时遵循项目 TDD 流程：先添加测试 → 实现代码 → 运行相关快速验证。  
 新增测试优先覆盖纯协议层、loopback 集成和 `uyagin` upgrade 主链路。
 
+## 当前状态（截至 2026-05-13）
+
+- 已完成并有测试覆盖：
+  - Phase 1：公共类型与模块骨架（除 TLS / client / JSON / `uyagin` bridge 文件）
+  - Phase 2：HTTP/1.1 握手 helper 与握手响应构造
+  - Phase 3：frame 编解码
+  - Phase 4：fd transport、async 会话主链路、continuation 聚合、auto pong、close 失败语义、最小 send queue / flush
+- 已明确但尚未开始：
+  - 裸 HTTP upgrade 接管
+  - `uyagin` upgrade 桥接
+  - TLS / WSS
+  - JSON helper
+  - reconnect / heartbeat 主动任务
+  - HTTP/2 RFC 8441 与 HTTP/3 / QUIC 路线
+- 当前实现收敛说明：
+  - async read API 采用 primitive out 参数 + caller-owned buffer，避免当前编译器在“复杂 view struct + 多次 `@await`”路径上的 lowering 不稳定点
+  - 内部写队列当前采用固定槽位 owned queue，`flush_pending()` 已可用，但后台 sender pump 仍待补
+
 ## 范围说明
 
 - 本页对应 `std.http.websocket` 设计稿的落地拆解。
@@ -26,10 +44,10 @@
 
 ### 1.1 模块与文件
 
-- [ ] 新增 `lib/std/http/websocket_types.uya`
-- [ ] 新增 `lib/std/http/websocket_frame.uya`
-- [ ] 新增 `lib/std/http/websocket_handshake.uya`
-- [ ] 新增 `lib/std/http/websocket_async.uya`
+- [x] 新增 `lib/std/http/websocket_types.uya`
+- [x] 新增 `lib/std/http/websocket_frame.uya`
+- [x] 新增 `lib/std/http/websocket_handshake.uya`
+- [x] 新增 `lib/std/http/websocket_async.uya`
 - [ ] 新增 `lib/std/http/websocket_tls.uya`
 - [ ] 新增 `lib/std/http/websocket_client.uya`
 - [ ] 新增 `lib/std/http/websocket_json.uya`
@@ -37,7 +55,7 @@
 
 ### 1.2 错误、常量、枚举
 
-- [ ] 定义 WebSocket 专用错误：
+- [x] 定义 WebSocket 专用错误：
   - `WebSocketBadHandshake`
   - `WebSocketUnsupportedVersion`
   - `WebSocketMissingKey`
@@ -54,31 +72,31 @@
   - `WebSocketControlFrameTooLarge`
   - `WebSocketFragmentedControlFrame`
   - `WebSocketContinuationMissing`
-- [ ] 定义常量：
+- [x] 定义常量：
   - `WS_GUID`
   - `WS_MAX_HEADER_BYTES`
   - `WS_CONTROL_MAX_PAYLOAD`
-- [ ] 定义枚举：
+- [x] 定义枚举：
   - `WebSocketOpcode`
   - `WebSocketRole`
 
 ### 1.3 公共结构体与接口
 
-- [ ] 定义 `WebSocketFrameView`
-- [ ] 定义 `WebSocketMessageView`
-- [ ] 定义 `WebSocketAcceptOptions`
-- [ ] 定义 `AsyncWebSocketConn` 接口
-- [ ] 定义 `WebSocketFdTransport`
+- [x] 定义 `WebSocketFrameView`
+- [x] 定义 `WebSocketMessageView`
+- [x] 定义 `WebSocketAcceptOptions`
+- [x] 定义 `AsyncWebSocketConn` 接口
+- [x] 定义 `WebSocketFdTransport`
 - [ ] 定义 `WebSocketTlsTransport`
-- [ ] 定义 `WebSocketConn`
+- [x] 定义 `WebSocketConn`
 - [ ] 定义 `WebSocketClient`
-- [ ] 定义 `ReconnectPolicy`
+- [x] 定义 `ReconnectPolicy`
 
 ### 1.4 测试
 
-- [ ] 新增 `tests/test_http_websocket_types.uya`
-- [ ] 覆盖错误、常量、枚举值与结构体基本初始化
-- [ ] 验证接口签名与结构体方法实现的最小编译冒烟
+- [x] 新增 `tests/test_http_websocket_types.uya`
+- [x] 覆盖错误、常量、枚举值与结构体基本初始化
+- [x] 验证接口签名与结构体方法实现的最小编译冒烟
 
 ---
 
@@ -86,19 +104,19 @@
 
 ### 2.1 基础握手工具
 
-- [ ] 实现 `websocket_request_is_upgrade(req)`
-- [ ] 实现 `websocket_validate_upgrade_request(req)`
-- [ ] 实现 `websocket_compute_accept(key, out, out_cap)`
-- [ ] 实现 `websocket_pick_subprotocol(req, supported, supported_count)`
+- [x] 实现 `websocket_request_is_upgrade(req)`
+- [x] 实现 `websocket_validate_upgrade_request(req)`
+- [x] 实现 `websocket_compute_accept(key, out, out_cap)`
+- [x] 实现 `websocket_pick_subprotocol(req, supported, supported_count)`
 
 ### 2.2 HTTP 协商细节
 
-- [ ] 校验 `Connection: Upgrade`
-- [ ] 校验 `Upgrade: websocket`
-- [ ] 校验 `Sec-WebSocket-Version: 13`
-- [ ] 校验 `Sec-WebSocket-Key`
-- [ ] 返回 `101 Switching Protocols`
-- [ ] 处理可选 `Sec-WebSocket-Protocol`
+- [x] 校验 `Connection: Upgrade`
+- [x] 校验 `Upgrade: websocket`
+- [x] 校验 `Sec-WebSocket-Version: 13`
+- [x] 校验 `Sec-WebSocket-Key`
+- [x] 返回 `101 Switching Protocols`
+- [x] 处理可选 `Sec-WebSocket-Protocol`
 - [ ] 明确本版是否拒绝 `Sec-WebSocket-Extensions`
 
 ### 2.3 裸 HTTP 集成
@@ -109,12 +127,12 @@
 
 ### 2.4 测试
 
-- [ ] 新增 `tests/test_http_websocket_handshake.uya`
-- [ ] 覆盖握手成功
-- [ ] 覆盖缺失 `Sec-WebSocket-Key`
-- [ ] 覆盖 `Sec-WebSocket-Version != 13`
-- [ ] 覆盖大小写差异 header
-- [ ] 覆盖 subprotocol 选择成功与失败
+- [x] 新增 `tests/test_http_websocket_handshake.uya`
+- [x] 覆盖握手成功
+- [x] 覆盖缺失 `Sec-WebSocket-Key`
+- [x] 覆盖 `Sec-WebSocket-Version != 13`
+- [x] 覆盖大小写差异 header
+- [x] 覆盖 subprotocol 选择成功与失败
 
 ---
 
@@ -122,29 +140,29 @@
 
 ### 3.1 编码
 
-- [ ] 实现 `websocket_encode_frame_header(...)`
-- [ ] 实现 masking 应用函数
-- [ ] 支持 text / binary / close / ping / pong / continuation 编码
-- [ ] 区分 client/server mask 规则
+- [x] 实现 `websocket_encode_frame_header(...)`
+- [x] 实现 masking 应用函数
+- [x] 支持 text / binary / close / ping / pong / continuation 编码
+- [x] 区分 client/server mask 规则
 
 ### 3.2 解析
 
-- [ ] 实现 `websocket_parse_frame_from_buffer(...)`
-- [ ] 支持 7-bit / 16-bit / 64-bit payload 长度解析
-- [ ] 支持 mask key 读取与 unmask
-- [ ] 检查控制帧长度上限
-- [ ] 检查控制帧 `FIN == true`
-- [ ] 检查 continuation 状态合法性
+- [x] 实现 `websocket_parse_frame_from_buffer(...)`
+- [x] 支持 7-bit / 16-bit / 64-bit payload 长度解析
+- [x] 支持 mask key 读取与 unmask
+- [x] 检查控制帧长度上限
+- [x] 检查控制帧 `FIN == true`
+- [x] 检查 continuation 状态合法性
 
 ### 3.3 测试
 
-- [ ] 新增 `tests/test_http_websocket_frame.uya`
-- [ ] 覆盖 text/binary frame 编解码
-- [ ] 覆盖 ping/pong/close 控制帧
-- [ ] 覆盖客户端未 mask 被 server 拒绝
-- [ ] 覆盖服务端错误 mask 被 client 拒绝
-- [ ] 覆盖长度边界 125 / 126 / 65535 / 65536
-- [ ] 覆盖 continuation 错序与控制帧分片错误
+- [x] 新增 `tests/test_http_websocket_frame.uya`
+- [x] 覆盖 text/binary frame 编解码
+- [x] 覆盖 ping/pong/close 控制帧
+- [x] 覆盖客户端未 mask 被 server 拒绝
+- [x] 覆盖服务端错误 mask 被 client 拒绝
+- [x] 覆盖长度边界 125 / 126 / 65535 / 65536
+- [x] 覆盖 continuation 错序与控制帧分片错误
 
 ---
 
@@ -152,42 +170,42 @@
 
 ### 4.1 transport
 
-- [ ] 让 `WebSocketFdTransport` 实现 `AsyncReader` / `AsyncWriter`
-- [ ] 为 transport 补 `drop` 关闭 fd
-- [ ] 对齐 `MqttFdTransport` 风格，确保可直接接 event loop
+- [x] 让 `WebSocketFdTransport` 实现 `AsyncReader` / `AsyncWriter`
+- [x] 为 transport 补 `drop` 关闭 fd
+- [x] 对齐 `MqttFdTransport` 风格，确保可直接接 event loop
 
 ### 4.2 `WebSocketConn` 基础方法
 
-- [ ] 实现 `read_frame(...)`
-- [ ] 实现 `write_frame(...)`
-- [ ] 实现 `ping(...)`
-- [ ] 实现 `close_with_code(...)`
-- [ ] 实现 `enqueue_message(...)`
-- [ ] 实现 `flush_pending(...)`
-- [ ] 明确 `closed` 状态与幂等 close 语义
-- [ ] 明确 caller-owned 直接写 API 与连接内 owned queue API 的边界
+- [x] 实现 `read_frame(...)`
+- [x] 实现 `write_frame(...)`
+- [x] 实现 `ping(...)`
+- [x] 实现 `close_with_code(...)`
+- [x] 实现 `enqueue_message(...)`
+- [x] 实现 `flush_pending(...)`
+- [x] 明确 `closed` 状态与幂等 close 语义
+- [x] 明确 caller-owned 直接写 API 与连接内 owned queue API 的边界
 
 ### 4.3 消息层方法
 
-- [ ] 实现 `read_message(...)`
-- [ ] 实现 `write_message(...)`
-- [ ] 默认支持 continuation 聚合到 caller-owned `msg` 缓冲区
-- [ ] 明确 `payload` 生命周期与复用规则
+- [x] 实现 `read_message(...)`
+- [x] 实现 `write_message(...)`
+- [x] 默认支持 continuation 聚合到 caller-owned `msg` 缓冲区
+- [x] 明确 `payload` 生命周期与复用规则
 
 ### 4.4 控制帧策略
 
-- [ ] 当 `auto_pong == true` 时自动响应 ping
-- [ ] 默认忽略 pong 但保留底层可观测性
-- [ ] close frame 到达时进入 closed 状态并返回统一错误
+- [x] 当 `auto_pong == true` 时自动响应 ping
+- [x] 默认忽略 pong 但保留底层可观测性
+- [x] close frame 到达时进入 closed 状态并返回统一错误
 
 ### 4.5 测试
 
-- [ ] 新增 `tests/test_http_websocket_async.uya`
-- [ ] 覆盖 loopback frame 收发
-- [ ] 覆盖多 frame message 聚合
-- [ ] 覆盖 close 后再次读写行为
-- [ ] 覆盖 auto pong
-- [ ] 覆盖 enqueue/flush 最小链路
+- [x] 新增 `tests/test_http_websocket_async.uya`
+- [x] 覆盖 loopback frame 收发
+- [x] 覆盖多 frame message 聚合
+- [x] 覆盖 close 后再次读写行为
+- [x] 覆盖 auto pong
+- [x] 覆盖 enqueue/flush 最小链路
 
 ---
 
@@ -310,20 +328,21 @@
 
 ### 10.1 队列模型
 
-- [ ] 设计单生产者/多生产者边界
-- [ ] 评估复用 `std.async_channel` / ring queue / 自定义固定队列
-- [ ] 明确 caller-owned buffer 与后台写队列如何协作
+- [x] 设计单生产者/多生产者边界
+- [x] 评估复用 `std.async_channel` / ring queue / 自定义固定队列
+- [x] 明确 caller-owned buffer 与后台写队列如何协作
 
 ### 10.2 背压策略
 
-- [ ] 队列满时返回错误、阻塞等待还是丢弃旧消息
+- [x] 队列满时返回错误、阻塞等待还是丢弃旧消息
 - [ ] 控制帧与业务帧优先级策略
 - [ ] close frame 是否抢占发送
 
 ### 10.3 后台发送
 
 - [ ] 增加后台 flush task / frame pump
-- [ ] 保证与显式 `write_message` 行为不冲突
+- [x] 保证与显式 `write_message` 行为不冲突
+- [x] 当前先提供显式 `flush_pending()` drain；后台 pump 仍待补
 - [ ] 明确 shutdown 时 drain 还是直接丢弃
 
 ### 10.4 测试
