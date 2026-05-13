@@ -271,12 +271,14 @@ fn ssl_sync_state(ctx: &SslContext) void {
     }
     if ctx.handshake_done {
         ctx.peer_verified = true;
-        if ctx.role == HS_ROLE_CLIENT && ctx.peer_leaf == null as &const Cert {
-            ssl_capture_peer_chain_from_server_flight(ctx);
-        }
-        ssl_verify_peer_chain(ctx);
-        if ctx.peer_verified {
-            ssl_verify_peer_hostname(ctx);
+        if ctx.role == HS_ROLE_CLIENT {
+            if ctx.peer_leaf == null as &const Cert {
+                ssl_capture_peer_chain_from_server_flight(ctx);
+            }
+            ssl_verify_peer_chain(ctx);
+            if ctx.peer_verified {
+                ssl_verify_peer_hostname(ctx);
+            }
         }
         ctx.rec.version = ctx.negotiated_version;
         if ctx.negotiated_version == TLS_VERSION_1_2 && ctx.hs.tls12_keys_ready {
