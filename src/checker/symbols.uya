@@ -970,6 +970,9 @@ fn checker_mark_moved_call_args(checker: &TypeChecker, node: &ASTNode) void {
     if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR {
         return;
     }
+    if checker_is_manual_drop_call(checker, node) != 0 {
+        return;
+    }
     const callee: &ASTNode = node.call_expr_callee;
     const n: i32 = node.call_expr_arg_count;
     const args: & & ASTNode = node.call_expr_args;

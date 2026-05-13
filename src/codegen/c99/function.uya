@@ -5892,6 +5892,38 @@ fn type_has_drop_c99(codegen: &C99CodeGenerator, struct_name: &byte) i32 {
     return 0;
 }
 
+fn c99_named_type_drop_callee(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
+    if codegen == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_NAMED || type_node.type_named_name == null {
+        return null;
+    }
+    var drop_type_name: &byte = type_node.type_named_name;
+    if type_node.type_named_type_args != null && type_node.type_named_type_arg_count > 0 {
+        var mono_type_name: &byte = null;
+        if find_union_decl_c99(codegen, type_node.type_named_name) != null {
+            mono_type_name = get_mono_union_name(
+                codegen,
+                type_node.type_named_name,
+                type_node.type_named_type_args,
+                type_node.type_named_type_arg_count
+            );
+        } else {
+            mono_type_name = get_mono_struct_name(
+                codegen,
+                type_node.type_named_name,
+                type_node.type_named_type_args,
+                type_node.type_named_type_arg_count
+            );
+        }
+        if mono_type_name != null {
+            drop_type_name = mono_type_name;
+        }
+    }
+    if drop_type_name == null || type_has_drop_c99(codegen, drop_type_name) == 0 {
+        return null;
+    }
+    return get_method_c_name(codegen, drop_type_name, "drop" as *byte);
+}
+
 // 生成方法函数的前向声明（uya_StructName_methodname）
 fn gen_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_name: &byte) void {
     if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || struct_name == null {
@@ -6038,6 +6070,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
     }
     if method_name != null && strcmp(method_name as *byte, "drop" as *byte) == 0 {
         const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
+        const union_decl: &ASTNode = find_union_decl_c99(codegen, struct_name);
         const self_safe: &byte = get_safe_c_identifier(codegen, "self" as *byte);
         if struct_decl != null && struct_decl.struct_decl_fields != null && self_safe != null {
             const fc: i32 = struct_decl.struct_decl_field_count;
@@ -6053,29 +6086,65 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
                     fi = fi - 1;
                     continue;
                 }
-                var drop_type_name: &byte = ft.type_named_name;
-                if ft.type_named_type_args != null && ft.type_named_type_arg_count > 0 {
-                    const mono_field_name: &byte = get_mono_struct_name(
-                        codegen,
-                        ft.type_named_name,
-                        ft.type_named_type_args,
-                        ft.type_named_type_arg_count
-                    );
-                    if mono_field_name != null {
-                        drop_type_name = mono_field_name;
-                    }
-                }
-                if drop_type_name == null || type_has_drop_c99(codegen, drop_type_name) == 0 {
+                const drop_c: &byte = c99_named_type_drop_callee(codegen, ft);
+                if drop_c == null {
                     fi = fi - 1;
                     continue;
                 }
-                const drop_c: &byte = get_method_c_name(codegen, drop_type_name, "drop" as *byte);
                 const field_safe: &byte = get_safe_c_identifier(codegen, field.var_decl_name);
                 if drop_c != null && field_safe != null {
                     c99_emit_indent(codegen);
                     fprintf(codegen.emit_stream as *void, "/* drop field */ %s(%s.%s);\n" as *byte, drop_c as *byte, self_safe as *byte, field_safe as *byte);
                 }
                 fi = fi - 1;
+            }
+        }
+        if union_decl != null && union_decl.union_decl_variants != null && self_safe != null {
+            var has_variant_drop: i32 = 0;
+            var vi: i32 = 0;
+            while vi < union_decl.union_decl_variant_count {
+                const variant: &ASTNode = union_decl.union_decl_variants[vi];
+                if variant == null || variant.type != ASTNodeType.AST_VAR_DECL || variant.var_decl_name == null || variant.var_decl_type == null {
+                    vi = vi + 1;
+                    continue;
+                }
+                const vt: &ASTNode = variant.var_decl_type;
+                if vt.type != ASTNodeType.AST_TYPE_NAMED || vt.type_named_name == null {
+                    vi = vi + 1;
+                    continue;
+                }
+                const drop_c: &byte = c99_named_type_drop_callee(codegen, vt);
+                const variant_safe: &byte = get_safe_c_identifier(codegen, variant.var_decl_name);
+                if drop_c == null || variant_safe == null {
+                    vi = vi + 1;
+                    continue;
+                }
+                if has_variant_drop == 0 {
+                    c99_emit_indent(codegen);
+                    fprintf(codegen.emit_stream as *void, "switch (%s._tag) {\n" as *byte, self_safe as *byte);
+                    codegen.indent_level = codegen.indent_level + 1;
+                    has_variant_drop = 1;
+                }
+                c99_emit_indent(codegen);
+                fprintf(codegen.emit_stream as *void, "case %d:\n" as *byte, vi);
+                codegen.indent_level = codegen.indent_level + 1;
+                c99_emit_indent(codegen);
+                fprintf(codegen.emit_stream as *void, "/* drop active union variant */ %s(%s.u.%s);\n" as *byte, drop_c as *byte, self_safe as *byte, variant_safe as *byte);
+                c99_emit_indent(codegen);
+                c99_emit(codegen, "break;\n" as *byte);
+                codegen.indent_level = codegen.indent_level - 1;
+                vi = vi + 1;
+            }
+            if has_variant_drop != 0 {
+                c99_emit_indent(codegen);
+                c99_emit(codegen, "default:\n" as *byte);
+                codegen.indent_level = codegen.indent_level + 1;
+                c99_emit_indent(codegen);
+                c99_emit(codegen, "break;\n" as *byte);
+                codegen.indent_level = codegen.indent_level - 1;
+                codegen.indent_level = codegen.indent_level - 1;
+                c99_emit_indent(codegen);
+                c99_emit(codegen, "}\n" as *byte);
             }
         }
     }

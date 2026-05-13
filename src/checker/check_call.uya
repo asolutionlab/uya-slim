@@ -799,6 +799,62 @@ fn checker_type_namespace_owner_type_args(checker: &TypeChecker, object: &ASTNod
     }
 }
 
+fn checker_type_has_drop_method(checker: &TypeChecker, value_type: &Type) i32 {
+    if checker == null || value_type == null || checker.program_node == null {
+        return 0;
+    }
+    const struct_name: &byte = type_get_struct_name(value_type);
+    if struct_name != null && find_method_in_struct(checker.program_node, struct_name, "drop" as *byte) != null {
+        return 1;
+    }
+    const union_name: &byte = type_get_union_name(value_type);
+    if union_name != null && find_method_in_union(checker.program_node, union_name, "drop" as *byte) != null {
+        return 1;
+    }
+    return 0;
+}
+
+fn checker_is_manual_drop_call(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR || node.call_expr_callee == null {
+        return 0;
+    }
+    const callee: &ASTNode = node.call_expr_callee;
+    if callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null &&
+        str_equals(callee.identifier_name, "drop" as *byte) != 0 {
+        if function_table_lookup(checker, callee.identifier_name) != null {
+            return 0;
+        }
+        if checker.program_node != null && find_fn_decl_from_program(checker.program_node, callee.identifier_name) != null {
+            return 0;
+        }
+        if node.call_expr_arg_count == 1 && node.call_expr_args != null && node.call_expr_args[0] != null {
+            const arg_type: Type = checker_infer_type(checker, node.call_expr_args[0]);
+            if checker_type_has_drop_method(checker, &arg_type) != 0 {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if callee.type != ASTNodeType.AST_MEMBER_ACCESS || callee.member_access_object == null ||
+        callee.member_access_field_name == null || callee.member_access_is_module_access != 0 ||
+        str_equals(callee.member_access_field_name, "drop" as *byte) == 0 {
+        return 0;
+    }
+    var owner_is_union: i32 = 0;
+    const owner_name: &byte = checker_type_namespace_owner_name(checker, callee.member_access_object, &owner_is_union);
+    if owner_name != null {
+        return 1;
+    }
+    var object_type: Type = checker_infer_type(checker, callee.member_access_object);
+    if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+        object_type = object_type.pointer_to[0];
+    }
+    if checker_type_has_drop_method(checker, &object_type) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
 fn checker_owner_type_args_ast_from_type(checker: &TypeChecker, owner_type: &Type,
     line: i32, column: i32, filename: &byte,
     out_args: &&&ASTNode, out_count: &i32) void {
@@ -1175,6 +1231,11 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             checker_walk_reachability_expr(checker, node.call_expr_args[reach_arg_i]);
             reach_arg_i = reach_arg_i + 1;
         }
+    }
+
+    if checker_is_manual_drop_call(checker, node) != 0 {
+        checker_report_error(checker, node, "drop 不能手动调用；只能由编译器在离开作用域时自动插入" as *byte);
+        return result;
     }
 
     const simd_method: &byte = simd_get_vector_builtin_method(node);
