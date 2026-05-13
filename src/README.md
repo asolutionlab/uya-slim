@@ -1,156 +1,152 @@
-# Uya Mini 编译器源代码编译
+# Uya 编译器 `src/` 源码说明
 
-本目录包含 Uya Mini 编译器的 Uya 源代码，这些代码最终将用于编译器的自举。
+`src/` 是当前主线维护的 **Uya 自举编译器实现**。编译器已经完成自举，`src/` 下源码可编译出当前使用的 `bin/uya`；历史上的 `compiler-c/` 路线已退役，不再作为维护入口。
 
-## 文件列表
+## 目录结构
 
-- `arena.uya` - Arena 分配器模块
-- `str_utils.uya` - 字符串工具函数
-- `extern_decls.uya` - 外部函数声明（C 标准库函数）
-- `llvm_api.uya` - LLVM C API 外部函数声明
-- `ast.uya` - AST（抽象语法树）定义
-- `lexer.uya` - 词法分析器模块
-- `parser.uya` - 语法分析器模块
-- `checker.uya` - 类型检查器模块
-- `codegen.uya` - 代码生成器模块
-- `main.uya` - 主程序模块（编译器入口点）
+主要目录与入口：
 
-## 编译
+- `main.uya` - 编译器入口与驱动逻辑
+- `arena.uya` - Arena 分配器与基础内存工具
+- `ast.uya` - AST 定义
+- `extern_decls.uya` - 外部符号声明
+- `fmt.uya` - 格式化与文本输出辅助
+- `lexer.uya` - 词法分析器
+- `std_cfg.uya` - 平台 / 构建配置
+- `str_utils.uya` - 字符串工具
+- `parser/` - 语法分析阶段
+- `checker/` - 类型检查、可达性、泛型、证明优化等阶段
+- `lower/` - 降级 / 转换阶段
+- `codegen/c99/` - C99 后端
+- `build/` - 单文件 C 与中间产物输出目录
+- `.uyacache/`、`.uyacache-*` - 多文件 C / Makefile 中间产物目录
 
-### 快速开始
+> `build/`、`.uyacache/`、`.uyacache-*` 都是生成目录；日常开发通常不手动提交，提交前以仓库既有 `make backup-*` 流程为准。
 
-使用 `compile.sh` 脚本编译所有文件：
+## 构建
+
+### 推荐入口
+
+从仓库根目录运行：
 
 ```bash
-# 基本编译（使用默认设置）
-./compile.sh
+# 构建当前自举编译器
+make uya
 
-# 详细输出模式
-./compile.sh -v
-
-# 指定输出目录和文件名
-./compile.sh -o /tmp/my_compiler -n my_compiler
-
-# 清理后重新编译
-./compile.sh -c
+# 自举验证
+make b
 ```
 
-### 脚本选项
+如果你在 `src/` 目录内调试，也可以直接使用脚本：
+
+```bash
+cd src
+./compile.sh --c99 -e --safety-proof
+```
+
+### `compile.sh` 常用选项
 
 - `-h, --help` - 显示帮助信息
 - `-v, --verbose` - 详细输出模式
-- `-d, --debug` - 调试模式（保留中间文件）
+- `-d, --debug` - 保留中间文件
 - `-o, --output DIR` - 指定输出目录
 - `-n, --name NAME` - 指定输出文件名
 - `-c, --clean` - 清理输出目录后再编译
-- `--compiler PATH` - 指定编译器路径（默认使用 `../compiler-c/build/compiler-c`）
+- `-e, --exec` - 自动链接生成可执行文件
+- `--c99` - 使用 C99 后端
+- `--line-directives` - 生成 `#line` 指令
+- `--nostdlib` - 以 `nostdlib` 模式链接
+- `--compiler PATH` - 指定编译器路径（默认使用仓库根目录的 `bin/uya`）
 
-### 手动编译
+## 手动编译
 
-如果不使用脚本，也可以直接使用自举编译器：
+如果不走 `compile.sh`，可直接从仓库根目录调用当前编译器；`src/main.uya` 会自动收集依赖模块：
 
 ```bash
-# 从项目根目录运行
-cd ..
+# 生成单文件 C（常用于 seed / 备份流程）
+./bin/uya src/main.uya -o src/build/uya.c --c99
 
-# 编译所有 src 文件
-./bin/uya --c99 src/*.uya -o src/build/uya.c
-
-# 或者指定文件顺序（按依赖关系）
-./bin/uya --c99 \
-    src/arena.uya \
-    src/str_utils.uya \
-    src/extern_decls.uya \
-    src/llvm_api.uya \
-    src/ast.uya \
-    src/lexer.uya \
-    src/parser.uya \
-    src/checker.uya \
-    src/codegen.uya \
-    src/main.uya \
-    -o src/build/uya.c
+# 生成可执行文件（推荐仍通过 compile.sh / make 封装）
+cd src
+./compile.sh --c99 -e
 ```
 
 ## 依赖关系
 
-文件之间的依赖关系：
+高层依赖可概括为：
 
+```text
+main.uya
+  ├─> arena.uya / ast.uya / fmt.uya / lexer.uya / std_cfg.uya / str_utils.uya
+  ├─> parser/*
+  ├─> checker/*
+  ├─> lower/*
+  └─> codegen/c99/*
 ```
-arena.uya (基础，无依赖)
-  ├─> str_utils.uya
-  ├─> extern_decls.uya (仅 extern 声明)
-  ├─> llvm_api.uya (仅 extern 声明)
-  └─> ast.uya
-       ├─> lexer.uya
-       │    └─> parser.uya
-       │         └─> checker.uya
-       │              └─> codegen.uya
-       └─> main.uya (主程序，依赖所有模块)
-```
+
+实际模块会由 `main.uya` 根据 `use` 自动收集；日常不需要手工维护一长串 `src/*.uya` 顺序列表。
 
 ## 编译输出
 
-编译成功后，会在输出目录生成目标文件（`.o` 文件）。如果要生成可执行文件，需要使用链接器链接：
+当前主线以 **C99 后端** 为主：
+
+- 多文件 C 模式通常输出到 `src/.uyacache/`（含 `Makefile` 与分片 `.c`）
+- 单文件 C 模式通常输出到 `src/build/uya.c`、`src/build/uya-hosted.c` 等
+- 最终编译器可执行文件输出到 `bin/`
+
+日常验证与提交前流程建议使用：
 
 ```bash
-# 链接为目标文件
-gcc -no-pie build/uya-compiler/compiler.o -o build/uya-compiler/compiler.exe
+# 快速自举验证
+make b
 
-# 如果需要链接外部库（如 LLVM），添加相应选项
-gcc -no-pie build/uya-compiler/compiler.o \
-    -L/usr/lib/llvm-17/lib -lLLVM-17 \
-    -o build/uya-compiler/compiler.exe
+# 提交前完整验证并刷新备份
+make clean
+make backup-all
 ```
-
-## 注意事项
-
-1. **编译器要求**：需要使用已构建的自举编译器（`bin/uya`）。详见 [docs/releases/RELEASE_v0.1.0.md](../../docs/releases/RELEASE_v0.1.0.md) 与上级 [README](../readme.md)。
-2. **文件顺序**：虽然编译器支持任意顺序的多文件编译，但建议按照依赖关系顺序排列文件
-3. **类型检查**：编译器会检查跨文件的符号引用和类型匹配
-4. **输出格式**：默认输出为目标文件（`.o`），需要使用链接器生成可执行文件
 
 ## 故障排除
 
 ### 编译器不存在
 
-如果提示编译器不存在，请先构建自举编译器：
+如果提示 `bin/uya` 不存在，可先从 seed 冷启动：
 
 ```bash
-cd ..
-make from-c  # 从 bin/uya.c 构建
-# 或
-make uya     # 完整构建（需要已有的 bin/uya）
+make from-c
+# 或直接完整构建
+make uya
 ```
 
 ### 编译错误
 
 如果遇到编译错误，可以：
 
-1. 使用 `-v` 选项查看详细输出
-2. 使用 `-d` 选项保留中间文件以便调试
-3. 检查文件是否完整（是否有语法错误）
+1. 使用 `-v` 查看详细输出
+2. 使用 `-d` 保留中间文件以便调试
+3. 确认入口使用 `src/main.uya`，不要再沿用历史的 `src/*.uya` 手写列表
 
 ### 类型检查错误
 
-如果遇到类型检查错误，检查：
+如果遇到类型检查错误，优先检查：
 
-1. 跨文件的函数声明是否一致
-2. 结构体定义是否完整
-3. `extern` 函数声明是否正确
+1. 跨文件函数 / 方法签名是否一致
+2. 结构体 / 联合体定义是否完整
+3. `extern` 声明与调用约定是否匹配
 
-## 自举进度
+## 当前状态
 
-当前状态：
-- ✅ 词法分析阶段：通过
-- ✅ 语法分析阶段：通过
-- ✅ AST 合并阶段：通过
-- ✅ 类型检查阶段：通过（已修复所有类型检查错误）
-- ⚠️ 代码生成阶段：进行中（有段错误需要修复）
+当前主线状态：
+
+- ✅ 自举已完成
+- ✅ 词法分析、语法分析、AST 合并、类型检查、C99 代码生成都在主线使用中
+- ✅ `src/` 是唯一维护中的编译器实现
+- ✅ 提交前验证以 `make b` / `make backup-all` 为准
+
+更详细的项目状态以仓库根目录 `readme.md` 与 `docs/uya.md` 为准。
 
 ## 参考
 
-- [docs/uya.md](../../docs/uya.md) - 完整语言规范
-- [v0.1.0 版本说明](../../docs/releases/RELEASE_v0.1.0.md) - 自举达成与发布说明
-
-
-
+- [../readme.md](../readme.md) - 项目总览与当前状态
+- [../docs/uya.md](../docs/uya.md) - 完整语言规范
+- [../docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) - 开发说明
+- [../docs/TESTING.md](../docs/TESTING.md) - 测试与验证流程
