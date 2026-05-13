@@ -418,8 +418,16 @@ fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
             i = i + 1;
             continue;
         }
-        if field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER && field_type.kind == TypeKind.TYPE_STRUCT && field_type.struct_name != null {
-            checker_mark_moved(checker, field_value, field_value.identifier_name, field_type.struct_name);
+        if field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER {
+            var moved_struct_name: &byte = null;
+            if field_value_type.kind == TypeKind.TYPE_STRUCT && field_value_type.struct_name != null {
+                moved_struct_name = field_value_type.struct_name;
+            } else if field_type.kind == TypeKind.TYPE_STRUCT && field_type.struct_name != null {
+                moved_struct_name = field_type.struct_name;
+            }
+            if moved_struct_name != null {
+                checker_mark_moved(checker, field_value, field_value.identifier_name, moved_struct_name);
+            }
         }
         i = i + 1;
     }
