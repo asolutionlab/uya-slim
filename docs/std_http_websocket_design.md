@@ -1,0 +1,883 @@
+# Uya `std.http.websocket` 详细设计
+
+**版本**：v0.1  
+**状态**：设计阶段  
+**定位**：放在 `std.http` 下的 WebSocket 能力层，优先服务 `uyagin`，同时保持可脱离框架单独复用
+
+**实现拆解**：见 [todo_http_websocket.md](./todo_http_websocket.md)
+
+## 1. 设计目标
+
+### 1.1 目标
+
+- 提供一套参考 Go WebSocket 使用体验的 Uya API，但保持 Uya 风格：
+  - 复用结构体承载会话状态；
+  - 复用结构体 `@async_fn` 方法承载高频语义操作；
+  - 通过接口抽象 transport / session 能力；
+  - 优先 caller-owned buffer，避免隐式堆分配。
+- 先支持 **HTTP/1.1 Upgrade -> WebSocket**，并明确归属到 `std.http`。
+- 与现有 `std.http.uyagin`、`std.async`、`std.async_event`、`std.async_scheduler`、`std.http.types`、`std.http.server` 风格对齐。
+- 让业务代码可以像 Go 一样围绕“连接对象”编写，而不是把所有逻辑摊平成函数。
+- 这一版同时覆盖完整可用链路上的高级能力：
+  - WebSocket over TLS transport 适配；
+  - JSON 消息编解码辅助 API；
+  - 自动重连策略；
+  - 自动心跳 / ping-pong 保活策略；
+  - 写队列、背压与后台发送模型。
+
+### 1.2 非目标
+
+- 本设计不追求首稿就覆盖浏览器扩展生态兼容层，例如 DOM / JS bridge、浏览器专属 API 适配等宿主集成问题。
+- 本设计不把“任意三方实时协议网关”作为首要目标，例如 MQTT-over-WebSocket 网关、SSE/WS 混合桥等跨协议编排。
+- 本设计优先完成仓库内可直接验证的 `std.http` / `uyagin` / `tls.https` / `std.async` 主链路，再考虑更外围生态封装。
+
+## 2. 设计原则
+
+### 2.1 参考 Go，但不直接照搬
+
+Go 常见使用方式是：
+
+- `Upgrader.Upgrade(...)` 建连
+- `Conn.ReadMessage()` / `Conn.WriteMessage()`
+- `SetReadDeadline()` / `WriteControl()` / `NextReader()` / `NextWriter()`
+
+Uya 版本保留“围绕连接对象调用方法”的体验，但做这些调整：
+
+- 不隐藏生命周期，连接状态明确放进 `struct WebSocketConn`。
+- 不默认分配消息对象，读写缓冲由调用方或连接对象显式提供。
+- 不依赖 goroutine；异步语义全部通过 `@async_fn` + `Future<!T>`。
+- 不强调“writer 对象必须 close 才 flush”的 Go 习惯，优先做显式 frame/message API。
+
+### 2.2 复用现有标准库形态
+
+直接借鉴两个已存在模式：
+
+- `std.mqtt.async`
+  - `AsyncMqttClient` 接口 + `MqttFdClient` 结构体实现
+  - caller-owned `tx` / `rx` buffer
+  - 语义动作挂在结构体 `@async_fn` 方法上
+- `std.http.uyagin`
+  - `AsyncHandler` 接口
+  - `GinContext` 作为单次请求上下文
+  - 框架层与协议层分离
+
+因此 WebSocket 也分四层：
+
+1. HTTP Upgrade / Handshake 层
+2. Frame 编解码层
+3. Async session 接口层
+4. 基于 fd 的默认连接实现层
+
+在这一版范围扩展后，还需要再补三层：
+
+5. TLS / WSS transport 适配层
+6. Client policy 层（自动重连、心跳、背压）
+7. JSON 辅助 API 层
+
+## 3. 模块布局
+
+建议新增：
+
+```text
+lib/std/http/
+  websocket_types.uya
+  websocket_frame.uya
+  websocket_handshake.uya
+  websocket_async.uya
+  websocket_tls.uya
+  websocket_client.uya
+  websocket_json.uya
+  uyagin_websocket.uya
+```
+
+建议职责：
+
+- `websocket_types.uya`
+  - 错误、常量、枚举、公共结构体、接口
+- `websocket_frame.uya`
+  - frame header 编解码
+  - masking / payload copy / fragmentation 基础逻辑
+- `websocket_handshake.uya`
+  - `Sec-WebSocket-Key` 校验
+  - `Sec-WebSocket-Accept` 计算
+  - 与 HTTP request / response 的 Upgrade 协商
+- `websocket_async.uya`
+  - `AsyncWebSocketConn` 接口
+  - `WebSocketFdTransport`
+  - `WebSocketConn`
+  - 高层 `@async_fn` 会话方法
+  - 直接读写与连接自持发送缓冲
+- `websocket_tls.uya`
+  - WSS transport 适配
+  - TLS 握手后与 WebSocket upgrade 的桥接
+- `websocket_client.uya`
+  - `WebSocketClient`
+  - `ReconnectPolicy`
+  - 心跳、重连、后台发送 pump
+- `websocket_json.uya`
+  - JSON 文本消息辅助读写
+- `uyagin_websocket.uya`
+  - `GinContext` upgrade 桥接
+
+首期文档与实现都放在 `std.http` 命名空间下，不另起 `std.websocket`，因为：
+
+- 握手依赖 HTTP request / header / response；
+- `uyagin` 集成是第一落点；
+- 后续 HTTPS 接入也更自然沿 `std.http` 扩展。
+
+这也意味着：
+
+- `HTTP/2 WebSocket` 与 `HTTP/3/QUIC WebSocket` 仍然归属本设计范围；
+- 但模块归属仍保留在 `std.http.*`，不拆成新的顶层命名空间。
+
+## 4. 核心类型设计
+
+### 4.1 错误
+
+建议新增错误：
+
+```uya
+export error WebSocketBadHandshake;
+export error WebSocketUnsupportedVersion;
+export error WebSocketMissingKey;
+export error WebSocketInvalidKey;
+export error WebSocketProtocolError;
+export error WebSocketFrameTooLarge;
+export error WebSocketMessageTooLarge;
+export error WebSocketNeedMoreData;
+export error WebSocketConnectionClosed;
+export error WebSocketMaskedServerFrame;
+export error WebSocketUnmaskedClientFrame;
+export error WebSocketUnsupportedOpcode;
+export error WebSocketUtf8Required;
+export error WebSocketControlFrameTooLarge;
+export error WebSocketFragmentedControlFrame;
+export error WebSocketContinuationMissing;
+```
+
+这些错误不替换 `std.http.types` 现有错误，而是专用于 WebSocket 层。
+
+### 4.2 常量与枚举
+
+建议放在 `websocket_types.uya`：
+
+```uya
+export const WS_GUID: &const byte = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+export const WS_MAX_HEADER_BYTES: usize = 14;
+export const WS_CONTROL_MAX_PAYLOAD: usize = 125;
+
+export enum WebSocketOpcode {
+    Continuation = 0,
+    Text = 1,
+    Binary = 2,
+    Close = 8,
+    Ping = 9,
+    Pong = 10,
+}
+
+export enum WebSocketRole {
+    Server,
+    Client,
+}
+```
+
+### 4.3 Frame 视图与消息视图
+
+首期分成“frame 视图”和“message 视图”两层。
+
+```uya
+export struct WebSocketFrameView {
+    fin: bool,
+    opcode: WebSocketOpcode,
+    masked: bool,
+    payload: &[byte],
+    mask_key: [byte: 4],
+}
+
+export struct WebSocketMessageView {
+    opcode: WebSocketOpcode,
+    payload: &[byte],
+}
+```
+
+说明：
+
+- `FrameView` 更贴近协议，可用于调试、测试、低层代理。
+- `MessageView` 更贴近业务，可隐藏 continuation 拼接细节。
+- `payload` 仍然是借用切片，生命周期绑定到调用方提供的缓冲区。
+
+### 4.4 握手配置
+
+建议提供可复用的配置结构体，而不是只暴露一个大函数。
+
+```uya
+export struct WebSocketAcceptOptions {
+    subprotocols: &[const byte] = [],
+    subprotocol_count: i32 = 0,
+    allow_extensions: bool = false,
+    max_frame_size: usize = 65536,
+    max_message_size: usize = 1048576,
+    auto_pong: bool = true,
+}
+```
+
+说明：
+
+- `subprotocols` 是服务端愿意接受的协议列表。
+- `allow_extensions` 首期只是配置位，实际默认不协商 `permessage-deflate`。
+- `max_frame_size` 与 `max_message_size` 分开，便于后续做聚合消息限制。
+
+### 4.5 连接状态结构体
+
+参考 Go `Conn`，但显式化 Uya 所需状态：
+
+```uya
+export struct WebSocketConn {
+    transport: WebSocketFdTransport,
+    role: WebSocketRole,
+    closed: bool,
+    auto_pong: bool,
+    max_frame_size: usize,
+    max_message_size: usize,
+    fragmented_opcode: WebSocketOpcode,
+    fragmented_active: bool,
+    send_queue_enabled: bool,
+    tx_buf: &byte,
+    tx_cap: usize,
+    rx_buf: &byte,
+    rx_cap: usize,
+}
+```
+
+设计意图：
+
+- 连接对象长期复用，承载会话状态与策略。
+- 结构体方法就是主要 API 面。
+- 连接对象内部预留自持缓冲与队列能力，避免后续为了背压/后台发送而推翻 API。
+- 后续可在不破坏调用面的前提下增加 deadline、metrics、subprotocol、close 状态。
+
+## 5. transport 与接口设计
+
+### 5.1 transport 层
+
+默认基础实现是 fd transport，形态对齐 `MqttFdTransport`：
+
+```uya
+export struct WebSocketFdTransport : AsyncReader, AsyncWriter {
+    fd: i32,
+}
+```
+
+职责：
+
+- 复用 `std.async.AsyncReader` / `AsyncWriter`
+- 可直接挂到 epoll readiness
+- `drop` 自动关闭 fd
+
+另外补一个 WSS transport 层：
+
+```uya
+export struct WebSocketTlsTransport : AsyncReader, AsyncWriter {
+    // 具体字段依赖 tls.https / TLS 会话抽象收敛结果
+}
+```
+
+这样 `ws://` 与 `wss://` 共用会话层，而不是在 `WebSocketConn` 内写死 fd 特判。
+
+### 5.2 AsyncWebSocketConn 接口
+
+建议像 `AsyncMqttClient` 一样定义能力接口，便于接 fd、TLS、内存环回、测试桩。
+
+```uya
+export interface AsyncWebSocketConn {
+    @async_fn
+    fn read_frame(self: &Self, rx: &byte, rx_cap: usize) Future<!WebSocketFrameView>;
+    @async_fn
+    fn read_message(self: &Self, rx: &byte, rx_cap: usize, msg: &byte, msg_cap: usize) Future<!WebSocketMessageView>;
+    @async_fn
+    fn write_frame(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn write_message(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn ping(self: &Self, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn close_with_code(self: &Self, code: u16, reason: &const byte, reason_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn enqueue_message(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize) Future<!usize>;
+    @async_fn
+    fn flush_pending(self: &Self) Future<!usize>;
+}
+```
+
+要点：
+
+- `read_frame` 提供底层能力。
+- `read_message` 聚合 continuation，给业务更优雅的入口。
+- `write_frame` / `write_message` 同时保留，避免 API 过早锁死。
+- `ping` / `close_with_code` 是 WebSocket 语义动作，值得成为一等方法。
+- `enqueue_message` / `flush_pending` 负责给后台发送、背压与自动重连后的恢复留稳定接口。
+
+### 5.3 直接写与排队写双层 API
+
+这是本版和前一稿最大的修正。
+
+前一稿只定义了 caller-owned `tx/rx/msg` 风格的直接方法，这适合：
+
+- 简单 echo
+- 同步 request/response 风格会话
+- 协议测试
+
+但它不适合：
+
+- 后台发送 pump
+- 自动心跳
+- 自动重连后重发
+- 多生产者业务写入
+
+因此本设计明确分成两层：
+
+1. 直接 I/O 层  
+   - `read_frame(rx, rx_cap)`
+   - `read_message(rx, rx_cap, msg, msg_cap)`
+   - `write_frame(..., tx, tx_cap)`
+   - `write_message(..., tx, tx_cap)`
+
+2. 连接自持队列层  
+   - `enqueue_message(...)`
+   - `flush_pending()`
+   - 后台 heartbeat / reconnect / sender pump 只使用这层
+
+约束也要写清楚：
+
+- caller-owned buffer API 不跨 await 长期持有调用方栈缓冲；
+- 队列层只接受“复制进连接内 owned queue”的消息；
+- 需要背压时，以队列层语义为准，而不是直接写语义。
+
+## 6. 握手 API 设计
+
+### 6.1 低层握手函数
+
+建议先提供协议层函数，便于 `uyagin` 和裸 `std.http.server` 都能接。
+
+```uya
+export fn websocket_request_is_upgrade(req: &Request) bool;
+export fn websocket_validate_upgrade_request(req: &Request) !void;
+export fn websocket_compute_accept(key: &[const byte], out: &byte, out_cap: usize) !usize;
+export fn websocket_pick_subprotocol(req: &Request, supported: &[const byte], supported_count: i32) !&[const byte];
+```
+
+### 6.2 与 `uyagin` 的集成入口
+
+建议提供一个框架友好的升级函数：
+
+```uya
+export @async_fn fn uyagin_websocket_upgrade(
+    ctx: &GinContext,
+    options: &WebSocketAcceptOptions
+) Future<!WebSocketConn>;
+```
+
+行为：
+
+1. 从 `ctx.req()` 读取 header
+2. 校验 `Connection: Upgrade`、`Upgrade: websocket`
+3. 校验 `Sec-WebSocket-Version: 13`
+4. 校验 `Sec-WebSocket-Key`
+5. 发送 `101 Switching Protocols`
+6. 从 `ctx.fd` 偷走连接所有权，构造 `WebSocketConn`
+
+这里“偷走 fd 所有权”的语义必须写清楚，因为它是和普通 HTTP handler 最大的差异点：
+
+- upgrade 成功后，这个连接不再由 `uyagin` 常规响应路径管理；
+- 后续 fd 生命周期由 `WebSocketConn.drop()` 接管；
+- `GinContext` 进入“已接管连接”状态，禁止再走普通 `ctx.string()` / `ctx.bytes()`。
+
+### 6.3 裸 HTTP 集成入口
+
+为了不绑死在 `uyagin`，还要提供：
+
+```uya
+export fn websocket_accept_from_http(
+    fd: i32,
+    req: &Request,
+    options: &WebSocketAcceptOptions
+) !WebSocketConn;
+```
+
+这个函数可用于：
+
+- `std.http.server` 的自定义 accept 循环
+- 更轻量的非框架 HTTP 服务
+- 测试中手写握手场景
+
+## 7. 读写 API 风格
+
+### 7.1 最短路径
+
+目标是让基础业务代码能写成：
+
+```uya
+const ws: WebSocketConn = try @await uyagin_websocket_upgrade(ctx, &opts);
+const msg: WebSocketMessageView = try @await ws.read_message(&rx[0], 4096, &msg_buf[0], 4096);
+_ = try @await ws.write_message(WebSocketOpcode.Text, msg.payload.ptr, msg.payload.len, &tx[0], 4096);
+```
+
+这就是本设计最核心的“更优美”标准：
+
+- 围绕 `ws` 调方法
+- 复用一个连接对象
+- 复用已有缓冲区
+- 与 `MqttFdClient.connect()/publish_qos0()` 风格一致
+
+而当业务需要后台发送、心跳和广播时，再切到：
+
+```uya
+_ = try @await ws.enqueue_message(WebSocketOpcode.Text, data, data_len);
+_ = try @await ws.flush_pending();
+```
+
+### 7.2 为什么同时保留 frame/message 两层
+
+只做 `ReadMessage/WriteMessage` 会丢掉协议灵活性；只做 frame 又不够优雅；只做 caller-owned 直接写又承载不了背压/重连。
+
+因此建议：
+
+- 业务代码默认用 `read_message` / `write_message`
+- 协议代理、调试、网关场景用 `read_frame` / `write_frame`
+- 后台任务、广播器、重连恢复场景用 `enqueue_message` / `flush_pending`
+
+### 7.3 控制帧行为
+
+建议默认策略：
+
+- 收到 `Ping` 且 `auto_pong == true` 时，`read_message` 内部自动回 `Pong`
+- 收到 `Pong` 时默认忽略，不作为业务消息返回
+- 收到 `Close` 时返回 `error.WebSocketConnectionClosed`，并将 `closed = true`
+
+同时保留一个更底层选择：
+
+- `read_frame` 不隐藏控制帧
+- 由调用方决定如何处理
+
+## 8. frame 编码与解析策略
+
+### 8.1 编码函数
+
+建议拆成可组合的低层函数：
+
+```uya
+export fn websocket_encode_frame_header(
+    role: WebSocketRole,
+    fin: bool,
+    opcode: WebSocketOpcode,
+    payload_len: usize,
+    mask_key: &[const byte],
+    out: &byte,
+    out_cap: usize
+) !usize;
+
+export fn websocket_apply_mask(dst: &byte, src: &const byte, n: usize, mask_key: &[const byte]) void;
+```
+
+### 8.2 解析函数
+
+```uya
+export fn websocket_parse_frame_from_buffer(
+    role: WebSocketRole,
+    src: &[byte],
+    out: &WebSocketFrameView,
+    consumed: &usize
+) !void;
+```
+
+解析规则：
+
+- server 侧读客户端帧时，必须要求 `masked == true`
+- client 侧读服务端帧时，必须要求 `masked == false`
+- 控制帧必须 `FIN == true`
+- 控制帧 payload 不能超过 125
+- continuation 规则必须严格校验
+
+## 9. 分片与消息聚合
+
+### 9.1 首期支持
+
+首期建议：
+
+- `write_message` 默认只发单 frame 消息
+- `read_message` 支持把多 frame continuation 聚合进 `msg` 缓冲区
+
+原因：
+
+- 读路径比写路径更需要兼容外部客户端
+- 写路径先保持简单，避免 API 过重
+
+### 9.2 后续扩展
+
+如果后面要支持超大消息流式发送，再补：
+
+```uya
+export interface AsyncWebSocketMessageWriter {
+    @async_fn
+    fn write_chunk(self: &Self, data: &const byte, data_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn finish(self: &Self, tx: &byte, tx_cap: usize) Future<!usize>;
+}
+```
+
+但这不进入首期，因为会明显提高状态机复杂度。
+
+## 10. 与 `uyagin` 的集成设计
+
+### 10.1 新模块建议
+
+如果不想把所有逻辑塞进 `uyagin.uya`，可新增一个桥接文件：
+
+```text
+lib/std/http/uyagin_websocket.uya
+```
+
+职责只做：
+
+- 读取 `GinContext`
+- 发送 `101`
+- 移交 fd
+- 构造 `WebSocketConn`
+
+这样能避免：
+
+- `uyagin.uya` 继续膨胀
+- WebSocket 协议层反向依赖框架细节
+
+### 10.2 业务 handler 风格
+
+建议业务端这样写：
+
+```uya
+export struct ChatHandler : AsyncHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        const opts: WebSocketAcceptOptions = WebSocketAcceptOptions{};
+        var ws: WebSocketConn = try @await uyagin_websocket_upgrade(ctx, &opts);
+
+        var rx: [byte: 4096] = [0: 4096];
+        var msg: [byte: 4096] = [0: 4096];
+        var tx: [byte: 4096] = [0: 4096];
+
+        while true {
+            const m: WebSocketMessageView = try @await ws.read_message(&rx[0], 4096, &msg[0], 4096);
+            _ = try @await ws.write_message(WebSocketOpcode.Text, m.payload.ptr, m.payload.len, &tx[0], 4096);
+        }
+        return 0;
+    }
+}
+```
+
+这份风格文档层面要明确鼓励，因为它正好体现：
+
+- handler 是结构体
+- websocket 会话也是结构体
+- 高层动作全是方法
+- caller-owned buffer 清晰可见
+
+## 11. 所有权与生命周期
+
+### 11.1 Upgrade 后的所有权转移
+
+需要写死这些规则：
+
+- `WebSocketConn` 独占连接 fd 的关闭责任
+- upgrade 成功后，HTTP 层不得再关闭同一个 fd
+- 从 HTTP request 借来的 header/path 切片不能跨 WebSocket 会话长期持有
+- 若连接启用了内部发送队列，队列中的消息副本由连接对象拥有，不再借用调用方 payload
+
+### 11.2 缓冲区生命周期
+
+- `read_frame` 返回的 `payload` 绑定到 `rx` 缓冲区
+- `read_message` 返回的 `payload` 绑定到 `msg` 聚合缓冲区
+- 调用下一次 `read_*` 之前，若业务还要保留数据，必须自己复制
+- `enqueue_message` 必须在进入队列前完成复制，不能悬挂外部栈上 payload
+
+### 11.3 drop 行为
+
+`WebSocketConn` 应实现：
+
+```uya
+fn drop(self: WebSocketConn) void
+```
+
+行为：
+
+- 如果底层 transport fd 仍有效，则关闭
+- 若已经显式 close 过，则 drop 幂等
+
+## 12. 与 async/runtime 的适配
+
+### 12.1 直接复用 `AsyncReader` / `AsyncWriter`
+
+这是最重要的兼容点，因为能自然复用：
+
+- `AsyncFd`
+- `LinuxEpoll`
+- `block_on_with_event_loop`
+- 未来 TLS transport
+
+同时，Client policy 层不能直接依赖“临时传入的 tx/rx 缓冲区”，而应依赖连接对象自持状态。
+
+### 12.2 `@async_fn` 方法优先
+
+所有高频 API 都设计成结构体 `@async_fn` 方法，而不是只给自由函数：
+
+- `ws.read_message(...)`
+- `ws.write_message(...)`
+- `ws.ping(...)`
+- `ws.close_with_code(...)`
+- `ws.enqueue_message(...)`
+- `ws.flush_pending(...)`
+
+自由函数只保留在：
+
+- 握手工具
+- frame 编解码
+- 连接构造
+
+## 13. 分阶段落地计划
+
+### Phase 1：基础类型与握手
+
+- `websocket_types.uya`
+- `websocket_handshake.uya`
+- 纯函数测试：header 校验、accept 计算、subprotocol 选择
+
+### Phase 2：frame 编解码
+
+- `websocket_frame.uya`
+- 单 frame text/binary/ping/pong/close 编解码
+- 掩码与长度边界测试
+
+### Phase 3：async fd 会话
+
+- `WebSocketFdTransport`
+- `WebSocketConn`
+- `read_frame` / `write_frame`
+
+### Phase 4：message 聚合与控制帧策略
+
+- `read_message`
+- auto pong
+- continuation 聚合
+
+### Phase 5：`uyagin` 集成
+
+- `uyagin_websocket_upgrade`
+- 示例 handler
+- loopback 集成测试
+
+### Phase 6：TLS / WSS transport
+
+- `WebSocketTlsTransport`
+- HTTPS / WSS loopback
+
+### Phase 7：JSON 辅助 API
+
+- `write_json`
+- `read_json`
+
+### Phase 8：心跳、重连、背压
+
+- `WebSocketClient`
+- `ReconnectPolicy`
+- sender queue / flush pump / heartbeat
+
+## 14. 测试设计
+
+建议新增测试：
+
+```text
+tests/test_http_websocket_handshake.uya
+tests/test_http_websocket_frame.uya
+tests/test_http_websocket_async.uya
+tests/test_http_uyagin_websocket.uya
+tests/test_https_websocket_loopback.uya
+tests/test_http_websocket_json.uya
+tests/test_http_websocket_reconnect.uya
+tests/test_http_websocket_heartbeat.uya
+tests/test_http_websocket_backpressure.uya
+```
+
+覆盖重点：
+
+- 握手成功
+- 缺失 `Sec-WebSocket-Key`
+- `Sec-WebSocket-Version != 13`
+- 服务端拒绝未 masked 客户端帧
+- 控制帧长度超限
+- continuation 乱序
+- ping 自动 pong
+- close 后 `read_message` / `write_message` 行为
+- `uyagin` upgrade 后 echo roundtrip
+- WSS loopback
+- JSON 编解码
+- 重连与队列满背压
+
+## 15. 与现有模块关系
+
+### 15.1 依赖方向
+
+建议依赖关系：
+
+```text
+std.http.types
+        ^
+        |
+std.http.websocket_handshake
+        ^
+        |
+std.http.websocket_async
+        ^
+        |
+std.http.websocket_tls
+std.http.websocket_json
+std.http.websocket_client
+
+std.async ----^
+std.http.uyagin_websocket -> std.http.uyagin + std.http.websocket_async
+```
+
+注意避免：
+
+- `std.http.types` 反向依赖 websocket
+- `std.http.websocket_async` 直接深度耦合 `uyagin`
+- `websocket_client` 反向侵入协议层基础编码逻辑
+
+### 15.2 为什么不直接塞进 `uyagin`
+
+因为 WebSocket 是“基于 HTTP Upgrade 的长期连接协议”，不是单纯框架语法糖：
+
+- 底层 `std.http.server` 也能用
+- 测试桩和工具程序也能用
+- 后面 HTTPS bridge 也能复用
+- client policy 层也需要共享同一套协议核心
+
+## 16. API 草案汇总
+
+```uya
+export enum WebSocketOpcode {
+    Continuation = 0,
+    Text = 1,
+    Binary = 2,
+    Close = 8,
+    Ping = 9,
+    Pong = 10,
+}
+
+export enum WebSocketRole {
+    Server,
+    Client,
+}
+
+export struct WebSocketAcceptOptions {
+    subprotocols: &[const byte] = [],
+    subprotocol_count: i32 = 0,
+    allow_extensions: bool = false,
+    max_frame_size: usize = 65536,
+    max_message_size: usize = 1048576,
+    auto_pong: bool = true,
+}
+
+export struct WebSocketFrameView {
+    fin: bool,
+    opcode: WebSocketOpcode,
+    masked: bool,
+    payload: &[byte],
+    mask_key: [byte: 4],
+}
+
+export struct WebSocketMessageView {
+    opcode: WebSocketOpcode,
+    payload: &[byte],
+}
+
+export struct WebSocketFdTransport : AsyncReader, AsyncWriter {
+    fd: i32,
+}
+
+export struct WebSocketConn : AsyncWebSocketConn {
+    transport: WebSocketFdTransport,
+    role: WebSocketRole,
+    closed: bool,
+    auto_pong: bool,
+    max_frame_size: usize,
+    max_message_size: usize,
+    fragmented_opcode: WebSocketOpcode,
+    fragmented_active: bool,
+    send_queue_enabled: bool,
+    tx_buf: &byte,
+    tx_cap: usize,
+    rx_buf: &byte,
+    rx_cap: usize,
+}
+
+export interface AsyncWebSocketConn {
+    @async_fn
+    fn read_frame(self: &Self, rx: &byte, rx_cap: usize) Future<!WebSocketFrameView>;
+    @async_fn
+    fn read_message(self: &Self, rx: &byte, rx_cap: usize, msg: &byte, msg_cap: usize) Future<!WebSocketMessageView>;
+    @async_fn
+    fn write_frame(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn write_message(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn ping(self: &Self, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn close_with_code(self: &Self, code: u16, reason: &const byte, reason_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn enqueue_message(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize) Future<!usize>;
+    @async_fn
+    fn flush_pending(self: &Self) Future<!usize>;
+}
+
+export fn websocket_request_is_upgrade(req: &Request) bool;
+export fn websocket_validate_upgrade_request(req: &Request) !void;
+export fn websocket_compute_accept(key: &[const byte], out: &byte, out_cap: usize) !usize;
+export fn websocket_accept_from_http(fd: i32, req: &Request, options: &WebSocketAcceptOptions) !WebSocketConn;
+
+export @async_fn fn uyagin_websocket_upgrade(ctx: &GinContext, options: &WebSocketAcceptOptions) Future<!WebSocketConn>;
+```
+
+## 17. 关键决策
+
+### 17.1 放在 `std.http`
+
+决定放在 `std.http`，不是 `std.net.websocket` 或独立顶层模块。
+
+### 17.2 连接对象优先
+
+决定优先把能力挂在 `WebSocketConn` 结构体方法上，而不是只提供函数式 API。
+
+### 17.3 接口 + 默认实现并存
+
+决定同时提供：
+
+- `AsyncWebSocketConn` 接口
+- `WebSocketConn` / `WebSocketFdTransport` 默认实现
+
+### 17.4 caller-owned buffer
+
+决定继续沿用 `std.mqtt.async` 风格提供直接读写 API，但同时补上连接内 owned queue，避免后续背压/心跳/重连推翻接口。
+
+### 17.5 `uyagin` 只做桥接
+
+决定 `uyagin` 负责 upgrade 集成，不负责承载全部协议实现。
+
+### 17.6 高级能力不再视为“后续再想”
+
+决定把 TLS、JSON、心跳、重连、背压明确纳入这一版架构设计，而不是只在 TODO 里挂名。
+
+## 18. 后续文档同步建议
+
+如果进入实现阶段，建议同步补这些文档：
+
+- `docs/todo_http.md`
+- 若新增公开 API，再补充相关 std/http 使用文档
+- 若最终把 WebSocket 视为框架能力的一部分，可再加 `docs/std_http_websocket.md` 作为用户文档
