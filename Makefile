@@ -559,6 +559,19 @@ check: uya
 		echo "✗ 默认顶层函数发射验证失败"; \
 		exit 1; \
 	fi; \
+	echo ""; \
+	echo "验证 nested async split-C codegen..."; \
+	if bash ./tests/verify_async_nested_split_codegen.sh > /tmp/verify_out.txt 2>&1; then \
+		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ nested async split-C codegen 验证失败"; \
+		exit 1; \
+	fi; \
 		echo ""; \
 		echo "验证 microapp 聚合套件..."; \
 		if $(MAKE) microapp-check > /tmp/verify_out.txt 2>&1; then \
@@ -702,6 +715,14 @@ check-hosted: b-hosted
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 默认顶层函数发射验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 nested async split-C codegen..."
+	@bash ./tests/verify_async_nested_split_codegen.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ nested async split-C codegen 验证失败"; \
 		exit 1; \
 	fi
 	@echo ""

@@ -2136,6 +2136,15 @@ fn c99_async_await_operand_is_inlineable(codegen: &C99CodeGenerator, operand: &A
     if fd == null || fd.fn_decl_is_async == 0 {
         return 0;
     }
+    if codegen.split_mirror != 0 && codegen.current_function_decl != null &&
+        codegen.current_function_decl.filename != null && fd.filename != null &&
+        strcmp(codegen.current_function_decl.filename as *byte, fd.filename as *byte) != 0 {
+        // 镜像 split-C 下，跨源文件的 async 子 frame 不能按值内联到 caller TU：
+        // child poll/frame_stop 仍以当前文件的 static helper 生成，若强行内联会把
+        // struct 预定义污染到别的 TU，导致定义/原型分裂与 incomplete type。
+        // 这类 await 退回接口 Future 路径即可保持语义正确，只损失一点内联收益。
+        return 0;
+    }
     var func_c_name: &byte = null;
     if fd.fn_decl_is_export != 0 && fd.filename != null {
         func_c_name = get_export_function_c_name(codegen, callee.identifier_name, fd.filename);
@@ -2224,6 +2233,10 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
     if c99_async_stage_b_effective_return_type(child_decl.fn_decl_return_type, &child_effective_return_type) == 0 {
         return;
     }
+    const saved_emit_stream_predef: &void = codegen.emit_stream;
+    if codegen.split_mirror != 0 {
+        c99_mirror_emit_for_node(codegen, child_decl);
+    }
 
     const saved_collect_count: i32 = codegen.async_collect_count;
     const saved_collect_ret_expr: &ASTNode = codegen.async_collect_ret_expr;
@@ -2265,6 +2278,7 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
     }
 
     gen_async_function_stage_b(codegen, child_decl, child_func_c_name, child_decl.fn_decl_return_type, child_effective_return_type, 1);
+    codegen.emit_stream = saved_emit_stream_predef;
 
     codegen.async_collect_count = saved_collect_count;
     codegen.async_collect_ret_expr = saved_collect_ret_expr;
@@ -4493,6 +4507,11 @@ fn c99_type_to_c_async_method_opt(codegen: &C99CodeGenerator, type_node: &ASTNod
 fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, func_c_name: &byte, full_return_type: &ASTNode, effective_return_type: &ASTNode, only_struct: i32) void {
     if codegen == null || fn_decl == null || effective_return_type == null {
         return;
+    }
+    const saved_current_function_decl_stage_b: &ASTNode = codegen.current_function_decl;
+    codegen.current_function_decl = fn_decl;
+    defer {
+        codegen.current_function_decl = saved_current_function_decl_stage_b;
     }
     if effective_return_type.type != ASTNodeType.AST_TYPE_NAMED || effective_return_type.type_named_name == null ||
         strcmp(effective_return_type.type_named_name as *byte, "Future" as *byte) != 0 ||
