@@ -322,14 +322,14 @@ fn increment(counter: *Counter) void {
 }
 ```
 
-## 当前状态（v0.9.6）
+## 当前状态（v0.9.7）
 
 - **自举编译器**：已完成自举，所有测试通过。编译器能编译自身，输出 C99 代码（默认多文件至 `.uyacache`，可用 `--no-split-c` 单文件）。
 - **开发模式**：仅维护 `src/` 目录的自举编译器。
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：在 **v0.9.5 microapp hosted 多平台真执行闭环** 基础上，当前为 **v0.9.6**：统一 trap/runtime bridge ABI 与 loader `payload result=` 结果面，锁定 payload symbol / Linux toolchain 合约，把 `.uapp required_caps` 映射为 `SYS_IO` 设备与操作白名单，并同步 `cmd` 子命令拆分设计与待办文档，为后续 CLI 收口提供稳定基线。
+- **最新特性**：在 **v0.9.5 microapp hosted 多平台真执行闭环** 基础上，当前为 **v0.9.7**：修复 interface + error-union lowering 的回归，补齐 `drop` 为“仅编译器自动插入”的语义，并让 union 自定义 `drop` 在用户体前自动清理当前活跃变体；同时同步 `src/README.md` 等文档口径，收掉过期的“代码生成阶段进行中”历史残留。
 
 ## 文档
 
@@ -360,6 +360,6 @@ fn increment(counter: *Counter) void {
 
 ---
 
-**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.6**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.6.md](./docs/releases/RELEASE_v0.9.6.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
+**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.7**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.7.md](./docs/releases/RELEASE_v0.9.7.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目
