@@ -1,7 +1,7 @@
 # Uya `std.http.websocket` 详细设计
 
 **版本**：v0.2
-**状态**：部分实现（协议层与 async 会话核心已落地）
+**状态**：部分实现（协议层、async 会话核心与 `uyagin` bridge 已落地）
 **定位**：放在 `std.http` 下的 WebSocket 能力层，优先服务 `uyagin`，同时保持可脱离框架单独复用
 
 **实现拆解**：见 [todo_http_websocket.md](./todo_http_websocket.md)
@@ -13,15 +13,16 @@
   - `websocket_handshake.uya`
   - `websocket_frame.uya`
   - `websocket_async.uya`
+  - `uyagin_websocket.uya`
   - `std.crypto.sha1`
 - 已验证：
   - `Sec-WebSocket-Accept`
   - HTTP/1.1 Upgrade 请求校验
+  - 裸 HTTP `websocket_accept_from_http(...)`
   - frame 编解码 / mask / continuation 基础规则
   - loopback async 会话收发、消息聚合、auto pong、close 失败语义、最小 send queue
+  - `uyagin` route -> upgrade -> echo roundtrip / fallback / hijack 防呆
 - 仍待实现：
-  - 裸 HTTP upgrade 接管
-  - `uyagin` 桥接
   - TLS / WSS
   - JSON helper
   - reconnect / heartbeat 主动任务
@@ -418,6 +419,22 @@ export @async_fn fn uyagin_websocket_upgrade(
 ) Future<!WebSocketConn>;
 ```
 
+当前实现同时补了一个同步 helper：
+
+```uya
+export fn uyagin_websocket_upgrade_sync(
+    ctx: &GinContext,
+    options: &WebSocketAcceptOptions
+) !WebSocketConn;
+```
+
+原因不是语义分叉，而是当前编译器在“handler 内升级后把 `WebSocketConn` 这个大结构体跨多次 `@await` 持有”时 lowering 仍不稳定。
+因此当前推荐写法是：
+
+- 简单场景直接用 `uyagin_websocket_upgrade_sync(...)` 拿到连接；
+- 后续读/写动作仍然调用 `WebSocketConn` 的 `@async_fn` 方法；
+- 若 handler 内需要同时做多次 WebSocket `@await`，优先把另一半工作拆到同步 helper 或单次 `@await` 路径，直到 lowering 稳定后再完全收敛回纯 async 风格。
+
 行为：
 
 1. 从 `ctx.req()` 读取 header
@@ -450,6 +467,11 @@ export fn websocket_accept_from_http(
 - `std.http.server` 的自定义 accept 循环
 - 更轻量的非框架 HTTP 服务
 - 测试中手写握手场景
+
+当前扩展策略也已收敛：
+
+- 当客户端带 `Sec-WebSocket-Extensions` 且 `allow_extensions == false` 时，直接返回 `error.WebSocketExtensionsNotSupported`
+- 当 `allow_extensions == true` 时，当前版本仍只表示“允许未来协商”，并不会回写扩展响应头
 
 ## 7. 读写 API 风格
 

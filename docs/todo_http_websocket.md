@@ -8,13 +8,13 @@
 ## 当前状态（截至 2026-05-13）
 
 - 已完成并有测试覆盖：
-  - Phase 1：公共类型与模块骨架（除 TLS / client / JSON / `uyagin` bridge 文件）
-  - Phase 2：HTTP/1.1 握手 helper 与握手响应构造
+  - Phase 1：公共类型与模块骨架（除 TLS / client / JSON 文件）
+  - Phase 2：HTTP/1.1 握手 helper、扩展策略与裸 HTTP upgrade 接管
   - Phase 3：frame 编解码
   - Phase 4：fd transport、async 会话主链路、continuation 聚合、auto pong、close 失败语义、最小 send queue / flush
+- 已完成并有测试覆盖：
+  - Phase 5：`uyagin` upgrade 桥接、hijack 语义与主链路回归
 - 已明确但尚未开始：
-  - 裸 HTTP upgrade 接管
-  - `uyagin` upgrade 桥接
   - TLS / WSS
   - JSON helper
   - reconnect / heartbeat 主动任务
@@ -22,6 +22,7 @@
 - 当前实现收敛说明：
   - async read API 采用 primitive out 参数 + caller-owned buffer，避免当前编译器在“复杂 view struct + 多次 `@await`”路径上的 lowering 不稳定点
   - 内部写队列当前采用固定槽位 owned queue，`flush_pending()` 已可用，但后台 sender pump 仍待补
+  - `uyagin` bridge 额外提供 `uyagin_websocket_upgrade_sync(...)`；异步包装仍保留，但当前在“handler 内升级后持有大结构体跨多次 `@await`”场景下，测试与示例优先采用同步 helper + 单次 `@await` 组合以规避 lowering 缺陷
 
 ## 范围说明
 
@@ -51,7 +52,7 @@
 - [ ] 新增 `lib/std/http/websocket_tls.uya`
 - [ ] 新增 `lib/std/http/websocket_client.uya`
 - [ ] 新增 `lib/std/http/websocket_json.uya`
-- [ ] 新增 `lib/std/http/uyagin_websocket.uya` 作为框架桥接层
+- [x] 新增 `lib/std/http/uyagin_websocket.uya` 作为框架桥接层
 
 ### 1.2 错误、常量、枚举
 
@@ -117,13 +118,13 @@
 - [x] 校验 `Sec-WebSocket-Key`
 - [x] 返回 `101 Switching Protocols`
 - [x] 处理可选 `Sec-WebSocket-Protocol`
-- [ ] 明确本版是否拒绝 `Sec-WebSocket-Extensions`
+- [x] 明确本版默认策略：当请求携带 `Sec-WebSocket-Extensions` 且 `allow_extensions == false` 时拒绝握手；`allow_extensions == true` 时当前仍不协商扩展响应头
 
 ### 2.3 裸 HTTP 集成
 
-- [ ] 实现 `websocket_accept_from_http(fd, req, options) !WebSocketConn`
-- [ ] 明确 upgrade 成功后的 fd 所有权转移规则
-- [ ] 明确 upgrade 失败时由哪一层负责返回 HTTP 错误响应
+- [x] 实现 `websocket_accept_from_http(fd, req, options) !WebSocketConn`
+- [x] 明确 upgrade 成功后的 fd 所有权转移规则
+- [x] 明确 upgrade 失败时由哪一层负责返回 HTTP 错误响应
 
 ### 2.4 测试
 
@@ -213,10 +214,10 @@
 
 ### 5.1 桥接 API
 
-- [ ] 实现 `uyagin_websocket_upgrade(ctx, options) Future<!WebSocketConn>`
-- [ ] 若拆桥接文件，则落在 `lib/std/http/uyagin_websocket.uya`
-- [ ] 让 `GinContext` 在 upgrade 成功后进入“连接已接管”状态
-- [ ] 禁止 upgrade 后再走普通 HTTP body/response 路径
+- [x] 实现 `uyagin_websocket_upgrade(ctx, options) Future<!WebSocketConn>`
+- [x] 若拆桥接文件，则落在 `lib/std/http/uyagin_websocket.uya`
+- [x] 让 `GinContext` 在 upgrade 成功后进入“连接已接管”状态
+- [x] 禁止 upgrade 后再走普通 HTTP body/response 路径
 
 ### 5.2 业务使用体验
 
@@ -226,10 +227,10 @@
 
 ### 5.3 测试
 
-- [ ] 新增 `tests/test_http_uyagin_websocket.uya`
-- [ ] 覆盖 `uyagin` route -> upgrade -> echo roundtrip
-- [ ] 覆盖非 WebSocket 请求命中 upgrade handler 的失败路径
-- [ ] 覆盖 upgrade 后重复写 HTTP 响应的防呆
+- [x] 新增 `tests/test_http_uyagin_websocket.uya`
+- [x] 覆盖 `uyagin` route -> upgrade -> echo roundtrip
+- [x] 覆盖非 WebSocket 请求命中 upgrade handler 的失败路径
+- [x] 覆盖 upgrade 后重复写 HTTP 响应的防呆
 
 ---
 
