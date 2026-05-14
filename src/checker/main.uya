@@ -1074,6 +1074,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         _ = checker_infer_type(checker, node);
         return 1;
+    } else if node.type == ASTNodeType.AST_ERROR_NAME {
+        if node.error_name_operand != null {
+            checker_check_node(checker, node.error_name_operand);
+        }
+        _ = checker_infer_type(checker, node);
+        return 1;
     } else if node.type == ASTNodeType.AST_VA_START || node.type == ASTNodeType.AST_VA_END || node.type == ASTNodeType.AST_VA_ARG {
         // 必须调用 checker_infer_type 以触发可变参数函数内校验
         checker_infer_type(checker, node);

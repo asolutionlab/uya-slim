@@ -966,6 +966,10 @@ fn format_expr_prec(expr: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize,
         write_str(out, out_pos, out_cap, "error." as &byte);
         if expr.error_value_name != null { write_str(out, out_pos, out_cap, expr.error_value_name); }
         else { write_str(out, out_pos, out_cap, "?" as &byte); }
+    } else if expr.type == ASTNodeType.AST_ERROR_NAME {
+        write_str(out, out_pos, out_cap, "@error_name(" as &byte);
+        format_expr_prec(expr.error_name_operand, out, out_pos, out_cap, 0);
+        write_byte(out, out_pos, out_cap, ')' as byte);
     } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
         write_str(out, out_pos, out_cap, "match " as &byte);
         format_expr_prec(expr.match_expr_expr, out, out_pos, out_cap, 0);

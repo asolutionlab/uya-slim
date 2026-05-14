@@ -830,6 +830,7 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
         test_epoll_syscall
         test_epoll_server
         test_error_id_builtin
+        test_error_name_builtin
         test_kernel_sim
         test_nonlinear_bounds
         test_std_syscall

@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.49（完整版 · 2026-05-12）
+# Uya 语言规范 0.49.50（完整版 · 2026-05-14）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,12 @@
 ---
 
 ## 规范变更
+
+### 0.49.50（2026-05-14）
+
+- **新增错误名内置函数**：`@error_name(err)` 返回语言级错误名字符串，结果不带 `error.` 前缀；当错误值不是当前编译单元收集到的命名错误（例如 `@syscall` errno）时，统一回退为 `"UnknownError"`。
+- **错误打印建议更新**：错误值本身仍不能直接按 `error` 类型打印；若需要日志文本，可用 `@error_name(err)`，若需要系统 errno 描述，请继续配合 `@error_id(err)` 与 `libc.strerror(...)`。
+- **回归测试**：新增 `tests/test_error_name_builtin.uya`。
 
 ### 0.49.49（2026-05-12）
 
@@ -671,7 +677,7 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
   defer errdefer try catch error null interface atomic union
   export use
   ```
-- **内置函数**：所有内置函数均以 `@` 开头，无需导入。包括：`@size_of(T)`、`@align_of(T)`、`@len(a)`（数组长度）、`@max`、`@min`（整数类型极值，类型由上下文推断）、`@error_id(err)`（提取错误值的数值 ID）、`@embed("file")`（编译期嵌入单文件）、`@embed_dir("dir")`（编译期嵌入目录）。另外，`@c_import("path", cflags?, ldflags?);` 是顶层构建指令，用于把外部 C 源纳入当前构建图。
+- **内置函数**：所有内置函数均以 `@` 开头，无需导入。包括：`@size_of(T)`、`@align_of(T)`、`@len(a)`（数组长度）、`@max`、`@min`（整数类型极值，类型由上下文推断）、`@error_id(err)`（提取错误值的数值 ID）、`@error_name(err)`（提取语言级错误名字符串）、`@embed("file")`（编译期嵌入单文件）、`@embed_dir("dir")`（编译期嵌入目录）。另外，`@c_import("path", cflags?, ldflags?);` 是顶层构建指令，用于把外部 C 源纳入当前构建图。
 - 标识符 `[A-Za-z_][A-Za-z0-9_]*`，区分大小写。
 - 数值字面量：
   - 整数字面量：
@@ -2885,9 +2891,10 @@ bin/uya --c99 app.uya …   # 推荐：由驱动自动加入 entry.uya
   - 兼容旧写法：`if err == error.FileNotFound { ... }`
   - 运行时错误同样如此：`if err == error.SomeRuntimeError { ... }`
   - catch 块中可以判断错误类型并做不同处理
-  - 错误类型不能直接打印，需要通过模式匹配处理
+  - 错误值本身不能直接按 `error` 类型打印；若需要名字字符串，可用 `@error_name(err)` 获取不带 `error.` 前缀的名称
   - 也可显式比较错误 ID：`if @error_id(err) == @error_id(error.PredefinedError) || @error_id(err) == @error_id(error.RuntimeError) { ... }`
   - 可通过 `@error_id(err)` 读取错误值的数值 ID；对 `@syscall` 失败路径，该 ID 等于底层 errno 值
+  - `@error_name(err)` 仅保证语言级命名错误返回稳定名称；未知或 `@syscall` 错误统一回退为 `"UnknownError"`
   
 **错误处理设计哲学**：
 - **编译期检查**：错误处理是编译期检查，编译器在当前函数内验证错误处理
@@ -4629,7 +4636,7 @@ fn caller() void {
 
 ## 16 标准库
 
-所有内置函数均以 `@` 开头，编译期展开，无需导入或声明。
+所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其中部分为编译期展开，部分为零成本运行时访问或运行时 helper。
 
 | 内置函数 | 签名 | 说明 |
 |----------|------|------|
@@ -4637,6 +4644,7 @@ fn caller() void {
 | `@size_of` | `fn @size_of(T) i32` | 返回类型 `T` 的字节大小（编译期常量） |
 | `@align_of` | `fn @align_of(T) i32` | 返回类型 `T` 的对齐字节数（编译期常量） |
 | `@error_id` | `fn @error_id(err: error) u32` | 提取错误值的数值 ID；可用于显式错误比较或检查 `@syscall` 返回的 errno |
+| `@error_name` | `fn @error_name(err: error) *byte` | 提取语言级错误名字符串；未知或 `@syscall` 错误回退为 `"UnknownError"` |
 | `@max` | 上下文推断 | 整数类型最大值（编译期常量） |
 | `@min` | 上下文推断 | 整数类型最小值（编译期常量） |
 | `@va_start` | `@va_start(&ap, last)` | 可变参数函数内初始化 va_list（编译时展开为 C 宏） |

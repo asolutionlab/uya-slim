@@ -301,6 +301,10 @@ export fn stmt_contains_await(node: &ASTNode) i32 {
         return stmt_contains_await(node.error_id_operand);
     }
 
+    if node.type == ASTNodeType.AST_ERROR_NAME {
+        return stmt_contains_await(node.error_name_operand);
+    }
+
     if node.type == ASTNodeType.AST_VA_START {
         if stmt_contains_await(node.va_start_ap) != 0 { return 1; }
         return stmt_contains_await(node.va_start_last_param);

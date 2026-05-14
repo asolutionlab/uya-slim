@@ -1402,6 +1402,8 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.mc_source_operand = deep_copy_ast_internal(node.mc_source_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_ERROR_ID {
         copy.error_id_operand = deep_copy_ast_internal(node.error_id_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_ERROR_NAME {
+        copy.error_name_operand = deep_copy_ast_internal(node.error_name_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_STRUCT_INIT {
         copy.struct_init_struct_name = node.struct_init_struct_name;
         copy.struct_init_field_count = node.struct_init_field_count;

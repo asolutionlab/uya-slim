@@ -254,6 +254,34 @@ fn emit_microapp_mmu_helpers(codegen: &C99CodeGenerator) void {
     fputs("}\n\n" as *byte, codegen.emit_stream as *void);
 }
 
+fn emit_error_name_helper(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.emit_stream == null {
+        return;
+    }
+
+    fputs("static uint8_t *uya_error_name_from_id(uint32_t uya_error_id) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    switch (uya_error_id) {\n" as *byte, codegen.emit_stream as *void);
+
+    if codegen.checker != null {
+        var i: i32 = 0;
+        const count: i32 = codegen.checker.error_name_count;
+        while i < count {
+            if i >= 0 && i < @len(codegen.checker.error_names) &&
+                codegen.checker.error_names[i] != null {
+                fprintf(codegen.emit_stream as *void,
+                    "        case %uU: return (uint8_t *)\"%s\";\n" as *byte,
+                    codegen.checker.error_hashes[i],
+                    codegen.checker.error_names[i] as *byte);
+            }
+            i = i + 1;
+        }
+    }
+
+    fputs("        default: return (uint8_t *)\"UnknownError\";\n" as *byte, codegen.emit_stream as *void);
+    fputs("    }\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+}
+
 // 递归收集标准库函数调用，设置相应的标志
 fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -2217,6 +2245,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 生成 err_union_void 用于 test "name" {} 语句
     fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.emit_stream as *void);
     mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);
+    emit_error_name_helper(codegen);
     fputs("#ifdef __APPLE__\n" as *byte, codegen.emit_stream as *void);
     fputs("#define stat uya_macos_native_stat_call\n" as *byte, codegen.emit_stream as *void);
     fputs("#define fstat uya_macos_native_fstat_call\n" as *byte, codegen.emit_stream as *void);

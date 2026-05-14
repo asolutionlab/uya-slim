@@ -1193,6 +1193,10 @@ fn checker_walk_reachability_expr_impl(checker: &TypeChecker, expr: &ASTNode) vo
         checker_walk_reachability_expr(checker, expr.error_id_operand);
         return;
     }
+    if expr.type == ASTNodeType.AST_ERROR_NAME {
+        checker_walk_reachability_expr(checker, expr.error_name_operand);
+        return;
+    }
     if expr.type == ASTNodeType.AST_SYSCALL {
         checker_walk_reachability_expr(checker, expr.syscall_number);
         if expr.syscall_args != null {
@@ -1355,6 +1359,10 @@ fn checker_walk_reachability_node(checker: &TypeChecker, node: &ASTNode) void {
     }
     if node.type == ASTNodeType.AST_ERROR_ID {
         checker_walk_reachability_node(checker, node.error_id_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERROR_NAME {
+        checker_walk_reachability_node(checker, node.error_name_operand);
         return;
     }
     if node.type == ASTNodeType.AST_SYSCALL {
@@ -1526,6 +1534,10 @@ fn checker_walk_reachability_expr_uncached(checker: &TypeChecker, expr: &ASTNode
         checker_walk_reachability_expr_uncached(checker, expr.error_id_operand);
         return;
     }
+    if expr.type == ASTNodeType.AST_ERROR_NAME {
+        checker_walk_reachability_expr_uncached(checker, expr.error_name_operand);
+        return;
+    }
     if expr.type == ASTNodeType.AST_SYSCALL {
         checker_walk_reachability_expr_uncached(checker, expr.syscall_number);
         if expr.syscall_args != null {
@@ -1675,6 +1687,10 @@ fn checker_walk_reachability_node_uncached(checker: &TypeChecker, node: &ASTNode
     }
     if node.type == ASTNodeType.AST_ERROR_ID {
         checker_walk_reachability_node_uncached(checker, node.error_id_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERROR_NAME {
+        checker_walk_reachability_node_uncached(checker, node.error_name_operand);
         return;
     }
     if node.type == ASTNodeType.AST_SYSCALL {

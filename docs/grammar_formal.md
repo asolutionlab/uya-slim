@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.49 同步（2026-05-12）
+> **版本**：与 [uya.md](./uya.md) 0.49.50 同步（2026-05-14）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -248,9 +248,9 @@ primary_expr   = ID | NUM | STRING | CHAR | 'true' | 'false' | 'null'
                | struct_literal | array_literal | tuple_literal | enum_literal | union_literal
                | match_expr | '(' expr ')'
 builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg' | 'va_copy' | 'asm')
-               | '@' ('mc_type' | 'mc_eval' | 'mc_ast' | 'mc_code' | 'mc_error' | 'mc_get_env' | 'mc_source') '(' expr_list ')'
+               | '@' ('mc_type' | 'mc_eval' | 'mc_ast' | 'mc_code' | 'mc_error' | 'mc_get_env' | 'mc_source' | 'error_id' | 'error_name') '(' expr_list ')'
                | vector_builtin_expr
-               # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(&ap,last)、@va_end(&ap)、@va_arg(ap,Type)、@va_copy(&dest,src) 为可变参数栈访问（uya.md §5.4）；@asm 为内联汇编块（uya.md §19）
+               # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(&ap,last)、@va_end(&ap)、@va_arg(ap,Type)、@va_copy(&dest,src) 为可变参数栈访问（uya.md §5.4）；@error_id(err) 读取错误 ID；@error_name(err) 返回语言级错误名字符串；@asm 为内联汇编块（uya.md §19）
                # 宏系统内置（uya.md §25）：@mc_type(expr) 返回 TypeInfo；@mc_eval(expr) 编译时求值；@mc_ast(code)、@mc_code(ast)、@mc_error(msg)、@mc_get_env(name)；@mc_source(expr) 编译期将表达式序列化为字符串
 vector_builtin_expr
                = '@vector' '.' 'splat' '(' expr ')'

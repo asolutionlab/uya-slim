@@ -54,6 +54,7 @@ fn is_expr_type(node_type: ASTNodeType) i32 {
     if node_type == ASTNodeType.AST_PTR_FROM_USIZE { return 1; }
     if node_type == ASTNodeType.AST_USIZE_FROM_PTR { return 1; }
     if node_type == ASTNodeType.AST_ERROR_ID { return 1; }
+    if node_type == ASTNodeType.AST_ERROR_NAME { return 1; }
     if node_type == ASTNodeType.AST_VA_START { return 1; }
     if node_type == ASTNodeType.AST_VA_END { return 1; }
     if node_type == ASTNodeType.AST_VA_ARG { return 1; }

@@ -1828,6 +1828,9 @@ fn c99_find_first_try_await_expr(node: &ASTNode, out_try_expr: &&ASTNode) i32 {
     if node.type == ASTNodeType.AST_ERROR_ID {
         return c99_find_first_try_await_expr(node.error_id_operand, out_try_expr);
     }
+    if node.type == ASTNodeType.AST_ERROR_NAME {
+        return c99_find_first_try_await_expr(node.error_name_operand, out_try_expr);
+    }
     if node.type == ASTNodeType.AST_VA_START {
         if c99_find_first_try_await_expr(node.va_start_ap, out_try_expr) != 0 {
             return 1;
@@ -3289,6 +3292,9 @@ fn c99_stmt_tree_has_await(node: &ASTNode) i32 {
     }
     if node.type == ASTNodeType.AST_ERROR_ID {
         return c99_stmt_tree_has_await(node.error_id_operand);
+    }
+    if node.type == ASTNodeType.AST_ERROR_NAME {
+        return c99_stmt_tree_has_await(node.error_name_operand);
     }
     if node.type == ASTNodeType.AST_VA_START {
         if c99_stmt_tree_has_await(node.va_start_ap) != 0 { return 1; }

@@ -77,6 +77,45 @@ fn c99_type_is_pointer_to_array_c(type_c: &byte) i32 {
     return 0;
 }
 
+fn c99_emit_error_id_of_operand(codegen: &C99CodeGenerator, operand: &ASTNode) void {
+    if codegen == null || codegen.emit_stream == null {
+        return;
+    }
+    if operand == null {
+        fputs("0U" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    if operand.type == ASTNodeType.AST_ERROR_VALUE {
+        fputs("((uint32_t)(" as *byte, codegen.emit_stream as *void);
+        gen_expr(codegen, operand);
+        fputs("))" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+
+    var operand_is_err_union: i32 = 0;
+    const operand_type_c: &byte = get_c_type_of_expr(codegen, operand);
+    if operand_type_c != null && strstr(operand_type_c as *byte, "err_union_" as *byte) != null {
+        operand_is_err_union = 1;
+    }
+    if operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
+        const operand_type_node: &ASTNode = c99_find_identifier_type_node(codegen, operand.identifier_name);
+        if operand_type_node != null && operand_type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+            operand_is_err_union = 1;
+        }
+    }
+
+    if operand_is_err_union != 0 {
+        fputs("((uint32_t)((" as *byte, codegen.emit_stream as *void);
+        gen_expr(codegen, operand);
+        fputs(").error_id))" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+
+    fputs("((uint32_t)(" as *byte, codegen.emit_stream as *void);
+    gen_expr(codegen, operand);
+    fputs("))" as *byte, codegen.emit_stream as *void);
+}
+
 fn c99_emit_mmu_wrapped_member_access(codegen: &C99CodeGenerator, object: &ASTNode, safe_field_name: &byte, is_pointer: i32, field_atomic_load_inner: &byte) void {
     if codegen == null || object == null || safe_field_name == null {
         return;
@@ -798,33 +837,18 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     } else if expr.type == ASTNodeType.AST_ERROR_ID {
         // @error_id(err) 提取错误值的数值 ID。
         const operand: &ASTNode = expr.error_id_operand;
-        if operand == null {
-            fputs("0U" as *byte, codegen.emit_stream as *void);
-        } else if operand.type == ASTNodeType.AST_ERROR_VALUE {
-            fputs("((uint32_t)(" as *byte, codegen.emit_stream as *void);
-            gen_expr(codegen, operand);
-            fputs("))" as *byte, codegen.emit_stream as *void);
+        c99_emit_error_id_of_operand(codegen, operand);
+    } else if expr.type == ASTNodeType.AST_ERROR_NAME {
+        // @error_name(err) 提取错误值的名称字符串；未知错误统一回退为 UnknownError。
+        const operand: &ASTNode = expr.error_name_operand;
+        if operand != null && operand.type == ASTNodeType.AST_ERROR_VALUE && operand.error_value_name != null {
+            fputs("(uint8_t *)\"" as *byte, codegen.emit_stream as *void);
+            escape_string_for_c(codegen.emit_stream, operand.error_value_name);
+            fputc(34, codegen.emit_stream as *void);
         } else {
-            var operand_is_err_union: i32 = 0;
-            const operand_type_c: &byte = get_c_type_of_expr(codegen, operand);
-            if operand_type_c != null && strstr(operand_type_c as *byte, "err_union_" as *byte) != null {
-                operand_is_err_union = 1;
-            }
-            if operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
-                const operand_type_node: &ASTNode = c99_find_identifier_type_node(codegen, operand.identifier_name);
-                if operand_type_node != null && operand_type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-                    operand_is_err_union = 1;
-                }
-            }
-            if operand_is_err_union != 0 {
-                fputs("((uint32_t)((" as *byte, codegen.emit_stream as *void);
-                gen_expr(codegen, operand);
-                fputs(").error_id))" as *byte, codegen.emit_stream as *void);
-            } else {
-                fputs("((uint32_t)(" as *byte, codegen.emit_stream as *void);
-                gen_expr(codegen, operand);
-                fputs("))" as *byte, codegen.emit_stream as *void);
-            }
+            fputs("uya_error_name_from_id(" as *byte, codegen.emit_stream as *void);
+            c99_emit_error_id_of_operand(codegen, operand);
+            fputs(")" as *byte, codegen.emit_stream as *void);
         }
     } else if expr.type == ASTNodeType.AST_SIZEOF {
         gen_sizeof_expr(codegen, expr);
