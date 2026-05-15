@@ -57,6 +57,7 @@
 - 尚未接线的 hosted profile 现在也会显式输出 `payload result=unwired bridge=... target=...`，不再只靠单独错误文案表达
 - `examples/microapp/microcontainer_hello_build.uya` / `examples/microapp/microcontainer_hello_load.uya` 是宿主侧构建/加载工具，不属于 portable source 子集
 - 用户 portable microapp 源码现在会在编译期拒绝直接 `use/call libc.*` 与 `std.time`，并提示改用 `std.microapp.*`
+- `std.microapp.io` 现在提供 UART/GPIO/TIMER 的最小 `SYS_IO` wrapper；编译器会从这些 wrapper 的源码使用推导 `.uapp required_caps`，并由 runtime 在加载期映射成设备白名单
 - 当前 microapp 路径里，目标选择已经切到 `profile-first`
 - 推荐本地用 `make microapp-check` 运行当前 microapp 回归集
 - `make microapp-check` 现在包含 Linux x86_64 profile/toolchain 契约审计：默认 profile 必须解析为 `linux_x86_64_hardvm`，`.uapp` 构建必须在 `READELF/OBJDUMP/NM/OBJCOPY=false` 下成功，不回退中间 ELF 链路，并通过 payload object 符号白名单与 runtime result surface 回归

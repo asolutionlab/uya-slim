@@ -69,6 +69,7 @@ assert_symbol_whitelist() {
         -e '^(\.data\.)?uya_microapp_bridge_abi_v1$' \
         -e '^\.(text|rodata)\.[A-Za-z0-9_.]+$' \
         -e '^ENTRY_(DEFAULT_STACK_LIMIT_BYTES|RLIMIT_STACK)$' \
+        -e '^MICROAPP_IO_(DEVICE_(UART|GPIO|TIMER)|OP_(READ|WRITE))$' \
         -e '^MICROAPP_SYS_(ALLOC|IO|PRINT|TIME|YIELD)$' \
         -e '^_uya_async_frame_heap_fallback$' \
         -e '^main$' \

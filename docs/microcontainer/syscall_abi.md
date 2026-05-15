@@ -127,6 +127,8 @@ syscall(number: u32, arg1: u32, arg2: u32) !u32
 - 当前最小操作白名单：
   - `operation = 0`：read
   - `operation = 1`：write
+- portable source 层当前通过 `std.microapp.io.read_uart/write_uart/read_gpio/write_gpio/read_timer/write_timer`
+  表达这些设备访问；编译器会把这些 wrapper 的使用推导为 `.uapp required_caps_bitmap`。
 - 未知 capability 位必须拒绝加载/授权，不允许静默忽略。
 
 失败返回：

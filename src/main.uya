@@ -107,6 +107,10 @@ var g_microapp_softvm_mode: i32 = 0;
 var g_microapp_target_profile_override: [byte: 128] = [];
 var g_microapp_target_profile_override_active: i32 = 0;
 
+const MICROAPP_REQUIRED_CAP_IO_UART: u32 = 1u32 << 0;
+const MICROAPP_REQUIRED_CAP_IO_GPIO: u32 = 1u32 << 1;
+const MICROAPP_REQUIRED_CAP_IO_TIMER: u32 = 1u32 << 2;
+
 fn set_microapp_target_profile_override(name: &byte) i32 {
     if name == null || name[0] == 0 as byte {
         g_microapp_target_profile_override_active = 0;
@@ -2686,6 +2690,141 @@ fn microapp_extract_elf_vaddrs(exe_path: &byte, text_va: &u32, rodata_va: &u32, 
     return 0;
 }
 
+fn microapp_source_is_ident_start(ch: byte) i32 {
+    if (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 95 {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_source_is_ident_continue(ch: byte) i32 {
+    if microapp_source_is_ident_start(ch) != 0 || (ch >= 48 && ch <= 57) {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_source_skip_string(buf: &byte, file_size: usize, pos: &usize, quote: byte) void {
+    if buf == null || pos == null || pos[0] >= file_size {
+        return;
+    }
+    pos[0] = pos[0] + 1;
+    while pos[0] < file_size {
+        const ch: byte = buf[pos[0]];
+        if ch == 92 && pos[0] + 1 < file_size {
+            pos[0] = pos[0] + 2;
+            continue;
+        }
+        pos[0] = pos[0] + 1;
+        if ch == quote {
+            return;
+        }
+    }
+}
+
+fn microapp_source_skip_comment(buf: &byte, file_size: usize, pos: &usize) i32 {
+    if buf == null || pos == null || pos[0] + 1 >= file_size {
+        return 0;
+    }
+    if buf[pos[0]] != 47 {
+        return 0;
+    }
+    const next: byte = buf[pos[0] + 1];
+    if next == 47 {
+        pos[0] = pos[0] + 2;
+        while pos[0] < file_size && buf[pos[0]] != 10 {
+            pos[0] = pos[0] + 1;
+        }
+        return 1;
+    }
+    if next == 42 {
+        pos[0] = pos[0] + 2;
+        while pos[0] + 1 < file_size {
+            if buf[pos[0]] == 42 && buf[pos[0] + 1] == 47 {
+                pos[0] = pos[0] + 2;
+                return 1;
+            }
+            pos[0] = pos[0] + 1;
+        }
+        pos[0] = file_size;
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_source_token_eq(buf: &byte, start: usize, end: usize, text: &byte) i32 {
+    if buf == null || text == null || end < start {
+        return 0;
+    }
+    const len: usize = end - start;
+    if strlen(text as *byte) != len {
+        return 0;
+    }
+    if len == 0 {
+        return 0;
+    }
+    if strncmp(&buf[start], text as *byte, len) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn microapp_source_has_ident(buf: &byte, file_size: usize, ident: &byte) i32 {
+    if buf == null || ident == null {
+        return 0;
+    }
+    var i: usize = 0;
+    while i < file_size {
+        const ch: byte = buf[i];
+        if ch == 34 || ch == 39 {
+            microapp_source_skip_string(buf, file_size, &i, ch);
+            continue;
+        }
+        if microapp_source_skip_comment(buf, file_size, &i) != 0 {
+            continue;
+        }
+        if microapp_source_is_ident_start(ch) == 0 {
+            i = i + 1;
+            continue;
+        }
+        const start: usize = i;
+        i = i + 1;
+        while i < file_size && microapp_source_is_ident_continue(buf[i]) != 0 {
+            i = i + 1;
+        }
+        if microapp_source_token_eq(buf, start, i, ident) != 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn microapp_infer_required_caps_from_source(source_path: &byte) u32 {
+    if source_path == null {
+        return 0u32;
+    }
+    const file_size: i32 = read_file_content(source_path, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+    if file_size < 0 {
+        return 0u32;
+    }
+    const buf: &byte = &file_buffer[0];
+    const size: usize = file_size as usize;
+    var caps: u32 = 0u32;
+    if microapp_source_has_ident(buf, size, "read_uart" as &byte) != 0 ||
+        microapp_source_has_ident(buf, size, "write_uart" as &byte) != 0 {
+        caps = caps | MICROAPP_REQUIRED_CAP_IO_UART;
+    }
+    if microapp_source_has_ident(buf, size, "read_gpio" as &byte) != 0 ||
+        microapp_source_has_ident(buf, size, "write_gpio" as &byte) != 0 {
+        caps = caps | MICROAPP_REQUIRED_CAP_IO_GPIO;
+    }
+    if microapp_source_has_ident(buf, size, "read_timer" as &byte) != 0 ||
+        microapp_source_has_ident(buf, size, "write_timer" as &byte) != 0 {
+        caps = caps | MICROAPP_REQUIRED_CAP_IO_TIMER;
+    }
+    return caps;
+}
+
 fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_path: &byte, data_bin_path: &byte, target_arch_raw: u32) i32 {
     const profile: MicroAppTargetProfile = resolve_microapp_target_profile();
     var gcc_buf: [byte: PATH_MAX] = [];
@@ -2805,6 +2944,10 @@ fn write_microapp_payload_obj(
     const image_flags: u32 = 0u32;
     const bridge_kind_raw: u32 = profile.bridge_kind_raw;
     const stack_size_hint: u32 = microapp_profile_default_stack_hint(&profile);
+    const required_caps: u32 = microapp_infer_required_caps_from_source(source_path);
+    if required_caps != 0u32 {
+        fprintf(libc.stderr, "信息：microapp inferred required_caps=%u\n" as *byte, required_caps);
+    }
     var entry_va: u32 = 0u32;
     var code_va: u32 = 0u32;
     var rodata_va: u32 = 0u32;
@@ -2932,7 +3075,6 @@ fn write_microapp_payload_obj(
     const magic: u32 = 0x4A424F50;  // "POBJ"
     const version: u16 = POBJ_VERSION;
     const flags: u16 = 0;
-    const required_caps: u32 = 0u32;
     const entry_offset: u32 = 0u32;
     const build_mode_raw: u32 = POBJ_BUILD_MODE_MICROAPP;
 

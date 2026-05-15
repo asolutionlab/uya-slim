@@ -179,6 +179,11 @@
   - [x] `std.microapp.mem`
   - [x] `std.microapp.task`
   - [x] `std.microapp.time`
+- [~] 源码层 capability 到镜像头的收敛：
+  - [x] `std.microapp.io` 已提供 UART/GPIO/TIMER 的最小 `SYS_IO` wrapper
+  - [x] 编译器已能从这些 wrapper 的使用推导 `.uapp required_caps`
+  - [x] x86_64 runtime 回归已覆盖声明 cap 后允许、未声明 cap 时拒绝
+  - [ ] manifest / 依赖闭包级 required_caps 汇总仍待接入
 - [x] 审计并限制直接宿主 libc API 使用
 
 验收标准：

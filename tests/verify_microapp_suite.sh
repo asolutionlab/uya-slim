@@ -12,6 +12,7 @@ SCRIPTS=(
     "tests/verify_microapp_pobj_manifest.sh"
     "tests/verify_microapp_pack_image.sh"
     "tests/verify_microapp_build_uapp.sh"
+    "tests/verify_microapp_required_caps_runtime.sh"
     "tests/verify_microapp_payload_symbols.sh"
     "tests/verify_microapp_uapp_compat.sh"
     "tests/verify_microapp_profile_cli.sh"
