@@ -1,0 +1,9 @@
+// exec/frame.uya - Exec VM frame definitions
+
+const EXEC_MAX_FRAME_SLOTS: i32 = 1024;
+
+struct ExecFrame {
+    function: &BCFunction,
+    ip: i32,
+    slots: [ExecValue: EXEC_MAX_FRAME_SLOTS],
+}

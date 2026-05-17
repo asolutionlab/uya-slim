@@ -1,0 +1,85 @@
+// exec/hir.uya - Exec backend HIR definitions
+
+const EXEC_MAX_CALL_ARGS: i32 = 16;
+
+enum HIRStmtKind {
+    HIR_STMT_VAR_INIT,
+    HIR_STMT_ASSIGN,
+    HIR_STMT_EXPR,
+    HIR_STMT_IF,
+    HIR_STMT_LOOP,
+    HIR_STMT_BREAK,
+    HIR_STMT_CONTINUE,
+    HIR_STMT_RETURN,
+}
+
+enum HIRExprKind {
+    HIR_EXPR_CONST,
+    HIR_EXPR_LOCAL,
+    HIR_EXPR_UNARY,
+    HIR_EXPR_BINARY,
+    HIR_EXPR_CALL,
+    HIR_EXPR_PRINT,
+    HIR_EXPR_PRINTLN,
+}
+
+struct HIRTypeRef {
+    type: Type,
+}
+
+struct HIRLocalSlot {
+    name: &byte,
+    slot: i32,
+    type_ref: HIRTypeRef,
+    is_param: i32,
+}
+
+struct HIRExpr {
+    kind: HIRExprKind,
+    ast_node: &ASTNode,
+    type_ref: HIRTypeRef,
+    local_slot: i32,
+    unary_op: i32,
+    binary_op: i32,
+    int_value: i64,
+    bool_value: i32,
+    string_value: &byte,
+    left: &HIRExpr,
+    right: &HIRExpr,
+    callee_name: &byte,
+    callee_decl: &ASTNode,
+    call_args: & & HIRExpr,
+    call_arg_count: i32,
+}
+
+struct HIRStmt {
+    kind: HIRStmtKind,
+    ast_node: &ASTNode,
+    local_slot: i32,
+    expr: &HIRExpr,
+    assign_expr: &HIRExpr,
+    then_block: &HIRBlock,
+    else_block: &HIRBlock,
+    loop_body: &HIRBlock,
+}
+
+struct HIRBlock {
+    stmts: & & HIRStmt,
+    stmt_count: i32,
+}
+
+struct HIRFunction {
+    name: &byte,
+    decl: &ASTNode,
+    return_type: HIRTypeRef,
+    locals: &HIRLocalSlot,
+    local_count: i32,
+    param_count: i32,
+    body: &HIRBlock,
+}
+
+struct HIRModule {
+    functions: & & HIRFunction,
+    function_count: i32,
+    entry_function: &HIRFunction,
+}

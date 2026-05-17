@@ -1,0 +1,119 @@
+// exec/main.uya - Exec backend orchestration
+
+use libc;
+
+var g_exec_last_error_message: [byte: 512] = [];
+var g_exec_last_error_is_unsupported: i32 = 0;
+var g_exec_dump_hir_enabled: i32 = 0;
+var g_exec_dump_bytecode_enabled: i32 = 0;
+var g_exec_trace_vm_enabled: i32 = 0;
+var g_exec_hir_module: &HIRModule = null;
+var g_exec_bc_program: &BCProgram = null;
+
+fn exec_write_error_prefix(node: &ASTNode) i32 {
+    if node != null && node.filename != null {
+        return snprintf(&g_exec_last_error_message[0] as *byte, 512,
+            "%s:%d:%d: " as *byte,
+            node.filename as *byte, node.line, node.column);
+    }
+    return snprintf(&g_exec_last_error_message[0] as *byte, 512, "exec: " as *byte);
+}
+
+fn exec_write_error_detail(pos: i32, message: &byte) void {
+    if pos < 0 || pos >= 511 {
+        return;
+    }
+    _ = snprintf((&g_exec_last_error_message[0] as *byte) + pos, 512 - pos, "%s" as *byte, message as *byte);
+}
+
+fn exec_backend_reset_state() void {
+    g_exec_last_error_message[0] = 0 as byte;
+    g_exec_last_error_is_unsupported = 0;
+    g_exec_hir_module = null;
+    g_exec_bc_program = null;
+}
+
+fn exec_backend_set_options(dump_hir: i32, dump_bytecode: i32, trace_vm: i32) void {
+    g_exec_dump_hir_enabled = dump_hir;
+    g_exec_dump_bytecode_enabled = dump_bytecode;
+    g_exec_trace_vm_enabled = trace_vm;
+}
+
+fn exec_backend_set_error(node: &ASTNode, message: &byte, is_unsupported: i32) void {
+    const prefix_len: i32 = exec_write_error_prefix(node);
+    exec_write_error_detail(prefix_len, message);
+    g_exec_last_error_is_unsupported = is_unsupported;
+}
+
+fn exec_backend_get_last_error() &byte {
+    if g_exec_last_error_message[0] == 0 as byte {
+        return null;
+    }
+    return &g_exec_last_error_message[0] as &byte;
+}
+
+fn exec_backend_error_is_unsupported() i32 {
+    return g_exec_last_error_is_unsupported;
+}
+
+/// 构建 exec backend 程序。
+/// 参数：`checker` 为完成类型检查后的 checker；`program` 为 merged checked AST；`module_name` 仅用于调试输出。
+/// 返回值：`0` 表示成功，`2` 表示命中特性不支持可考虑 fallback，其他非 0 表示真正构建失败。
+export fn exec_build_program(checker: &TypeChecker, program: &ASTNode, module_name: &byte) i32 {
+    exec_backend_reset_state();
+    if checker == null || program == null {
+        exec_backend_set_error(program, "exec: build 输入无效" as *byte, 0);
+        return 1;
+    }
+    const lowered: &HIRModule = exec_lower_module(checker.arena, checker, program);
+    if lowered == null {
+        if exec_backend_error_is_unsupported() != 0 {
+            return 2;
+        }
+        return 1;
+    }
+    g_exec_hir_module = lowered;
+    if g_exec_dump_hir_enabled != 0 {
+        exec_debug_dump_hir_module(lowered);
+    }
+    const bytecode: &BCProgram = exec_build_bytecode(checker.arena, lowered);
+    if bytecode == null {
+        if exec_backend_error_is_unsupported() != 0 {
+            return 2;
+        }
+        return 1;
+    }
+    g_exec_bc_program = bytecode;
+    if g_exec_dump_bytecode_enabled != 0 {
+        exec_debug_dump_bytecode(bytecode);
+    }
+    if module_name != null {
+        fprintf(libc.stderr, "exec backend 已构建: %s\n" as *byte, module_name as *byte);
+    }
+    return 0;
+}
+
+/// 运行最近一次由 exec backend 构建完成的程序。
+/// 参数：无，运行目标来自最近一次 `exec_build_program(...)` 成功产物。
+/// 返回值：成功时返回程序退出码；失败时返回非 0。
+export fn exec_run_program() i32 {
+    if g_exec_bc_program == null {
+        exec_backend_set_error(null, "exec: 尚无可运行的 bytecode 程序" as *byte, 0);
+        return 1;
+    }
+    return vm_run_program(g_exec_bc_program, g_exec_trace_vm_enabled);
+}
+
+/// 打印最近一次 lowering 得到的 HIR。
+/// 参数：无，输出目标来自最近一次 `exec_build_program(...)` 成功产物。
+/// 返回值：无。
+export fn exec_dump_hir() void {
+    exec_debug_dump_hir_module(g_exec_hir_module);
+}
+
+/// 打印最近一次构建得到的 bytecode。
+/// 参数：无，输出目标来自最近一次 `exec_build_program(...)` 成功产物。
+/// 返回值：无。
+export fn exec_dump_bytecode() void {
+    exec_debug_dump_bytecode(g_exec_bc_program);
+}

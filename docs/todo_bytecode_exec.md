@@ -1,6 +1,6 @@
 # Uya Bytecode / IR 执行后端 TODO
 
-**状态**：executable TODO, implementation pending  
+**状态**：executable TODO, implementation in progress
 **更新日期**：2026-05-17  
 **配套设计**：`docs/bytecode_exec_design.md`
 
@@ -27,6 +27,44 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 先为 `run/test` 提供 `exec backend`
 - 让 hosted 场景跳过 `codegen/c99 + gcc/clang`
 
+## 当前进度快照
+
+截至 `2026-05-17` 晚间，仓库里已经有第一批可编译的 exec backend 骨架与主链路接线：
+
+- 已新增 `src/exec/` 目录与首批文件：`main/hir/lower/bytecode/builder/vm/value/frame/debug`
+- 已在 `src/main.uya` 中接入 `use exec;`
+- 已为 `run/test` 接入 CLI 开关：
+  - `--exec`
+  - `--vm`
+  - `--dump-exec-hir`
+  - `--dump-bytecode`
+  - `--trace-vm`
+- 已接入第一版 fallback 语义：
+  - `--exec` 遇到“不支持”时回退 C99
+  - `--vm` 遇到“不支持”时直接失败
+- 已有最小 HIR / bytecode / VM 闭环代码，但覆盖面仍很窄：
+  - 标量常量
+  - 局部变量
+  - 一元/二元算术与比较
+  - `if`
+  - `while`
+  - `break` / `continue`
+  - 直接函数调用
+  - `return`
+  - `@print` / `@println`
+
+当前限制也必须明确记录：
+
+- 这批代码目前仍属于“第一阶段骨架 + 最小执行路径”，不是可提交完成态
+- 目前已验证：
+  - `./bin/uya build src/main.uya -o /tmp/uya_exec_backend_smoke.c --no-safety-proof`
+  - `./bin/uya build src/main.uya -o /tmp/uya_exec_default_smoke.c`
+  - 上述两条命令都可以成功重新生成编译器的 C99 输出，说明主模块接线、类型链路、代码生成集成，以及默认安全证明下的 exec 模块边界检查都已打通
+  - 用新生成的编译器二进制可直接跑通最小 smoke：
+    - `./build/uya_exec_default_smoke_bin run --vm tests/test_main_only.uya`
+- 目前尚未验证：
+  - 在默认 `--safety-proof` 配置下完整自举
+
 ---
 
 ## 执行原则
@@ -42,82 +80,93 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 0：基线确认
 
-- [ ] 查看工作树：`git status --short`
-- [ ] 阅读入口：`src/main.uya` 中 `COMMAND_RUN` / `COMMAND_TEST` 主路径
-- [ ] 阅读 parser / checker / codegen 边界：
-  - [ ] `src/parser/*`
-  - [ ] `src/checker/*`
-  - [ ] `src/codegen/c99/*`
-- [ ] 跑一次最小性能基线，记录 `run/test` 当前 wall time
-- [ ] 确认统计口径：`生成耗时` 不含 gcc/link
-- [ ] 收集第一批 exec backend 目标测试：
-  - [ ] 纯算术 / 分支 / 循环
-  - [ ] 纯函数调用
-  - [ ] 基础 struct/array/slice
-  - [ ] `!T` / `try/catch`
+- [x] 查看工作树：`git status --short`
+- [x] 阅读入口：`src/main.uya` 中 `COMMAND_RUN` / `COMMAND_TEST` 主路径
+- [x] 阅读 parser / checker / codegen 边界：
+  - [x] `src/parser/*`
+  - [x] `src/checker/*`
+  - [x] `src/codegen/c99/*`
+- [x] 跑一次最小性能基线，记录 `run/test` 当前 wall time
+- [x] 确认统计口径：`生成耗时` 不含 gcc/link
+- [x] 收集第一批 exec backend 目标测试：
+  - [x] 纯算术 / 分支 / 循环
+  - [x] 纯函数调用
+  - [x] 基础 struct/array/slice
+  - [x] `!T` / `try/catch`
+
+备注：
+
+- 已记录最小基线：`./bin/uya run tests/test_if_return_simple.uya`，wall time 约 `0.124s`
+- 当前仅完成测试样本收集与 smoke 入口梳理，尚未形成 exec backend 回归集
+- `tests/test_main_only.uya` 已成为当前最小 `--vm` smoke，后续应继续补算术、分支、循环、函数调用的独立回归
 
 ---
 
 ## Phase 1：目录与骨架
 
-- [ ] 新建 `src/exec/` 目录
-- [ ] 新建骨架文件：
-  - [ ] `src/exec/main.uya`
-  - [ ] `src/exec/hir.uya`
-  - [ ] `src/exec/lower.uya`
-  - [ ] `src/exec/bytecode.uya`
-  - [ ] `src/exec/builder.uya`
-  - [ ] `src/exec/vm.uya`
-  - [ ] `src/exec/value.uya`
-  - [ ] `src/exec/frame.uya`
-  - [ ] `src/exec/debug.uya`
-- [ ] 在 `src/main.uya` 中 `use exec;`
-- [ ] 设计导出入口：
-  - [ ] `exec_build_program(...)`
-  - [ ] `exec_run_program(...)`
-  - [ ] `exec_dump_hir(...)`
-  - [ ] `exec_dump_bytecode(...)`
-- [ ] 所有新增公共 `export fn` 前写 `///` 注释
+- [x] 新建 `src/exec/` 目录
+- [x] 新建骨架文件：
+  - [x] `src/exec/main.uya`
+  - [x] `src/exec/hir.uya`
+  - [x] `src/exec/lower.uya`
+  - [x] `src/exec/bytecode.uya`
+  - [x] `src/exec/builder.uya`
+  - [x] `src/exec/vm.uya`
+  - [x] `src/exec/value.uya`
+  - [x] `src/exec/frame.uya`
+  - [x] `src/exec/debug.uya`
+- [x] 在 `src/main.uya` 中 `use exec;`
+- [x] 设计导出入口：
+  - [x] `exec_build_program(...)`
+  - [x] `exec_run_program(...)`
+  - [x] `exec_dump_hir(...)`
+  - [x] `exec_dump_bytecode(...)`
+- [x] 所有新增公共 `export fn` 前写 `///` 注释
 
 ---
 
 ## Phase 2：CLI 接线
 
-- [ ] 为 `run/test` 增加显式开关：
-  - [ ] `--exec`
-  - [ ] `--exec-only`
-  - [ ] `--dump-exec-hir`
-  - [ ] `--dump-bytecode`
-  - [ ] `--trace-vm`
-- [ ] `parse_args()` 或等价 driver 识别这些开关
-- [ ] `COMMAND_RUN` / `COMMAND_TEST` 中增加 exec backend 分支
-- [ ] 第一版策略：
-  - [ ] `--exec`：失败时允许回退 C99
-  - [ ] `--exec-only`：失败时直接退出非 0
-- [ ] 保持默认 `run/test` 语义不变
+- [x] 为 `run/test` 增加显式开关：
+  - [x] `--exec`
+  - [x] `--vm`
+  - [x] `--dump-exec-hir`
+  - [x] `--dump-bytecode`
+  - [x] `--trace-vm`
+- [x] `parse_args()` 或等价 driver 识别这些开关
+- [x] `COMMAND_RUN` / `COMMAND_TEST` 中增加 exec backend 分支
+- [x] 第一版策略：
+  - [x] `--exec`：失败时允许回退 C99
+  - [x] `--vm`：失败时直接退出非 0
+- [x] 保持默认 `run/test` 语义不变
+
+备注：
+
+- 当前仍未改动默认无开关时的 `run/test` 主路径，默认行为依旧是 C99 + 宿主工具链
+- 现阶段 fallback 的“不支持”判定主要依赖 exec backend 内部错误码与错误消息，后续仍需收敛成更稳定的原因码体系
 
 ---
 
 ## Phase 3：Exec HIR
 
-- [ ] 在 `hir.uya` 定义：
-  - [ ] `HIRModule`
-  - [ ] `HIRFunction`
-  - [ ] `HIRBlock`
-  - [ ] `HIRStmtKind`
-  - [ ] `HIRExprKind`
-  - [ ] `HIRTypeRef`
-  - [ ] `HIRLocalSlot`
-- [ ] 确定每个 HIR 节点都挂：
-  - [ ] 源位置
-  - [ ] 最终类型
-  - [ ] 绑定符号 / 目标函数 / field id
-- [ ] 先只支持最小节点集：
-  - [ ] const / local / assign
-  - [ ] unary / binary / compare
-  - [ ] if / while / break / continue
-  - [ ] call / return
-- [ ] 新增 HIR dump
+- [x] 在 `hir.uya` 定义：
+  - [x] `HIRModule`
+  - [x] `HIRFunction`
+  - [x] `HIRBlock`
+  - [x] `HIRStmtKind`
+  - [x] `HIRExprKind`
+  - [x] `HIRTypeRef`
+  - [x] `HIRLocalSlot`
+- [x] 确定每个 HIR 节点都挂：
+  - [x] 源位置
+  - [x] 最终类型
+  - [x] 绑定符号 / 目标函数 / field id
+- [x] 先只支持最小节点集：
+  - [x] const / local / assign
+  - [x] unary / binary / compare
+  - [x] if / while / break / continue
+  - [x] call / return
+- [x] 新增 HIR dump
 - [ ] 测试：
   - [ ] 一个函数 + 一条 return
   - [ ] if/else
@@ -128,57 +177,66 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 4：checked AST -> HIR lowering
 
-- [ ] 新建 lowering 入口：`exec_lower_module(...)`
-- [ ] 降级局部变量定义为稳定 slot
-- [ ] 降级方法调用为普通调用
+- [x] 新建 lowering 入口：`exec_lower_module(...)`
+- [x] 降级局部变量定义为稳定 slot
+- [x] 降级方法调用为普通调用
 - [ ] 降级 `for` 为规范 loop
 - [ ] 统一 `match` 的执行型表示
-- [ ] 对每个函数生成结构化 HIR block
-- [ ] 第一版先跳过或拒绝：
-  - [ ] async
+- [x] 对每个函数生成结构化 HIR block
+- [x] 第一版先跳过或拒绝：
+  - [x] async
   - [ ] `@c_import`
   - [ ] inline asm
   - [ ] SIMD
   - [ ] microapp 特化
-- [ ] 对不支持节点返回稳定错误信息：
-  - [ ] 节点种类
-  - [ ] 文件、行、列
-  - [ ] 是否允许 fallback
+- [x] 对不支持节点返回稳定错误信息：
+  - [x] 节点种类
+  - [x] 文件、行、列
+  - [x] 是否允许 fallback
+
+备注：
+
+- 目前 lowering 还没有完整枚举所有不支持路径；已显式拒绝的一部分特性有稳定报错，但 `@c_import`、asm、SIMD、microapp 等仍需补全专门原因码
+- 当前 `for` / `match` / 聚合值 / `try/catch` 都还没有进入可运行子集
 
 ---
 
 ## Phase 5：Bytecode 结构体与编码
 
-- [ ] 在 `bytecode.uya` 定义：
-  - [ ] `BCProgram`
-  - [ ] `BCFunction`
-  - [ ] `BCInstr`
-  - [ ] `BCOpcode`
-  - [ ] `BCConstPool`
-  - [ ] `BCSourceMap`
-- [ ] 选定寄存器化格式
-- [ ] 为指令定义统一字段布局
-- [ ] 增加 bytecode pretty printer
-- [ ] 增加基础 opcode：
-  - [ ] `LOAD_CONST`
-  - [ ] `MOV`
+- [x] 在 `bytecode.uya` 定义：
+  - [x] `BCProgram`
+  - [x] `BCFunction`
+  - [x] `BCInstr`
+  - [x] `BCOpcode`
+  - [x] `BCConstPool`
+  - [x] `BCSourceMap`
+- [x] 选定寄存器化格式
+- [x] 为指令定义统一字段布局
+- [x] 增加 bytecode pretty printer
+- [x] 增加基础 opcode：
+  - [x] `LOAD_CONST`
+  - [x] `MOV`
   - [ ] `LOAD_LOCAL`
   - [ ] `STORE_LOCAL`
-  - [ ] `ADD/SUB/MUL/DIV/REM`
-  - [ ] `CMP_*`
-  - [ ] `JMP/JMP_IF_*`
-  - [ ] `RET`
-  - [ ] `CALL`
+  - [x] `ADD/SUB/MUL/DIV/REM`
+  - [x] `CMP_*`
+  - [x] `JMP/JMP_IF_*`
+  - [x] `RET`
+  - [x] `CALL`
+
+备注：
+
+- 第一版 builder 目前把 local 读写折叠进寄存器槽位和 `MOV`，尚未单独引入 `LOAD_LOCAL/STORE_LOCAL`
 
 ---
 
 ## Phase 6：HIR -> Bytecode builder
 
-- [ ] 新建 `exec_build_bytecode(...)`
-- [ ] block label 分配
-- [ ] local / temp 槽位分配
+- [x] 新建 `exec_build_bytecode(...)`
+- [x] block label 分配
+- [x] local / temp 槽位分配
 - [ ] 生成常量池
-- [ ] 生成函数 bytecode
+- [x] 生成函数 bytecode
 - [ ] 验证每个函数：
   - [ ] 所有跳转目标存在
   - [ ] 所有读取槽位已初始化
@@ -191,20 +249,20 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 7：VM 最小可运行闭环
 
-- [ ] 在 `value.uya` 定义标量值表示
-- [ ] 在 `frame.uya` 定义 `ExecFrame`
-- [ ] 在 `vm.uya` 实现：
-  - [ ] `vm_run_program`
-  - [ ] `vm_call_function`
+- [x] 在 `value.uya` 定义标量值表示
+- [x] 在 `frame.uya` 定义 `ExecFrame`
+- [x] 在 `vm.uya` 实现：
+  - [x] `vm_run_program`
+  - [x] `vm_call_function`
   - [ ] `vm_step`
-- [ ] 支持最小 opcode 闭环：
-  - [ ] const
-  - [ ] local
-  - [ ] arithmetic
-  - [ ] compare
-  - [ ] branch
-  - [ ] call
-  - [ ] return
+- [x] 支持最小 opcode 闭环：
+  - [x] const
+  - [x] local
+  - [x] arithmetic
+  - [x] compare
+  - [x] branch
+  - [x] call
+  - [x] return
 - [ ] 让 `export fn main() i32` 程序能跑通
 - [ ] 测试：
   - [ ] `uya run --exec tests/...`
@@ -314,7 +372,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] `COMMAND_TEST` 接入 exec backend
 - [ ] 保持当前测试摘要格式基本一致
 - [ ] 失败退出码一致
-- [ ] `--exec-only` 下禁用 C99 fallback
+- [ ] `--vm` 下禁用 C99 fallback
 - [ ] 用现有快速测试集做 smoke：
   - [ ] 算术类
   - [ ] 控制流类
@@ -333,7 +391,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [ ] SIMD
   - [ ] unsupported extern ABI
 - [ ] `--exec` 时自动回退 C99
-- [ ] `--exec-only` 时直接失败
+- [ ] `--vm` 时直接失败
 - [ ] 打印清晰原因，不要静默切换
 
 ---
@@ -406,4 +464,3 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] 基础控制流、函数调用、struct/array/slice、`!T`、`defer` 已可用
 - [ ] 不支持特性能清晰报错并可按需 fallback
 - [ ] 相比现有 `run`，总耗时有明显下降
-

@@ -9,6 +9,7 @@
 use main;
 use parser;
 use checker;  // 包含 checker 目录下所有文件（包括 optimizer.uya）
+use exec;
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
 use kernel.image;
@@ -62,7 +63,8 @@ struct CompileArtifacts {
 // 后端类型
 enum BackendType {
     BACKEND_LLVM,
-    BACKEND_C99
+    BACKEND_C99,
+    BACKEND_EXEC
 }
 
 // 命令类型
@@ -5680,7 +5682,12 @@ fn parse_args(
     run_arg_start: &i32,
     is_nostdlib: &i32,
     stack_size: &i32,
-    async_frame_heap_fallback: &i32
+    async_frame_heap_fallback: &i32,
+    exec_requested: &i32,
+    exec_only: &i32,
+    dump_exec_hir: &i32,
+    dump_bytecode: &i32,
+    trace_vm: &i32
 ) i32 {
     const argc: i32 = get_argc();
     if argc < 2 {
@@ -5710,6 +5717,11 @@ fn parse_args(
     g_microapp_target_profile_override_active = 0;
     g_microapp_target_profile_override[0] = 0 as byte;
     async_frame_heap_fallback[0] = 0;
+    exec_requested[0] = 0;
+    exec_only[0] = 0;
+    dump_exec_hir[0] = 0;
+    dump_bytecode[0] = 0;
+    trace_vm[0] = 0;
 
     // 检测子命令
     const first_arg: *byte = get_argv(1);
@@ -5794,6 +5806,20 @@ fn parse_args(
             opt_level[0] = 3;
         } else if strcmp(arg, "--nostdlib" as *byte) == 0 {
             is_nostdlib[0] = 1;
+        } else if strcmp(arg, "--exec" as *byte) == 0 {
+            exec_requested[0] = 1;
+        } else if strcmp(arg, "--vm" as *byte) == 0 {
+            exec_requested[0] = 1;
+            exec_only[0] = 1;
+        } else if strcmp(arg, "--dump-exec-hir" as *byte) == 0 {
+            exec_requested[0] = 1;
+            dump_exec_hir[0] = 1;
+        } else if strcmp(arg, "--dump-bytecode" as *byte) == 0 {
+            exec_requested[0] = 1;
+            dump_bytecode[0] = 1;
+        } else if strcmp(arg, "--trace-vm" as *byte) == 0 {
+            exec_requested[0] = 1;
+            trace_vm[0] = 1;
         } else if strcmp(arg, "--app" as *byte) == 0 {
             if i + 1 < argc {
                 i = i + 1;
@@ -7378,6 +7404,8 @@ fn compile_files(
     var backend_str: *byte = "LLVM" as *byte;
     if backend == BackendType.BACKEND_C99 {
         backend_str = "C99" as *byte;
+    } else if backend == BackendType.BACKEND_EXEC {
+        backend_str = "EXEC" as *byte;
     }
     fprintf(libc.stderr, "后端类型: %s\n" as *byte, backend_str);
 
@@ -7617,6 +7645,41 @@ fn compile_files(
     fprintf(libc.stderr, "\n=== 代码生成阶段 ===\n" as *byte);
     fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
 
+    if backend == BackendType.BACKEND_EXEC {
+        exec_backend_set_options(g_exec_dump_hir_enabled, g_exec_dump_bytecode_enabled, g_exec_trace_vm_enabled);
+        const exec_result: i32 = exec_build_program(checker, merged_ast, module_name as &byte);
+        codegen_end_time = clock();
+
+        stats.parse_time_ms = (parse_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
+        stats.merge_time_ms = (merge_end_time - parse_end_time) * 1000 / CLOCKS_PER_SEC;
+        stats.check_time_ms = (check_end_time - merge_end_time) * 1000 / CLOCKS_PER_SEC;
+        stats.codegen_time_ms = (codegen_end_time - opt_end_time) * 1000 / CLOCKS_PER_SEC;
+        stats.total_time_ms = (codegen_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
+
+        fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
+        fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
+        fprintf(libc.stderr, "解析耗时: %ld ms\n" as *byte, stats.parse_time_ms);
+        fprintf(libc.stderr, "合并耗时: %ld ms\n" as *byte, stats.merge_time_ms);
+        fprintf(libc.stderr, "检查耗时: %ld ms\n" as *byte, stats.check_time_ms);
+        if opt_level > 0 {
+            const opt_time_ms_exec: i64 = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
+            fprintf(libc.stderr, "优化耗时: %ld ms\n" as *byte, opt_time_ms_exec);
+        }
+        fprintf(libc.stderr, "exec build 耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
+        fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
+
+        if exec_result != 0 {
+            const exec_err: &byte = exec_backend_get_last_error();
+            if exec_err != null {
+                fprintf(libc.stderr, "exec backend 失败: %s\n" as *byte, exec_err as *byte);
+            }
+            return exec_result;
+        }
+
+        fprintf(libc.stderr, "\nexec backend 构建完成\n" as *byte);
+        return 0;
+    }
+
     // C99 后端：生成 C 源代码（与 C 版本保持一致，直接使用 C99 后端）
     var out_file: *void = null;
     if split_c_dir == null || split_c_dir[0] == 0 as byte {
@@ -7730,13 +7793,21 @@ export fn main() i32 {
     var is_nostdlib: i32 = 0;
     var stack_size: i32 = 65536;  // 默认 64MB 堆栈
     var async_frame_heap_fallback: i32 = 0;
+    var exec_requested: i32 = 0;
+    var exec_only: i32 = 0;
+    var dump_exec_hir: i32 = 0;
+    var dump_bytecode: i32 = 0;
+    var trace_vm: i32 = 0;
 
     // 临时缓冲区用于自动生成输出路径
     var auto_output_path: [byte: PATH_MAX] = [];
 
-    if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib, &stack_size, &async_frame_heap_fallback) != 0 {
+    if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib, &stack_size, &async_frame_heap_fallback, &exec_requested, &exec_only, &dump_exec_hir, &dump_bytecode, &trace_vm) != 0 {
         return 1;
     }
+    g_exec_dump_hir_enabled = dump_exec_hir;
+    g_exec_dump_bytecode_enabled = dump_bytecode;
+    g_exec_trace_vm_enabled = trace_vm;
     if command == CommandType.COMMAND_VERSION {
         fprintf(libc.stdout, "v0.9.7\n" as *byte);
         return 0;
@@ -7861,6 +7932,9 @@ export fn main() i32 {
         g_split_c_dir_active = 0;
         g_split_c_disabled_cli = 1;
         g_split_c_dir[0] = 0 as byte;
+        if exec_requested != 0 {
+            backend = BackendType.BACKEND_EXEC;
+        }
     }
     
     // build 命令：如果指定了非 .c 输出，需要生成临时 C 文件
@@ -7956,10 +8030,22 @@ export fn main() i32 {
         },
         c_import_sidecar_path: null,
     };
-    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, &artifacts);
-    if result != 0 {
-        return result;
+    var selected_backend: BackendType = backend;
+    var result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, &artifacts);
+    if result == 2 && selected_backend == BackendType.BACKEND_EXEC && exec_only == 0 {
+        const exec_err: &byte = exec_backend_get_last_error();
+        if exec_err != null {
+            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99: %s\n" as *byte, exec_err as *byte);
+        } else {
+            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99\n" as *byte);
+        }
+        selected_backend = BackendType.BACKEND_C99;
+        result = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, &artifacts);
     }
+    if result != 0 {
+        return 1;
+    }
+    backend = selected_backend;
 
     if command == CommandType.COMMAND_RUN && g_app_mode_microapp != 0 {
         const source_path: *byte = get_argv(input_file_indices[0]);
@@ -8099,6 +8185,30 @@ export fn main() i32 {
 
     // run 和 test 命令：自动编译并运行
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
+        if backend == BackendType.BACKEND_EXEC {
+            const child_exit_exec: i32 = exec_run_program();
+            if command == CommandType.COMMAND_TEST {
+                var passed_exec: i32 = 0;
+                var failed_exec: i32 = 1;
+                if child_exit_exec == 0 {
+                    passed_exec = 1;
+                    failed_exec = 0;
+                }
+                fprintf(libc.stderr, "================================\n" as *byte);
+                fprintf(libc.stderr, "总计: 1 个测试\n" as *byte);
+                fprintf(libc.stderr, "通过: %d\n" as *byte, passed_exec);
+                fprintf(libc.stderr, "失败: %d\n" as *byte, failed_exec);
+                fprintf(libc.stderr, "================================\n" as *byte);
+            }
+            if child_exit_exec != 0 {
+                const exec_run_err: &byte = exec_backend_get_last_error();
+                if exec_run_err != null {
+                    fprintf(libc.stderr, "exec runtime: %s\n" as *byte, exec_run_err as *byte);
+                }
+                fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit_exec);
+            }
+            return child_exit_exec;
+        }
         // 获取输出路径
         var actual_output: &byte = artifacts.generated_c_path;
         if output_file_index >= 0 {

@@ -1,0 +1,177 @@
+// exec/debug.uya - Exec backend debug dumps
+
+use libc;
+
+fn exec_debug_print_type(type_ref: HIRTypeRef) void {
+    if type_ref.type.kind == TypeKind.TYPE_I32 {
+        fprintf(libc.stderr, "i32" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_BOOL {
+        fprintf(libc.stderr, "bool" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_BYTE {
+        fprintf(libc.stderr, "byte" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_VOID {
+        fprintf(libc.stderr, "void" as *byte);
+    } else {
+        fprintf(libc.stderr, "type(%d)" as *byte, type_ref.type.kind as i32);
+    }
+}
+
+fn exec_debug_dump_expr(expr: &HIRExpr) void {
+    if expr == null {
+        fprintf(libc.stderr, "<null-expr>" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CONST {
+        if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
+            var bool_text: *byte = "false" as *byte;
+            if expr.bool_value != 0 {
+                bool_text = "true" as *byte;
+            }
+            fprintf(libc.stderr, "const %s" as *byte, bool_text);
+        } else if expr.string_value != null {
+            fprintf(libc.stderr, "const \"%s\"" as *byte, expr.string_value as *byte);
+        } else {
+            fprintf(libc.stderr, "const %ld" as *byte, expr.int_value);
+        }
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
+        fprintf(libc.stderr, "local #%d" as *byte, expr.local_slot);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CALL {
+        fprintf(libc.stderr, "call %s(...)" as *byte, expr.callee_name as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_PRINT {
+        fprintf(libc.stderr, "@print(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
+        fprintf(libc.stderr, "@println(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_UNARY {
+        fprintf(libc.stderr, "unary(%d)" as *byte, expr.unary_op);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_BINARY {
+        fprintf(libc.stderr, "binary(%d)" as *byte, expr.binary_op);
+        return;
+    }
+    fprintf(libc.stderr, "expr(%d)" as *byte, expr.kind as i32);
+}
+
+fn exec_debug_dump_block(block: &HIRBlock, indent: i32) void {
+    if block == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < block.stmt_count {
+        var j: i32 = 0;
+        while j < indent {
+            fprintf(libc.stderr, "  " as *byte);
+            j = j + 1;
+        }
+        const stmt: &HIRStmt = block.stmts[i];
+        if stmt.kind == HIRStmtKind.HIR_STMT_VAR_INIT {
+            fprintf(libc.stderr, "var slot=%d = " as *byte, stmt.local_slot);
+            exec_debug_dump_expr(stmt.expr);
+            fprintf(libc.stderr, "\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_ASSIGN {
+            fprintf(libc.stderr, "assign slot=%d <- " as *byte, stmt.local_slot);
+            exec_debug_dump_expr(stmt.assign_expr);
+            fprintf(libc.stderr, "\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_EXPR {
+            exec_debug_dump_expr(stmt.expr);
+            fprintf(libc.stderr, "\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_RETURN {
+            fprintf(libc.stderr, "return " as *byte);
+            exec_debug_dump_expr(stmt.expr);
+            fprintf(libc.stderr, "\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_BREAK {
+            fprintf(libc.stderr, "break\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_CONTINUE {
+            fprintf(libc.stderr, "continue\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_IF {
+            fprintf(libc.stderr, "if " as *byte);
+            exec_debug_dump_expr(stmt.expr);
+            fprintf(libc.stderr, " {\n" as *byte);
+            exec_debug_dump_block(stmt.then_block, indent + 1);
+            j = 0;
+            while j < indent {
+                fprintf(libc.stderr, "  " as *byte);
+                j = j + 1;
+            }
+            fprintf(libc.stderr, "}" as *byte);
+            if stmt.else_block != null && stmt.else_block.stmt_count > 0 {
+                fprintf(libc.stderr, " else {\n" as *byte);
+                exec_debug_dump_block(stmt.else_block, indent + 1);
+                j = 0;
+                while j < indent {
+                    fprintf(libc.stderr, "  " as *byte);
+                    j = j + 1;
+                }
+                fprintf(libc.stderr, "}" as *byte);
+            }
+            fprintf(libc.stderr, "\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_LOOP {
+            fprintf(libc.stderr, "loop {\n" as *byte);
+            exec_debug_dump_block(stmt.loop_body, indent + 1);
+            j = 0;
+            while j < indent {
+                fprintf(libc.stderr, "  " as *byte);
+                j = j + 1;
+            }
+            fprintf(libc.stderr, "}\n" as *byte);
+        }
+        i = i + 1;
+    }
+}
+
+fn exec_debug_dump_hir_module(module: &HIRModule) void {
+    if module == null {
+        return;
+    }
+    fprintf(libc.stderr, "\n=== exec hir ===\n" as *byte);
+    var i: i32 = 0;
+    while i < module.function_count {
+        const fn_hir: &HIRFunction = module.functions[i];
+        fprintf(libc.stderr, "fn %s(" as *byte, fn_hir.name as *byte);
+        var pi: i32 = 0;
+        while pi < fn_hir.param_count {
+            if pi > 0 {
+                fprintf(libc.stderr, ", " as *byte);
+            }
+            fprintf(libc.stderr, "slot%d" as *byte, pi);
+            pi = pi + 1;
+        }
+        fprintf(libc.stderr, ") -> " as *byte);
+        exec_debug_print_type(fn_hir.return_type);
+        fprintf(libc.stderr, " {\n" as *byte);
+        exec_debug_dump_block(fn_hir.body, 1);
+        fprintf(libc.stderr, "}\n" as *byte);
+        i = i + 1;
+    }
+}
+
+fn exec_debug_dump_bytecode(program: &BCProgram) void {
+    if program == null {
+        return;
+    }
+    fprintf(libc.stderr, "\n=== exec bytecode ===\n" as *byte);
+    var fi: i32 = 0;
+    while fi < program.function_count {
+        const func: &BCFunction = program.functions + fi;
+        fprintf(libc.stderr, "fn[%d] %s slots=%d params=%d\n" as *byte,
+            fi, func.name as *byte, func.slot_count, func.param_count);
+        var ii: i32 = 0;
+        while ii < func.instr_count {
+            const instr: &BCInstr = func.instrs + ii;
+            fprintf(libc.stderr, "  %d: op=%d a=%d b=%d c=%d imm=%ld\n" as *byte,
+                ii, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
+            ii = ii + 1;
+        }
+        fi = fi + 1;
+    }
+}

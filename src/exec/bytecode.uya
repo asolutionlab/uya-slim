@@ -1,0 +1,64 @@
+// exec/bytecode.uya - Exec backend bytecode definitions
+
+enum BCOpcode {
+    BC_LOAD_CONST,
+    BC_MOV,
+    BC_ADD,
+    BC_SUB,
+    BC_MUL,
+    BC_DIV,
+    BC_REM,
+    BC_NEG,
+    BC_NOT,
+    BC_CMP_EQ,
+    BC_CMP_NE,
+    BC_CMP_LT,
+    BC_CMP_LE,
+    BC_CMP_GT,
+    BC_CMP_GE,
+    BC_JMP,
+    BC_JMP_IF_TRUE,
+    BC_JMP_IF_FALSE,
+    BC_CALL,
+    BC_RET,
+    BC_PRINT,
+    BC_PRINTLN,
+}
+
+struct BCConstPool {
+    values: &ExecValue,
+    count: i32,
+}
+
+struct BCSourceMap {
+    line: i32,
+    column: i32,
+    filename: &byte,
+}
+
+struct BCInstr {
+    opcode: BCOpcode,
+    a: i32,
+    b: i32,
+    c: i32,
+    imm: i64,
+    text: &byte,
+    source: BCSourceMap,
+}
+
+struct BCFunction {
+    name: &byte,
+    decl: &ASTNode,
+    instrs: &BCInstr,
+    instr_count: i32,
+    slot_count: i32,
+    param_count: i32,
+    return_type: Type,
+}
+
+struct BCProgram {
+    functions: &BCFunction,
+    function_count: i32,
+    entry_function_index: i32,
+    const_pool: BCConstPool,
+}

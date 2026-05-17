@@ -1,0 +1,81 @@
+// exec/value.uya - Exec runtime value representation
+
+enum ExecValueKind {
+    EXEC_VALUE_VOID,
+    EXEC_VALUE_I32,
+    EXEC_VALUE_BOOL,
+    EXEC_VALUE_BYTE,
+    EXEC_VALUE_STRING,
+}
+
+struct ExecValue {
+    kind: ExecValueKind,
+    i64_value: i64,
+    ptr_value: &byte,
+}
+
+fn exec_make_void() ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_VOID,
+        i64_value: 0,
+        ptr_value: null,
+    };
+}
+
+fn exec_make_i32(value: i32) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_I32,
+        i64_value: value as i64,
+        ptr_value: null,
+    };
+}
+
+fn exec_make_bool(value: i32) ExecValue {
+    var normalized: i64 = 0;
+    if value != 0 {
+        normalized = 1;
+    }
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_BOOL,
+        i64_value: normalized,
+        ptr_value: null,
+    };
+}
+
+fn exec_make_byte(value: i32) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_BYTE,
+        i64_value: value as i64,
+        ptr_value: null,
+    };
+}
+
+fn exec_make_string(value: &byte) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_STRING,
+        i64_value: 0,
+        ptr_value: value,
+    };
+}
+
+fn exec_value_truthy(value: ExecValue) i32 {
+    if value.kind == ExecValueKind.EXEC_VALUE_BOOL {
+        if value.i64_value != 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_I32 || value.kind == ExecValueKind.EXEC_VALUE_BYTE {
+        if value.i64_value != 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_STRING {
+        if value.ptr_value != null {
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
+}

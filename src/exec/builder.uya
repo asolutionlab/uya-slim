@@ -1,0 +1,644 @@
+// exec/builder.uya - HIR to bytecode builder
+
+use libc;
+
+const EXEC_MAX_BYTECODE_INSTRS: i32 = 4096;
+
+struct ExecLoopPatch {
+    break_jumps: [i32: 128],
+    break_count: i32,
+    continue_jumps: [i32: 128],
+    continue_count: i32,
+    continue_target: i32,
+}
+
+struct ExecFunctionBuildContext {
+    arena: &CompilerArena,
+    function: &HIRFunction,
+    instrs: [BCInstr: EXEC_MAX_BYTECODE_INSTRS],
+    instr_count: i32,
+    next_temp_slot: i32,
+    max_slot_count: i32,
+    loop_stack: [ExecLoopPatch: 32],
+    loop_depth: i32,
+}
+
+fn exec_builder_instr_slot(ctx: &ExecFunctionBuildContext, idx: i32) &BCInstr {
+    if ctx == null || idx < 0 || idx >= EXEC_MAX_BYTECODE_INSTRS {
+        return null;
+    }
+    if idx >= 0 && idx < EXEC_MAX_BYTECODE_INSTRS {
+        return &ctx.instrs[idx];
+    }
+    return null;
+}
+
+fn exec_builder_loop_patch_ref(ctx: &ExecFunctionBuildContext, idx: i32) &ExecLoopPatch {
+    if ctx == null || idx < 0 || idx >= 32 {
+        return null;
+    }
+    if idx >= 0 && idx < 32 {
+        return &ctx.loop_stack[idx];
+    }
+    return null;
+}
+
+fn exec_builder_break_jump_ref(loop_patch: &ExecLoopPatch, idx: i32) &i32 {
+    if loop_patch == null || idx < 0 || idx >= 128 {
+        return null;
+    }
+    if idx >= 0 && idx < 128 {
+        return &loop_patch.break_jumps[idx];
+    }
+    return null;
+}
+
+fn exec_builder_continue_jump_ref(loop_patch: &ExecLoopPatch, idx: i32) &i32 {
+    if loop_patch == null || idx < 0 || idx >= 128 {
+        return null;
+    }
+    if idx >= 0 && idx < 128 {
+        return &loop_patch.continue_jumps[idx];
+    }
+    return null;
+}
+
+fn exec_builder_emit(ctx: &ExecFunctionBuildContext, instr: BCInstr) i32 {
+    if ctx == null || ctx.instr_count >= EXEC_MAX_BYTECODE_INSTRS {
+        exec_backend_set_error(ctx.function.decl, "exec: bytecode 指令超出上限" as *byte, 0);
+        return -1;
+    }
+    if ctx.instr_count >= 0 && ctx.instr_count < EXEC_MAX_BYTECODE_INSTRS {
+        ctx.instrs[ctx.instr_count] = instr;
+    }
+    ctx.instr_count = ctx.instr_count + 1;
+    return ctx.instr_count - 1;
+}
+
+fn exec_builder_make_source(node: &ASTNode) BCSourceMap {
+    var line: i32 = 0;
+    var column: i32 = 0;
+    var filename: &byte = null;
+    if node != null {
+        line = node.line;
+        column = node.column;
+        filename = node.filename;
+    }
+    return BCSourceMap {
+        line: line,
+        column: column,
+        filename: filename,
+    };
+}
+
+fn exec_builder_new_temp(ctx: &ExecFunctionBuildContext) i32 {
+    const slot: i32 = ctx.next_temp_slot;
+    ctx.next_temp_slot = ctx.next_temp_slot + 1;
+    if ctx.next_temp_slot > ctx.max_slot_count {
+        ctx.max_slot_count = ctx.next_temp_slot;
+    }
+    if ctx.max_slot_count >= EXEC_MAX_FRAME_SLOTS {
+        exec_backend_set_error(ctx.function.decl, "exec: frame slot 超出上限" as *byte, 0);
+        return -1;
+    }
+    return slot;
+}
+
+fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRExpr) i32 {
+    var instr: BCInstr = BCInstr {
+        opcode: BCOpcode.BC_LOAD_CONST,
+        a: dst,
+        b: 0,
+        c: 0,
+        imm: expr.int_value,
+        text: expr.string_value,
+        source: exec_builder_make_source(expr.ast_node),
+    };
+    if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
+        instr.imm = expr.bool_value as i64;
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
+        instr.imm = expr.int_value;
+    }
+    return exec_builder_emit(ctx, instr);
+}
+
+fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32 {
+    if ctx == null || expr == null {
+        return -1;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
+        return expr.local_slot;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CONST {
+        const dst: i32 = exec_builder_new_temp(ctx);
+        if dst < 0 {
+            return -1;
+        }
+        if exec_builder_emit_const(ctx, dst, expr) < 0 {
+            return -1;
+        }
+        return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_UNARY {
+        const src: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if src < 0 {
+            return -1;
+        }
+        const dst: i32 = exec_builder_new_temp(ctx);
+        if dst < 0 {
+            return -1;
+        }
+        var opcode: BCOpcode = BCOpcode.BC_NEG;
+        if expr.unary_op == TokenType.TOKEN_EXCLAMATION as i32 {
+            opcode = BCOpcode.BC_NOT;
+        } else if expr.unary_op != TokenType.TOKEN_MINUS as i32 {
+            exec_backend_set_error(expr.ast_node, "exec: 当前仅支持 ! 与 - unary" as *byte, 1);
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: opcode,
+            a: dst,
+            b: src,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_BINARY {
+        const left: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const right: i32 = exec_builder_compile_expr(ctx, expr.right);
+        if left < 0 || right < 0 {
+            return -1;
+        }
+        const dst: i32 = exec_builder_new_temp(ctx);
+        if dst < 0 {
+            return -1;
+        }
+        var opcode: BCOpcode = BCOpcode.BC_ADD;
+        if expr.binary_op == TokenType.TOKEN_PLUS as i32 {
+            opcode = BCOpcode.BC_ADD;
+        } else if expr.binary_op == TokenType.TOKEN_MINUS as i32 {
+            opcode = BCOpcode.BC_SUB;
+        } else if expr.binary_op == TokenType.TOKEN_ASTERISK as i32 {
+            opcode = BCOpcode.BC_MUL;
+        } else if expr.binary_op == TokenType.TOKEN_SLASH as i32 {
+            opcode = BCOpcode.BC_DIV;
+        } else if expr.binary_op == TokenType.TOKEN_PERCENT as i32 {
+            opcode = BCOpcode.BC_REM;
+        } else if expr.binary_op == TokenType.TOKEN_EQUAL as i32 {
+            opcode = BCOpcode.BC_CMP_EQ;
+        } else if expr.binary_op == TokenType.TOKEN_NOT_EQUAL as i32 {
+            opcode = BCOpcode.BC_CMP_NE;
+        } else if expr.binary_op == TokenType.TOKEN_LESS as i32 {
+            opcode = BCOpcode.BC_CMP_LT;
+        } else if expr.binary_op == TokenType.TOKEN_LESS_EQUAL as i32 {
+            opcode = BCOpcode.BC_CMP_LE;
+        } else if expr.binary_op == TokenType.TOKEN_GREATER as i32 {
+            opcode = BCOpcode.BC_CMP_GT;
+        } else if expr.binary_op == TokenType.TOKEN_GREATER_EQUAL as i32 {
+            opcode = BCOpcode.BC_CMP_GE;
+        } else {
+            exec_backend_set_error(expr.ast_node, "exec: 当前不支持该 binary 运算符" as *byte, 1);
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: opcode,
+            a: dst,
+            b: left,
+            c: right,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_PRINT || expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
+        const src: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if src < 0 {
+            return -1;
+        }
+        var op: BCOpcode = BCOpcode.BC_PRINT;
+        if expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
+            op = BCOpcode.BC_PRINTLN;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: op,
+            a: src,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        const dst: i32 = exec_builder_new_temp(ctx);
+        if dst < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_LOAD_CONST,
+            a: dst,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CALL {
+        const dst: i32 = exec_builder_new_temp(ctx);
+        if dst < 0 {
+            return -1;
+        }
+        var arg_base: i32 = ctx.next_temp_slot;
+        var i: i32 = 0;
+        while i < expr.call_arg_count {
+            const arg_slot: i32 = exec_builder_compile_expr(ctx, expr.call_args[i]);
+            if arg_slot < 0 {
+                return -1;
+            }
+            const dst_arg: i32 = exec_builder_new_temp(ctx);
+            if dst_arg < 0 {
+                return -1;
+            }
+            if i == 0 {
+                arg_base = dst_arg;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MOV,
+                a: dst_arg,
+                b: arg_slot,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            i = i + 1;
+        }
+        if expr.callee_decl == null {
+            exec_backend_set_error(expr.ast_node, "exec: 无法解析被调用函数" as *byte, 1);
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_CALL,
+            a: dst,
+            b: arg_base,
+            c: expr.call_arg_count,
+            imm: 0,
+            text: expr.callee_name,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst;
+    }
+    exec_backend_set_error(expr.ast_node, "exec: builder 不支持该表达式" as *byte, 1);
+    return -1;
+}
+
+fn exec_builder_patch_jump(ctx: &ExecFunctionBuildContext, instr_index: i32, target: i32) void {
+    if ctx == null || instr_index < 0 || instr_index >= ctx.instr_count {
+        return;
+    }
+    const instr_ptr: &BCInstr = exec_builder_instr_slot(ctx, instr_index);
+    if instr_ptr != null {
+        instr_ptr.imm = target as i64;
+    }
+}
+
+fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) i32 {
+    if ctx == null || block == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < block.stmt_count {
+        const stmt: &HIRStmt = block.stmts[i];
+        if stmt.kind == HIRStmtKind.HIR_STMT_VAR_INIT {
+            const src: i32 = exec_builder_compile_expr(ctx, stmt.expr);
+            if src < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MOV,
+                a: stmt.local_slot,
+                b: src,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            }) < 0 {
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_ASSIGN {
+            const src2: i32 = exec_builder_compile_expr(ctx, stmt.assign_expr);
+            if src2 < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MOV,
+                a: stmt.local_slot,
+                b: src2,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            }) < 0 {
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_EXPR {
+            if stmt.expr != null && exec_builder_compile_expr(ctx, stmt.expr) < 0 {
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_RETURN {
+            var ret_slot: i32 = -1;
+            if stmt.expr != null {
+                ret_slot = exec_builder_compile_expr(ctx, stmt.expr);
+                if ret_slot < 0 {
+                    return -1;
+                }
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_RET,
+                a: ret_slot,
+                b: 0,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            }) < 0 {
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_IF {
+            const cond_slot: i32 = exec_builder_compile_expr(ctx, stmt.expr);
+            if cond_slot < 0 {
+                return -1;
+            }
+            const jmp_false: i32 = exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_JMP_IF_FALSE,
+                a: cond_slot,
+                b: 0,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            });
+            if jmp_false < 0 {
+                return -1;
+            }
+            if exec_builder_compile_block(ctx, stmt.then_block) < 0 {
+                return -1;
+            }
+            if stmt.else_block != null && stmt.else_block.stmt_count > 0 {
+                const jmp_end: i32 = exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_JMP,
+                    a: 0,
+                    b: 0,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(stmt.ast_node),
+                });
+                if jmp_end < 0 {
+                    return -1;
+                }
+                exec_builder_patch_jump(ctx, jmp_false, ctx.instr_count);
+                if exec_builder_compile_block(ctx, stmt.else_block) < 0 {
+                    return -1;
+                }
+                exec_builder_patch_jump(ctx, jmp_end, ctx.instr_count);
+            } else {
+                exec_builder_patch_jump(ctx, jmp_false, ctx.instr_count);
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_LOOP {
+            if ctx.loop_depth >= 32 {
+                exec_backend_set_error(stmt.ast_node, "exec: loop 嵌套过深" as *byte, 0);
+                return -1;
+            }
+            const loop_start: i32 = ctx.instr_count;
+            const loop_patch_ptr: &ExecLoopPatch = exec_builder_loop_patch_ref(ctx, ctx.loop_depth);
+            if loop_patch_ptr == null {
+                exec_backend_set_error(stmt.ast_node, "exec: loop patch 栈越界" as *byte, 0);
+                return -1;
+            }
+            loop_patch_ptr[0] = ExecLoopPatch {
+                break_jumps: [],
+                break_count: 0,
+                continue_jumps: [],
+                continue_count: 0,
+                continue_target: loop_start,
+            };
+            ctx.loop_depth = ctx.loop_depth + 1;
+            if exec_builder_compile_block(ctx, stmt.loop_body) < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_JMP,
+                a: 0,
+                b: 0,
+                c: 0,
+                imm: loop_start as i64,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            const loop_end: i32 = ctx.instr_count;
+            const loop_patch: &ExecLoopPatch = exec_builder_loop_patch_ref(ctx, ctx.loop_depth - 1);
+            if loop_patch == null {
+                exec_backend_set_error(stmt.ast_node, "exec: loop patch 读取失败" as *byte, 0);
+                return -1;
+            }
+            var bi: i32 = 0;
+            while bi < loop_patch.break_count {
+                const break_jump: &i32 = exec_builder_break_jump_ref(loop_patch, bi);
+                if break_jump == null {
+                    exec_backend_set_error(stmt.ast_node, "exec: break patch 读取失败" as *byte, 0);
+                    return -1;
+                }
+                exec_builder_patch_jump(ctx, break_jump[0], loop_end);
+                bi = bi + 1;
+            }
+            var ci: i32 = 0;
+            while ci < loop_patch.continue_count {
+                const continue_jump: &i32 = exec_builder_continue_jump_ref(loop_patch, ci);
+                if continue_jump == null {
+                    exec_backend_set_error(stmt.ast_node, "exec: continue patch 读取失败" as *byte, 0);
+                    return -1;
+                }
+                exec_builder_patch_jump(ctx, continue_jump[0], loop_patch.continue_target);
+                ci = ci + 1;
+            }
+            ctx.loop_depth = ctx.loop_depth - 1;
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_BREAK {
+            if ctx.loop_depth <= 0 {
+                exec_backend_set_error(stmt.ast_node, "exec: break 不在 loop 内" as *byte, 0);
+                return -1;
+            }
+            const loop_patch_for_break: &ExecLoopPatch = exec_builder_loop_patch_ref(ctx, ctx.loop_depth - 1);
+            if loop_patch_for_break == null {
+                exec_backend_set_error(stmt.ast_node, "exec: break patch 栈越界" as *byte, 0);
+                return -1;
+            }
+            const patch_idx: i32 = loop_patch_for_break.break_count;
+            const jump_idx: i32 = exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_JMP,
+                a: 0,
+                b: 0,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            });
+            if jump_idx < 0 || patch_idx >= 128 {
+                exec_backend_set_error(stmt.ast_node, "exec: break patch 超出上限" as *byte, 0);
+                return -1;
+            }
+            const break_jump_dst: &i32 = exec_builder_break_jump_ref(loop_patch_for_break, patch_idx);
+            if break_jump_dst == null {
+                exec_backend_set_error(stmt.ast_node, "exec: break patch 写入失败" as *byte, 0);
+                return -1;
+            }
+            break_jump_dst[0] = jump_idx;
+            loop_patch_for_break.break_count = patch_idx + 1;
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_CONTINUE {
+            if ctx.loop_depth <= 0 {
+                exec_backend_set_error(stmt.ast_node, "exec: continue 不在 loop 内" as *byte, 0);
+                return -1;
+            }
+            const loop_patch_for_continue: &ExecLoopPatch = exec_builder_loop_patch_ref(ctx, ctx.loop_depth - 1);
+            if loop_patch_for_continue == null {
+                exec_backend_set_error(stmt.ast_node, "exec: continue patch 栈越界" as *byte, 0);
+                return -1;
+            }
+            const patch_idx2: i32 = loop_patch_for_continue.continue_count;
+            const jump_idx2: i32 = exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_JMP,
+                a: 0,
+                b: 0,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(stmt.ast_node),
+            });
+            if jump_idx2 < 0 || patch_idx2 >= 128 {
+                exec_backend_set_error(stmt.ast_node, "exec: continue patch 超出上限" as *byte, 0);
+                return -1;
+            }
+            const continue_jump_dst: &i32 = exec_builder_continue_jump_ref(loop_patch_for_continue, patch_idx2);
+            if continue_jump_dst == null {
+                exec_backend_set_error(stmt.ast_node, "exec: continue patch 写入失败" as *byte, 0);
+                return -1;
+            }
+            continue_jump_dst[0] = jump_idx2;
+            loop_patch_for_continue.continue_count = patch_idx2 + 1;
+        } else {
+            exec_backend_set_error(stmt.ast_node, "exec: builder 不支持该语句" as *byte, 1);
+            return -1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn exec_builder_build_function(arena: &CompilerArena, fn_hir: &HIRFunction) &BCFunction {
+    if arena == null || fn_hir == null {
+        return null;
+    }
+    var ctx: ExecFunctionBuildContext = ExecFunctionBuildContext {
+        arena: arena,
+        function: fn_hir,
+        instrs: [],
+        instr_count: 0,
+        next_temp_slot: fn_hir.local_count,
+        max_slot_count: fn_hir.local_count,
+        loop_stack: [],
+        loop_depth: 0,
+    };
+    if exec_builder_compile_block(&ctx, fn_hir.body) != 0 {
+        return null;
+    }
+    const last_instr: &BCInstr = exec_builder_instr_slot(&ctx, ctx.instr_count - 1);
+    if ctx.instr_count == 0 || last_instr == null || last_instr.opcode != BCOpcode.BC_RET {
+        if exec_builder_emit(&ctx, BCInstr {
+            opcode: BCOpcode.BC_RET,
+            a: -1,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(fn_hir.decl),
+        }) < 0 {
+            return null;
+        }
+    }
+    const out_instrs: &BCInstr = compiler_arena_alloc(arena, @size_of(BCInstr) * ctx.instr_count as usize) as &BCInstr;
+    const out_fn: &BCFunction = compiler_arena_alloc(arena, @size_of(BCFunction)) as &BCFunction;
+    if out_instrs == null || out_fn == null {
+        exec_backend_set_error(fn_hir.decl, "exec: bytecode function 分配失败" as *byte, 0);
+        return null;
+    }
+    memcpy(out_instrs as *void, &ctx.instrs[0] as *void, @size_of(BCInstr) * ctx.instr_count as usize);
+    _ = memset(out_fn as *byte, 0, @size_of(BCFunction));
+    out_fn.name = fn_hir.name;
+    out_fn.decl = fn_hir.decl;
+    out_fn.instrs = out_instrs;
+    out_fn.instr_count = ctx.instr_count;
+    out_fn.slot_count = ctx.max_slot_count;
+    out_fn.param_count = fn_hir.param_count;
+    out_fn.return_type = copy_type(&fn_hir.return_type.type);
+    return out_fn;
+}
+
+/// 将 Exec HIR 转换为寄存器化 bytecode。
+/// 参数：`arena` 为 bytecode 所属 Arena；`module` 为 lowering 后的 HIR 模块。
+/// 返回值：成功时返回 `BCProgram`；失败时返回 null，并通过 exec backend 错误状态暴露原因。
+export fn exec_build_bytecode(arena: &CompilerArena, module: &HIRModule) &BCProgram {
+    if arena == null || module == null {
+        exec_backend_set_error(null, "exec: bytecode builder 输入无效" as *byte, 0);
+        return null;
+    }
+    const functions: &BCFunction = compiler_arena_alloc(arena, @size_of(BCFunction) * module.function_count as usize) as &BCFunction;
+    const program: &BCProgram = compiler_arena_alloc(arena, @size_of(BCProgram)) as &BCProgram;
+    if (module.function_count > 0 && functions == null) || program == null {
+        exec_backend_set_error(module.entry_function.decl, "exec: BCProgram 分配失败" as *byte, 0);
+        return null;
+    }
+    var entry_index: i32 = -1;
+    var i: i32 = 0;
+    while i < module.function_count {
+        const built: &BCFunction = exec_builder_build_function(arena, module.functions[i]);
+        if built == null {
+            return null;
+        }
+        functions[i] = built[0];
+        if module.functions[i] == module.entry_function {
+            entry_index = i;
+        }
+        i = i + 1;
+    }
+    if entry_index < 0 {
+        exec_backend_set_error(module.entry_function.decl, "exec: 未找到 entry bytecode 函数" as *byte, 0);
+        return null;
+    }
+    _ = memset(program as *byte, 0, @size_of(BCProgram));
+    program.functions = functions;
+    program.function_count = module.function_count;
+    program.entry_function_index = entry_index;
+    program.const_pool = BCConstPool {
+        values: null,
+        count: 0,
+    };
+    return program;
+}

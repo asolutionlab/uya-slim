@@ -1,0 +1,344 @@
+// exec/vm.uya - Minimal bytecode VM
+
+use libc;
+
+fn exec_vm_slot_ref(frame: &ExecFrame, idx: i32) &ExecValue {
+    if frame == null || idx < 0 || idx >= EXEC_MAX_FRAME_SLOTS {
+        return null;
+    }
+    if idx >= 0 && idx < EXEC_MAX_FRAME_SLOTS {
+        return &frame.slots[idx];
+    }
+    return null;
+}
+
+fn exec_vm_print_value(value: ExecValue, newline: i32) void {
+    if value.kind == ExecValueKind.EXEC_VALUE_I32 {
+        if newline != 0 {
+            fprintf(libc.stdout, "%d\n" as *byte, value.i64_value as i32);
+        } else {
+            fprintf(libc.stdout, "%d" as *byte, value.i64_value as i32);
+        }
+        return;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_BOOL {
+        var bool_text: *byte = "false" as *byte;
+        if value.i64_value != 0 {
+            bool_text = "true" as *byte;
+        }
+        if newline != 0 {
+            fprintf(libc.stdout, "%s\n" as *byte, bool_text);
+        } else {
+            fprintf(libc.stdout, "%s" as *byte, bool_text);
+        }
+        return;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_BYTE {
+        if newline != 0 {
+            fprintf(libc.stdout, "%c\n" as *byte, value.i64_value as i32);
+        } else {
+            fprintf(libc.stdout, "%c" as *byte, value.i64_value as i32);
+        }
+        return;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_STRING && value.ptr_value != null {
+        if newline != 0 {
+            fprintf(libc.stdout, "%s\n" as *byte, value.ptr_value as *byte);
+        } else {
+            fprintf(libc.stdout, "%s" as *byte, value.ptr_value as *byte);
+        }
+        return;
+    }
+    if newline != 0 {
+        fprintf(libc.stdout, "\n" as *byte);
+    }
+}
+
+fn exec_vm_find_function(program: &BCProgram, name: &byte) i32 {
+    if program == null || name == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < program.function_count {
+        if program.functions[i].name != null && str_equals(program.functions[i].name, name) != 0 {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_vm_trace(trace_vm: i32, fn_name: &byte, ip: i32, instr: &BCInstr) void {
+    if trace_vm == 0 || instr == null {
+        return;
+    }
+    fprintf(libc.stderr, "[vm] fn=%s ip=%d op=%d a=%d b=%d c=%d imm=%ld\n" as *byte,
+        fn_name as *byte, ip, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
+}
+
+fn exec_vm_call_function(program: &BCProgram, function_index: i32, args: &ExecValue, arg_count: i32, trace_vm: i32, out_value: &ExecValue) i32 {
+    if program == null || function_index < 0 || function_index >= program.function_count || out_value == null {
+        exec_backend_set_error(null, "exec: VM 调用参数无效" as *byte, 0);
+        return -1;
+    }
+    const function: &BCFunction = program.functions + function_index;
+    if function.slot_count > EXEC_MAX_FRAME_SLOTS {
+        exec_backend_set_error(function.decl, "exec: VM frame slot 超限" as *byte, 0);
+        return -1;
+    }
+    var frame: ExecFrame = ExecFrame {
+        function: function,
+        ip: 0,
+        slots: [],
+    };
+    var si: i32 = 0;
+    while si < EXEC_MAX_FRAME_SLOTS {
+        frame.slots[si] = exec_make_void();
+        si = si + 1;
+    }
+    si = 0;
+    while si < arg_count && si < function.param_count {
+        frame.slots[si] = args[si];
+        si = si + 1;
+    }
+    while frame.ip < function.instr_count {
+        const instr: &BCInstr = function.instrs + frame.ip;
+        exec_vm_trace(trace_vm, function.name, frame.ip, instr);
+        const slot_a: &ExecValue = exec_vm_slot_ref(&frame, instr.a);
+        const slot_b: &ExecValue = exec_vm_slot_ref(&frame, instr.b);
+        const slot_c: &ExecValue = exec_vm_slot_ref(&frame, instr.c);
+        if instr.opcode == BCOpcode.BC_LOAD_CONST {
+            if slot_a == null {
+                exec_backend_set_error(function.decl, "exec: LOAD_CONST 槽位越界" as *byte, 0);
+                return -1;
+            }
+            if instr.text != null {
+                slot_a[0] = exec_make_string(instr.text);
+            } else if function.return_type.kind == TypeKind.TYPE_BOOL || (instr.source.filename != null && instr.source.line >= 0 && instr.source.column >= 0 && instr.imm >= 0 && instr.imm <= 1) {
+                slot_a[0] = exec_make_i32(instr.imm as i32);
+                if instr.imm == 0 || instr.imm == 1 {
+                    slot_a.kind = ExecValueKind.EXEC_VALUE_I32;
+                }
+            } else {
+                slot_a[0] = exec_make_i32(instr.imm as i32);
+            }
+        } else if instr.opcode == BCOpcode.BC_MOV {
+            if slot_a == null || slot_b == null {
+                exec_backend_set_error(function.decl, "exec: MOV 槽位越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = slot_b[0];
+        } else if instr.opcode == BCOpcode.BC_ADD {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: ADD 槽位越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_i32((slot_b.i64_value + slot_c.i64_value) as i32);
+        } else if instr.opcode == BCOpcode.BC_SUB {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: SUB 槽位越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_i32((slot_b.i64_value - slot_c.i64_value) as i32);
+        } else if instr.opcode == BCOpcode.BC_MUL {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: MUL 槽位越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_i32((slot_b.i64_value * slot_c.i64_value) as i32);
+        } else if instr.opcode == BCOpcode.BC_DIV {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: DIV 槽位越界" as *byte, 0);
+                return -1;
+            }
+            if slot_c.i64_value == 0 {
+                exec_backend_set_error(function.decl, "exec: 除零" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_i32((slot_b.i64_value / slot_c.i64_value) as i32);
+        } else if instr.opcode == BCOpcode.BC_REM {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: REM 槽位越界" as *byte, 0);
+                return -1;
+            }
+            if slot_c.i64_value == 0 {
+                exec_backend_set_error(function.decl, "exec: 取模除零" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_i32((slot_b.i64_value % slot_c.i64_value) as i32);
+        } else if instr.opcode == BCOpcode.BC_NEG {
+            if slot_a == null || slot_b == null {
+                exec_backend_set_error(function.decl, "exec: NEG 槽位越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_i32((0 - slot_b.i64_value) as i32);
+        } else if instr.opcode == BCOpcode.BC_NOT {
+            if slot_a == null || slot_b == null {
+                exec_backend_set_error(function.decl, "exec: NOT 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var not_value: i32 = 0;
+            if exec_value_truthy(slot_b[0]) == 0 {
+                not_value = 1;
+            }
+            slot_a[0] = exec_make_bool(not_value);
+        } else if instr.opcode == BCOpcode.BC_CMP_EQ {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: CMP_EQ 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var eq_value: i32 = 0;
+            if slot_b.i64_value == slot_c.i64_value {
+                eq_value = 1;
+            }
+            slot_a[0] = exec_make_bool(eq_value);
+        } else if instr.opcode == BCOpcode.BC_CMP_NE {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: CMP_NE 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var ne_value: i32 = 0;
+            if slot_b.i64_value != slot_c.i64_value {
+                ne_value = 1;
+            }
+            slot_a[0] = exec_make_bool(ne_value);
+        } else if instr.opcode == BCOpcode.BC_CMP_LT {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: CMP_LT 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var lt_value: i32 = 0;
+            if slot_b.i64_value < slot_c.i64_value {
+                lt_value = 1;
+            }
+            slot_a[0] = exec_make_bool(lt_value);
+        } else if instr.opcode == BCOpcode.BC_CMP_LE {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: CMP_LE 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var le_value: i32 = 0;
+            if slot_b.i64_value <= slot_c.i64_value {
+                le_value = 1;
+            }
+            slot_a[0] = exec_make_bool(le_value);
+        } else if instr.opcode == BCOpcode.BC_CMP_GT {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: CMP_GT 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var gt_value: i32 = 0;
+            if slot_b.i64_value > slot_c.i64_value {
+                gt_value = 1;
+            }
+            slot_a[0] = exec_make_bool(gt_value);
+        } else if instr.opcode == BCOpcode.BC_CMP_GE {
+            if slot_a == null || slot_b == null || slot_c == null {
+                exec_backend_set_error(function.decl, "exec: CMP_GE 槽位越界" as *byte, 0);
+                return -1;
+            }
+            var ge_value: i32 = 0;
+            if slot_b.i64_value >= slot_c.i64_value {
+                ge_value = 1;
+            }
+            slot_a[0] = exec_make_bool(ge_value);
+        } else if instr.opcode == BCOpcode.BC_JMP {
+            frame.ip = instr.imm as i32;
+            continue;
+        } else if instr.opcode == BCOpcode.BC_JMP_IF_TRUE {
+            if slot_a == null {
+                exec_backend_set_error(function.decl, "exec: JMP_IF_TRUE 槽位越界" as *byte, 0);
+                return -1;
+            }
+            if exec_value_truthy(slot_a[0]) != 0 {
+                frame.ip = instr.imm as i32;
+                continue;
+            }
+        } else if instr.opcode == BCOpcode.BC_JMP_IF_FALSE {
+            if slot_a == null {
+                exec_backend_set_error(function.decl, "exec: JMP_IF_FALSE 槽位越界" as *byte, 0);
+                return -1;
+            }
+            if exec_value_truthy(slot_a[0]) == 0 {
+                frame.ip = instr.imm as i32;
+                continue;
+            }
+        } else if instr.opcode == BCOpcode.BC_CALL {
+            const callee_idx: i32 = exec_vm_find_function(program, instr.text);
+            if callee_idx < 0 {
+                exec_backend_set_error(function.decl, "exec: 无法找到被调用函数" as *byte, 0);
+                return -1;
+            }
+            var call_args: [ExecValue: EXEC_MAX_CALL_ARGS] = [];
+            var ai: i32 = 0;
+            while ai < instr.c && ai < EXEC_MAX_CALL_ARGS {
+                const arg_slot_index: i32 = instr.b + ai;
+                const arg_slot: &ExecValue = exec_vm_slot_ref(&frame, arg_slot_index);
+                if arg_slot == null {
+                    exec_backend_set_error(function.decl, "exec: CALL 参数槽位越界" as *byte, 0);
+                    return -1;
+                }
+                call_args[ai] = arg_slot[0];
+                ai = ai + 1;
+            }
+            var call_result: ExecValue = exec_make_void();
+            if exec_vm_call_function(program, callee_idx, &call_args[0], instr.c, trace_vm, &call_result) != 0 {
+                return -1;
+            }
+            if slot_a == null {
+                exec_backend_set_error(function.decl, "exec: CALL 返回槽位越界" as *byte, 0);
+                return -1;
+            }
+            slot_a.kind = call_result.kind;
+            slot_a.i64_value = call_result.i64_value;
+            slot_a.ptr_value = call_result.ptr_value;
+        } else if instr.opcode == BCOpcode.BC_PRINT {
+            if slot_a == null {
+                exec_backend_set_error(function.decl, "exec: PRINT 槽位越界" as *byte, 0);
+                return -1;
+            }
+            exec_vm_print_value(slot_a[0], 0);
+        } else if instr.opcode == BCOpcode.BC_PRINTLN {
+            if slot_a == null {
+                exec_backend_set_error(function.decl, "exec: PRINTLN 槽位越界" as *byte, 0);
+                return -1;
+            }
+            exec_vm_print_value(slot_a[0], 1);
+        } else if instr.opcode == BCOpcode.BC_RET {
+            if instr.a >= 0 {
+                if slot_a == null {
+                    exec_backend_set_error(function.decl, "exec: RET 槽位越界" as *byte, 0);
+                    return -1;
+                }
+                out_value[0] = slot_a[0];
+            } else {
+                out_value[0] = exec_make_void();
+            }
+            return 0;
+        } else {
+            exec_backend_set_error(function.decl, "exec: 未知 bytecode opcode" as *byte, 0);
+            return -1;
+        }
+        frame.ip = frame.ip + 1;
+    }
+    out_value[0] = exec_make_void();
+    return 0;
+}
+
+/// 运行已经构建好的 bytecode 程序。
+/// 参数：`program` 为 exec backend 构建产物；`trace_vm` 控制是否打印逐条 VM trace。
+/// 返回值：成功时返回程序 `main` 的退出码；失败时返回非 0，并通过 exec backend 错误状态说明原因。
+export fn vm_run_program(program: &BCProgram, trace_vm: i32) i32 {
+    if program == null {
+        exec_backend_set_error(null, "exec: VM 程序为空" as *byte, 0);
+        return 1;
+    }
+    var result: ExecValue = exec_make_void();
+    if exec_vm_call_function(program, program.entry_function_index, null, 0, trace_vm, &result) != 0 {
+        return 1;
+    }
+    if result.kind == ExecValueKind.EXEC_VALUE_I32 || result.kind == ExecValueKind.EXEC_VALUE_BYTE || result.kind == ExecValueKind.EXEC_VALUE_BOOL {
+        return result.i64_value as i32;
+    }
+    return 0;
+}

@@ -1,8 +1,72 @@
 # Uya Bytecode / IR 执行后端详细设计
 
-**版本**：v0.1  
+**版本**：v0.2
 **日期**：2026-05-17  
-**状态**：设计完成，待实现
+**状态**：设计完成，第一阶段实现进行中
+
+---
+
+## 实现状态附记（2026-05-17）
+
+本设计文档最初写成时，exec backend 仍处于纯设计状态；截至当日晚间，仓库中已经落下第一批实现，因此这里补一段现实状态，避免读者误以为“尚未开始编码”。
+
+已落地部分：
+
+- `src/exec/` 目录与首批文件已经创建：
+  - `main.uya`
+  - `hir.uya`
+  - `lower.uya`
+  - `bytecode.uya`
+  - `builder.uya`
+  - `vm.uya`
+  - `value.uya`
+  - `frame.uya`
+  - `debug.uya`
+- `src/main.uya` 已接入：
+  - `use exec;`
+  - `BACKEND_EXEC`
+  - `--exec`
+  - `--vm`
+  - `--dump-exec-hir`
+  - `--dump-bytecode`
+  - `--trace-vm`
+- `run/test` 已有第一版 exec backend 分支与 fallback 逻辑
+- 最小 HIR / bytecode / VM 闭环代码已存在，当前支持的只是很小的标量子集
+
+已验证部分：
+
+- 现有编译器可在 `--no-safety-proof` 下重新编译 `src/main.uya`，例如：
+
+```text
+./bin/uya build src/main.uya -o /tmp/uya_exec_backend_smoke.c --no-safety-proof
+```
+
+- 现有编译器也可在默认安全证明配置下重新编译 `src/main.uya`，例如：
+
+```text
+./bin/uya build src/main.uya -o /tmp/uya_exec_default_smoke.c
+```
+
+- 新生成的编译器二进制已经可以跑通最小 VM smoke：
+
+```text
+./build/uya_exec_default_smoke_bin run --vm tests/test_main_only.uya
+```
+
+这说明：
+
+- 模块发现已打通
+- checker/optimizer 后的 exec 分叉已接线
+- 新增 exec 模块不会阻塞现有 C99 代码生成
+- 默认安全证明下的 `exec` 模块基础边界检查已收敛到可编译状态
+- 从“新编译器二进制 -> exec build -> VM 启动最小程序”的闭环已经建立
+
+尚未完成部分：
+
+- 还未验证更大覆盖面的 `uya run/test --vm`
+- 当前实现远未覆盖 `struct/array/slice`、`!T`、`try/catch`、`defer` 等设计目标
+
+因此，本文其余章节依旧描述目标架构，但阅读时请以“已开始实现、仍处于第一阶段骨架期”理解。
 
 ---
 
@@ -863,7 +927,7 @@ obj.method(a, b) -> Type_method(obj, a, b)
 
 - 若 lower 阶段发现未支持语义，应给出稳定原因码
 - `run/test` 在允许 fallback 时自动回退到 C99 backend
-- `--exec-only` 模式下则直接失败
+- `--vm` 模式下则直接失败
 
 ---
 
