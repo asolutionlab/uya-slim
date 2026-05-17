@@ -10,7 +10,7 @@
 
 当前仓库仍处于设计待实现状态：
 
-- `src/main.uya` 仍约 8400 行，`parse_args()` 与 `main()` 仍直接处理 `build`/`run`/`test`/`fmt` 等业务。
+- `src/main.uya` 仍约 8400 行，`parse_args()` 与 `main()` 仍直接处理 `build`/`check`/`run`/`test`/`fmt` 等业务。
 - `src/cmd/*/main.uya` 尚未创建。
 - `Makefile` 尚未提供 `make cmds` 与 `cmd-*` 目标。
 - `src/main.uya` 尚未实现 `dispatch_external_cmd`。
@@ -25,7 +25,7 @@
 - 按 TDD 推进：先加相关测试，再做最小实现。
 - 保留 `uya <file.uya> ...` 隐式编译入口，直到 `cmd/build` seed 或等价 bootstrap 编译器来源稳定。
 - 最终目标是 `src/main.uya` 只负责命令分发；编译器业务归属 `cmd/build` 和共享 compiler driver。
-- 公开 `uya build/run/test/fmt/upm` 完成外置化后必须走 `cmd/xxx`，不要静默回退内部实现。
+- 公开 `uya build/check/run/test/fmt/upm` 完成外置化后必须走 `cmd/xxx`，不要静默回退内部实现。
 - `cmd/run` 与 `cmd/test` 由 compiler driver 完成编译、链接、执行和退出码映射，不在 wrapper 里另写一套执行逻辑。
 
 ---
@@ -40,6 +40,7 @@
 
 ```bash
 ./bin/uya --version || true
+./bin/uya check tests/check_cli_no_main.uya
 ./bin/uya build tests/test_errno.uya -o /tmp/uya_baseline_errno --no-split-c
 ./bin/uya test tests/test_errno.uya
 ./bin/uya fmt tests/test_errno.uya >/tmp/uya_baseline_fmt.out
@@ -57,7 +58,7 @@
 compiler_driver_parse_args(default_command, argv_start, allow_optional_subcommand, args_out)
 ```
 
-- [ ] 将当前 `export fn main()` 中 `build/run/test` 共享流程提取到 driver，例如：
+- [ ] 将当前 `export fn main()` 中 `build/check/run/test` 共享流程提取到 driver，例如：
 
 ```text
 compiler_driver_main(command, argv_start) -> exit_code
@@ -66,6 +67,7 @@ compiler_driver_compile(command, argv_start, result_out) -> exit_code
 
 - [ ] 明确 driver 语义：
   - [ ] `COMMAND_BUILD` 完成完整 build CLI 语义并返回退出码。
+  - [ ] `COMMAND_CHECK` 完成 lexer/parser/checker 流程并返回退出码，不执行代码生成。
   - [ ] `COMMAND_RUN` 完成编译、链接、执行目标程序和退出码映射。
   - [ ] `COMMAND_TEST` 完成测试编译、执行、摘要输出和退出码映射。
 - [ ] 将链接工具链函数移入 driver：`link_with_toolchain`、`compile_c_source_to_object`、`link_split_with_make` 等。
@@ -167,7 +169,7 @@ bin/cmd/upm
 
 ### C4：实现主程序调度器
 
-- [ ] 在 `src/main.uya` 新增 `is_external_cmd(name)`，识别 `build/run/test/fmt/upm`。
+- [ ] 在 `src/main.uya` 新增 `is_external_cmd(name)`，识别 `build/check/run/test/fmt/upm`。
 - [ ] 新增 `build_external_cmd_path(cmd_name, out, out_cap)`，基于 `get_compiler_dir(get_argv(0), ...)` 生成 `cmd/<name>` 路径，Windows 目标补 `.exe`。
 - [ ] 新增 `dispatch_external_cmd(cmd_name, strip_subcommand)`：
   - [ ] 构造新的 argv 数组，`argv[0]` 为 `cmd_path`。
@@ -237,7 +239,7 @@ make backup-all
 
 ## 文档同步
 
-- [ ] 更新 `docs/UYA_BUILD_RUN.md`：说明 `uya build/run/test` 由 `cmd/build`、`cmd/run`、`cmd/test` 执行。
+- [ ] 更新 `docs/UYA_BUILD_RUN.md`：说明 `uya build/check/run/test` 由 `cmd/build`、`cmd/check`、`cmd/run`、`cmd/test` 执行。
 - [ ] 更新 `docs/TESTING.md`：加入 `make cmds` 和 `tests/test_cmd_dispatch.sh`。
 - [ ] 如 `upm` 帮助文字采用 `upm` 而不是 `uyapm`，在相关文档中说明二者关系或保留为后续 TODO。
 - [ ] 如果没有改变语言语法、BNF 或内建函数，不需要升级 `docs/uya.md` 规范版本。

@@ -10,6 +10,7 @@ Uya 工具链采用**子命令独立程序**架构，每个子命令是一个独
 │                    (主入口)                          │
 ├──────────────────────────────────────────────────────┤
 │  uya build  ──────▶ uya-build  (编译器)             │
+│  uya check  ──────▶ uya-check  (前端检查器)         │
 │  uya run    ──────▶ uya-run    (编译并运行)         │
 │  uya test   ──────▶ uya-test   (测试运行器)         │
 │  uya fmt    ──────▶ uya-fmt    (格式化器)           │
@@ -37,6 +38,7 @@ uya-asm/
 │   ├── main.uya           # uya 主入口（转发器）
 │   ├── tools/             # 独立工具目录
 │   │   ├── build.uya      # uya-build 入口
+│   │   ├── check.uya      # uya-check 入口
 │   │   ├── run.uya        # uya-run 入口
 │   │   ├── test.uya       # uya-test 入口
 │   │   ├── fmt.uya        # uya-fmt 入口
@@ -55,6 +57,7 @@ uya-asm/
 ├── bin/                   # 编译输出
 │   ├── uya                # 主入口
 │   ├── uya-build
+│   ├── uya-check
 │   ├── uya-run
 │   ├── uya-test
 │   └── uya-fmt
@@ -67,6 +70,7 @@ uya-asm/
 |------|------|----------|----------|
 | `uya` | 子命令转发 | `main.uya` | 无 |
 | `uya-build` | 编译为可执行文件 | `tools/build.uya` | lexer, parser, checker, codegen |
+| `uya-check` | 只执行到 checker | `tools/check.uya` | lexer, parser, checker |
 | `uya-run` | 编译并运行 | `tools/run.uya` | build (调用) |
 | `uya-test` | 运行测试 | `tools/test.uya` | build (调用) |
 | `uya-fmt` | 代码格式化 | `tools/fmt.uya` | lexer, parser, formatter |
@@ -1168,7 +1172,7 @@ export fn format_code(
 
 ### 5.1 编译核心模块
 
-`src/core/` 目录，供 build/run/test 共享：
+`src/core/` 目录，供 build/check/run/test 共享：
 
 ```
 src/core/

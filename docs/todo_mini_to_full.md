@@ -87,7 +87,7 @@
 | 38.3 | **新标准库 SQL（std.sql）** | [~] `lib/std/sql/`：`types` / `driver` / `db` 已落地，提供 `Value`、`NamedArg`、`Driver`、`Conn`、`Stmt`、`Rows`、`Tx`、`DB` 等通用抽象；fake driver 回归 `tests/test_std_sql.uya` 已通过。SQLite / MySQL 等真实驱动待接入，说明见 [std_sql.md](std_sql.md) |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
-| 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
+| 41 | **统一命令行接口（build/check/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
 
 标准库分层重构（std → libc → osal → syscall）的详细任务见 [todo_std_refactor.md](todo_std_refactor.md)。
 
@@ -139,7 +139,7 @@
 
 ## 下次优先实现（统一命令行接口）
 
-### 命令行接口标准化（build/run/test）
+### 命令行接口标准化（build/check/run/test）
 
 - [ ] **统一应用程序入口点**：
   - 应用程序必须包含 `export fn main() !int` 或 `export fn main() int`
@@ -149,6 +149,10 @@
 - [ ] **`uya build` 命令**：
   - 编译为可执行文件：`uya build main.uya -o myapp`
   - 支持现有参数：`--c99`、`--outlibc` 等
+
+- [ ] **`uya check` 命令**：
+  - 仅执行到 checker：`uya check main.uya`
+  - 不生成 C、不链接、不运行
 
 - [ ] **`uya run` 命令**：
   - 编译并运行：`uya run main.uya`

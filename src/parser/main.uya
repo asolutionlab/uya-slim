@@ -31,6 +31,7 @@ struct Parser {
     context: ParserContext,  // 当前解析上下文
     pending_greater_token: &Token,  // 待处理的 > token（用于嵌套泛型 >> 拆分）
     saw_use_std: i32,        // 当前文件中是否已显式出现 use std;
+    has_error: i32,          // 当前文件解析期间是否已报告语法错误
 }
 
 // 初始化 Parser
@@ -47,6 +48,7 @@ fn parser_init(parser: &Parser, lexer: &Lexer, arena: &CompilerArena) i32 {
     parser.context = ParserContext.PARSER_CONTEXT_NORMAL;  // 默认上下文
     parser.pending_greater_token = null;  // 初始化待处理的 > token
     parser.saw_use_std = 0;
+    parser.has_error = 0;
     
     // 获取第一个 Token
     parser.current_token = lexer_next_token(lexer, arena);
@@ -182,6 +184,7 @@ fn parser_report_syntax_error(parser: &Parser, message: &byte) void {
     if parser == null {
         return;
     }
+    parser.has_error = 1;
 
     var filename: &byte = "(unknown)" as *byte;
     if parser.lexer != null && parser.lexer.filename != null {

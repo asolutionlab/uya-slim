@@ -70,6 +70,7 @@ enum BackendType {
 // 命令类型
 enum CommandType {
     COMMAND_BUILD,   // uya build - 编译为可执行文件
+    COMMAND_CHECK,   // uya check - 只执行到 checker
     COMMAND_RUN,     // uya run - 编译并运行
     COMMAND_TEST,    // uya test - 编译测试并运行
     COMMAND_PACK_IMAGE, // uya pack-image - 将 .pobj 打包为 .uapp
@@ -4011,6 +4012,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "版本：v0.9.7\n" as *byte);
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件或中间产物\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s check <文件> [选项]              仅做词法/语法/类型检查，不执行代码生成\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build --app microapp <文件> -o <xxx.pobj|xxx.uapp>  输出 microapp 载荷对象或镜像\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s pack-image <xxx.pobj> -o <xxx.uapp>  将 microapp 载荷对象打包为 .uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s inspect-image <xxx.pobj|xxx.uapp>  打印 microapp 头信息\n" as *byte, name as *byte);
@@ -4020,6 +4022,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n示例:\n" as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s check lib/foo.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s pack-image hello.pobj -o hello.uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s inspect-image hello.uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s verify-image hello.uapp\n" as *byte, name as *byte);
@@ -5002,6 +5005,7 @@ fn collect_module_dependencies(
         context: ParserContext.PARSER_CONTEXT_NORMAL,
         pending_greater_token: null,
         saw_use_std: 0,
+        has_error: 0,
     };
     if parser_init(&parser, lexer, arena) != 0 {
         compiler_arena_restore(arena, arena_save_offset);
@@ -5730,6 +5734,9 @@ fn parse_args(
     if first_arg != null {
         if strcmp(first_arg, "build" as *byte) == 0 {
             command[0] = CommandType.COMMAND_BUILD;
+            start_idx = 2;
+        } else if strcmp(first_arg, "check" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_CHECK;
             start_idx = 2;
         } else if strcmp(first_arg, "run" as *byte) == 0 {
             command[0] = CommandType.COMMAND_RUN;
@@ -7103,6 +7110,7 @@ fn compile_files(
     stack_size: i32,
     split_c_dir: &byte,
     async_frame_heap_fallback: i32,
+    stop_after_checker: i32,
     out_artifacts: &CompileArtifacts
 ) i32 {
     compile_artifacts_reset(out_artifacts);
@@ -7233,8 +7241,8 @@ fn compile_files(
                 continue;
             }
             
-            // 是文件，检查是否包含 main
-            if detect_main_function(input) != 0 {
+            // check 模式允许单文件无 main；其余命令保持现有 main 约束
+            if stop_after_checker != 0 || detect_main_function(input) != 0 {
                 resolved_files[resolved_count] = input;
                 resolved_count = resolved_count + 1;
                 // 设置项目根目录（文件所在目录）
@@ -7258,7 +7266,7 @@ fn compile_files(
             } else {
                 // 多文件模式下，允许某些文件不包含 main（它们是库文件）
                 // 但如果这是唯一输入文件�����则必须包含 main
-                if input_file_count == 1 {
+                if stop_after_checker == 0 && input_file_count == 1 {
                     fprintf(libc.stderr, "错误: 文件 '%s' 不包含 main 函数\n" as *byte, input_path);
                     return 1;
                 }
@@ -7274,7 +7282,11 @@ fn compile_files(
     }
     
     if resolved_count == 0 {
-        fprintf(libc.stderr, "错误: 未找到包含 main 函数的文件\n" as *byte);
+        if stop_after_checker != 0 {
+            fprintf(libc.stderr, "错误: 未找到可检查的 .uya 文件\n" as *byte);
+        } else {
+            fprintf(libc.stderr, "错误: 未找到包含 main 函数的文件\n" as *byte);
+        }
         return 1;
     }
     
@@ -7298,7 +7310,7 @@ fn compile_files(
     
     // 如果有 export fn main 或 test 语句（但没有 export fn main），自动添加 std.runtime.entry
     // test 模式下需要 entry.uya 来提供 C main 入口
-    if has_export_extern_main == 0 && (has_export_main != 0 || has_test_stmt != 0) {
+    if stop_after_checker == 0 && has_export_extern_main == 0 && (has_export_main != 0 || has_test_stmt != 0) {
         var entry_path: [byte: PATH_MAX] = [];
         const entry_len: i32 = snprintf(&entry_path[0], PATH_MAX, "%sstd/runtime/entry/entry.uya" as *byte, &uya_root_buffer[0] as *byte);
         if entry_len > 0 && entry_len < PATH_MAX {
@@ -7391,7 +7403,11 @@ fn compile_files(
     if out_artifacts != null {
         out_artifacts.generated_c_path = actual_output as &byte;
     }
-    fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
+    if stop_after_checker != 0 {
+        fprintf(libc.stderr, "输出模式: checker-only\n" as *byte);
+    } else {
+        fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
+    }
     if project_root != null {
         fprintf(libc.stderr, "项目根目录: %s\n" as *byte, project_root as *byte);
     }
@@ -7450,6 +7466,7 @@ fn compile_files(
             context: ParserContext.PARSER_CONTEXT_NORMAL,
             pending_greater_token: null,
             saw_use_std: 0,
+            has_error: 0,
         };
         if parser_init(&parser, lexer, &arena) != 0 {
             fprintf(libc.stderr, "错误: Parser 初始化失败: %s\n" as *byte, input_path);
@@ -7466,6 +7483,10 @@ fn compile_files(
         }
         // 检查词法分析错误（如未闭合块注释）
         if lexer.has_error != 0 {
+            fprintf(libc.stderr, "错误: 语法分析失败: %s\n" as *byte, input_path);
+            return 1;
+        }
+        if parser.has_error != 0 {
             fprintf(libc.stderr, "错误: 语法分析失败: %s\n" as *byte, input_path);
             return 1;
         }
@@ -7581,6 +7602,10 @@ fn compile_files(
     fprintf(libc.stderr, "类型检查通过\n" as *byte);
     if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM {
         merged_ast = checker.program_node;
+    }
+    if stop_after_checker != 0 {
+        fprintf(libc.stderr, "\n检查完成：checker 通过（未执行代码生成）\n" as *byte);
+        return 0;
     }
     if out_artifacts != null {
         if collect_c_import_plan(&arena, merged_ast, &out_artifacts.c_import_plan) != 0 {
@@ -8033,7 +8058,11 @@ export fn main() i32 {
         c_import_sidecar_path: null,
     };
     var selected_backend: BackendType = backend;
-    var result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, &artifacts);
+    var stop_after_checker: i32 = 0;
+    if command == CommandType.COMMAND_CHECK {
+        stop_after_checker = 1;
+    }
+    var result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
     if result == 2 && selected_backend == BackendType.BACKEND_EXEC && exec_only == 0 {
         const exec_err: &byte = exec_backend_get_last_error();
         if exec_err != null {
@@ -8042,7 +8071,7 @@ export fn main() i32 {
             fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99\n" as *byte);
         }
         selected_backend = BackendType.BACKEND_C99;
-        result = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, &artifacts);
+        result = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
     }
     if result != 0 {
         return 1;

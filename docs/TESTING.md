@@ -27,6 +27,17 @@ export fn main() i32 {
 
 ## 运行测试
 
+### 语法 / checker 快速检查
+
+在跑完整回归前，建议先用 `check` 做单文件快速验证：
+
+```bash
+bin/uya check tests/check_cli_no_main.uya
+bin/uya check tests/error_check_missing_brace.uya
+```
+
+`check` 只跑到 checker，不生成 C、不链接、不执行程序，适合先确认语法错误、模块解析错误和类型错误。
+
 ### 完整测试套件
 
 ```bash
@@ -51,7 +62,7 @@ make tests-uya
 ### 单个测试
 
 ```bash
-bin/uya tests/programs/test_basic.uya -o /tmp/test.c --c99
+bin/uya build tests/programs/test_basic.uya -o /tmp/test.c --c99
 gcc -std=c99 /tmp/test.c -o /tmp/test -lm
 /tmp/test
 ```
@@ -59,7 +70,7 @@ gcc -std=c99 /tmp/test.c -o /tmp/test -lm
 对于带 `_start` 的 `--nostdlib` 产物，链接方式需改成仓库当前使用的 freestanding 方式。例如：
 
 ```bash
-bin/uya --c99 --nostdlib tests/test_std_sql.uya -o /tmp/test_std_sql.c
+bin/uya build --c99 --nostdlib tests/test_std_sql.uya -o /tmp/test_std_sql.c
 gcc -std=c99 -nostdlib -static -no-pie /tmp/test_std_sql.c -o /tmp/test_std_sql
 /tmp/test_std_sql
 ```

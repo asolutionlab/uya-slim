@@ -64,14 +64,21 @@ fn exec_builder_continue_jump_ref(loop_patch: &ExecLoopPatch, idx: i32) &i32 {
 }
 
 fn exec_builder_emit(ctx: &ExecFunctionBuildContext, instr: BCInstr) i32 {
-    if ctx == null || ctx.instr_count >= EXEC_MAX_BYTECODE_INSTRS {
+    if ctx == null {
+        return -1;
+    }
+    const instr_index: i32 = ctx.instr_count;
+    if instr_index >= EXEC_MAX_BYTECODE_INSTRS {
         exec_backend_set_error(ctx.function.decl, "exec: bytecode 指令超出上限" as *byte, 0);
         return -1;
     }
-    if ctx.instr_count >= 0 && ctx.instr_count < EXEC_MAX_BYTECODE_INSTRS {
-        ctx.instrs[ctx.instr_count] = instr;
+    const instr_ptr: &BCInstr = exec_builder_instr_slot(ctx, instr_index);
+    if instr_ptr == null {
+        exec_backend_set_error(ctx.function.decl, "exec: bytecode 指令写入失败" as *byte, 0);
+        return -1;
     }
-    ctx.instr_count = ctx.instr_count + 1;
+    instr_ptr[0] = instr;
+    ctx.instr_count = instr_index + 1;
     return ctx.instr_count - 1;
 }
 

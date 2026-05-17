@@ -499,9 +499,19 @@ make from-c
 
 ```bash
 # 运行单个测试
-./bin/uya tests/programs/test_xxx.uya -o /tmp/test.c
+./bin/uya build tests/programs/test_xxx.uya -o /tmp/test.c
 gcc /tmp/test.c -o /tmp/test && /tmp/test
 ```
+
+### 先做语法 / checker 检查
+
+如果你怀疑问题出在语法、模块解析或类型检查阶段，可以先运行：
+
+```bash
+./bin/uya check your_file.uya
+```
+
+这会只执行到 checker，不进入代码生成与宿主 C 编译器，便于更快定位前端问题。
 
 ---
 
