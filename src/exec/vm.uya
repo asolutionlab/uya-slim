@@ -76,6 +76,21 @@ fn exec_vm_trace(trace_vm: i32, fn_name: &byte, ip: i32, instr: &BCInstr) void {
         fn_name as *byte, ip, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
 }
 
+fn exec_vm_trace_call_enter(trace_vm: i32, fn_name: &byte, arg_count: i32) void {
+    if trace_vm == 0 {
+        return;
+    }
+    fprintf(libc.stderr, "[vm] enter fn=%s args=%d\n" as *byte, fn_name as *byte, arg_count);
+}
+
+fn exec_vm_trace_jump(trace_vm: i32, fn_name: &byte, from_ip: i32, to_ip: i32, reason: &byte) void {
+    if trace_vm == 0 {
+        return;
+    }
+    fprintf(libc.stderr, "[vm] jump fn=%s from=%d to=%d reason=%s\n" as *byte,
+        fn_name as *byte, from_ip, to_ip, reason as *byte);
+}
+
 fn exec_vm_call_function(program: &BCProgram, function_index: i32, args: &ExecValue, arg_count: i32, trace_vm: i32, out_value: &ExecValue) i32 {
     if program == null || function_index < 0 || function_index >= program.function_count || out_value == null {
         exec_backend_set_error(null, "exec: VM 调用参数无效" as *byte, 0);
@@ -91,6 +106,7 @@ fn exec_vm_call_function(program: &BCProgram, function_index: i32, args: &ExecVa
         ip: 0,
         slots: [],
     };
+    exec_vm_trace_call_enter(trace_vm, function.name, arg_count);
     var si: i32 = 0;
     while si < EXEC_MAX_FRAME_SLOTS {
         frame.slots[si] = exec_make_void();
@@ -243,6 +259,7 @@ fn exec_vm_call_function(program: &BCProgram, function_index: i32, args: &ExecVa
             }
             slot_a[0] = exec_make_bool(ge_value);
         } else if instr.opcode == BCOpcode.BC_JMP {
+            exec_vm_trace_jump(trace_vm, function.name, frame.ip, instr.imm as i32, "jmp" as *byte);
             frame.ip = instr.imm as i32;
             continue;
         } else if instr.opcode == BCOpcode.BC_JMP_IF_TRUE {
@@ -251,6 +268,7 @@ fn exec_vm_call_function(program: &BCProgram, function_index: i32, args: &ExecVa
                 return -1;
             }
             if exec_value_truthy(slot_a[0]) != 0 {
+                exec_vm_trace_jump(trace_vm, function.name, frame.ip, instr.imm as i32, "cond-true" as *byte);
                 frame.ip = instr.imm as i32;
                 continue;
             }
@@ -260,6 +278,7 @@ fn exec_vm_call_function(program: &BCProgram, function_index: i32, args: &ExecVa
                 return -1;
             }
             if exec_value_truthy(slot_a[0]) == 0 {
+                exec_vm_trace_jump(trace_vm, function.name, frame.ip, instr.imm as i32, "cond-false" as *byte);
                 frame.ip = instr.imm as i32;
                 continue;
             }

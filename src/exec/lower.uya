@@ -13,7 +13,12 @@ struct ExecLowerContext {
     local_slots: [i32: EXEC_MAX_LOCALS],
     local_types: [Type: EXEC_MAX_LOCALS],
     local_is_param: [i32: EXEC_MAX_LOCALS],
-    local_count: i32,
+    slot_names: [&byte: EXEC_MAX_LOCALS],
+    slot_types: [Type: EXEC_MAX_LOCALS],
+    slot_is_param: [i32: EXEC_MAX_LOCALS],
+    active_local_count: i32,
+    next_slot: i32,
+    max_slot_count: i32,
     scope_markers: [i32: EXEC_MAX_SCOPE_DEPTH],
     scope_depth: i32,
 }
@@ -81,7 +86,7 @@ fn exec_lower_push_scope(ctx: &ExecLowerContext) void {
         return;
     }
     if ctx.scope_depth >= 0 && ctx.scope_depth < EXEC_MAX_SCOPE_DEPTH {
-        ctx.scope_markers[ctx.scope_depth] = ctx.local_count;
+        ctx.scope_markers[ctx.scope_depth] = ctx.active_local_count;
     }
     ctx.scope_depth = ctx.scope_depth + 1;
 }
@@ -92,7 +97,8 @@ fn exec_lower_pop_scope(ctx: &ExecLowerContext) void {
     }
     ctx.scope_depth = ctx.scope_depth - 1;
     if ctx.scope_depth >= 0 && ctx.scope_depth < EXEC_MAX_SCOPE_DEPTH {
-        ctx.local_count = ctx.scope_markers[ctx.scope_depth];
+        ctx.active_local_count = ctx.scope_markers[ctx.scope_depth];
+        ctx.next_slot = ctx.active_local_count;
     }
 }
 
@@ -100,7 +106,7 @@ fn exec_lower_find_slot(ctx: &ExecLowerContext, name: &byte) i32 {
     if ctx == null || name == null {
         return -1;
     }
-    var i: i32 = ctx.local_count - 1;
+    var i: i32 = ctx.active_local_count - 1;
     while i >= 0 {
         if i >= 0 && i < EXEC_MAX_LOCALS {
             if ctx.local_names[i] != null && str_equals(ctx.local_names[i], name) != 0 {
@@ -113,17 +119,26 @@ fn exec_lower_find_slot(ctx: &ExecLowerContext, name: &byte) i32 {
 }
 
 fn exec_lower_append_local(ctx: &ExecLowerContext, name: &byte, type: &Type, is_param: i32) i32 {
-    if ctx == null || name == null || ctx.local_count >= EXEC_MAX_LOCALS {
+    if ctx == null || name == null || ctx.active_local_count >= EXEC_MAX_LOCALS || ctx.next_slot >= EXEC_MAX_LOCALS {
         return -1;
     }
-    const slot: i32 = ctx.local_count;
-    if ctx.local_count >= 0 && ctx.local_count < EXEC_MAX_LOCALS {
-        ctx.local_names[ctx.local_count] = name;
-        ctx.local_slots[ctx.local_count] = slot;
-        ctx.local_types[ctx.local_count] = copy_type(type);
-        ctx.local_is_param[ctx.local_count] = is_param;
+    const slot: i32 = ctx.next_slot;
+    if ctx.active_local_count >= 0 && ctx.active_local_count < EXEC_MAX_LOCALS {
+        ctx.local_names[ctx.active_local_count] = name;
+        ctx.local_slots[ctx.active_local_count] = slot;
+        ctx.local_types[ctx.active_local_count] = copy_type(type);
+        ctx.local_is_param[ctx.active_local_count] = is_param;
     }
-    ctx.local_count = ctx.local_count + 1;
+    if slot >= 0 && slot < EXEC_MAX_LOCALS {
+        ctx.slot_names[slot] = name;
+        ctx.slot_types[slot] = copy_type(type);
+        ctx.slot_is_param[slot] = is_param;
+    }
+    ctx.active_local_count = ctx.active_local_count + 1;
+    ctx.next_slot = slot + 1;
+    if ctx.next_slot > ctx.max_slot_count {
+        ctx.max_slot_count = ctx.next_slot;
+    }
     return slot;
 }
 
@@ -158,6 +173,198 @@ fn exec_lower_alloc_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, kind: HIRSt
     stmt.ast_node = ast_node;
     stmt.local_slot = -1;
     return stmt;
+}
+
+fn exec_lower_make_bool_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, value: i32) &HIRExpr {
+    const bool_type: Type = make_bool_type();
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_CONST, &bool_type);
+    if expr == null {
+        return null;
+    }
+    expr.bool_value = value;
+    return expr;
+}
+
+fn exec_lower_make_local_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, slot: i32, type: &Type) &HIRExpr {
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_LOCAL, type);
+    if expr == null {
+        return null;
+    }
+    expr.local_slot = slot;
+    return expr;
+}
+
+fn exec_lower_make_binary_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, op: i32, left: &HIRExpr, right: &HIRExpr, type: &Type) &HIRExpr {
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_BINARY, type);
+    if expr == null {
+        return null;
+    }
+    expr.binary_op = op;
+    expr.left = left;
+    expr.right = right;
+    return expr;
+}
+
+fn exec_lower_make_assign_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, slot: i32, value: &HIRExpr) &HIRStmt {
+    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_ASSIGN);
+    if stmt == null {
+        return null;
+    }
+    stmt.local_slot = slot;
+    stmt.assign_expr = value;
+    return stmt;
+}
+
+fn exec_lower_wrap_block_as_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, block: &HIRBlock) &HIRStmt {
+    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_IF);
+    if stmt == null {
+        return null;
+    }
+    const cond: &HIRExpr = exec_lower_make_bool_const_expr(ctx, ast_node, 1);
+    if cond == null {
+        return null;
+    }
+    stmt.expr = cond;
+    stmt.then_block = block;
+    return stmt;
+}
+
+fn exec_lower_make_break_block(ctx: &ExecLowerContext, ast_node: &ASTNode) &HIRBlock {
+    const block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+    const stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
+    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_BREAK);
+    if block == null || stmts == null || stmt == null {
+        exec_backend_set_error(ast_node, "exec: break block 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(block as *byte, 0, @size_of(HIRBlock));
+    stmts[0] = stmt;
+    block.stmts = stmts;
+    block.stmt_count = 1;
+    return block;
+}
+
+fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &HIRStmt {
+    if stmt_node == null || stmt_node.for_stmt_is_range == 0 {
+        return null;
+    }
+    if stmt_node.for_stmt_var_name == null {
+        exec_backend_set_error(stmt_node, "exec: 当前 for range 必须显式绑定迭代变量" as *byte, 1);
+        return null;
+    }
+    if stmt_node.for_stmt_is_ref != 0 {
+        exec_backend_set_error(stmt_node, "exec: 当前不支持 for range 引用绑定" as *byte, 1);
+        return null;
+    }
+    if stmt_node.for_stmt_range_end == null {
+        exec_backend_set_error(stmt_node, "exec: 当前不支持无上界 for range" as *byte, 1);
+        return null;
+    }
+    const start_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.for_stmt_range_start);
+    const end_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.for_stmt_range_end);
+    if start_expr == null || end_expr == null {
+        return null;
+    }
+    if start_expr.type_ref.type.kind != TypeKind.TYPE_I32 || end_expr.type_ref.type.kind != TypeKind.TYPE_I32 {
+        exec_backend_set_error(stmt_node, "exec: 当前仅支持 i32 for range" as *byte, 1);
+        return null;
+    }
+
+    exec_lower_push_scope(ctx);
+    const iter_type: Type = make_i32_type();
+    const iter_slot: i32 = exec_lower_append_local(ctx, stmt_node.for_stmt_var_name, &iter_type, 0);
+    const end_slot: i32 = exec_lower_append_local(ctx, "__exec_for_end" as *byte, &iter_type, 0);
+    if iter_slot < 0 || end_slot < 0 {
+        exec_lower_pop_scope(ctx);
+        exec_backend_set_error(stmt_node, "exec: for range 槽位不足" as *byte, 0);
+        return null;
+    }
+
+    const user_body: &HIRBlock = exec_lower_block(ctx, stmt_node.for_stmt_body);
+    if user_body == null {
+        exec_lower_pop_scope(ctx);
+        return null;
+    }
+
+    const loop_body: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+    const loop_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
+    if loop_body == null || loop_stmts == null {
+        exec_lower_pop_scope(ctx);
+        exec_backend_set_error(stmt_node, "exec: for loop body 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(loop_body as *byte, 0, @size_of(HIRBlock));
+
+    const iter_local_for_cond: &HIRExpr = exec_lower_make_local_expr(ctx, stmt_node, iter_slot, &iter_type);
+    const end_local_for_cond: &HIRExpr = exec_lower_make_local_expr(ctx, stmt_node, end_slot, &iter_type);
+    const cond_type: Type = make_bool_type();
+    const cond_expr: &HIRExpr = exec_lower_make_binary_expr(ctx, stmt_node, TokenType.TOKEN_LESS as i32, iter_local_for_cond, end_local_for_cond, &cond_type);
+    const then_block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+    const then_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * 2 as usize) as & & HIRStmt;
+    const break_block: &HIRBlock = exec_lower_make_break_block(ctx, stmt_node);
+    if cond_expr == null || then_block == null || then_stmts == null || break_block == null {
+        exec_lower_pop_scope(ctx);
+        exec_backend_set_error(stmt_node, "exec: for 条件块分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(then_block as *byte, 0, @size_of(HIRBlock));
+
+    const wrapped_user_body: &HIRStmt = exec_lower_wrap_block_as_stmt(ctx, stmt_node.for_stmt_body, user_body);
+    const one_expr: &HIRExpr = exec_lower_alloc_expr(ctx, stmt_node, HIRExprKind.HIR_EXPR_CONST, &iter_type);
+    const iter_local_for_inc: &HIRExpr = exec_lower_make_local_expr(ctx, stmt_node, iter_slot, &iter_type);
+    if wrapped_user_body == null || one_expr == null || iter_local_for_inc == null {
+        exec_lower_pop_scope(ctx);
+        return null;
+    }
+    one_expr.int_value = 1;
+    const next_iter_expr: &HIRExpr = exec_lower_make_binary_expr(ctx, stmt_node, TokenType.TOKEN_PLUS as i32, iter_local_for_inc, one_expr, &iter_type);
+    const inc_stmt: &HIRStmt = exec_lower_make_assign_stmt(ctx, stmt_node, iter_slot, next_iter_expr);
+    if inc_stmt == null {
+        exec_lower_pop_scope(ctx);
+        return null;
+    }
+    then_stmts[0] = wrapped_user_body;
+    then_stmts[1] = inc_stmt;
+    then_block.stmts = then_stmts;
+    then_block.stmt_count = 2;
+
+    const cond_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_IF);
+    if cond_stmt == null {
+        exec_lower_pop_scope(ctx);
+        return null;
+    }
+    cond_stmt.expr = cond_expr;
+    cond_stmt.then_block = then_block;
+    cond_stmt.else_block = break_block;
+    loop_stmts[0] = cond_stmt;
+    loop_body.stmts = loop_stmts;
+    loop_body.stmt_count = 1;
+
+    const loop_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_LOOP);
+    const setup_block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+    const setup_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * 3 as usize) as & & HIRStmt;
+    const init_iter: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_VAR_INIT);
+    const init_end: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_VAR_INIT);
+    if loop_stmt == null || setup_block == null || setup_stmts == null || init_iter == null || init_end == null {
+        exec_lower_pop_scope(ctx);
+        exec_backend_set_error(stmt_node, "exec: for setup block 分配失败" as *byte, 0);
+        return null;
+    }
+    loop_stmt.loop_body = loop_body;
+    init_iter.local_slot = iter_slot;
+    init_iter.expr = start_expr;
+    init_end.local_slot = end_slot;
+    init_end.expr = end_expr;
+    _ = memset(setup_block as *byte, 0, @size_of(HIRBlock));
+    setup_stmts[0] = init_iter;
+    setup_stmts[1] = init_end;
+    setup_stmts[2] = loop_stmt;
+    setup_block.stmts = setup_stmts;
+    setup_block.stmt_count = 3;
+
+    const result_stmt: &HIRStmt = exec_lower_wrap_block_as_stmt(ctx, stmt_node, setup_block);
+    exec_lower_pop_scope(ctx);
+    return result_stmt;
 }
 
 fn exec_lower_find_entry_decl(checker: &TypeChecker) &ASTNode {
@@ -548,6 +755,12 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 return null;
             }
             stmt.loop_body = loop_body;
+        } else if stmt_node.type == ASTNodeType.AST_FOR_STMT {
+            stmt = exec_lower_make_for_range_stmt(ctx, stmt_node);
+            if stmt == null {
+                exec_lower_pop_scope(ctx);
+                return null;
+            }
         } else if stmt_node.type == ASTNodeType.AST_BREAK_STMT {
             stmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_BREAK);
         } else if stmt_node.type == ASTNodeType.AST_CONTINUE_STMT {
@@ -571,20 +784,11 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 exec_lower_pop_scope(ctx);
                 return null;
             }
-            const nested_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_IF);
+            const nested_stmt: &HIRStmt = exec_lower_wrap_block_as_stmt(ctx, stmt_node, nested_block);
             if nested_stmt == null {
                 exec_lower_pop_scope(ctx);
                 return null;
             }
-            const bool_type_for_block: Type = make_bool_type();
-            const true_expr: &HIRExpr = exec_lower_alloc_expr(ctx, stmt_node, HIRExprKind.HIR_EXPR_CONST, &bool_type_for_block);
-            if true_expr == null {
-                exec_lower_pop_scope(ctx);
-                return null;
-            }
-            true_expr.bool_value = 1;
-            nested_stmt.expr = true_expr;
-            nested_stmt.then_block = nested_block;
             stmt = nested_stmt;
         } else {
             exec_lower_pop_scope(ctx);
@@ -627,7 +831,12 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         local_slots: [],
         local_types: [],
         local_is_param: [],
-        local_count: 0,
+        slot_names: [],
+        slot_types: [],
+        slot_is_param: [],
+        active_local_count: 0,
+        next_slot: 0,
+        max_slot_count: 0,
         scope_markers: [],
         scope_depth: 0,
     };
@@ -662,22 +871,22 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
     hir_fn.name = fn_decl.fn_decl_name;
     hir_fn.decl = fn_decl;
     hir_fn.return_type = exec_lower_make_type_ref(&return_type);
-    if ctx.local_count > 0 {
-        const locals: &HIRLocalSlot = compiler_arena_alloc(arena, @size_of(HIRLocalSlot) * ctx.local_count as usize) as &HIRLocalSlot;
+    if ctx.max_slot_count > 0 {
+        const locals: &HIRLocalSlot = compiler_arena_alloc(arena, @size_of(HIRLocalSlot) * ctx.max_slot_count as usize) as &HIRLocalSlot;
         if locals == null {
             exec_backend_set_error(fn_decl, "exec: local slot 表分配失败" as *byte, 0);
             return null;
         }
         i = 0;
-        while i < ctx.local_count {
-            locals[i].name = ctx.local_names[i];
-            locals[i].slot = ctx.local_slots[i];
-            locals[i].type_ref = exec_lower_make_type_ref(&ctx.local_types[i]);
-            locals[i].is_param = ctx.local_is_param[i];
+        while i < ctx.max_slot_count {
+            locals[i].name = ctx.slot_names[i];
+            locals[i].slot = i;
+            locals[i].type_ref = exec_lower_make_type_ref(&ctx.slot_types[i]);
+            locals[i].is_param = ctx.slot_is_param[i];
             i = i + 1;
         }
         hir_fn.locals = locals;
-        hir_fn.local_count = ctx.local_count;
+        hir_fn.local_count = ctx.max_slot_count;
     }
     hir_fn.param_count = fn_decl.fn_decl_param_count;
     hir_fn.body = body;

@@ -7665,6 +7665,8 @@ fn compile_files(
             const opt_time_ms_exec: i64 = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
             fprintf(libc.stderr, "优化耗时: %ld ms\n" as *byte, opt_time_ms_exec);
         }
+        fprintf(libc.stderr, "exec lowering 耗时: %ld ms\n" as *byte, exec_backend_get_last_lower_time_ms());
+        fprintf(libc.stderr, "exec bytecode 构建耗时: %ld ms\n" as *byte, exec_backend_get_last_bytecode_build_time_ms());
         fprintf(libc.stderr, "exec build 耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
         fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
 
@@ -8187,6 +8189,7 @@ export fn main() i32 {
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         if backend == BackendType.BACKEND_EXEC {
             const child_exit_exec: i32 = exec_run_program();
+            fprintf(libc.stderr, "exec vm 运行耗时: %ld ms\n" as *byte, exec_backend_get_last_vm_run_time_ms());
             if command == CommandType.COMMAND_TEST {
                 var passed_exec: i32 = 0;
                 var failed_exec: i32 = 1;

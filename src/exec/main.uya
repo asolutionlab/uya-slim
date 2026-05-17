@@ -1,6 +1,7 @@
 // exec/main.uya - Exec backend orchestration
 
 use libc;
+use libc.stdlib;
 
 var g_exec_last_error_message: [byte: 512] = [];
 var g_exec_last_error_is_unsupported: i32 = 0;
@@ -9,6 +10,9 @@ var g_exec_dump_bytecode_enabled: i32 = 0;
 var g_exec_trace_vm_enabled: i32 = 0;
 var g_exec_hir_module: &HIRModule = null;
 var g_exec_bc_program: &BCProgram = null;
+var g_exec_last_lower_time_ms: i64 = 0;
+var g_exec_last_bytecode_build_time_ms: i64 = 0;
+var g_exec_last_vm_run_time_ms: i64 = 0;
 
 fn exec_write_error_prefix(node: &ASTNode) i32 {
     if node != null && node.filename != null {
@@ -31,6 +35,9 @@ fn exec_backend_reset_state() void {
     g_exec_last_error_is_unsupported = 0;
     g_exec_hir_module = null;
     g_exec_bc_program = null;
+    g_exec_last_lower_time_ms = 0;
+    g_exec_last_bytecode_build_time_ms = 0;
+    g_exec_last_vm_run_time_ms = 0;
 }
 
 fn exec_backend_set_options(dump_hir: i32, dump_bytecode: i32, trace_vm: i32) void {
@@ -65,7 +72,10 @@ export fn exec_build_program(checker: &TypeChecker, program: &ASTNode, module_na
         exec_backend_set_error(program, "exec: build 输入无效" as *byte, 0);
         return 1;
     }
+    const lower_start_time: i64 = clock();
     const lowered: &HIRModule = exec_lower_module(checker.arena, checker, program);
+    const lower_end_time: i64 = clock();
+    g_exec_last_lower_time_ms = (lower_end_time - lower_start_time) * 1000 / CLOCKS_PER_SEC;
     if lowered == null {
         if exec_backend_error_is_unsupported() != 0 {
             return 2;
@@ -76,7 +86,10 @@ export fn exec_build_program(checker: &TypeChecker, program: &ASTNode, module_na
     if g_exec_dump_hir_enabled != 0 {
         exec_debug_dump_hir_module(lowered);
     }
+    const build_start_time: i64 = clock();
     const bytecode: &BCProgram = exec_build_bytecode(checker.arena, lowered);
+    const build_end_time: i64 = clock();
+    g_exec_last_bytecode_build_time_ms = (build_end_time - build_start_time) * 1000 / CLOCKS_PER_SEC;
     if bytecode == null {
         if exec_backend_error_is_unsupported() != 0 {
             return 2;
@@ -101,7 +114,11 @@ export fn exec_run_program() i32 {
         exec_backend_set_error(null, "exec: 尚无可运行的 bytecode 程序" as *byte, 0);
         return 1;
     }
-    return vm_run_program(g_exec_bc_program, g_exec_trace_vm_enabled);
+    const run_start_time: i64 = clock();
+    const exit_code: i32 = vm_run_program(g_exec_bc_program, g_exec_trace_vm_enabled);
+    const run_end_time: i64 = clock();
+    g_exec_last_vm_run_time_ms = (run_end_time - run_start_time) * 1000 / CLOCKS_PER_SEC;
+    return exit_code;
 }
 
 /// 打印最近一次 lowering 得到的 HIR。
@@ -116,4 +133,16 @@ export fn exec_dump_hir() void {
 /// 返回值：无。
 export fn exec_dump_bytecode() void {
     exec_debug_dump_bytecode(g_exec_bc_program);
+}
+
+fn exec_backend_get_last_lower_time_ms() i64 {
+    return g_exec_last_lower_time_ms;
+}
+
+fn exec_backend_get_last_bytecode_build_time_ms() i64 {
+    return g_exec_last_bytecode_build_time_ms;
+}
+
+fn exec_backend_get_last_vm_run_time_ms() i64 {
+    return g_exec_last_vm_run_time_ms;
 }

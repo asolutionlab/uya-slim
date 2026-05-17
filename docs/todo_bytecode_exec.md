@@ -167,11 +167,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] if / while / break / continue
   - [x] call / return
 - [x] 新增 HIR dump
-- [ ] 测试：
-  - [ ] 一个函数 + 一条 return
-  - [ ] if/else
-  - [ ] while
-  - [ ] 多函数调用
+- [x] 测试：
+  - [x] 一个函数 + 一条 return
+  - [x] if/else
+  - [x] while
+  - [x] 多函数调用
 
 ---
 
@@ -180,7 +180,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 新建 lowering 入口：`exec_lower_module(...)`
 - [x] 降级局部变量定义为稳定 slot
 - [x] 降级方法调用为普通调用
-- [ ] 降级 `for` 为规范 loop
+- [x] 降级 `for` 为规范 loop
 - [ ] 统一 `match` 的执行型表示
 - [x] 对每个函数生成结构化 HIR block
 - [x] 第一版先跳过或拒绝：
@@ -238,12 +238,12 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] 生成常量池
 - [x] 生成函数 bytecode
 - [ ] 验证每个函数：
-  - [ ] 所有跳转目标存在
-  - [ ] 所有读取槽位已初始化
+  - [x] 所有跳转目标存在
+  - [x] 所有读取槽位已初始化
   - [ ] 所有返回路径类型一致
-- [ ] 测试：
-  - [ ] 字节码打印稳定
-  - [ ] 同一输入多次构建结果一致
+- [x] 测试：
+  - [x] 字节码打印稳定
+  - [x] 同一输入多次构建结果一致
 
 ---
 
@@ -263,25 +263,25 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] branch
   - [x] call
   - [x] return
-- [ ] 让 `export fn main() i32` 程序能跑通
-- [ ] 测试：
-  - [ ] `uya run --exec tests/...`
-  - [ ] 与 C99 路径退出码一致
+- [x] 让 `export fn main() i32` 程序能跑通
+- [x] 测试：
+  - [x] `uya run --exec tests/...`
+  - [x] 与 C99 路径退出码一致
 
 ---
 
 ## Phase 8：控制流与作用域
 
-- [ ] 支持 block scope 栈
-- [ ] 支持 `break`
-- [ ] 支持 `continue`
-- [ ] 支持嵌套循环
-- [ ] 支持短路 `&&` / `||`
+- [x] 支持 block scope 栈
+- [x] 支持 `break`
+- [x] 支持 `continue`
+- [x] 支持嵌套循环
+- [x] 支持短路 `&&` / `||`
 - [ ] 支持 `match` 基本分支
-- [ ] 增加 trace：
-  - [ ] 函数进入
-  - [ ] 指令序号
-  - [ ] 分支跳转
+- [x] 增加 trace：
+  - [x] 函数进入
+  - [x] 指令序号
+  - [x] 分支跳转
 
 ---
 
