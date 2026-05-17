@@ -223,6 +223,44 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         slot_a[0] = exec_make_bool((slot_b.i64_value >= slot_c.i64_value) as i32);
+    } else if instr.opcode == BCOpcode.BC_MAKE_OK {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: MAKE_OK 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_make_error_union_ok(slot_b[0]);
+    } else if instr.opcode == BCOpcode.BC_MAKE_ERR {
+        if slot_a == null {
+            exec_backend_set_error(function.decl, "exec: MAKE_ERR 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_make_error_union_err(instr.imm as i32);
+    } else if instr.opcode == BCOpcode.BC_IS_ERR {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: IS_ERR 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_make_bool(exec_value_is_error_union_err(slot_b[0]));
+    } else if instr.opcode == BCOpcode.BC_UNWRAP_OK {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: UNWRAP_OK 槽位越界" as *byte, 0);
+            return -1;
+        }
+        if exec_value_is_error_union_err(slot_b[0]) != 0 {
+            exec_backend_set_error(function.decl, "exec: UNWRAP_OK 遇到错误值" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_value_unwrap_ok(slot_b[0]);
+    } else if instr.opcode == BCOpcode.BC_UNWRAP_ERR {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: UNWRAP_ERR 槽位越界" as *byte, 0);
+            return -1;
+        }
+        if exec_value_is_error_union_err(slot_b[0]) == 0 {
+            exec_backend_set_error(function.decl, "exec: UNWRAP_ERR 遇到成功值" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_value_unwrap_err(slot_b[0]);
     } else if instr.opcode == BCOpcode.BC_JMP {
         exec_vm_trace_jump(trace_vm, function.name, frame.ip, instr.imm as i32, "jmp" as *byte);
         frame.ip = instr.imm as i32;

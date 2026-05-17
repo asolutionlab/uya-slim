@@ -30,6 +30,16 @@ struct ExecFunctionBuildContext {
     loop_depth: i32,
 }
 
+fn exec_builder_const_pool_value_ref(const_pool: &ExecConstPoolBuilder, idx: i32) &ExecValue {
+    if const_pool == null || idx < 0 || idx >= EXEC_MAX_CONST_POOL_VALUES {
+        return null;
+    }
+    if idx >= 0 && idx < EXEC_MAX_CONST_POOL_VALUES {
+        return &const_pool.values[idx];
+    }
+    return null;
+}
+
 fn exec_builder_instr_slot(ctx: &ExecFunctionBuildContext, idx: i32) &BCInstr {
     if ctx == null || idx < 0 || idx >= EXEC_MAX_BYTECODE_INSTRS {
         return null;
@@ -76,7 +86,16 @@ fn exec_builder_intern_const(ctx: &ExecFunctionBuildContext, value: ExecValue) i
         return -1;
     }
     const const_idx: i32 = ctx.const_pool.count;
-    ctx.const_pool.values[const_idx] = value;
+    if const_idx < 0 || const_idx >= EXEC_MAX_CONST_POOL_VALUES {
+        exec_backend_set_error(ctx.function.decl, "exec: const pool 索引非法" as *byte, 0);
+        return -1;
+    }
+    const value_ref: &ExecValue = exec_builder_const_pool_value_ref(ctx.const_pool, const_idx);
+    if value_ref == null {
+        exec_backend_set_error(ctx.function.decl, "exec: const pool 写入失败" as *byte, 0);
+        return -1;
+    }
+    value_ref[0] = value;
     ctx.const_pool.count = const_idx + 1;
     return const_idx;
 }
@@ -163,6 +182,8 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
     var const_value: ExecValue = exec_make_void();
     if expr.string_value != null {
         const_value = exec_make_string(expr.string_value);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
+        const_value = exec_make_error(expr.int_value as i32);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
         const_value = exec_make_bool(expr.bool_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
@@ -257,6 +278,285 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return -1;
         }
         return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_TRY {
+        const union_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if union_slot < 0 {
+            return -1;
+        }
+        const is_err_slot: i32 = exec_builder_new_temp(ctx);
+        if is_err_slot < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_IS_ERR,
+            a: is_err_slot,
+            b: union_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        const continue_jump: i32 = exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_JMP_IF_FALSE,
+            a: is_err_slot,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        });
+        if continue_jump < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_RET,
+            a: union_slot,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        exec_builder_patch_jump(ctx, continue_jump, ctx.instr_count);
+        const try_dst: i32 = exec_builder_new_temp(ctx);
+        if try_dst < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_UNWRAP_OK,
+            a: try_dst,
+            b: union_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return try_dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CATCH {
+        const union_slot2: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if union_slot2 < 0 {
+            return -1;
+        }
+        const catch_dst: i32 = exec_builder_new_temp(ctx);
+        const is_err_slot2: i32 = exec_builder_new_temp(ctx);
+        if catch_dst < 0 || is_err_slot2 < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_IS_ERR,
+            a: is_err_slot2,
+            b: union_slot2,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        const ok_jump: i32 = exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_JMP_IF_FALSE,
+            a: is_err_slot2,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        });
+        if ok_jump < 0 {
+            return -1;
+        }
+        const fallback_slot: i32 = exec_builder_compile_expr(ctx, expr.right);
+        if fallback_slot < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MOV,
+            a: catch_dst,
+            b: fallback_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        const end_jump: i32 = exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_JMP,
+            a: 0,
+            b: 0,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        });
+        if end_jump < 0 {
+            return -1;
+        }
+        exec_builder_patch_jump(ctx, ok_jump, ctx.instr_count);
+        const ok_value_slot: i32 = exec_builder_new_temp(ctx);
+        if ok_value_slot < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_UNWRAP_OK,
+            a: ok_value_slot,
+            b: union_slot2,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MOV,
+            a: catch_dst,
+            b: ok_value_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        exec_builder_patch_jump(ctx, end_jump, ctx.instr_count);
+        return catch_dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_MATCH {
+        const subject_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if subject_slot < 0 {
+            return -1;
+        }
+        const match_dst: i32 = exec_builder_new_temp(ctx);
+        if match_dst < 0 {
+            return -1;
+        }
+        var end_jumps: [i32: 64] = [];
+        var end_jump_count: i32 = 0;
+        var mi: i32 = 0;
+        while mi < expr.match_arm_count {
+            const arm: &HIRMatchArm = expr.match_arms + mi;
+            if arm.kind == MatchPatternKind.MATCH_PAT_ELSE || arm.kind == MatchPatternKind.MATCH_PAT_WILDCARD {
+                const arm_slot: i32 = exec_builder_compile_expr(ctx, arm.result_expr);
+                if arm_slot < 0 {
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_MOV,
+                    a: match_dst,
+                    b: arm_slot,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(expr.ast_node),
+                }) < 0 {
+                    return -1;
+                }
+            } else {
+                const pattern_slot: i32 = exec_builder_new_temp(ctx);
+                const cmp_slot: i32 = exec_builder_new_temp(ctx);
+                if pattern_slot < 0 || cmp_slot < 0 {
+                    return -1;
+                }
+                var pattern_type: Type = make_i32_type();
+                if arm.bool_value != 0 {
+                    pattern_type = make_bool_type();
+                }
+                var const_expr: HIRExpr = HIRExpr {
+                    kind: HIRExprKind.HIR_EXPR_CONST,
+                    ast_node: expr.ast_node,
+                    type_ref: HIRTypeRef {
+                        type: pattern_type,
+                    },
+                    local_slot: -1,
+                    unary_op: 0,
+                    binary_op: 0,
+                    int_value: arm.int_value,
+                    bool_value: arm.int_value as i32,
+                    string_value: null,
+                    left: null,
+                    right: null,
+                    callee_name: null,
+                    callee_decl: null,
+                    call_args: null,
+                    call_arg_count: 0,
+                    match_arms: null,
+                    match_arm_count: 0,
+                };
+                if exec_builder_emit_const(ctx, pattern_slot, &const_expr) < 0 {
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_CMP_EQ,
+                    a: cmp_slot,
+                    b: subject_slot,
+                    c: pattern_slot,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(expr.ast_node),
+                }) < 0 {
+                    return -1;
+                }
+                const next_arm_jump: i32 = exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_JMP_IF_FALSE,
+                    a: cmp_slot,
+                    b: 0,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(expr.ast_node),
+                });
+                if next_arm_jump < 0 {
+                    return -1;
+                }
+                const matched_slot: i32 = exec_builder_compile_expr(ctx, arm.result_expr);
+                if matched_slot < 0 {
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_MOV,
+                    a: match_dst,
+                    b: matched_slot,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(expr.ast_node),
+                }) < 0 {
+                    return -1;
+                }
+                if end_jump_count < 64 {
+                    end_jumps[end_jump_count] = exec_builder_emit(ctx, BCInstr {
+                        opcode: BCOpcode.BC_JMP,
+                        a: 0,
+                        b: 0,
+                        c: 0,
+                        imm: 0,
+                        text: null,
+                        source: exec_builder_make_source(expr.ast_node),
+                    });
+                    if end_jumps[end_jump_count] < 0 {
+                        return -1;
+                    }
+                    end_jump_count = end_jump_count + 1;
+                }
+                exec_builder_patch_jump(ctx, next_arm_jump, ctx.instr_count);
+            }
+            mi = mi + 1;
+        }
+        mi = 0;
+        while mi < end_jump_count {
+            exec_builder_patch_jump(ctx, end_jumps[mi], ctx.instr_count);
+            mi = mi + 1;
+        }
+        return match_dst;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_UNARY {
         const src: i32 = exec_builder_compile_expr(ctx, expr.left);
@@ -500,6 +800,33 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
                 ret_slot = exec_builder_compile_expr(ctx, stmt.expr);
                 if ret_slot < 0 {
                     return -1;
+                }
+                if ctx.function.return_type.type.kind == TypeKind.TYPE_ERROR_UNION {
+                    if stmt.expr.type_ref.type.kind == TypeKind.TYPE_ERROR_UNION {
+                    } else {
+                        const wrapped_slot: i32 = exec_builder_new_temp(ctx);
+                        if wrapped_slot < 0 {
+                            return -1;
+                        }
+                        var wrap_opcode: BCOpcode = BCOpcode.BC_MAKE_OK;
+                        var wrap_imm: i64 = 0;
+                        if stmt.expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
+                            wrap_opcode = BCOpcode.BC_MAKE_ERR;
+                            wrap_imm = stmt.expr.type_ref.type.error_error_id as i64;
+                        }
+                        if exec_builder_emit(ctx, BCInstr {
+                            opcode: wrap_opcode,
+                            a: wrapped_slot,
+                            b: ret_slot,
+                            c: 0,
+                            imm: wrap_imm,
+                            text: null,
+                            source: exec_builder_make_source(stmt.ast_node),
+                        }) < 0 {
+                            return -1;
+                        }
+                        ret_slot = wrapped_slot;
+                    }
                 }
             }
             if exec_builder_emit(ctx, BCInstr {
@@ -749,7 +1076,10 @@ fn exec_builder_validate_function(fn_hir: &HIRFunction, out_fn: &BCFunction) i32
             if dst_slot3 >= 0 && dst_slot3 < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot3] = 1;
             }
-        } else if instr.opcode == BCOpcode.BC_NEG || instr.opcode == BCOpcode.BC_NOT {
+        } else if instr.opcode == BCOpcode.BC_NEG || instr.opcode == BCOpcode.BC_NOT ||
+            instr.opcode == BCOpcode.BC_MAKE_OK || instr.opcode == BCOpcode.BC_MAKE_ERR ||
+            instr.opcode == BCOpcode.BC_IS_ERR || instr.opcode == BCOpcode.BC_UNWRAP_OK ||
+            instr.opcode == BCOpcode.BC_UNWRAP_ERR {
             if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: 一元指令源槽位非法" as *byte) != 0 {
                 return -1;
             }
@@ -823,7 +1153,16 @@ fn exec_builder_validate_return_types_in_block(fn_hir: &HIRFunction, block: &HIR
                     exec_backend_set_error(stmt.ast_node, "exec: 非 void 函数缺少返回值" as *byte, 0);
                     return -1;
                 }
-                if type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type) == 0 {
+                if fn_hir.return_type.type.kind == TypeKind.TYPE_ERROR_UNION {
+                    if type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type) == 0 {
+                    } else if stmt.expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
+                    } else if fn_hir.return_type.type.error_union_payload_type != null &&
+                        type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type.error_union_payload_type[0]) != 0 {
+                    } else {
+                        exec_backend_set_error(stmt.ast_node, "exec: return 类型与错误联合返回类型不一致" as *byte, 0);
+                        return -1;
+                    }
+                } else if type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type) == 0 {
                     exec_backend_set_error(stmt.ast_node, "exec: return 类型与函数返回类型不一致" as *byte, 0);
                     return -1;
                 }

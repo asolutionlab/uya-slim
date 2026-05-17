@@ -63,6 +63,19 @@ fn exec_type_is_scalar_supported(type: Type) i32 {
     return 0;
 }
 
+fn exec_type_is_vm_value_supported(type: Type) i32 {
+    if exec_type_is_scalar_supported(type) != 0 {
+        return 1;
+    }
+    if type.kind == TypeKind.TYPE_ERROR {
+        return 1;
+    }
+    if type.kind == TypeKind.TYPE_ERROR_UNION && type.error_union_payload_type != null {
+        return exec_type_is_vm_value_supported(type.error_union_payload_type[0]);
+    }
+    return 0;
+}
+
 fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
     if ctx == null || ctx.checker == null || expr == null {
         return Type {
@@ -188,6 +201,17 @@ fn exec_lower_alloc_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, kind: HIRSt
     stmt.ast_node = ast_node;
     stmt.local_slot = -1;
     return stmt;
+}
+
+fn exec_lower_extract_block_result_expr(ctx: &ExecLowerContext, block: &ASTNode) &HIRExpr {
+    if block == null || block.type != ASTNodeType.AST_BLOCK || block.block_stmt_count != 1 {
+        return exec_lower_fail_expr(block, "exec: 当前仅支持单表达式 catch/match 分支块" as *byte);
+    }
+    const only_stmt: &ASTNode = block.block_stmts[0];
+    if only_stmt == null {
+        return exec_lower_fail_expr(block, "exec: catch/match 分支块为空" as *byte);
+    }
+    return exec_lower_expr(ctx, only_stmt);
 }
 
 fn exec_lower_make_bool_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, value: i32) &HIRExpr {
@@ -464,6 +488,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     if expr.type == ASTNodeType.AST_STRING_INTERP {
         return exec_lower_fail_expr_reason(expr, "exec: 当前不支持字符串插值" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_STRING_INTERP);
     }
+    if expr.type == ASTNodeType.AST_ERROR_VALUE {
+        const hir_error: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
+        if hir_error == null {
+            return null;
+        }
+        hir_error.int_value = expr_type.error_error_id as i64;
+        return hir_error;
+    }
     if expr.type == ASTNodeType.AST_IDENTIFIER {
         const slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
         if slot < 0 {
@@ -524,8 +556,8 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if expr.call_expr_arg_count > EXEC_MAX_CALL_ARGS {
             return exec_lower_fail_expr(expr, "exec: 调用参数过多" as *byte);
         }
-        if exec_type_is_scalar_supported(expr_type) == 0 {
-            return exec_lower_fail_expr(expr, "exec: 当前仅支持标量/void 函数返回值" as *byte);
+        if exec_type_is_vm_value_supported(expr_type) == 0 {
+            return exec_lower_fail_expr(expr, "exec: 当前仅支持标量/错误联合函数返回值" as *byte);
         }
         const args: & & HIRExpr = compiler_arena_alloc(ctx.arena, @size_of(&HIRExpr) * expr.call_expr_arg_count as usize) as & & HIRExpr;
         if expr.call_expr_arg_count > 0 && args == null {
@@ -569,13 +601,92 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir;
     }
     if expr.type == ASTNodeType.AST_TRY_EXPR {
-        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 try" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_TRY_EXPR);
+        const operand: &HIRExpr = exec_lower_expr(ctx, expr.try_expr_operand);
+        if operand == null {
+            return null;
+        }
+        if operand.type_ref.type.kind != TypeKind.TYPE_ERROR_UNION {
+            return exec_lower_fail_expr_reason(expr, "exec: try 操作数不是错误联合" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_TRY_EXPR);
+        }
+        const hir_try: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_TRY, &expr_type);
+        if hir_try == null {
+            return null;
+        }
+        hir_try.left = operand;
+        return hir_try;
     }
     if expr.type == ASTNodeType.AST_CATCH_EXPR {
-        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 catch" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        if expr.catch_expr_err_name != null {
+            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持带错误绑定的 catch" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        }
+        const operand2: &HIRExpr = exec_lower_expr(ctx, expr.catch_expr_operand);
+        if operand2 == null {
+            return null;
+        }
+        if operand2.type_ref.type.kind != TypeKind.TYPE_ERROR_UNION {
+            return exec_lower_fail_expr_reason(expr, "exec: catch 操作数不是错误联合" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        }
+        const fallback_expr: &HIRExpr = exec_lower_extract_block_result_expr(ctx, expr.catch_expr_catch_block);
+        if fallback_expr == null {
+            return null;
+        }
+        const hir_catch: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CATCH, &expr_type);
+        if hir_catch == null {
+            return null;
+        }
+        hir_catch.left = operand2;
+        hir_catch.right = fallback_expr;
+        return hir_catch;
     }
     if expr.type == ASTNodeType.AST_MATCH_EXPR {
-        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+        if expr.match_expr_expr == null || expr.match_expr_arms == null || expr.match_expr_arm_count <= 0 {
+            return exec_lower_fail_expr_reason(expr, "exec: match 结构无效" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+        }
+        const subject_expr: &HIRExpr = exec_lower_expr(ctx, expr.match_expr_expr);
+        if subject_expr == null {
+            return null;
+        }
+        if exec_type_is_scalar_supported(subject_expr.type_ref.type) == 0 {
+            return exec_lower_fail_expr_reason(expr, "exec: 当前仅支持标量 match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+        }
+        const arms: &HIRMatchArm = compiler_arena_alloc(ctx.arena, @size_of(HIRMatchArm) * expr.match_expr_arm_count as usize) as &HIRMatchArm;
+        if arms == null {
+            exec_backend_set_error(expr, "exec: match arms 分配失败" as *byte, 0);
+            return null;
+        }
+        var mi: i32 = 0;
+        while mi < expr.match_expr_arm_count {
+            const arm: ASTMatchArm = expr.match_expr_arms[mi];
+            if arm.kind != MatchPatternKind.MATCH_PAT_LITERAL &&
+                arm.kind != MatchPatternKind.MATCH_PAT_ELSE &&
+                arm.kind != MatchPatternKind.MATCH_PAT_WILDCARD {
+                return exec_lower_fail_expr_reason(expr, "exec: 当前仅支持 literal/else/wildcard match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+            }
+            var arm_result_expr: &HIRExpr = null;
+            if arm.result_is_block != 0 {
+                arm_result_expr = exec_lower_extract_block_result_expr(ctx, arm.result_expr);
+            } else {
+                arm_result_expr = exec_lower_expr(ctx, arm.result_expr);
+            }
+            if arm_result_expr == null {
+                return null;
+            }
+            arms[mi] = HIRMatchArm {
+                kind: arm.kind,
+                int_value: arm.literal_int_value as i64,
+                bool_value: arm.literal_is_bool,
+                result_expr: arm_result_expr,
+            };
+            mi = mi + 1;
+        }
+        const hir_match: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_MATCH, &expr_type);
+        if hir_match == null {
+            return null;
+        }
+        hir_match.left = subject_expr;
+        hir_match.match_arms = arms;
+        hir_match.match_arm_count = expr.match_expr_arm_count;
+        return hir_match;
     }
     if expr.type == ASTNodeType.AST_ASM {
         return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 inline asm" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_ASM);
@@ -611,10 +722,10 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 return exec_lower_fail_block(stmt_node, "exec: 当前不支持未初始化局部变量" as *byte);
             }
             const init_type: Type = exec_lower_expr_type(ctx, stmt_node.var_decl_init);
-            if exec_type_is_scalar_supported(init_type) == 0 &&
+            if exec_type_is_vm_value_supported(init_type) == 0 &&
                 stmt_node.var_decl_init.type != ASTNodeType.AST_STRING {
                 exec_lower_pop_scope(ctx);
-                return exec_lower_fail_block(stmt_node, "exec: 当前仅支持标量局部变量" as *byte);
+                return exec_lower_fail_block(stmt_node, "exec: 当前仅支持标量/错误联合局部变量" as *byte);
             }
             const slot: i32 = exec_lower_append_local(ctx, stmt_node.var_decl_name, &init_type, 0);
             if slot < 0 {
@@ -661,7 +772,10 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             stmt_node.type == ASTNodeType.AST_PRINTLN ||
             stmt_node.type == ASTNodeType.AST_BINARY_EXPR ||
             stmt_node.type == ASTNodeType.AST_UNARY_EXPR ||
-            stmt_node.type == ASTNodeType.AST_IDENTIFIER {
+            stmt_node.type == ASTNodeType.AST_IDENTIFIER ||
+            stmt_node.type == ASTNodeType.AST_MATCH_EXPR ||
+            stmt_node.type == ASTNodeType.AST_TRY_EXPR ||
+            stmt_node.type == ASTNodeType.AST_CATCH_EXPR {
             const expr_stmt: &HIRExpr = exec_lower_expr(ctx, stmt_node);
             if expr_stmt == null {
                 exec_lower_pop_scope(ctx);
@@ -855,8 +969,8 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         return null;
     }
     const return_type: Type = type_from_ast(checker, fn_decl.fn_decl_return_type);
-    if exec_type_is_scalar_supported(return_type) == 0 {
-        exec_lower_set_unsupported(fn_decl, "exec: 当前仅支持标量/void 返回值" as *byte);
+    if exec_type_is_vm_value_supported(return_type) == 0 {
+        exec_lower_set_unsupported(fn_decl, "exec: 当前仅支持标量/错误联合/void 返回值" as *byte);
         return null;
     }
     var ctx: ExecLowerContext = ExecLowerContext {
@@ -884,8 +998,8 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
             return null;
         }
         const param_type: Type = type_from_ast(checker, param.var_decl_type);
-        if exec_type_is_scalar_supported(param_type) == 0 {
-            exec_lower_set_unsupported(param, "exec: 当前仅支持标量参数" as *byte);
+        if exec_type_is_vm_value_supported(param_type) == 0 {
+            exec_lower_set_unsupported(param, "exec: 当前仅支持标量/错误联合参数" as *byte);
             return null;
         }
         if exec_lower_append_local(&ctx, param.var_decl_name, &param_type, 1) < 0 {

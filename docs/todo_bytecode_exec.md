@@ -1,7 +1,7 @@
 # Uya Bytecode / IR 执行后端 TODO
 
 **状态**：executable TODO, implementation in progress
-**更新日期**：2026-05-17  
+**更新日期**：2026-05-18
 **配套设计**：`docs/bytecode_exec_design.md`
 
 ---
@@ -29,7 +29,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## 当前进度快照
 
-截至 `2026-05-17` 晚间，仓库里已经有第一批可编译的 exec backend 骨架与主链路接线：
+截至 `2026-05-18`，仓库里的 exec backend 已经从“最小标量闭环”继续推进到基础 `match` 与 `!T` 子集：
 
 - 已新增 `src/exec/` 目录与首批文件：`main/hir/lower/bytecode/builder/vm/value/frame/debug`
 - 已在 `src/main.uya` 中接入 `use exec;`
@@ -49,7 +49,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `if`
   - `while`
   - `break` / `continue`
+  - `match` 基本分支（当前仅 literal/else/wildcard，且仅覆盖标量 subject）
   - 直接函数调用
+  - `!T` 运行时表示
+  - `try`
+  - `catch`（当前仅无 `|err|` 绑定的基础恢复路径）
   - `return`
   - `@print` / `@println`
 
@@ -64,6 +68,13 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `./build/uya_exec_default_smoke_bin run --vm tests/test_main_only.uya`
 - 目前尚未验证：
   - 在默认 `--safety-proof` 配置下完整自举
+- 2026-05-18 已新增并跑通：
+  - `tests/test_exec_vm_match_basic.uya`
+  - `tests/test_exec_vm_error_union.uya`
+  - `bash ./tests/verify_exec_vm_smoke.sh`
+  - `bash ./tests/verify_exec_backend_progress.sh`
+- 当前仍有一个已知残留：
+  - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
 
 ---
 
@@ -181,7 +192,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 降级局部变量定义为稳定 slot
 - [x] 降级方法调用为普通调用
 - [x] 降级 `for` 为规范 loop
-- [ ] 统一 `match` 的执行型表示
+- [x] 统一 `match` 的执行型表示
 - [x] 对每个函数生成结构化 HIR block
 - [x] 第一版先跳过或拒绝：
   - [x] async
@@ -197,7 +208,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 备注：
 
 - 目前 lowering 还没有完整枚举所有不支持路径；已显式拒绝的一部分特性有稳定报错，`SIMD` 与更细粒度 extern ABI 原因码仍需补全
-- 当前 `for` / `match` / 聚合值 / `try/catch` 都还没有进入可运行子集
+- 当前 `for`、基础 `match`、基础 `try/catch` 已进入可运行子集
+- 当前 `match` 仍只支持 literal/else/wildcard 分支，不支持 enum/union/error/bind 等更完整模式
+- 当前 `catch` 仍只支持无 `|err|` 绑定、且 catch 块可被收敛为单表达式结果的基础形式
 
 ---
 
@@ -220,6 +233,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [ ] `STORE_LOCAL`
   - [x] `ADD/SUB/MUL/DIV/REM`
   - [x] `CMP_*`
+  - [x] `MAKE_OK/MAKE_ERR/IS_ERR/UNWRAP_OK/UNWRAP_ERR`
   - [x] `JMP/JMP_IF_*`
   - [x] `RET`
   - [x] `CALL`
@@ -283,7 +297,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 支持 `continue`
 - [x] 支持嵌套循环
 - [x] 支持短路 `&&` / `||`
-- [ ] 支持 `match` 基本分支
+- [x] 支持 `match` 基本分支
 - [x] 增加 trace：
   - [x] 函数进入
   - [x] 指令序号
@@ -310,21 +324,27 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 10：错误联合与 `try/catch`
 
-- [ ] 定义 `!T` 运行时表示
-- [ ] 支持：
-  - [ ] `MAKE_OK`
-  - [ ] `MAKE_ERR`
-  - [ ] `IS_ERR`
-  - [ ] `UNWRAP_OK`
-  - [ ] `UNWRAP_ERR`
-- [ ] lowering 支持：
-  - [ ] `try`
-  - [ ] `catch`
-  - [ ] 错误返回路径
-- [ ] 测试：
-  - [ ] 成功路径
-  - [ ] 错误传播
-  - [ ] catch 恢复
+- [x] 定义 `!T` 运行时表示
+- [x] 支持：
+  - [x] `MAKE_OK`
+  - [x] `MAKE_ERR`
+  - [x] `IS_ERR`
+  - [x] `UNWRAP_OK`
+  - [x] `UNWRAP_ERR`
+- [x] lowering 支持：
+  - [x] `try`
+  - [x] `catch`
+  - [x] 错误返回路径
+- [x] 测试：
+  - [x] 成功路径
+  - [x] 错误传播
+  - [x] catch 恢复
+
+备注：
+
+- 当前仅覆盖标量 payload 的 `!T`
+- 当前 `catch` 仍不支持 `|err|` 绑定
+- 当前已验证 exec backend 运行时语义闭环，但 checker 侧仍有残留误报诊断待后续清理
 
 ---
 
@@ -383,11 +403,12 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] 算术类
   - [x] 控制流类
   - [ ] struct/array/slice 类
-  - [ ] error 类
+  - [x] error 类
 
 备注：
 
-- 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump，以及 `catch` / `@c_import` unsupported 原因
+- 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump、`try/catch` 错误联合路径，以及 `@c_import` unsupported 原因
+- 已新增 `tests/test_exec_vm_match_basic.uya` 与 `tests/test_exec_vm_error_union.uya`，并纳入 `tests/verify_exec_vm_smoke.sh`
 
 ---
 

@@ -43,6 +43,18 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
         fprintf(libc.stderr, "call %s(...)" as *byte, expr.callee_name as *byte);
         return;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_TRY {
+        fprintf(libc.stderr, "try(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CATCH {
+        fprintf(libc.stderr, "catch(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_MATCH {
+        fprintf(libc.stderr, "match(...)" as *byte);
+        return;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_PRINT {
         fprintf(libc.stderr, "@print(...)" as *byte);
         return;

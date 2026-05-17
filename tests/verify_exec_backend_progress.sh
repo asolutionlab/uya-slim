@@ -25,14 +25,9 @@ grep -q 'const\[0\]' "$TMP_STDERR"
 grep -q 'const\[1\]' "$TMP_STDERR"
 echo "  const pool dump ✓"
 
-echo "验证 catch unsupported 原因..."
-if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_try_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
-    echo "✗ catch unsupported case should fail under --vm"
-    cat "$TMP_STDERR"
-    exit 1
-fi
-grep -q 'exec: 当前不支持 catch' "$TMP_STDERR"
-echo "  catch unsupported reason ✓"
+echo "验证 try/catch 错误联合路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_error_union.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+echo "  try/catch exec path ✓"
 
 echo "验证 @c_import unsupported 原因..."
 if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_c_import_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
