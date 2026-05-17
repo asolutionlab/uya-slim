@@ -16,6 +16,7 @@ TESTS=(
     "test_exec_vm_for_range.uya"
     "test_exec_vm_match_basic.uya"
     "test_exec_vm_error_union.uya"
+    "test_exec_vm_aggregates.uya"
 )
 
 TMP_STDOUT="$(mktemp)"

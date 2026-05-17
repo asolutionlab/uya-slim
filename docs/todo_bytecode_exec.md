@@ -29,7 +29,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## 当前进度快照
 
-截至 `2026-05-18`，仓库里的 exec backend 已经从“最小标量闭环”继续推进到基础 `match` 与 `!T` 子集：
+截至 `2026-05-18`，仓库里的 exec backend 已经从“最小标量闭环”继续推进到基础 `match`、`!T`，以及第一批聚合值子集：
 
 - 已新增 `src/exec/` 目录与首批文件：`main/hir/lower/bytecode/builder/vm/value/frame/debug`
 - 已在 `src/main.uya` 中接入 `use exec;`
@@ -49,6 +49,12 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `if`
   - `while`
   - `break` / `continue`
+  - 基础 `struct` / `array` / `slice` / `tuple`
+    - `struct init`
+    - 字段读取 / 字段写入
+    - 数组字面量 / 下标读取 / 下标写入
+    - slice 构造与 `@len`
+    - tuple 字面量与 `.0/.1/...` 读取
   - `match` 基本分支（当前仅 literal/else/wildcard，且仅覆盖标量 subject）
   - 直接函数调用
   - `!T` 运行时表示
@@ -71,10 +77,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-18 已新增并跑通：
   - `tests/test_exec_vm_match_basic.uya`
   - `tests/test_exec_vm_error_union.uya`
-  - `bash ./tests/verify_exec_vm_smoke.sh`
+  - `tests/test_exec_vm_aggregates.uya`
   - `bash ./tests/verify_exec_backend_progress.sh`
+- 2026-05-18 已用新生成编译器二进制验证通过：
+  - `bash ./tests/verify_exec_vm_aggregates.sh`
+  - `tests/test_exec_vm_aggregates.uya` 的 `run --vm`
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
+  - 新增聚合值支持后，完整 `bash ./tests/verify_exec_vm_smoke.sh` 仍有一个待收敛回归：
+    - `test_exec_vm_for_range.uya` 在新编译器下失败，需继续排查 `for range` lowering/builder 与新聚合值路径的交互
 
 ---
 
@@ -307,18 +318,28 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 9：聚合值与内存模型
 
-- [ ] 定义运行时聚合值存储策略
-- [ ] 支持：
-  - [ ] struct init / field load / field store
-  - [ ] array init / index load / index store
-  - [ ] slice `(ptr, len)`
-  - [ ] tuple
+- [x] 定义第一版运行时聚合值存储策略
+- [x] 支持：
+  - [x] struct init / field load / field store
+  - [x] array init / index load / index store
+  - [x] slice 第一版视图表示与 `@len`
+  - [x] tuple
 - [ ] 统一布局来源，避免和 C99 backend 漂移
 - [ ] 若需要，提取共享布局模块
-- [ ] 测试：
-  - [ ] struct 字段读写
+- [x] 测试：
+  - [x] struct 字段读写
+  - [x] slice 长度与切片
+  - [x] tuple 读取
   - [ ] 数组遍历
-  - [ ] slice 长度与切片
+
+备注：
+
+- 当前第一版聚合值实现选择“聚合值 owning storage + slice 共享 backing store 视图”：
+  - array / struct / tuple 按值持有元素槽
+  - slice 记录 `(aggregate, start, len)`，避免切片时复制整段元素
+- 当前目标是先打通 `run/test` 的基础 hosted 子集，不追求与 C99 backend 完整共享布局元数据
+- 当前 `slice.ptr`、更复杂聚合值嵌套语义、以及与 extern ABI 对齐仍未进入支持面
+- 当前 `for range` smoke 仍有一个回归待修复，因此本阶段虽已打通第一批聚合值能力，但还不能视为完全收口
 
 ---
 
@@ -385,11 +406,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] VM 内支持：
   - [ ] `@print`
   - [ ] `@println`
-  - [ ] `@len`
+  - [x] `@len`
   - [ ] `@error_id`
   - [ ] `@error_name`
 - [ ] 错误信息与当前运行体验对齐
 - [ ] 测试输出文本与现有路径一致
+
+备注：
+
+- `@len` 已随第一版 array/slice lowering 与 bytecode/VM 路径接通
+- 其余 builtin bridge 仍未系统整理到统一模块
 
 ---
 
@@ -402,13 +428,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] 用现有快速测试集做 smoke：
   - [x] 算术类
   - [x] 控制流类
-  - [ ] struct/array/slice 类
+  - [x] struct/array/slice 类
   - [x] error 类
 
 备注：
 
-- 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump、`try/catch` 错误联合路径，以及 `@c_import` unsupported 原因
-- 已新增 `tests/test_exec_vm_match_basic.uya` 与 `tests/test_exec_vm_error_union.uya`，并纳入 `tests/verify_exec_vm_smoke.sh`
+- 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump、`try/catch` 错误联合路径、聚合值基础路径，以及 `@c_import` unsupported 原因
+- 已新增 `tests/test_exec_vm_match_basic.uya`、`tests/test_exec_vm_error_union.uya`、`tests/test_exec_vm_aggregates.uya`
+- 已新增 `tests/verify_exec_vm_aggregates.sh`
+- `tests/verify_exec_vm_smoke.sh` 已纳入聚合值用例，但当前仍被 `test_exec_vm_for_range.uya` 回归阻塞，尚未恢复全绿
 
 ---
 

@@ -29,6 +29,10 @@ echo "验证 try/catch 错误联合路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_error_union.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 echo "  try/catch exec path ✓"
 
+echo "验证 struct/array/slice/tuple 聚合值路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_aggregates.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+echo "  aggregate exec path ✓"
+
 echo "验证 @c_import unsupported 原因..."
 if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_c_import_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
     echo "✗ @c_import unsupported case should fail under --vm"

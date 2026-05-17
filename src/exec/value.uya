@@ -1,13 +1,31 @@
 // exec/value.uya - Exec runtime value representation
 
+use libc;
+use libc.heap;
+
 enum ExecValueKind {
     EXEC_VALUE_VOID,
     EXEC_VALUE_I32,
     EXEC_VALUE_BOOL,
     EXEC_VALUE_BYTE,
     EXEC_VALUE_STRING,
+    EXEC_VALUE_STRUCT,
+    EXEC_VALUE_ARRAY,
+    EXEC_VALUE_SLICE,
+    EXEC_VALUE_TUPLE,
     EXEC_VALUE_ERROR,
     EXEC_VALUE_ERROR_UNION,
+}
+
+struct ExecAggregate {
+    count: i32,
+    values: &ExecValue,
+}
+
+struct ExecSliceData {
+    aggregate: &ExecAggregate,
+    start: i32,
+    len: i32,
 }
 
 struct ExecValue {
@@ -143,6 +161,217 @@ fn exec_value_unwrap_err(value: ExecValue) ExecValue {
     return exec_make_error(value.error_id);
 }
 
+fn exec_value_alloc_bytes(size: usize) &byte {
+    const mem: &byte = malloc(size) as &byte;
+    if mem == null {
+        return null;
+    }
+    _ = memset(mem as *byte, 0, size);
+    return mem;
+}
+
+fn exec_value_aggregate_kind(type: Type) ExecValueKind {
+    if type.kind == TypeKind.TYPE_STRUCT {
+        return ExecValueKind.EXEC_VALUE_STRUCT;
+    }
+    if type.kind == TypeKind.TYPE_ARRAY {
+        return ExecValueKind.EXEC_VALUE_ARRAY;
+    }
+    if type.kind == TypeKind.TYPE_TUPLE {
+        return ExecValueKind.EXEC_VALUE_TUPLE;
+    }
+    return ExecValueKind.EXEC_VALUE_VOID;
+}
+
+fn exec_value_aggregate_from_parts(kind: ExecValueKind, count: i32, values: &ExecValue) ExecValue {
+    const aggregate: &ExecAggregate = exec_value_alloc_bytes(@size_of(ExecAggregate)) as &ExecAggregate;
+    if aggregate == null {
+        return exec_make_void();
+    }
+    aggregate.count = count;
+    aggregate.values = values;
+    return ExecValue {
+        kind: kind,
+        i64_value: count as i64,
+        ptr_value: aggregate as &byte,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_value_make_aggregate(kind: ExecValueKind, count: i32) ExecValue {
+    if count < 0 {
+        return exec_make_void();
+    }
+    var values: &ExecValue = null;
+    if count > 0 {
+        values = exec_value_alloc_bytes((@size_of(ExecValue) * count) as usize) as &ExecValue;
+        if values == null {
+            return exec_make_void();
+        }
+    }
+    return exec_value_aggregate_from_parts(kind, count, values);
+}
+
+fn exec_make_struct(count: i32) ExecValue {
+    return exec_value_make_aggregate(ExecValueKind.EXEC_VALUE_STRUCT, count);
+}
+
+fn exec_make_array(count: i32) ExecValue {
+    return exec_value_make_aggregate(ExecValueKind.EXEC_VALUE_ARRAY, count);
+}
+
+fn exec_make_tuple(count: i32) ExecValue {
+    return exec_value_make_aggregate(ExecValueKind.EXEC_VALUE_TUPLE, count);
+}
+
+fn exec_make_slice(aggregate: &ExecAggregate, start: i32, len: i32) ExecValue {
+    const slice_data: &ExecSliceData = exec_value_alloc_bytes(@size_of(ExecSliceData)) as &ExecSliceData;
+    if slice_data == null {
+        return exec_make_void();
+    }
+    slice_data.aggregate = aggregate;
+    slice_data.start = start;
+    slice_data.len = len;
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_SLICE,
+        i64_value: len as i64,
+        ptr_value: slice_data as &byte,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_value_as_aggregate(value: &ExecValue) &ExecAggregate {
+    if value == null ||
+        (value.kind != ExecValueKind.EXEC_VALUE_STRUCT &&
+        value.kind != ExecValueKind.EXEC_VALUE_ARRAY &&
+        value.kind != ExecValueKind.EXEC_VALUE_TUPLE) {
+        return null;
+    }
+    return value.ptr_value as &ExecAggregate;
+}
+
+fn exec_value_as_slice(value: &ExecValue) &ExecSliceData {
+    if value == null || value.kind != ExecValueKind.EXEC_VALUE_SLICE {
+        return null;
+    }
+    return value.ptr_value as &ExecSliceData;
+}
+
+fn exec_value_clone(value: &ExecValue) ExecValue {
+    if value == null {
+        return exec_make_void();
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
+        value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
+        value.kind == ExecValueKind.EXEC_VALUE_TUPLE {
+        const aggregate: &ExecAggregate = exec_value_as_aggregate(value);
+        if aggregate == null {
+            return exec_make_void();
+        }
+        const cloned: ExecValue = exec_value_make_aggregate(value.kind, aggregate.count);
+        const cloned_aggregate: &ExecAggregate = exec_value_as_aggregate(&cloned);
+        if cloned_aggregate == null {
+            return exec_make_void();
+        }
+        var i: i32 = 0;
+        while i < aggregate.count {
+            cloned_aggregate.values[i] = exec_value_clone(&aggregate.values[i]);
+            i = i + 1;
+        }
+        return cloned;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        const slice_data: &ExecSliceData = exec_value_as_slice(value);
+        if slice_data == null {
+            return exec_make_void();
+        }
+        return exec_make_slice(slice_data.aggregate, slice_data.start, slice_data.len);
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_ERROR_UNION {
+        if value.i64_value != 0 {
+            return exec_make_error_union_err(value.error_id);
+        }
+        var ok_value: ExecValue = exec_value_unwrap_ok(value[0]);
+        return exec_make_error_union_ok(exec_value_clone(&ok_value));
+    }
+    return value[0];
+}
+
+fn exec_value_count(value: &ExecValue) i32 {
+    if value == null {
+        return 0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
+        value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
+        value.kind == ExecValueKind.EXEC_VALUE_TUPLE {
+        const aggregate: &ExecAggregate = exec_value_as_aggregate(value);
+        if aggregate != null {
+            return aggregate.count;
+        }
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        const slice_data: &ExecSliceData = exec_value_as_slice(value);
+        if slice_data != null {
+            return slice_data.len;
+        }
+    }
+    return 0;
+}
+
+fn exec_value_get_index(value: &ExecValue, idx: i32) ExecValue {
+    if value == null {
+        return exec_make_void();
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
+        value.kind == ExecValueKind.EXEC_VALUE_TUPLE ||
+        value.kind == ExecValueKind.EXEC_VALUE_STRUCT {
+        const aggregate: &ExecAggregate = exec_value_as_aggregate(value);
+        if aggregate == null || idx < 0 || idx >= aggregate.count {
+            return exec_make_void();
+        }
+        return aggregate.values[idx];
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        const slice_data: &ExecSliceData = exec_value_as_slice(value);
+        if slice_data == null || slice_data.aggregate == null || idx < 0 || idx >= slice_data.len {
+            return exec_make_void();
+        }
+        return slice_data.aggregate.values[slice_data.start + idx];
+    }
+    return exec_make_void();
+}
+
+fn exec_value_set_index(dst: &ExecValue, idx: i32, value: &ExecValue) i32 {
+    if dst == null || value == null {
+        return -1;
+    }
+    if dst.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
+        dst.kind == ExecValueKind.EXEC_VALUE_TUPLE ||
+        dst.kind == ExecValueKind.EXEC_VALUE_STRUCT {
+        const aggregate: &ExecAggregate = exec_value_as_aggregate(dst);
+        if aggregate == null || idx < 0 || idx >= aggregate.count {
+            return -1;
+        }
+        aggregate.values[idx] = exec_value_clone(value);
+        return 0;
+    }
+    if dst.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        const slice_data: &ExecSliceData = exec_value_as_slice(dst);
+        if slice_data == null || slice_data.aggregate == null || idx < 0 || idx >= slice_data.len {
+            return -1;
+        }
+        slice_data.aggregate.values[slice_data.start + idx] = exec_value_clone(value);
+        return 0;
+    }
+    return -1;
+}
+
 fn exec_value_truthy(value: ExecValue) i32 {
     if value.kind == ExecValueKind.EXEC_VALUE_BOOL {
         if value.i64_value != 0 {
@@ -158,6 +387,15 @@ fn exec_value_truthy(value: ExecValue) i32 {
     }
     if value.kind == ExecValueKind.EXEC_VALUE_STRING {
         if value.ptr_value != null {
+            return 1;
+        }
+        return 0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
+        value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
+        value.kind == ExecValueKind.EXEC_VALUE_TUPLE ||
+        value.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        if exec_value_count(&value) != 0 {
             return 1;
         }
         return 0;
