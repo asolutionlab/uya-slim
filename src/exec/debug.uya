@@ -160,6 +160,20 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
         return;
     }
     fprintf(libc.stderr, "\n=== exec bytecode ===\n" as *byte);
+    fprintf(libc.stderr, "const_pool=%d\n" as *byte, program.const_pool.count);
+    var ci: i32 = 0;
+    while ci < program.const_pool.count {
+        const value: &ExecValue = program.const_pool.values + ci;
+        fprintf(libc.stderr, "  const[%d] kind=%d " as *byte, ci, value.kind as i32);
+        if value.kind == ExecValueKind.EXEC_VALUE_STRING && value.ptr_value != null {
+            fprintf(libc.stderr, "\"%s\"\n" as *byte, value.ptr_value as *byte);
+        } else if value.kind == ExecValueKind.EXEC_VALUE_VOID {
+            fprintf(libc.stderr, "void\n" as *byte);
+        } else {
+            fprintf(libc.stderr, "%ld\n" as *byte, value.i64_value);
+        }
+        ci = ci + 1;
+    }
     var fi: i32 = 0;
     while fi < program.function_count {
         const func: &BCFunction = program.functions + fi;

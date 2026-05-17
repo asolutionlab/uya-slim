@@ -185,10 +185,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 对每个函数生成结构化 HIR block
 - [x] 第一版先跳过或拒绝：
   - [x] async
-  - [ ] `@c_import`
-  - [ ] inline asm
+  - [x] `@c_import`
+  - [x] inline asm
   - [ ] SIMD
-  - [ ] microapp 特化
+  - [x] microapp 特化
 - [x] 对不支持节点返回稳定错误信息：
   - [x] 节点种类
   - [x] 文件、行、列
@@ -196,7 +196,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 备注：
 
-- 目前 lowering 还没有完整枚举所有不支持路径；已显式拒绝的一部分特性有稳定报错，但 `@c_import`、asm、SIMD、microapp 等仍需补全专门原因码
+- 目前 lowering 还没有完整枚举所有不支持路径；已显式拒绝的一部分特性有稳定报错，`SIMD` 与更细粒度 extern ABI 原因码仍需补全
 - 当前 `for` / `match` / 聚合值 / `try/catch` 都还没有进入可运行子集
 
 ---
@@ -235,15 +235,21 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 新建 `exec_build_bytecode(...)`
 - [x] block label 分配
 - [x] local / temp 槽位分配
-- [ ] 生成常量池
+- [x] 生成常量池
 - [x] 生成函数 bytecode
 - [ ] 验证每个函数：
   - [x] 所有跳转目标存在
   - [x] 所有读取槽位已初始化
-  - [ ] 所有返回路径类型一致
+  - [x] 所有返回路径类型一致
 - [x] 测试：
   - [x] 字节码打印稳定
   - [x] 同一输入多次构建结果一致
+
+---
+
+备注：
+
+- 2026-05-17 已把重复标量/字符串常量收敛到共享 `const pool`，避免在 bytecode 指令流里重复内联同值常量
 
 ---
 
@@ -254,7 +260,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 在 `vm.uya` 实现：
   - [x] `vm_run_program`
   - [x] `vm_call_function`
-  - [ ] `vm_step`
+  - [x] `vm_step`
 - [x] 支持最小 opcode 闭环：
   - [x] const
   - [x] local
@@ -369,30 +375,34 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 14：`uya test --exec`
 
-- [ ] `COMMAND_TEST` 接入 exec backend
-- [ ] 保持当前测试摘要格式基本一致
-- [ ] 失败退出码一致
-- [ ] `--vm` 下禁用 C99 fallback
+- [x] `COMMAND_TEST` 接入 exec backend
+- [x] 保持当前测试摘要格式基本一致
+- [x] 失败退出码一致
+- [x] `--vm` 下禁用 C99 fallback
 - [ ] 用现有快速测试集做 smoke：
-  - [ ] 算术类
-  - [ ] 控制流类
+  - [x] 算术类
+  - [x] 控制流类
   - [ ] struct/array/slice 类
   - [ ] error 类
+
+备注：
+
+- 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump，以及 `catch` / `@c_import` unsupported 原因
 
 ---
 
 ## Phase 15：fallback 机制
 
-- [ ] 定义“不支持原因码”
+- [x] 定义“不支持原因码”
 - [ ] 定义 fallback 条件：
-  - [ ] `@c_import`
-  - [ ] async
-  - [ ] asm
+  - [x] `@c_import`
+  - [x] async
+  - [x] asm
   - [ ] SIMD
   - [ ] unsupported extern ABI
-- [ ] `--exec` 时自动回退 C99
-- [ ] `--vm` 时直接失败
-- [ ] 打印清晰原因，不要静默切换
+- [x] `--exec` 时自动回退 C99
+- [x] `--vm` 时直接失败
+- [x] 打印清晰原因，不要静默切换
 
 ---
 
@@ -415,9 +425,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 ## Phase 17：性能与缓存
 
 - [ ] 增加 exec backend 子计时：
-  - [ ] lowering
-  - [ ] bytecode build
-  - [ ] VM run
+  - [x] lowering
+  - [x] bytecode build
+  - [x] VM run
 - [ ] 对比 C99 run/test 的 wall time
 - [ ] 查找热点：
   - [ ] Value 拷贝

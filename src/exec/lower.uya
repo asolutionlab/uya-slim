@@ -24,7 +24,12 @@ struct ExecLowerContext {
 }
 
 fn exec_lower_set_unsupported(node: &ASTNode, reason: &byte) i32 {
-    exec_backend_set_error(node, reason, 1);
+    exec_backend_set_unsupported_error(node, reason, ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC);
+    return 2;
+}
+
+fn exec_lower_set_unsupported_reason(node: &ASTNode, reason: &byte, code: ExecUnsupportedReason) i32 {
+    exec_backend_set_unsupported_error(node, reason, code);
     return 2;
 }
 
@@ -33,8 +38,18 @@ fn exec_lower_fail_expr(node: &ASTNode, reason: &byte) &HIRExpr {
     return null;
 }
 
+fn exec_lower_fail_expr_reason(node: &ASTNode, reason: &byte, code: ExecUnsupportedReason) &HIRExpr {
+    _ = exec_lower_set_unsupported_reason(node, reason, code);
+    return null;
+}
+
 fn exec_lower_fail_block(node: &ASTNode, reason: &byte) &HIRBlock {
     _ = exec_lower_set_unsupported(node, reason);
+    return null;
+}
+
+fn exec_lower_fail_block_reason(node: &ASTNode, reason: &byte, code: ExecUnsupportedReason) &HIRBlock {
+    _ = exec_lower_set_unsupported_reason(node, reason, code);
     return null;
 }
 
@@ -446,6 +461,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         hir.string_value = expr.string_literal_value;
         return hir;
     }
+    if expr.type == ASTNodeType.AST_STRING_INTERP {
+        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持字符串插值" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_STRING_INTERP);
+    }
     if expr.type == ASTNodeType.AST_IDENTIFIER {
         const slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
         if slot < 0 {
@@ -549,6 +567,18 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         hir.left = inner;
         return hir;
+    }
+    if expr.type == ASTNodeType.AST_TRY_EXPR {
+        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 try" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_TRY_EXPR);
+    }
+    if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 catch" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+    }
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+    }
+    if expr.type == ASTNodeType.AST_ASM {
+        return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 inline asm" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_ASM);
     }
     return exec_lower_fail_expr(expr, "exec: 尚未支持的表达式节点" as *byte);
 }
@@ -792,6 +822,12 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             stmt = nested_stmt;
         } else {
             exec_lower_pop_scope(ctx);
+            if stmt_node.type == ASTNodeType.AST_TEST_STMT {
+                return exec_lower_fail_block(stmt_node, "exec: 当前不支持 test 语句" as *byte);
+            }
+            if stmt_node.type == ASTNodeType.AST_DEFER_STMT || stmt_node.type == ASTNodeType.AST_ERRDEFER_STMT {
+                return exec_lower_fail_block(stmt_node, "exec: 当前不支持 defer/errdefer" as *byte);
+            }
             return exec_lower_fail_block(stmt_node, "exec: 尚未支持的语句节点" as *byte);
         }
         if stmt == null {
@@ -811,11 +847,11 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         return null;
     }
     if fn_decl.fn_decl_is_async != 0 {
-        exec_lower_set_unsupported(fn_decl, "exec: 当前不支持 async" as *byte);
+        exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 async" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_ASYNC);
         return null;
     }
     if fn_decl.fn_decl_is_extern != 0 {
-        exec_lower_set_unsupported(fn_decl, "exec: 当前不支持 extern ABI" as *byte);
+        exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
         return null;
     }
     const return_type: Type = type_from_ast(checker, fn_decl.fn_decl_return_type);
@@ -900,6 +936,21 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
     if arena == null || checker == null || program == null {
         exec_backend_set_error(program, "exec: lowering 输入无效" as *byte, 0);
         return null;
+    }
+    if g_app_mode_microapp != 0 {
+        exec_lower_set_unsupported_reason(program, "exec: 当前不支持 microapp exec backend" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MICROAPP);
+        return null;
+    }
+    if program.type == ASTNodeType.AST_PROGRAM {
+        var decl_idx: i32 = 0;
+        while decl_idx < program.program_decl_count {
+            const decl: &ASTNode = program.program_decls[decl_idx];
+            if decl != null && decl.type == ASTNodeType.AST_C_IMPORT_DECL {
+                exec_lower_set_unsupported_reason(decl, "exec: 当前不支持 @c_import" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_C_IMPORT);
+                return null;
+            }
+            decl_idx = decl_idx + 1;
+        }
     }
     var main_decl: &ASTNode = exec_lower_find_entry_decl(checker);
     if main_decl == null {

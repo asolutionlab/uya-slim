@@ -3,8 +3,24 @@
 use libc;
 use libc.stdlib;
 
+enum ExecUnsupportedReason {
+    EXEC_UNSUPPORTED_NONE,
+    EXEC_UNSUPPORTED_GENERIC,
+    EXEC_UNSUPPORTED_C_IMPORT,
+    EXEC_UNSUPPORTED_ASYNC,
+    EXEC_UNSUPPORTED_EXTERN_ABI,
+    EXEC_UNSUPPORTED_TRY_EXPR,
+    EXEC_UNSUPPORTED_CATCH_EXPR,
+    EXEC_UNSUPPORTED_MATCH_EXPR,
+    EXEC_UNSUPPORTED_STRING_INTERP,
+    EXEC_UNSUPPORTED_ASM,
+    EXEC_UNSUPPORTED_SIMD,
+    EXEC_UNSUPPORTED_MICROAPP,
+}
+
 var g_exec_last_error_message: [byte: 512] = [];
 var g_exec_last_error_is_unsupported: i32 = 0;
+var g_exec_last_unsupported_reason: ExecUnsupportedReason = ExecUnsupportedReason.EXEC_UNSUPPORTED_NONE;
 var g_exec_dump_hir_enabled: i32 = 0;
 var g_exec_dump_bytecode_enabled: i32 = 0;
 var g_exec_trace_vm_enabled: i32 = 0;
@@ -33,6 +49,7 @@ fn exec_write_error_detail(pos: i32, message: &byte) void {
 fn exec_backend_reset_state() void {
     g_exec_last_error_message[0] = 0 as byte;
     g_exec_last_error_is_unsupported = 0;
+    g_exec_last_unsupported_reason = ExecUnsupportedReason.EXEC_UNSUPPORTED_NONE;
     g_exec_hir_module = null;
     g_exec_bc_program = null;
     g_exec_last_lower_time_ms = 0;
@@ -50,6 +67,14 @@ fn exec_backend_set_error(node: &ASTNode, message: &byte, is_unsupported: i32) v
     const prefix_len: i32 = exec_write_error_prefix(node);
     exec_write_error_detail(prefix_len, message);
     g_exec_last_error_is_unsupported = is_unsupported;
+    if is_unsupported == 0 {
+        g_exec_last_unsupported_reason = ExecUnsupportedReason.EXEC_UNSUPPORTED_NONE;
+    }
+}
+
+fn exec_backend_set_unsupported_error(node: &ASTNode, message: &byte, reason: ExecUnsupportedReason) void {
+    exec_backend_set_error(node, message, 1);
+    g_exec_last_unsupported_reason = reason;
 }
 
 fn exec_backend_get_last_error() &byte {
@@ -61,6 +86,10 @@ fn exec_backend_get_last_error() &byte {
 
 fn exec_backend_error_is_unsupported() i32 {
     return g_exec_last_error_is_unsupported;
+}
+
+fn exec_backend_get_last_unsupported_reason() ExecUnsupportedReason {
+    return g_exec_last_unsupported_reason;
 }
 
 /// 构建 exec backend 程序。

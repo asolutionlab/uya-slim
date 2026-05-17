@@ -3,6 +3,12 @@
 use libc;
 
 const EXEC_MAX_BYTECODE_INSTRS: i32 = 4096;
+const EXEC_MAX_CONST_POOL_VALUES: i32 = 1024;
+
+struct ExecConstPoolBuilder {
+    values: [ExecValue: EXEC_MAX_CONST_POOL_VALUES],
+    count: i32,
+}
 
 struct ExecLoopPatch {
     break_jumps: [i32: 128],
@@ -14,6 +20,7 @@ struct ExecLoopPatch {
 
 struct ExecFunctionBuildContext {
     arena: &CompilerArena,
+    const_pool: &ExecConstPoolBuilder,
     function: &HIRFunction,
     instrs: [BCInstr: EXEC_MAX_BYTECODE_INSTRS],
     instr_count: i32,
@@ -31,6 +38,47 @@ fn exec_builder_instr_slot(ctx: &ExecFunctionBuildContext, idx: i32) &BCInstr {
         return &ctx.instrs[idx];
     }
     return null;
+}
+
+fn exec_builder_const_value_equals(left: ExecValue, right: ExecValue) i32 {
+    if left.kind != right.kind {
+        return 0;
+    }
+    if left.kind == ExecValueKind.EXEC_VALUE_STRING {
+        if left.ptr_value == right.ptr_value {
+            return 1;
+        }
+        if left.ptr_value == null || right.ptr_value == null {
+            return 0;
+        }
+        return (str_equals(left.ptr_value, right.ptr_value) != 0) as i32;
+    }
+    if left.i64_value == right.i64_value {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_builder_intern_const(ctx: &ExecFunctionBuildContext, value: ExecValue) i32 {
+    if ctx == null || ctx.const_pool == null {
+        exec_backend_set_error(null, "exec: const pool builder 输入无效" as *byte, 0);
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < ctx.const_pool.count {
+        if exec_builder_const_value_equals(ctx.const_pool.values[i], value) != 0 {
+            return i;
+        }
+        i = i + 1;
+    }
+    if ctx.const_pool.count >= EXEC_MAX_CONST_POOL_VALUES {
+        exec_backend_set_error(ctx.function.decl, "exec: const pool 超出上限" as *byte, 0);
+        return -1;
+    }
+    const const_idx: i32 = ctx.const_pool.count;
+    ctx.const_pool.values[const_idx] = value;
+    ctx.const_pool.count = const_idx + 1;
+    return const_idx;
 }
 
 fn exec_builder_loop_patch_ref(ctx: &ExecFunctionBuildContext, idx: i32) &ExecLoopPatch {
@@ -112,20 +160,29 @@ fn exec_builder_new_temp(ctx: &ExecFunctionBuildContext) i32 {
 }
 
 fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRExpr) i32 {
+    var const_value: ExecValue = exec_make_void();
+    if expr.string_value != null {
+        const_value = exec_make_string(expr.string_value);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
+        const_value = exec_make_bool(expr.bool_value);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
+        const_value = exec_make_byte(expr.int_value as i32);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 {
+        const_value = exec_make_i32(expr.int_value as i32);
+    }
+    const const_idx: i32 = exec_builder_intern_const(ctx, const_value);
+    if const_idx < 0 {
+        return -1;
+    }
     var instr: BCInstr = BCInstr {
         opcode: BCOpcode.BC_LOAD_CONST,
         a: dst,
         b: 0,
         c: 0,
-        imm: expr.int_value,
-        text: expr.string_value,
+        imm: const_idx as i64,
+        text: null,
         source: exec_builder_make_source(expr.ast_node),
     };
-    if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
-        instr.imm = expr.bool_value as i64;
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
-        instr.imm = expr.int_value;
-    }
     return exec_builder_emit(ctx, instr);
 }
 
@@ -748,12 +805,53 @@ fn exec_builder_validate_function(fn_hir: &HIRFunction, out_fn: &BCFunction) i32
     return 0;
 }
 
-fn exec_builder_build_function(arena: &CompilerArena, fn_hir: &HIRFunction) &BCFunction {
-    if arena == null || fn_hir == null {
+fn exec_builder_validate_return_types_in_block(fn_hir: &HIRFunction, block: &HIRBlock) i32 {
+    if fn_hir == null || block == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < block.stmt_count {
+        const stmt: &HIRStmt = block.stmts[i];
+        if stmt.kind == HIRStmtKind.HIR_STMT_RETURN {
+            if fn_hir.return_type.type.kind == TypeKind.TYPE_VOID {
+                if stmt.expr != null {
+                    exec_backend_set_error(stmt.ast_node, "exec: void 函数不应返回值" as *byte, 0);
+                    return -1;
+                }
+            } else {
+                if stmt.expr == null {
+                    exec_backend_set_error(stmt.ast_node, "exec: 非 void 函数缺少返回值" as *byte, 0);
+                    return -1;
+                }
+                if type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type) == 0 {
+                    exec_backend_set_error(stmt.ast_node, "exec: return 类型与函数返回类型不一致" as *byte, 0);
+                    return -1;
+                }
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_IF {
+            if exec_builder_validate_return_types_in_block(fn_hir, stmt.then_block) != 0 {
+                return -1;
+            }
+            if exec_builder_validate_return_types_in_block(fn_hir, stmt.else_block) != 0 {
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_LOOP {
+            if exec_builder_validate_return_types_in_block(fn_hir, stmt.loop_body) != 0 {
+                return -1;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPoolBuilder, fn_hir: &HIRFunction) &BCFunction {
+    if arena == null || const_pool == null || fn_hir == null {
         return null;
     }
     var ctx: ExecFunctionBuildContext = ExecFunctionBuildContext {
         arena: arena,
+        const_pool: const_pool,
         function: fn_hir,
         instrs: [],
         instr_count: 0,
@@ -762,6 +860,9 @@ fn exec_builder_build_function(arena: &CompilerArena, fn_hir: &HIRFunction) &BCF
         loop_stack: [],
         loop_depth: 0,
     };
+    if exec_builder_validate_return_types_in_block(fn_hir, fn_hir.body) != 0 {
+        return null;
+    }
     if exec_builder_compile_block(&ctx, fn_hir.body) != 0 {
         return null;
     }
@@ -808,6 +909,10 @@ export fn exec_build_bytecode(arena: &CompilerArena, module: &HIRModule) &BCProg
         exec_backend_set_error(null, "exec: bytecode builder 输入无效" as *byte, 0);
         return null;
     }
+    var const_pool_builder: ExecConstPoolBuilder = ExecConstPoolBuilder {
+        values: [],
+        count: 0,
+    };
     const functions: &BCFunction = compiler_arena_alloc(arena, @size_of(BCFunction) * module.function_count as usize) as &BCFunction;
     const program: &BCProgram = compiler_arena_alloc(arena, @size_of(BCProgram)) as &BCProgram;
     if (module.function_count > 0 && functions == null) || program == null {
@@ -817,7 +922,7 @@ export fn exec_build_bytecode(arena: &CompilerArena, module: &HIRModule) &BCProg
     var entry_index: i32 = -1;
     var i: i32 = 0;
     while i < module.function_count {
-        const built: &BCFunction = exec_builder_build_function(arena, module.functions[i]);
+        const built: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, module.functions[i]);
         if built == null {
             return null;
         }
@@ -835,9 +940,22 @@ export fn exec_build_bytecode(arena: &CompilerArena, module: &HIRModule) &BCProg
     program.functions = functions;
     program.function_count = module.function_count;
     program.entry_function_index = entry_index;
-    program.const_pool = BCConstPool {
-        values: null,
-        count: 0,
-    };
+    if const_pool_builder.count > 0 {
+        const const_values: &ExecValue = compiler_arena_alloc(arena, @size_of(ExecValue) * const_pool_builder.count as usize) as &ExecValue;
+        if const_values == null {
+            exec_backend_set_error(module.entry_function.decl, "exec: const pool 分配失败" as *byte, 0);
+            return null;
+        }
+        memcpy(const_values as *void, &const_pool_builder.values[0] as *void, @size_of(ExecValue) * const_pool_builder.count as usize);
+        program.const_pool = BCConstPool {
+            values: const_values,
+            count: const_pool_builder.count,
+        };
+    } else {
+        program.const_pool = BCConstPool {
+            values: null,
+            count: 0,
+        };
+    }
     return program;
 }
