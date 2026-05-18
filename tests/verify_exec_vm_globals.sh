@@ -33,4 +33,15 @@ if grep -q 'SHOULD_NOT_RUN' "$TMP_STDOUT"; then
 fi
 echo "  global init failure ✓"
 
+echo "验证多模块 global init 顺序与 use module.item 全局访问..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_globals_multi.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ multi-module globals unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  multi-module globals ✓"
+
 echo "✓ exec vm global checks passed"

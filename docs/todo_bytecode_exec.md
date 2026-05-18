@@ -62,7 +62,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `catch`（当前仅无 `|err|` 绑定的基础恢复路径）
   - `return`
   - `@print` / `@println`
-  - 第一版 top-level global init / global load-store（当前先覆盖单文件 hosted 子集）
+  - 第一版 top-level global init / global load-store（已覆盖单文件 hosted 与多模块 exported global 基础子集）
 
 当前限制也必须明确记录：
 
@@ -81,6 +81,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `tests/test_exec_vm_aggregates.uya`
   - `tests/test_exec_vm_globals.uya`
   - `tests/test_exec_vm_global_init_fail.uya`
+  - `tests/test_exec_vm_globals_multi.uya`
   - `tests/test_exec_vm_simd_unsupported.uya`
   - `tests/test_exec_vm_extern_unsupported.uya`
   - `bash ./tests/verify_exec_backend_progress.sh`
@@ -99,7 +100,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - 现在都会显式校验 `后端类型: EXEC`、`exec backend 构建完成` 或 fallback 原因
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
-  - 当前已打通“单文件 hosted 场景”的 global init / global read-write / global init failure；但跨模块 `use module.item` 导入后的 global 访问与“多模块全局初始化顺序”仍未完成，Phase 12 还不能算全部收口
+  - 当前 global 路径已打通单文件 hosted，以及多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集；更复杂全局类型与更大覆盖面回归仍待继续扩大
 
 ---
 
@@ -424,8 +425,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 支持全局变量初始化（当前先覆盖单文件 hosted 子集）
 - [x] 冻结全局初始化顺序（当前按 merged AST 顶层声明顺序）
 - [x] `main` 启动前执行 global init list
-- [ ] 测试：
-  - [ ] 多模块全局初始化
+- [x] 测试：
+  - [x] 多模块全局初始化
   - [x] 全局初始化失败
 
 备注：
@@ -439,11 +440,14 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 当前已验证：
   - `tests/test_exec_vm_globals.uya`
   - `tests/test_exec_vm_global_init_fail.uya`
+  - `tests/test_exec_vm_globals_multi.uya`
   - `bash ./tests/verify_exec_vm_globals.sh`
+- 当前已完成：
+  - 跨模块 `use module.item` 导出的 global 访问基础路径
+  - 多模块全局初始化顺序基础回归
 - 当前尚未完成：
-  - 跨模块 `use module.item` 后的 global 访问
-  - 多模块全局初始化顺序回归
   - 更复杂全局类型（当前仍以 exec VM 可表示子集为准）
+  - 更大规模多模块 global 回归矩阵
 
 ---
 

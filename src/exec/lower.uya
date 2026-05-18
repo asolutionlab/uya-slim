@@ -720,6 +720,9 @@ fn exec_lower_append_global_slot(checker: &TypeChecker, decl: &ASTNode, globals:
     if checker == null || decl == null || globals == null || out_count == null {
         return -1;
     }
+    if exec_lower_decl_is_uya_root_runtime(checker, decl) != 0 {
+        return 0;
+    }
     if out_count[0] >= EXEC_MAX_GLOBALS {
         exec_backend_set_error(decl, "exec: global 数量超出上限" as *byte, 0);
         return -1;
@@ -1933,77 +1936,9 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
         }
     }
     var global_count: i32 = 0;
-    var globals: &HIRGlobalSlot = compiler_arena_alloc(arena, @size_of(HIRGlobalSlot) * EXEC_MAX_GLOBALS as usize) as &HIRGlobalSlot;
+    var globals: &HIRGlobalSlot = exec_lower_collect_global_slots(arena, checker, program, &global_count);
     if globals == null {
-        exec_backend_set_error(program, "exec: global slot 表分配失败" as *byte, 0);
         return null;
-    }
-    var global_scope: i32 = 0;
-    while global_scope < @len(checker.scope_heads) {
-        var global_symbol: &Symbol = checker.scope_heads[global_scope];
-        while global_symbol != null {
-            if exec_lower_global_is_runtime_decl(global_symbol.decl_node) != 0 &&
-                exec_lower_decl_is_uya_root_runtime(checker, global_symbol.decl_node) == 0 &&
-                exec_lower_find_global_slot_by_decl_in_globals(globals, global_count, global_symbol.decl_node) < 0 {
-                if global_count >= EXEC_MAX_GLOBALS {
-                    exec_backend_set_error(global_symbol.decl_node, "exec: global 数量超出上限" as *byte, 0);
-                    return null;
-                }
-                const global_type_ast: &ASTNode = exec_lower_global_type_ast(global_symbol.decl_node);
-                if global_type_ast == null {
-                    global_symbol = global_symbol.next_in_scope;
-                    continue;
-                }
-                const global_type: Type = type_from_ast(checker, global_type_ast);
-                if exec_type_is_vm_value_supported(global_type) == 0 {
-                    global_symbol = global_symbol.next_in_scope;
-                    continue;
-                }
-                globals[global_count] = HIRGlobalSlot {
-                    name: exec_lower_global_name(global_symbol.decl_node),
-                    decl: global_symbol.decl_node,
-                    slot: global_count,
-                    type_ref: exec_lower_make_type_ref(&global_type),
-                    is_const: exec_lower_global_is_const(global_symbol.decl_node),
-                    init_expr: null,
-                };
-                global_count = global_count + 1;
-            }
-            global_symbol = global_symbol.next_in_scope;
-        }
-        global_scope = global_scope + 1;
-    }
-    if global_count > 1 {
-        const ordered_globals: &HIRGlobalSlot = compiler_arena_alloc(arena, @size_of(HIRGlobalSlot) * EXEC_MAX_GLOBALS as usize) as &HIRGlobalSlot;
-        if ordered_globals == null {
-            exec_backend_set_error(program, "exec: ordered global slot 表分配失败" as *byte, 0);
-            return null;
-        }
-        var ordered_count: i32 = 0;
-        var decl_idx2: i32 = 0;
-        while decl_idx2 < program.program_decl_count {
-            const decl2: &ASTNode = program.program_decls[decl_idx2];
-            if exec_lower_global_is_runtime_decl(decl2) != 0 {
-                const found_idx: i32 = exec_lower_find_global_slot_by_decl_in_globals(globals, global_count, decl2);
-                if found_idx >= 0 {
-                    ordered_globals[ordered_count] = globals[found_idx];
-                    ordered_globals[ordered_count].slot = ordered_count;
-                    ordered_count = ordered_count + 1;
-                }
-            }
-            decl_idx2 = decl_idx2 + 1;
-        }
-        var gi2: i32 = 0;
-        while gi2 < global_count {
-            if exec_lower_find_global_slot_by_decl_in_globals(ordered_globals, ordered_count, globals[gi2].decl) < 0 {
-                ordered_globals[ordered_count] = globals[gi2];
-                ordered_globals[ordered_count].slot = ordered_count;
-                ordered_count = ordered_count + 1;
-            }
-            gi2 = gi2 + 1;
-        }
-        globals = ordered_globals;
-        global_count = ordered_count;
     }
     var main_decl: &ASTNode = exec_lower_find_entry_decl(checker);
     if main_decl == null {
