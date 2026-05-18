@@ -15,7 +15,7 @@ echo "验证 exec vm defer/errdefer 清理顺序..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_defer.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
-tail -n 4 "$TMP_STDOUT" | diff -u <(printf 'B1\nCC2\nDO7\nEDR0\n') -
+tail -n 5 "$TMP_STDOUT" | diff -u <(printf 'NSIK\nOB1\nCC2\nDO7\nEDR0\n') -
 echo "  run --vm defer/errdefer ✓"
 
 echo "验证 --exec defer/errdefer 不发生 fallback..."
@@ -26,7 +26,7 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     cat "$TMP_STDERR"
     exit 1
 fi
-tail -n 4 "$TMP_STDOUT" | diff -u <(printf 'B1\nCC2\nDO7\nEDR0\n') -
+tail -n 5 "$TMP_STDOUT" | diff -u <(printf 'NSIK\nOB1\nCC2\nDO7\nEDR0\n') -
 echo "  run --exec defer/errdefer ✓"
 
 echo "✓ exec vm defer checks passed"

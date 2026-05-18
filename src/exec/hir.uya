@@ -33,6 +33,8 @@ enum HIRExprKind {
     HIR_EXPR_MATCH,
     HIR_EXPR_PRINT,
     HIR_EXPR_PRINTLN,
+    HIR_EXPR_ERROR_ID,
+    HIR_EXPR_ERROR_NAME,
 }
 
 struct HIRMatchArm {

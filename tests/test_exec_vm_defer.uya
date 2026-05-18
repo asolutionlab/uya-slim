@@ -29,7 +29,18 @@ fn err_case(flag: i32) !i32 {
     return 7;
 }
 
+fn nested_scope_case() void {
+    @print("N");
+    {
+        defer { @print("I"); }
+        @print("S");
+    }
+    defer { @print("O"); }
+    @println("K");
+}
+
 export fn main() i32 {
+    nested_scope_case();
     break_case();
     continue_case();
     const ok: i32 = err_case(0) catch { 0; };

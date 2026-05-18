@@ -337,7 +337,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] struct 字段读写
   - [x] slice 长度与切片
   - [x] tuple 读取
-  - [ ] 数组遍历
+  - [x] 数组遍历
 
 备注：
 
@@ -388,7 +388,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [ ] 在何 scope 退出时 drop
 - [x] 测试：
   - [x] 单层 defer
-  - [ ] 嵌套 defer
+  - [x] 嵌套 defer
   - [x] return 提前退出
   - [x] error 提前退出
 
@@ -430,8 +430,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] `@print`
   - [x] `@println`
   - [x] `@len`
-  - [ ] `@error_id`
-  - [ ] `@error_name`
+  - [x] `@error_id`
+  - [x] `@error_name`
 - [ ] 错误信息与当前运行体验对齐
 - [ ] 测试输出文本与现有路径一致
 
@@ -439,6 +439,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - `@len` 已随第一版 array/slice lowering 与 bytecode/VM 路径接通
 - `@print` / `@println` 已有最小 VM bridge，可覆盖当前 exec smoke 与 defer/errdefer 顺序回归
+- `@error_id` / `@error_name` 已接通命名错误字面量的 exec lowering、bytecode、VM 查表路径，并新增：
+  - `tests/test_exec_vm_error_builtin.uya`
+  - `tests/verify_exec_vm_error_builtin.sh`
 - 其余 builtin bridge 仍未系统整理到统一模块
 
 ---

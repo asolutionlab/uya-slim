@@ -414,3 +414,10 @@ fn exec_value_truthy(value: ExecValue) i32 {
     }
     return 0;
 }
+
+fn exec_value_error_id(value: ExecValue) i32 {
+    if value.kind == ExecValueKind.EXEC_VALUE_ERROR {
+        return value.error_id;
+    }
+    return 0;
+}

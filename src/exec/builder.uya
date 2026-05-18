@@ -149,6 +149,46 @@ fn exec_builder_cleanup_scope_ref(ctx: &ExecFunctionBuildContext, idx: i32) &Exe
     return null;
 }
 
+fn exec_builder_defer_stmt_ref(scope: &ExecCleanupScope, idx: i32) &HIRStmt {
+    if scope == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < scope.defer_count && idx < 64 {
+        return scope.defers[idx];
+    }
+    return null;
+}
+
+fn exec_builder_errdefer_stmt_ref(scope: &ExecCleanupScope, idx: i32) &HIRStmt {
+    if scope == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < scope.errdefer_count && idx < 64 {
+        return scope.errdefers[idx];
+    }
+    return null;
+}
+
+fn exec_builder_defer_stmt_slot_ref(scope: &ExecCleanupScope, idx: i32) &&HIRStmt {
+    if scope == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < 64 {
+        return &scope.defers[idx];
+    }
+    return null;
+}
+
+fn exec_builder_errdefer_stmt_slot_ref(scope: &ExecCleanupScope, idx: i32) &&HIRStmt {
+    if scope == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < 64 {
+        return &scope.errdefers[idx];
+    }
+    return null;
+}
+
 fn exec_builder_emit(ctx: &ExecFunctionBuildContext, instr: BCInstr) i32 {
     if ctx == null {
         return -1;
@@ -207,7 +247,7 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
         const_value = exec_make_bool(expr.bool_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
         const_value = exec_make_byte(expr.int_value as i32);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 {
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 || expr.type_ref.type.kind == TypeKind.TYPE_U32 {
         const_value = exec_make_i32(expr.int_value as i32);
     }
     const const_idx: i32 = exec_builder_intern_const(ctx, const_value);
@@ -590,6 +630,34 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         if ok_jump < 0 {
             return -1;
         }
+        if expr.local_slot >= 0 {
+            const err_value_slot: i32 = exec_builder_new_temp(ctx);
+            if err_value_slot < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_UNWRAP_ERR,
+                a: err_value_slot,
+                b: union_slot2,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MOV,
+                a: expr.local_slot,
+                b: err_value_slot,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+        }
         const fallback_slot: i32 = exec_builder_compile_expr(ctx, expr.right);
         if fallback_slot < 0 {
             return -1;
@@ -863,6 +931,29 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         return dst;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_ERROR_ID || expr.kind == HIRExprKind.HIR_EXPR_ERROR_NAME {
+        const src_builtin: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_builtin: i32 = exec_builder_new_temp(ctx);
+        if src_builtin < 0 || dst_builtin < 0 {
+            return -1;
+        }
+        var builtin_opcode: BCOpcode = BCOpcode.BC_ERROR_ID;
+        if expr.kind == HIRExprKind.HIR_EXPR_ERROR_NAME {
+            builtin_opcode = BCOpcode.BC_ERROR_NAME;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: builtin_opcode,
+            a: dst_builtin,
+            b: src_builtin,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_builtin;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_PRINT || expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
         const src: i32 = exec_builder_compile_expr(ctx, expr.left);
         if src < 0 {
@@ -1011,19 +1102,29 @@ fn exec_builder_register_cleanup(ctx: &ExecFunctionBuildContext, stmt: &HIRStmt,
         return -1;
     }
     if is_errdefer != 0 {
-        if scope.errdefer_count >= 64 {
+        const errdefer_slot: &&HIRStmt = exec_builder_errdefer_stmt_slot_ref(scope, scope.errdefer_count);
+        if scope.errdefer_count < 0 || scope.errdefer_count >= 64 {
             exec_backend_set_error(stmt.ast_node, "exec: errdefer 数量超出上限" as *byte, 0);
             return -1;
         }
-        scope.errdefers[scope.errdefer_count] = stmt;
+        if errdefer_slot == null {
+            exec_backend_set_error(stmt.ast_node, "exec: errdefer 写入失败" as *byte, 0);
+            return -1;
+        }
+        errdefer_slot[0] = stmt;
         scope.errdefer_count = scope.errdefer_count + 1;
         return 0;
     }
-    if scope.defer_count >= 64 {
+    const defer_slot: &&HIRStmt = exec_builder_defer_stmt_slot_ref(scope, scope.defer_count);
+    if scope.defer_count < 0 || scope.defer_count >= 64 {
         exec_backend_set_error(stmt.ast_node, "exec: defer 数量超出上限" as *byte, 0);
         return -1;
     }
-    scope.defers[scope.defer_count] = stmt;
+    if defer_slot == null {
+        exec_backend_set_error(stmt.ast_node, "exec: defer 写入失败" as *byte, 0);
+        return -1;
+    }
+    defer_slot[0] = stmt;
     scope.defer_count = scope.defer_count + 1;
     return 0;
 }
@@ -1036,7 +1137,7 @@ fn exec_builder_emit_cleanup_scope(ctx: &ExecFunctionBuildContext, scope_idx: i3
     if include_errdefer != 0 {
         var ei: i32 = scope.errdefer_count - 1;
         while ei >= 0 {
-            const stmt_err: &HIRStmt = scope.errdefers[ei];
+            const stmt_err: &HIRStmt = exec_builder_errdefer_stmt_ref(scope, ei);
             if stmt_err == null || stmt_err.cleanup_block == null {
                 exec_backend_set_error(null, "exec: errdefer cleanup block 无效" as *byte, 0);
                 return -1;
@@ -1049,7 +1150,7 @@ fn exec_builder_emit_cleanup_scope(ctx: &ExecFunctionBuildContext, scope_idx: i3
     }
     var di: i32 = scope.defer_count - 1;
     while di >= 0 {
-        const stmt_defer: &HIRStmt = scope.defers[di];
+        const stmt_defer: &HIRStmt = exec_builder_defer_stmt_ref(scope, di);
         if stmt_defer == null || stmt_defer.cleanup_block == null {
             exec_backend_set_error(null, "exec: defer cleanup block 无效" as *byte, 0);
             return -1;
@@ -1496,7 +1597,8 @@ fn exec_builder_validate_function(fn_hir: &HIRFunction, out_fn: &BCFunction) i32
             instr.opcode == BCOpcode.BC_LOAD_LEN ||
             instr.opcode == BCOpcode.BC_MAKE_OK || instr.opcode == BCOpcode.BC_MAKE_ERR ||
             instr.opcode == BCOpcode.BC_IS_ERR || instr.opcode == BCOpcode.BC_UNWRAP_OK ||
-            instr.opcode == BCOpcode.BC_UNWRAP_ERR {
+            instr.opcode == BCOpcode.BC_UNWRAP_ERR ||
+            instr.opcode == BCOpcode.BC_ERROR_ID || instr.opcode == BCOpcode.BC_ERROR_NAME {
             if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: 一元指令源槽位非法" as *byte) != 0 {
                 return -1;
             }
@@ -1730,8 +1832,8 @@ fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPool
 /// 将 Exec HIR 转换为寄存器化 bytecode。
 /// 参数：`arena` 为 bytecode 所属 Arena；`module` 为 lowering 后的 HIR 模块。
 /// 返回值：成功时返回 `BCProgram`；失败时返回 null，并通过 exec backend 错误状态暴露原因。
-export fn exec_build_bytecode(arena: &CompilerArena, module: &HIRModule) &BCProgram {
-    if arena == null || module == null {
+export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, module: &HIRModule) &BCProgram {
+    if arena == null || checker == null || module == null {
         exec_backend_set_error(null, "exec: bytecode builder 输入无效" as *byte, 0);
         return null;
     }
@@ -1782,6 +1884,26 @@ export fn exec_build_bytecode(arena: &CompilerArena, module: &HIRModule) &BCProg
             values: null,
             count: 0,
         };
+    }
+    if checker.error_name_count > 0 {
+        const error_names: &BCErrorNameEntry = compiler_arena_alloc(arena, @size_of(BCErrorNameEntry) * checker.error_name_count as usize) as &BCErrorNameEntry;
+        if error_names == null {
+            exec_backend_set_error(module.entry_function.decl, "exec: error name 表分配失败" as *byte, 0);
+            return null;
+        }
+        i = 0;
+        while i < checker.error_name_count {
+            error_names[i] = BCErrorNameEntry {
+                error_id: checker.error_hashes[i] as i32,
+                name: checker.error_names[i],
+            };
+            i = i + 1;
+        }
+        program.error_names = error_names;
+        program.error_name_count = checker.error_name_count;
+    } else {
+        program.error_names = null;
+        program.error_name_count = 0;
     }
     return program;
 }

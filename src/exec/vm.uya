@@ -125,6 +125,21 @@ fn exec_vm_get_aggregate_for_slice(function: &BCFunction, value: ExecValue) &Exe
     return null;
 }
 
+fn exec_vm_lookup_error_name(program: &BCProgram, error_id: i32) &byte {
+    if program == null || error_id == 0 {
+        return "UnknownError" as &byte;
+    }
+    var i: i32 = 0;
+    while i < program.error_name_count {
+        const entry: &BCErrorNameEntry = program.error_names + i;
+        if entry != null && entry.error_id == error_id && entry.name != null {
+            return entry.name;
+        }
+        i = i + 1;
+    }
+    return "UnknownError" as &byte;
+}
+
 fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &ExecValue) i32 {
     if program == null || frame == null || frame.function == null || out_value == null {
         exec_backend_set_error(null, "exec: vm_step 输入无效" as *byte, 0);
@@ -398,6 +413,18 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         slot_a[0] = exec_value_unwrap_err(slot_b[0]);
+    } else if instr.opcode == BCOpcode.BC_ERROR_ID {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: ERROR_ID 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_make_i32(exec_value_error_id(slot_b[0]));
+    } else if instr.opcode == BCOpcode.BC_ERROR_NAME {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: ERROR_NAME 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_make_string(exec_vm_lookup_error_name(program, exec_value_error_id(slot_b[0])));
     } else if instr.opcode == BCOpcode.BC_JMP {
         exec_vm_trace_jump(trace_vm, function.name, frame.ip, instr.imm as i32, "jmp" as *byte);
         frame.ip = instr.imm as i32;

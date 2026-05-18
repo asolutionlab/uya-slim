@@ -5,6 +5,8 @@ use libc;
 fn exec_debug_print_type(type_ref: HIRTypeRef) void {
     if type_ref.type.kind == TypeKind.TYPE_I32 {
         fprintf(libc.stderr, "i32" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_U32 {
+        fprintf(libc.stderr, "u32" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_BOOL {
         fprintf(libc.stderr, "bool" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_BYTE {
@@ -61,6 +63,14 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
     }
     if expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
         fprintf(libc.stderr, "@println(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_ERROR_ID {
+        fprintf(libc.stderr, "@error_id(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_ERROR_NAME {
+        fprintf(libc.stderr, "@error_name(...)" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_UNARY {
@@ -191,6 +201,7 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
     }
     fprintf(libc.stderr, "\n=== exec bytecode ===\n" as *byte);
     fprintf(libc.stderr, "const_pool=%d\n" as *byte, program.const_pool.count);
+    fprintf(libc.stderr, "error_names=%d\n" as *byte, program.error_name_count);
     var ci: i32 = 0;
     while ci < program.const_pool.count {
         const value: &ExecValue = program.const_pool.values + ci;
@@ -202,6 +213,12 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
         } else {
             fprintf(libc.stderr, "%ld\n" as *byte, value.i64_value);
         }
+        ci = ci + 1;
+    }
+    ci = 0;
+    while ci < program.error_name_count {
+        const entry: &BCErrorNameEntry = program.error_names + ci;
+        fprintf(libc.stderr, "  err[%d] id=%d name=%s\n" as *byte, ci, entry.error_id, entry.name as *byte);
         ci = ci + 1;
     }
     var fi: i32 = 0;

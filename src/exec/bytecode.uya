@@ -37,6 +37,13 @@ enum BCOpcode {
     BC_RET,
     BC_PRINT,
     BC_PRINTLN,
+    BC_ERROR_ID,
+    BC_ERROR_NAME,
+}
+
+struct BCErrorNameEntry {
+    error_id: i32,
+    name: &byte,
 }
 
 struct BCConstPool {
@@ -75,4 +82,6 @@ struct BCProgram {
     function_count: i32,
     entry_function_index: i32,
     const_pool: BCConstPool,
+    error_names: &BCErrorNameEntry,
+    error_name_count: i32,
 }

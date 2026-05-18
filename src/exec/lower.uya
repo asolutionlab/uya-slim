@@ -55,6 +55,7 @@ fn exec_lower_fail_block_reason(node: &ASTNode, reason: &byte, code: ExecUnsuppo
 
 fn exec_type_is_scalar_supported(type: Type) i32 {
     if type.kind == TypeKind.TYPE_I32 ||
+        type.kind == TypeKind.TYPE_U32 ||
         type.kind == TypeKind.TYPE_BOOL ||
         type.kind == TypeKind.TYPE_BYTE ||
         type.kind == TypeKind.TYPE_VOID {
@@ -615,8 +616,8 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     }
     const expr_type: Type = exec_lower_expr_type(ctx, expr);
     if expr.type == ASTNodeType.AST_NUMBER {
-        if expr_type.kind != TypeKind.TYPE_I32 {
-            return exec_lower_fail_expr(expr, "exec: 仅支持 i32 数字字面量" as *byte);
+        if expr_type.kind != TypeKind.TYPE_I32 && expr_type.kind != TypeKind.TYPE_U32 {
+            return exec_lower_fail_expr(expr, "exec: 仅支持 i32/u32 数字字面量" as *byte);
         }
         const hir: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
         if hir == null {
@@ -933,6 +934,30 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         hir.left = inner;
         return hir;
+    }
+    if expr.type == ASTNodeType.AST_ERROR_ID {
+        const operand_error_id: &HIRExpr = exec_lower_expr(ctx, expr.error_id_operand);
+        if operand_error_id == null {
+            return null;
+        }
+        const hir_error_id: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_ERROR_ID, &expr_type);
+        if hir_error_id == null {
+            return null;
+        }
+        hir_error_id.left = operand_error_id;
+        return hir_error_id;
+    }
+    if expr.type == ASTNodeType.AST_ERROR_NAME {
+        const operand_error_name: &HIRExpr = exec_lower_expr(ctx, expr.error_name_operand);
+        if operand_error_name == null {
+            return null;
+        }
+        const hir_error_name: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_ERROR_NAME, &expr_type);
+        if hir_error_name == null {
+            return null;
+        }
+        hir_error_name.left = operand_error_name;
+        return hir_error_name;
     }
     if expr.type == ASTNodeType.AST_TRY_EXPR {
         const operand: &HIRExpr = exec_lower_expr(ctx, expr.try_expr_operand);
