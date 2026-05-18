@@ -22,10 +22,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - `gen c` 约 `13169 ms`
 - `gcc/link` 额外时间尚未计入上述 `13169 ms`
 
-因此，本 TODO 的直接目标是：
+因此，本 TODO 的第一阶段直接目标是：
 
 - 先为 `run/test` 提供 `exec backend`
-- 让 hosted 场景跳过 `codegen/c99 + gcc/clang`
+- 先让 hosted 基础程序场景跳过 `codegen/c99 + gcc/clang`
+- `uya run --vm src/main.uya` 目前视为拉伸目标，用来检验 exec backend 对编译器本体 hosted 子集的覆盖度；它不是当前第一阶段已承诺的完成标准
 
 ## 当前进度快照
 
@@ -100,9 +101,30 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `verify_exec_backend_progress.sh`
   - `verify_exec_vm_globals.sh`
   - 现在都会显式校验 `后端类型: EXEC`、`exec backend 构建完成` 或 fallback 原因
+- 2026-05-18 已直接验证：
+  - `./bin/uya run --vm src/main.uya`
+  - 当前并非卡在 CLI 接线或 VM 启动，而是在 lowering 阶段命中首个“编译器本体 hosted 子集尚未覆盖”的类型缺口
+- 当前已知首个 blocker：
+  - `src/main.uya:197:1: exec: 当前仅支持 exec VM 可表示的全局变量`
+  - 首个命中点是 `const POBJ_VERSION: u16 = 8`
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
   - 当前 global 路径已打通单文件 hosted，以及多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集；更复杂全局类型与更大覆盖面回归仍待继续扩大
+
+---
+
+## 当前阶段目标与 `src/main.uya` 缺口
+
+- 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
+- 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
+- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，但会在 lowering 阶段因为 `u16` 顶层全局常量而停止，说明眼前主阻塞已从“接线”转为“类型面与运行时表示覆盖度”
+- 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
+- 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
+- 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
+- 缺口：扩编译器主路径最小 extern/libc bridge；当前固定白名单只够最小 smoke，离 `fopen/fread/fwrite/fclose/fprintf/snprintf/getenv/opendir/readdir/closedir` 这批编译器路径常用接口还有距离
+- 缺口：为 `fprintf/snprintf/printf` 这类 varargs 接口明确长期策略；继续 fallback、做特化 bridge、或改走 builtin helper，都需要显式决策，不能长期依赖“碰到再报 unsupported”
+- 缺口：扩大语义覆盖面，包括 `interface / 间接调用`、更完整的 `union` 语义、更复杂标准库程序，以及面向编译器本体路径的 staged regressions
+- 推荐推进顺序：先补基础数值类型与通用指针表示，再补地址型 builtin，然后补编译器主路径 extern bridge，最后用 `src/main.uya` 的 `run --vm` / 更大 hosted 程序回归收口
 
 ---
 
@@ -567,10 +589,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 18：覆盖率扩大
 
+- [ ] 编译器本体所需基础值类型：`u8/u16/usize/isize`
+- [ ] 通用指针值表示：`&T/*T`、`&void/*void`，而不只 `&byte`
+- [ ] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
+- [ ] 编译器主路径 extern/libc bridge：`fopen/fread/fwrite/fclose/fprintf/snprintf/getenv/opendir/readdir/closedir`
 - [ ] interface / 间接调用
 - [ ] union 更完整语义
 - [ ] 更复杂标准库程序
 - [ ] 更大回归测试集
+- [ ] `src/main.uya` 的 `run --vm` staged smoke
 - [ ] `uya test` 默认优先 exec backend 的可行性评估
 
 ---
@@ -598,3 +625,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] 基础控制流、函数调用、struct/array/slice、`!T`、`defer` 已可用
 - [ ] 不支持特性能清晰报错并可按需 fallback
 - [ ] 相比现有 `run`，总耗时有明显下降
+
+补充说明：
+
+- 第一阶段完成标准默认不包含 `uya run --vm src/main.uya`
+- `uya run --vm src/main.uya` 更适合作为后续“覆盖率扩大 + 编译器本体 hosted 路径 smoke”阶段的拉伸目标
