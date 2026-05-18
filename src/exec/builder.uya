@@ -18,6 +18,13 @@ struct ExecLoopPatch {
     continue_target: i32,
 }
 
+struct ExecCleanupScope {
+    defers: [&HIRStmt: 64],
+    defer_count: i32,
+    errdefers: [&HIRStmt: 64],
+    errdefer_count: i32,
+}
+
 struct ExecFunctionBuildContext {
     arena: &CompilerArena,
     const_pool: &ExecConstPoolBuilder,
@@ -28,6 +35,8 @@ struct ExecFunctionBuildContext {
     max_slot_count: i32,
     loop_stack: [ExecLoopPatch: 32],
     loop_depth: i32,
+    cleanup_scopes: [ExecCleanupScope: 64],
+    cleanup_depth: i32,
 }
 
 fn exec_builder_const_pool_value_ref(const_pool: &ExecConstPoolBuilder, idx: i32) &ExecValue {
@@ -126,6 +135,16 @@ fn exec_builder_continue_jump_ref(loop_patch: &ExecLoopPatch, idx: i32) &i32 {
     }
     if idx >= 0 && idx < 128 {
         return &loop_patch.continue_jumps[idx];
+    }
+    return null;
+}
+
+fn exec_builder_cleanup_scope_ref(ctx: &ExecFunctionBuildContext, idx: i32) &ExecCleanupScope {
+    if ctx == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < 64 {
+        return &ctx.cleanup_scopes[idx];
     }
     return null;
 }
@@ -504,6 +523,9 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             source: exec_builder_make_source(expr.ast_node),
         });
         if continue_jump < 0 {
+            return -1;
+        }
+        if exec_builder_emit_all_cleanup(ctx, 1) < 0 {
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -949,8 +971,116 @@ fn exec_builder_patch_jump(ctx: &ExecFunctionBuildContext, instr_index: i32, tar
     }
 }
 
+fn exec_builder_push_cleanup_scope(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode) i32 {
+    if ctx == null {
+        return -1;
+    }
+    if ctx.cleanup_depth >= 64 {
+        exec_backend_set_error(ast_node, "exec: cleanup scope 嵌套过深" as *byte, 0);
+        return -1;
+    }
+    const scope: &ExecCleanupScope = exec_builder_cleanup_scope_ref(ctx, ctx.cleanup_depth);
+    if scope == null {
+        exec_backend_set_error(ast_node, "exec: cleanup scope 栈越界" as *byte, 0);
+        return -1;
+    }
+    scope[0] = ExecCleanupScope {
+        defers: [],
+        defer_count: 0,
+        errdefers: [],
+        errdefer_count: 0,
+    };
+    ctx.cleanup_depth = ctx.cleanup_depth + 1;
+    return 0;
+}
+
+fn exec_builder_pop_cleanup_scope(ctx: &ExecFunctionBuildContext) void {
+    if ctx == null || ctx.cleanup_depth <= 0 {
+        return;
+    }
+    ctx.cleanup_depth = ctx.cleanup_depth - 1;
+}
+
+fn exec_builder_register_cleanup(ctx: &ExecFunctionBuildContext, stmt: &HIRStmt, is_errdefer: i32) i32 {
+    if ctx == null || stmt == null || ctx.cleanup_depth <= 0 {
+        return -1;
+    }
+    const scope: &ExecCleanupScope = exec_builder_cleanup_scope_ref(ctx, ctx.cleanup_depth - 1);
+    if scope == null {
+        exec_backend_set_error(stmt.ast_node, "exec: cleanup scope 读取失败" as *byte, 0);
+        return -1;
+    }
+    if is_errdefer != 0 {
+        if scope.errdefer_count >= 64 {
+            exec_backend_set_error(stmt.ast_node, "exec: errdefer 数量超出上限" as *byte, 0);
+            return -1;
+        }
+        scope.errdefers[scope.errdefer_count] = stmt;
+        scope.errdefer_count = scope.errdefer_count + 1;
+        return 0;
+    }
+    if scope.defer_count >= 64 {
+        exec_backend_set_error(stmt.ast_node, "exec: defer 数量超出上限" as *byte, 0);
+        return -1;
+    }
+    scope.defers[scope.defer_count] = stmt;
+    scope.defer_count = scope.defer_count + 1;
+    return 0;
+}
+
+fn exec_builder_emit_cleanup_scope(ctx: &ExecFunctionBuildContext, scope_idx: i32, include_errdefer: i32) i32 {
+    const scope: &ExecCleanupScope = exec_builder_cleanup_scope_ref(ctx, scope_idx);
+    if ctx == null || scope == null {
+        return -1;
+    }
+    if include_errdefer != 0 {
+        var ei: i32 = scope.errdefer_count - 1;
+        while ei >= 0 {
+            const stmt_err: &HIRStmt = scope.errdefers[ei];
+            if stmt_err == null || stmt_err.cleanup_block == null {
+                exec_backend_set_error(null, "exec: errdefer cleanup block 无效" as *byte, 0);
+                return -1;
+            }
+            if exec_builder_compile_block(ctx, stmt_err.cleanup_block) < 0 {
+                return -1;
+            }
+            ei = ei - 1;
+        }
+    }
+    var di: i32 = scope.defer_count - 1;
+    while di >= 0 {
+        const stmt_defer: &HIRStmt = scope.defers[di];
+        if stmt_defer == null || stmt_defer.cleanup_block == null {
+            exec_backend_set_error(null, "exec: defer cleanup block 无效" as *byte, 0);
+            return -1;
+        }
+        if exec_builder_compile_block(ctx, stmt_defer.cleanup_block) < 0 {
+            return -1;
+        }
+        di = di - 1;
+    }
+    return 0;
+}
+
+fn exec_builder_emit_all_cleanup(ctx: &ExecFunctionBuildContext, include_errdefer: i32) i32 {
+    if ctx == null {
+        return -1;
+    }
+    var scope_idx: i32 = ctx.cleanup_depth - 1;
+    while scope_idx >= 0 {
+        if exec_builder_emit_cleanup_scope(ctx, scope_idx, include_errdefer) < 0 {
+            return -1;
+        }
+        scope_idx = scope_idx - 1;
+    }
+    return 0;
+}
+
 fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) i32 {
     if ctx == null || block == null {
+        return -1;
+    }
+    if exec_builder_push_cleanup_scope(ctx, null) < 0 {
         return -1;
     }
     var i: i32 = 0;
@@ -982,6 +1112,17 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
             }
         } else if stmt.kind == HIRStmtKind.HIR_STMT_EXPR {
             if stmt.expr != null && exec_builder_compile_expr(ctx, stmt.expr) < 0 {
+                exec_builder_pop_cleanup_scope(ctx);
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_DEFER {
+            if exec_builder_register_cleanup(ctx, stmt, 0) < 0 {
+                exec_builder_pop_cleanup_scope(ctx);
+                return -1;
+            }
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_ERRDEFER {
+            if exec_builder_register_cleanup(ctx, stmt, 1) < 0 {
+                exec_builder_pop_cleanup_scope(ctx);
                 return -1;
             }
         } else if stmt.kind == HIRStmtKind.HIR_STMT_RETURN {
@@ -1018,6 +1159,77 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
                         ret_slot = wrapped_slot;
                     }
                 }
+            }
+            if ctx.function.return_type.type.kind == TypeKind.TYPE_ERROR_UNION && ret_slot >= 0 {
+                const ret_is_err_slot: i32 = exec_builder_new_temp(ctx);
+                if ret_is_err_slot < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_IS_ERR,
+                    a: ret_is_err_slot,
+                    b: ret_slot,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(stmt.ast_node),
+                }) < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                const ok_jump: i32 = exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_JMP_IF_FALSE,
+                    a: ret_is_err_slot,
+                    b: 0,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(stmt.ast_node),
+                });
+                if ok_jump < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                if exec_builder_emit_all_cleanup(ctx, 1) < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_RET,
+                    a: ret_slot,
+                    b: 0,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(stmt.ast_node),
+                }) < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                exec_builder_patch_jump(ctx, ok_jump, ctx.instr_count);
+                if exec_builder_emit_all_cleanup(ctx, 0) < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_RET,
+                    a: ret_slot,
+                    b: 0,
+                    c: 0,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(stmt.ast_node),
+                }) < 0 {
+                    exec_builder_pop_cleanup_scope(ctx);
+                    return -1;
+                }
+                i = i + 1;
+                continue;
+            }
+            if exec_builder_emit_all_cleanup(ctx, 0) < 0 {
+                exec_builder_pop_cleanup_scope(ctx);
+                return -1;
             }
             if exec_builder_emit(ctx, BCInstr {
                 opcode: BCOpcode.BC_RET,
@@ -1141,6 +1353,10 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
                 exec_backend_set_error(stmt.ast_node, "exec: break patch 栈越界" as *byte, 0);
                 return -1;
             }
+            if exec_builder_emit_all_cleanup(ctx, 0) < 0 {
+                exec_builder_pop_cleanup_scope(ctx);
+                return -1;
+            }
             const patch_idx: i32 = loop_patch_for_break.break_count;
             const jump_idx: i32 = exec_builder_emit(ctx, BCInstr {
                 opcode: BCOpcode.BC_JMP,
@@ -1172,6 +1388,10 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
                 exec_backend_set_error(stmt.ast_node, "exec: continue patch 栈越界" as *byte, 0);
                 return -1;
             }
+            if exec_builder_emit_all_cleanup(ctx, 0) < 0 {
+                exec_builder_pop_cleanup_scope(ctx);
+                return -1;
+            }
             const patch_idx2: i32 = loop_patch_for_continue.continue_count;
             const jump_idx2: i32 = exec_builder_emit(ctx, BCInstr {
                 opcode: BCOpcode.BC_JMP,
@@ -1195,10 +1415,16 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
             loop_patch_for_continue.continue_count = patch_idx2 + 1;
         } else {
             exec_backend_set_error(stmt.ast_node, "exec: builder 不支持该语句" as *byte, 1);
+            exec_builder_pop_cleanup_scope(ctx);
             return -1;
         }
         i = i + 1;
     }
+    if exec_builder_emit_cleanup_scope(ctx, ctx.cleanup_depth - 1, 0) < 0 {
+        exec_builder_pop_cleanup_scope(ctx);
+        return -1;
+    }
+    exec_builder_pop_cleanup_scope(ctx);
     return 0;
 }
 
@@ -1457,6 +1683,8 @@ fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPool
         max_slot_count: fn_hir.local_count,
         loop_stack: [],
         loop_depth: 0,
+        cleanup_scopes: [],
+        cleanup_depth: 0,
     };
     if exec_builder_validate_return_types_in_block(fn_hir, fn_hir.body) != 0 {
         return null;

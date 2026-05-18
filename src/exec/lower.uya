@@ -408,6 +408,30 @@ fn exec_lower_wrap_block_as_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, blo
     return stmt;
 }
 
+fn exec_lower_wrap_stmt_node_as_block(ctx: &ExecLowerContext, stmt_node: &ASTNode) &HIRBlock {
+    if ctx == null || stmt_node == null {
+        return null;
+    }
+    if stmt_node.type == ASTNodeType.AST_BLOCK {
+        return exec_lower_block(ctx, stmt_node);
+    }
+    const synthetic_block: &ASTNode = compiler_arena_alloc(ctx.arena, @size_of(ASTNode)) as &ASTNode;
+    const synthetic_stmts: & & ASTNode = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode)) as & & ASTNode;
+    if synthetic_block == null || synthetic_stmts == null {
+        exec_backend_set_error(stmt_node, "exec: defer/errdefer synthetic block 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(synthetic_block as *byte, 0, @size_of(ASTNode));
+    synthetic_block.type = ASTNodeType.AST_BLOCK;
+    synthetic_block.line = stmt_node.line;
+    synthetic_block.column = stmt_node.column;
+    synthetic_block.filename = stmt_node.filename;
+    synthetic_block.block_stmts = synthetic_stmts;
+    synthetic_block.block_stmt_count = 1;
+    synthetic_stmts[0] = stmt_node;
+    return exec_lower_block(ctx, synthetic_block);
+}
+
 fn exec_lower_make_break_block(ctx: &ExecLowerContext, ast_node: &ASTNode) &HIRBlock {
     const block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
     const stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
@@ -1108,6 +1132,28 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 return null;
             }
             stmt.expr = expr_stmt;
+        } else if stmt_node.type == ASTNodeType.AST_DEFER_STMT || stmt_node.type == ASTNodeType.AST_ERRDEFER_STMT {
+            var cleanup_body: &ASTNode = stmt_node.defer_stmt_body;
+            var cleanup_kind: HIRStmtKind = HIRStmtKind.HIR_STMT_DEFER;
+            if stmt_node.type == ASTNodeType.AST_ERRDEFER_STMT {
+                cleanup_body = stmt_node.errdefer_stmt_body;
+                cleanup_kind = HIRStmtKind.HIR_STMT_ERRDEFER;
+            }
+            if cleanup_body == null {
+                exec_lower_pop_scope(ctx);
+                return exec_lower_fail_block(stmt_node, "exec: defer/errdefer body 为空" as *byte);
+            }
+            const cleanup_block: &HIRBlock = exec_lower_wrap_stmt_node_as_block(ctx, cleanup_body);
+            if cleanup_block == null {
+                exec_lower_pop_scope(ctx);
+                return null;
+            }
+            stmt = exec_lower_alloc_stmt(ctx, stmt_node, cleanup_kind);
+            if stmt == null {
+                exec_lower_pop_scope(ctx);
+                return null;
+            }
+            stmt.cleanup_block = cleanup_block;
         } else if stmt_node.type == ASTNodeType.AST_IF_STMT {
             const cond_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.if_stmt_condition);
             if cond_expr == null {
@@ -1259,9 +1305,6 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             exec_lower_pop_scope(ctx);
             if stmt_node.type == ASTNodeType.AST_TEST_STMT {
                 return exec_lower_fail_block(stmt_node, "exec: 当前不支持 test 语句" as *byte);
-            }
-            if stmt_node.type == ASTNodeType.AST_DEFER_STMT || stmt_node.type == ASTNodeType.AST_ERRDEFER_STMT {
-                return exec_lower_fail_block(stmt_node, "exec: 当前不支持 defer/errdefer" as *byte);
             }
             return exec_lower_fail_block(stmt_node, "exec: 尚未支持的语句节点" as *byte);
         }

@@ -6,6 +6,8 @@ enum HIRStmtKind {
     HIR_STMT_VAR_INIT,
     HIR_STMT_ASSIGN,
     HIR_STMT_EXPR,
+    HIR_STMT_DEFER,
+    HIR_STMT_ERRDEFER,
     HIR_STMT_IF,
     HIR_STMT_LOOP,
     HIR_STMT_BREAK,
@@ -84,6 +86,7 @@ struct HIRStmt {
     then_block: &HIRBlock,
     else_block: &HIRBlock,
     loop_body: &HIRBlock,
+    cleanup_block: &HIRBlock,
 }
 
 struct HIRBlock {

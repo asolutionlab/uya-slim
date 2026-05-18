@@ -41,6 +41,13 @@ grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
 echo "  aggregate exec path ✓"
 
+echo "验证 defer/errdefer 清理顺序..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_defer.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+tail -n 4 "$TMP_STDOUT" | diff -u <(printf 'B1\nCC2\nDO7\nEDR0\n') -
+echo "  defer/errdefer exec path ✓"
+
 echo "验证 @c_import unsupported 原因..."
 if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_c_import_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
     echo "✗ @c_import unsupported case should fail under --vm"

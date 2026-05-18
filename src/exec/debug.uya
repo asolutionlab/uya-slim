@@ -97,6 +97,24 @@ fn exec_debug_dump_block(block: &HIRBlock, indent: i32) void {
         } else if stmt.kind == HIRStmtKind.HIR_STMT_EXPR {
             exec_debug_dump_expr(stmt.expr);
             fprintf(libc.stderr, "\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_DEFER {
+            fprintf(libc.stderr, "defer {\n" as *byte);
+            exec_debug_dump_block(stmt.cleanup_block, indent + 1);
+            j = 0;
+            while j < indent {
+                fprintf(libc.stderr, "  " as *byte);
+                j = j + 1;
+            }
+            fprintf(libc.stderr, "}\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_ERRDEFER {
+            fprintf(libc.stderr, "errdefer {\n" as *byte);
+            exec_debug_dump_block(stmt.cleanup_block, indent + 1);
+            j = 0;
+            while j < indent {
+                fprintf(libc.stderr, "  " as *byte);
+                j = j + 1;
+            }
+            fprintf(libc.stderr, "}\n" as *byte);
         } else if stmt.kind == HIRStmtKind.HIR_STMT_RETURN {
             fprintf(libc.stderr, "return " as *byte);
             exec_debug_dump_expr(stmt.expr);

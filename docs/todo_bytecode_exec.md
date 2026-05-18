@@ -378,19 +378,36 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 ## Phase 11：`defer` / `errdefer` / drop
 
 - [ ] 在 HIR 明确 scope enter/exit
-- [ ] 实现 defer 栈
-- [ ] 实现 errdefer 栈
-- [ ] 规范执行顺序：
-  - [ ] 正常返回：`defer`
-  - [ ] 错误返回：`errdefer -> defer`
+- [x] 实现 defer 栈
+- [x] 实现 errdefer 栈
+- [x] 规范执行顺序：
+  - [x] 正常返回：`defer`
+  - [x] 错误返回：`errdefer -> defer`
 - [ ] 设计 drop 元数据前移：
   - [ ] 哪些局部需 drop
   - [ ] 在何 scope 退出时 drop
-- [ ] 测试：
-  - [ ] 单层 defer
+- [x] 测试：
+  - [x] 单层 defer
   - [ ] 嵌套 defer
-  - [ ] return 提前退出
-  - [ ] error 提前退出
+  - [x] return 提前退出
+  - [x] error 提前退出
+
+备注：
+
+- 2026-05-18 已接通 `defer/errdefer` 的 exec 路径，不再在 lowering 阶段直接报 unsupported
+- 当前实现选择“builder 期 cleanup scope 栈 + 显式出口清理”：
+  - 在 HIR 中保留 `HIR_STMT_DEFER` / `HIR_STMT_ERRDEFER`
+  - 在 bytecode builder 中按 block scope 收集 cleanup
+  - 在 `return` / `break` / `continue` / `try` 错误传播出口前展开清理
+- 当前实现刻意没有给 VM 增加运行时 defer 栈，优先复用现有 bytecode/VM 闭环，减少 dispatch 与解释执行额外开销
+- 当前已验证：
+  - 正常返回仅执行 `defer`
+  - 错误返回先执行 `errdefer`，再执行 `defer`
+  - `break` / `continue` 会触发当前作用域 `defer`
+- 当前尚未完成：
+  - drop 自动析构元数据前移
+  - “纯 HIR 层显式 scope enter/exit 节点”建模
+  - 更完整的嵌套 `defer` 回归集
 
 ---
 
@@ -410,8 +427,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - [ ] 编译期可折叠 builtin 前移，不进入 VM
 - [ ] VM 内支持：
-  - [ ] `@print`
-  - [ ] `@println`
+  - [x] `@print`
+  - [x] `@println`
   - [x] `@len`
   - [ ] `@error_id`
   - [ ] `@error_name`
@@ -421,6 +438,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 备注：
 
 - `@len` 已随第一版 array/slice lowering 与 bytecode/VM 路径接通
+- `@print` / `@println` 已有最小 VM bridge，可覆盖当前 exec smoke 与 defer/errdefer 顺序回归
 - 其余 builtin bridge 仍未系统整理到统一模块
 
 ---
@@ -441,8 +459,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump、`try/catch` 错误联合路径、聚合值基础路径，以及 `@c_import` unsupported 原因
 - 已新增 `tests/test_exec_vm_match_basic.uya`、`tests/test_exec_vm_error_union.uya`、`tests/test_exec_vm_aggregates.uya`
+- 已新增 `tests/test_exec_vm_defer.uya`
 - 已新增 `tests/test_exec_vm_simd_unsupported.uya`、`tests/test_exec_vm_extern_unsupported.uya`
 - 已新增 `tests/verify_exec_vm_aggregates.sh`
+- 已新增 `tests/verify_exec_vm_defer.sh`
 - `tests/verify_exec_vm_smoke.sh` 已纳入 `for range` 与聚合值用例，并已在新生成编译器二进制下恢复全绿
 - 相关 verify 脚本现已强制校验真实 EXEC 路径与 fallback 原因，避免“空 bytecode dump / 仅退出码一致”的假阳性
 
