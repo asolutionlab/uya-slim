@@ -1,0 +1,10 @@
+use std.runtime.entry;
+use libc.puts;
+
+export fn main() i32 {
+    const rc: i32 = puts("exec extern fallback smoke");
+    if rc < 0 {
+        return 1;
+    }
+    return 0;
+}

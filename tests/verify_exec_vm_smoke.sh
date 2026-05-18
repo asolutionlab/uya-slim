@@ -37,6 +37,8 @@ run_case() {
         cat "$TMP_STDERR"
         return 1
     fi
+    grep -q '后端类型: EXEC' "$TMP_STDERR"
+    grep -q 'exec backend 构建完成' "$TMP_STDERR"
     echo "  $mode $file ✓"
 }
 
@@ -59,13 +61,23 @@ for file in "${TESTS[@]}"; do
         cat "$TMP_DUMP1"
         exit 1
     fi
+    grep -q '后端类型: EXEC' "$TMP_STDERR"
+    if grep -q '回退 C99' "$TMP_STDERR"; then
+        echo "✗ unexpected fallback for supported smoke $file"
+        cat "$TMP_STDERR"
+        exit 1
+    fi
     echo "  exit code match $file ✓"
 done
 
 echo "检查 bytecode dump 稳定性..."
 "$COMPILER" run --vm --dump-bytecode "$SCRIPT_DIR/test_exec_vm_multi_fn.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q '=== exec bytecode ===' "$TMP_STDERR"
 sed -n '/=== exec bytecode ===/,/=== 编译统计 ===/p' "$TMP_STDERR" >"$TMP_DUMP1"
 "$COMPILER" run --vm --dump-bytecode "$SCRIPT_DIR/test_exec_vm_multi_fn.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q '=== exec bytecode ===' "$TMP_STDERR"
 sed -n '/=== exec bytecode ===/,/=== 编译统计 ===/p' "$TMP_STDERR" >"$TMP_DUMP2"
 if ! diff -u "$TMP_DUMP1" "$TMP_DUMP2" >"$TMP_STDERR"; then
     echo "✗ bytecode dump not stable"

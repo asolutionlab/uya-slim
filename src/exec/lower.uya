@@ -63,6 +63,31 @@ fn exec_type_is_scalar_supported(type: Type) i32 {
     return 0;
 }
 
+fn exec_type_uses_simd(ty: Type) i32 {
+    if ty.kind == TypeKind.TYPE_VECTOR || ty.kind == TypeKind.TYPE_MASK {
+        return 1;
+    }
+    if ty.kind == TypeKind.TYPE_ARRAY && ty.element_type != null {
+        return exec_type_uses_simd(ty.element_type[0]);
+    }
+    if ty.kind == TypeKind.TYPE_SLICE && ty.slice_element_type != null {
+        return exec_type_uses_simd(ty.slice_element_type[0]);
+    }
+    if ty.kind == TypeKind.TYPE_TUPLE && ty.tuple_element_types != null {
+        var i: i32 = 0;
+        while i < ty.tuple_count {
+            if exec_type_uses_simd(ty.tuple_element_types[i]) != 0 {
+                return 1;
+            }
+            i = i + 1;
+        }
+    }
+    if ty.kind == TypeKind.TYPE_ERROR_UNION && ty.error_union_payload_type != null {
+        return exec_type_uses_simd(ty.error_union_payload_type[0]);
+    }
+    return 0;
+}
+
 fn exec_type_is_aggregate_supported(ty: Type) i32 {
     if ty.kind == TypeKind.TYPE_ARRAY && ty.element_type != null {
         return exec_type_is_vm_value_supported(ty.element_type[0]);
@@ -339,7 +364,16 @@ fn exec_lower_make_assign_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, slot:
     if stmt == null {
         return null;
     }
+    if value == null {
+        exec_backend_set_error(ast_node, "exec: assign 语句值为空" as *byte, 0);
+        return null;
+    }
+    const target: &HIRExpr = exec_lower_make_local_expr(ctx, ast_node, slot, &value.type_ref.type);
+    if target == null {
+        return null;
+    }
     stmt.local_slot = slot;
+    stmt.assign_target = target;
     stmt.assign_expr = value;
     return stmt;
 }
@@ -616,6 +650,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR {
         if exec_type_is_scalar_supported(expr_type) == 0 {
+            if exec_type_uses_simd(expr_type) != 0 {
+                return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+            }
             return exec_lower_fail_expr(expr, "exec: 不支持的 unary 结果类型" as *byte);
         }
         const operand: &HIRExpr = exec_lower_expr(ctx, expr.unary_expr_operand);
@@ -633,6 +670,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     if expr.type == ASTNodeType.AST_BINARY_EXPR {
         if exec_type_is_scalar_supported(expr_type) == 0 &&
             expr_type.kind != TypeKind.TYPE_BOOL {
+            if exec_type_uses_simd(expr_type) != 0 {
+                return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+            }
             return exec_lower_fail_expr(expr, "exec: 不支持的 binary 结果类型" as *byte);
         }
         const left: &HIRExpr = exec_lower_expr(ctx, expr.binary_expr_left);
@@ -662,7 +702,16 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if expr.call_expr_arg_count > EXEC_MAX_CALL_ARGS {
             return exec_lower_fail_expr(expr, "exec: 调用参数过多" as *byte);
         }
+        const callee_decl: &ASTNode = find_fn_decl_from_program(ctx.checker.program_node, expr.call_expr_callee.identifier_name);
+        if callee_decl != null &&
+            callee_decl.type == ASTNodeType.AST_FN_DECL &&
+            callee_decl.fn_decl_is_extern != 0 {
+            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
+        }
         if exec_type_is_vm_value_supported(expr_type) == 0 {
+            if exec_type_uses_simd(expr_type) != 0 {
+                return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+            }
             return exec_lower_fail_expr(expr, "exec: 当前仅支持标量/错误联合函数返回值" as *byte);
         }
         const args: & & HIRExpr = compiler_arena_alloc(ctx.arena, @size_of(&HIRExpr) * expr.call_expr_arg_count as usize) as & & HIRExpr;
@@ -684,7 +733,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return null;
         }
         hir.callee_name = expr.call_expr_callee.identifier_name;
-        hir.callee_decl = find_fn_decl_from_program(ctx.checker.program_node, hir.callee_name);
+        hir.callee_decl = callee_decl;
         hir.call_args = args;
         hir.call_arg_count = expr.call_expr_arg_count;
         return hir;
@@ -988,6 +1037,9 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             }
             if exec_type_is_vm_value_supported(local_type) == 0 {
                 exec_lower_pop_scope(ctx);
+                if exec_type_uses_simd(local_type) != 0 {
+                    return exec_lower_fail_block_reason(stmt_node, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+                }
                 return exec_lower_fail_block(stmt_node, "exec: 当前仅支持 exec VM 可表示的局部变量" as *byte);
             }
             const slot: i32 = exec_lower_append_local(ctx, stmt_node.var_decl_name, &local_type, 0);
@@ -1239,6 +1291,10 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
     }
     const return_type: Type = type_from_ast(checker, fn_decl.fn_decl_return_type);
     if exec_type_is_vm_value_supported(return_type) == 0 {
+        if exec_type_uses_simd(return_type) != 0 {
+            exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+            return null;
+        }
         exec_lower_set_unsupported(fn_decl, "exec: 当前仅支持标量/错误联合/void 返回值" as *byte);
         return null;
     }
@@ -1268,6 +1324,10 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         }
         const param_type: Type = type_from_ast(checker, param.var_decl_type);
         if exec_type_is_vm_value_supported(param_type) == 0 {
+            if exec_type_uses_simd(param_type) != 0 {
+                exec_lower_set_unsupported_reason(param, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+                return null;
+            }
             exec_lower_set_unsupported(param, "exec: 当前仅支持标量/错误联合参数" as *byte);
             return null;
         }

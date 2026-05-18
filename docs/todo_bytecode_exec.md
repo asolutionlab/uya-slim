@@ -78,14 +78,21 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `tests/test_exec_vm_match_basic.uya`
   - `tests/test_exec_vm_error_union.uya`
   - `tests/test_exec_vm_aggregates.uya`
+  - `tests/test_exec_vm_simd_unsupported.uya`
+  - `tests/test_exec_vm_extern_unsupported.uya`
   - `bash ./tests/verify_exec_backend_progress.sh`
 - 2026-05-18 已用新生成编译器二进制验证通过：
+  - `./bin/uya build src/main.uya -o /tmp/uya_exec_todo_bin`
   - `bash ./tests/verify_exec_vm_aggregates.sh`
+  - `bash ./tests/verify_exec_vm_smoke.sh`
   - `tests/test_exec_vm_aggregates.uya` 的 `run --vm`
+- 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
+  - `verify_exec_vm_smoke.sh`
+  - `verify_exec_vm_aggregates.sh`
+  - `verify_exec_backend_progress.sh`
+  - 现在都会显式校验 `后端类型: EXEC`、`exec backend 构建完成` 或 fallback 原因
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
-  - 新增聚合值支持后，完整 `bash ./tests/verify_exec_vm_smoke.sh` 仍有一个待收敛回归：
-    - `test_exec_vm_for_range.uya` 在新编译器下失败，需继续排查 `for range` lowering/builder 与新聚合值路径的交互
 
 ---
 
@@ -209,7 +216,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] async
   - [x] `@c_import`
   - [x] inline asm
-  - [ ] SIMD
+  - [x] SIMD
   - [x] microapp 特化
 - [x] 对不支持节点返回稳定错误信息：
   - [x] 节点种类
@@ -218,7 +225,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 备注：
 
-- 目前 lowering 还没有完整枚举所有不支持路径；已显式拒绝的一部分特性有稳定报错，`SIMD` 与更细粒度 extern ABI 原因码仍需补全
+- 目前 lowering 还没有完整枚举所有不支持路径；已显式拒绝的一部分特性有稳定报错，更细粒度 extern ABI 白名单仍需后续补全
 - 当前 `for`、基础 `match`、基础 `try/catch` 已进入可运行子集
 - 当前 `match` 仍只支持 literal/else/wildcard 分支，不支持 enum/union/error/bind 等更完整模式
 - 当前 `catch` 仍只支持无 `|err|` 绑定、且 catch 块可被收敛为单表达式结果的基础形式
@@ -262,7 +269,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] local / temp 槽位分配
 - [x] 生成常量池
 - [x] 生成函数 bytecode
-- [ ] 验证每个函数：
+- [x] 验证每个函数：
   - [x] 所有跳转目标存在
   - [x] 所有读取槽位已初始化
   - [x] 所有返回路径类型一致
@@ -339,7 +346,6 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - slice 记录 `(aggregate, start, len)`，避免切片时复制整段元素
 - 当前目标是先打通 `run/test` 的基础 hosted 子集，不追求与 C99 backend 完整共享布局元数据
 - 当前 `slice.ptr`、更复杂聚合值嵌套语义、以及与 extern ABI 对齐仍未进入支持面
-- 当前 `for range` smoke 仍有一个回归待修复，因此本阶段虽已打通第一批聚合值能力，但还不能视为完全收口
 
 ---
 
@@ -425,7 +431,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 保持当前测试摘要格式基本一致
 - [x] 失败退出码一致
 - [x] `--vm` 下禁用 C99 fallback
-- [ ] 用现有快速测试集做 smoke：
+- [x] 用现有快速测试集做 smoke：
   - [x] 算术类
   - [x] 控制流类
   - [x] struct/array/slice 类
@@ -435,8 +441,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 已新增 `tests/verify_exec_backend_progress.sh`，覆盖 `uya test --vm` 基本链路、const pool dump、`try/catch` 错误联合路径、聚合值基础路径，以及 `@c_import` unsupported 原因
 - 已新增 `tests/test_exec_vm_match_basic.uya`、`tests/test_exec_vm_error_union.uya`、`tests/test_exec_vm_aggregates.uya`
+- 已新增 `tests/test_exec_vm_simd_unsupported.uya`、`tests/test_exec_vm_extern_unsupported.uya`
 - 已新增 `tests/verify_exec_vm_aggregates.sh`
-- `tests/verify_exec_vm_smoke.sh` 已纳入聚合值用例，但当前仍被 `test_exec_vm_for_range.uya` 回归阻塞，尚未恢复全绿
+- `tests/verify_exec_vm_smoke.sh` 已纳入 `for range` 与聚合值用例，并已在新生成编译器二进制下恢复全绿
+- 相关 verify 脚本现已强制校验真实 EXEC 路径与 fallback 原因，避免“空 bytecode dump / 仅退出码一致”的假阳性
 
 ---
 
@@ -447,8 +455,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] `@c_import`
   - [x] async
   - [x] asm
-  - [ ] SIMD
-  - [ ] unsupported extern ABI
+  - [x] SIMD
+  - [x] unsupported extern ABI
 - [x] `--exec` 时自动回退 C99
 - [x] `--vm` 时直接失败
 - [x] 打印清晰原因，不要静默切换
