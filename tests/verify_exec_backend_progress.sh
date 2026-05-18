@@ -91,6 +91,21 @@ grep -q 'exec: 当前不支持 extern ABI' "$TMP_STDERR"
 grep -q '信息: exec backend 不支持，回退 C99 (原因码: extern_abi):' "$TMP_STDERR"
 echo "  extern unsupported/fallback ✓"
 
+echo "验证 extern/libc bridge 正向路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_extern_bridge.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+grep -q 'test_exec_vm_extern_bridge.uya' "$TMP_STDOUT"
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_extern_bridge.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ extern bridge unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  extern bridge exec path ✓"
+
 echo "验证 test --vm/test --exec 的 extern fallback 行为..."
 if "$COMPILER" test --vm "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
     echo "✗ extern unsupported test should fail under test --vm"

@@ -36,6 +36,7 @@ enum BCOpcode {
     BC_JMP_IF_TRUE,
     BC_JMP_IF_FALSE,
     BC_CALL,
+    BC_CALL_EXTERN,
     BC_RET,
     BC_PRINT,
     BC_PRINTLN,

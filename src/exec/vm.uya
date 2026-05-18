@@ -1,6 +1,12 @@
 // exec/vm.uya - Minimal bytecode VM
 
 use libc;
+use libc.puts;
+use libc.atoi;
+use libc.atoll;
+use libc.isqrt;
+use libc.strcmp;
+use libc.llabs;
 
 fn exec_vm_slot_ref(frame: &ExecFrame, idx: i32) &ExecValue {
     if frame == null || idx < 0 || idx >= EXEC_MAX_FRAME_SLOTS {
@@ -32,6 +38,22 @@ fn exec_vm_print_value(value: ExecValue, newline: i32) void {
             fprintf(libc.stdout, "%d\n" as *byte, value.i64_value as i32);
         } else {
             fprintf(libc.stdout, "%d" as *byte, value.i64_value as i32);
+        }
+        return;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_I64 {
+        if newline != 0 {
+            fprintf(libc.stdout, "%ld\n" as *byte, value.i64_value);
+        } else {
+            fprintf(libc.stdout, "%ld" as *byte, value.i64_value);
+        }
+        return;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_U64 {
+        if newline != 0 {
+            fprintf(libc.stdout, "%lu\n" as *byte, value.i64_value as u64);
+        } else {
+            fprintf(libc.stdout, "%lu" as *byte, value.i64_value as u64);
         }
         return;
     }
@@ -143,6 +165,63 @@ fn exec_vm_lookup_error_name(program: &BCProgram, error_id: i32) &byte {
         }
     }
     return "UnknownError" as &byte;
+}
+
+fn exec_vm_call_extern(function: &BCFunction, bridge_id: ExecExternBridgeId, args: &ExecValue, arg_count: i32, out_value: &ExecValue) i32 {
+    if function == null || out_value == null {
+        exec_backend_set_error(null, "exec: extern bridge 输入无效" as *byte, 0);
+        return -1;
+    }
+    if bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_PUTS {
+        if arg_count != 1 || args == null {
+            exec_backend_set_error(function.decl, "exec: puts 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i32(puts(args[0].ptr_value));
+        return 0;
+    }
+    if bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOI {
+        if arg_count != 1 || args == null {
+            exec_backend_set_error(function.decl, "exec: atoi 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i32(atoi(args[0].ptr_value));
+        return 0;
+    }
+    if bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOLL {
+        if arg_count != 1 || args == null {
+            exec_backend_set_error(function.decl, "exec: atoll 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i64(atoll(args[0].ptr_value));
+        return 0;
+    }
+    if bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ISQRT {
+        if arg_count != 1 || args == null {
+            exec_backend_set_error(function.decl, "exec: isqrt 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_u64(isqrt(args[0].i64_value as u64));
+        return 0;
+    }
+    if bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_STRCMP {
+        if arg_count != 2 || args == null {
+            exec_backend_set_error(function.decl, "exec: strcmp 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i32(strcmp(args[0].ptr_value, args[1].ptr_value));
+        return 0;
+    }
+    if bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS {
+        if arg_count != 1 || args == null {
+            exec_backend_set_error(function.decl, "exec: llabs 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i64(llabs(args[0].i64_value));
+        return 0;
+    }
+    exec_backend_set_error(function.decl, "exec: extern bridge 目标非法" as *byte, 0);
+    return -1;
 }
 
 fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &ExecValue) i32 {
@@ -494,6 +573,27 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         exec_vm_store_slot(slot_a, call_result);
+    } else if instr.opcode == BCOpcode.BC_CALL_EXTERN {
+        var call_args2: [ExecValue: EXEC_MAX_CALL_ARGS] = [];
+        var ai2: i32 = 0;
+        while ai2 < instr.c && ai2 < EXEC_MAX_CALL_ARGS {
+            const arg_slot2: &ExecValue = exec_vm_slot_ref(frame, instr.b + ai2);
+            if arg_slot2 == null {
+                exec_backend_set_error(function.decl, "exec: CALL_EXTERN 参数槽位越界" as *byte, 0);
+                return -1;
+            }
+            call_args2[ai2] = exec_value_clone(arg_slot2);
+            ai2 = ai2 + 1;
+        }
+        var extern_result: ExecValue = exec_make_void();
+        if exec_vm_call_extern(function, instr.imm as ExecExternBridgeId, &call_args2[0], instr.c, &extern_result) != 0 {
+            return -1;
+        }
+        if slot_a == null {
+            exec_backend_set_error(function.decl, "exec: CALL_EXTERN 返回槽位越界" as *byte, 0);
+            return -1;
+        }
+        exec_vm_store_slot(slot_a, extern_result);
     } else if instr.opcode == BCOpcode.BC_PRINT {
         if slot_a == null {
             exec_backend_set_error(function.decl, "exec: PRINT 槽位越界" as *byte, 0);

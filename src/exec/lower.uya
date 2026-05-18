@@ -61,7 +61,9 @@ fn exec_lower_fail_block_reason(node: &ASTNode, reason: &byte, code: ExecUnsuppo
 
 fn exec_type_is_scalar_supported(type: Type) i32 {
     if type.kind == TypeKind.TYPE_I32 ||
+        type.kind == TypeKind.TYPE_I64 ||
         type.kind == TypeKind.TYPE_U32 ||
+        type.kind == TypeKind.TYPE_U64 ||
         type.kind == TypeKind.TYPE_BOOL ||
         type.kind == TypeKind.TYPE_BYTE ||
         type.kind == TypeKind.TYPE_VOID {
@@ -78,6 +80,63 @@ fn exec_type_is_string_pointer_supported(type: Type) i32 {
         return 1;
     }
     return 0;
+}
+
+fn exec_lower_is_supported_extern_lib(fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    if fn_decl.fn_decl_extern_lib_name == null {
+        return 1;
+    }
+    if str_equals(fn_decl.fn_decl_extern_lib_name, "libc" as &byte) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_lower_is_exact_scalar_type(type: Type, kind: TypeKind) i32 {
+    if type.kind == kind {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_lower_match_extern_bridge_signature(checker: &TypeChecker, fn_decl: &ASTNode) ExecExternBridgeId {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
+    if fn_decl.fn_decl_is_extern == 0 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
+    if fn_decl.fn_decl_is_varargs != 0 || fn_decl.fn_decl_name == null || fn_decl.fn_decl_return_type == null {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
+    if str_equals(fn_decl.fn_decl_name, "puts" as &byte) != 0 &&
+        fn_decl.fn_decl_param_count == 1 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_PUTS;
+    }
+    if str_equals(fn_decl.fn_decl_name, "atoi" as &byte) != 0 &&
+        fn_decl.fn_decl_param_count == 1 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOI;
+    }
+    if str_equals(fn_decl.fn_decl_name, "atoll" as &byte) != 0 &&
+        fn_decl.fn_decl_param_count == 1 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOLL;
+    }
+    if str_equals(fn_decl.fn_decl_name, "isqrt" as &byte) != 0 &&
+        fn_decl.fn_decl_param_count == 1 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ISQRT;
+    }
+    if str_equals(fn_decl.fn_decl_name, "strcmp" as &byte) != 0 &&
+        fn_decl.fn_decl_param_count == 2 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_STRCMP;
+    }
+    if str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 &&
+        fn_decl.fn_decl_param_count == 1 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS;
+    }
+    return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
 }
 
 fn exec_type_uses_simd(ty: Type) i32 {
@@ -975,6 +1034,7 @@ fn exec_lower_collect_called_decls_from_expr(expr: &HIRExpr, out_decls: & & ASTN
     }
     if expr.kind == HIRExprKind.HIR_EXPR_CALL && expr.callee_decl != null &&
         expr.callee_decl.type == ASTNodeType.AST_FN_DECL &&
+        expr.callee_decl.fn_decl_is_extern == 0 &&
         exec_lower_decl_index(out_decls, out_count[0], expr.callee_decl) < 0 {
         if out_count[0] < MAX_REACHABLE_FN_DECLS {
             out_decls[out_count[0]] = expr.callee_decl;
@@ -1189,8 +1249,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return exec_lower_make_string_const_expr(ctx, expr, &expr_type, func_name);
     }
     if expr.type == ASTNodeType.AST_NUMBER {
-        if expr_type.kind != TypeKind.TYPE_I32 && expr_type.kind != TypeKind.TYPE_U32 {
-            return exec_lower_fail_expr(expr, "exec: 仅支持 i32/u32 数字字面量" as *byte);
+        if expr_type.kind != TypeKind.TYPE_I32 &&
+            expr_type.kind != TypeKind.TYPE_U32 &&
+            expr_type.kind != TypeKind.TYPE_I64 &&
+            expr_type.kind != TypeKind.TYPE_U64 {
+            return exec_lower_fail_expr(expr, "exec: 仅支持 i32/u32/i64/u64 数字字面量" as *byte);
         }
         return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr.number_value_i64);
     }
@@ -1319,10 +1382,20 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return exec_lower_fail_expr(expr, "exec: 调用参数过多" as *byte);
         }
         const callee_decl: &ASTNode = find_fn_decl_from_program(ctx.checker.program_node, expr.call_expr_callee.identifier_name);
+        var extern_bridge_id: ExecExternBridgeId = ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
         if callee_decl != null &&
             callee_decl.type == ASTNodeType.AST_FN_DECL &&
             callee_decl.fn_decl_is_extern != 0 {
-            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
+            extern_bridge_id = exec_lower_match_extern_bridge_signature(ctx.checker, callee_decl);
+            if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
+                var extern_msg: [byte: 160] = [];
+                if callee_decl.fn_decl_name != null {
+                    _ = snprintf(&extern_msg[0] as *byte, 160, "exec: 当前不支持 extern ABI: %s/%d" as *byte,
+                        callee_decl.fn_decl_name as *byte, callee_decl.fn_decl_param_count);
+                    return exec_lower_fail_expr_reason(expr, &extern_msg[0], ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
+                }
+                return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
+            }
         }
         if exec_type_is_vm_value_supported(expr_type) == 0 {
             if exec_type_uses_simd(expr_type) != 0 {
@@ -1350,6 +1423,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         hir.callee_name = expr.call_expr_callee.identifier_name;
         hir.callee_decl = callee_decl;
+        hir.call_extern_id = extern_bridge_id;
         hir.call_args = args;
         hir.call_arg_count = expr.call_expr_arg_count;
         return hir;
@@ -2125,6 +2199,7 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
                 const to_decl: &ASTNode = checker.fn_call_edge_to[edge_idx];
                 if to_decl != null &&
                     to_decl.type == ASTNodeType.AST_FN_DECL &&
+                    to_decl.fn_decl_is_extern == 0 &&
                     to_decl.fn_decl_body != null &&
                     exec_lower_decl_index(&exec_reachable[0] as & & ASTNode, exec_reachable_count, to_decl) < 0 {
                     if exec_reachable_count >= MAX_REACHABLE_FN_DECLS || tail >= MAX_REACHABLE_FN_DECLS {

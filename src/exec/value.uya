@@ -6,6 +6,8 @@ use libc.heap;
 enum ExecValueKind {
     EXEC_VALUE_VOID,
     EXEC_VALUE_I32,
+    EXEC_VALUE_I64,
+    EXEC_VALUE_U64,
     EXEC_VALUE_BOOL,
     EXEC_VALUE_BYTE,
     EXEC_VALUE_STRING,
@@ -53,6 +55,30 @@ fn exec_make_void() ExecValue {
 fn exec_make_i32(value: i32) ExecValue {
     return ExecValue {
         kind: ExecValueKind.EXEC_VALUE_I32,
+        i64_value: value as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_i64(value: i64) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_I64,
+        i64_value: value,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_u64(value: u64) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_U64,
         i64_value: value as i64,
         ptr_value: null,
         aux_kind: ExecValueKind.EXEC_VALUE_VOID,
@@ -379,7 +405,10 @@ fn exec_value_truthy(value: ExecValue) i32 {
         }
         return 0;
     }
-    if value.kind == ExecValueKind.EXEC_VALUE_I32 || value.kind == ExecValueKind.EXEC_VALUE_BYTE {
+    if value.kind == ExecValueKind.EXEC_VALUE_I32 ||
+        value.kind == ExecValueKind.EXEC_VALUE_I64 ||
+        value.kind == ExecValueKind.EXEC_VALUE_U64 ||
+        value.kind == ExecValueKind.EXEC_VALUE_BYTE {
         if value.i64_value != 0 {
             return 1;
         }

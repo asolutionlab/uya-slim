@@ -38,6 +38,7 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_JMP_IF_TRUE { return "BC_JMP_IF_TRUE" as &byte; }
     if opcode == BCOpcode.BC_JMP_IF_FALSE { return "BC_JMP_IF_FALSE" as &byte; }
     if opcode == BCOpcode.BC_CALL { return "BC_CALL" as &byte; }
+    if opcode == BCOpcode.BC_CALL_EXTERN { return "BC_CALL_EXTERN" as &byte; }
     if opcode == BCOpcode.BC_RET { return "BC_RET" as &byte; }
     if opcode == BCOpcode.BC_PRINT { return "BC_PRINT" as &byte; }
     if opcode == BCOpcode.BC_PRINTLN { return "BC_PRINTLN" as &byte; }
@@ -49,8 +50,12 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
 fn exec_debug_print_type(type_ref: HIRTypeRef) void {
     if type_ref.type.kind == TypeKind.TYPE_I32 {
         fprintf(libc.stderr, "i32" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_I64 {
+        fprintf(libc.stderr, "i64" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_U32 {
         fprintf(libc.stderr, "u32" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_U64 {
+        fprintf(libc.stderr, "u64" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_BOOL {
         fprintf(libc.stderr, "bool" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_BYTE {

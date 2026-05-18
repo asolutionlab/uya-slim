@@ -83,8 +83,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `tests/test_exec_vm_global_init_fail.uya`
   - `tests/test_exec_vm_globals_multi.uya`
   - `tests/test_exec_vm_simd_unsupported.uya`
+  - `tests/test_exec_vm_extern_bridge.uya`
   - `tests/test_exec_vm_extern_unsupported.uya`
   - `bash ./tests/verify_exec_backend_progress.sh`
+  - `bash ./tests/verify_exec_vm_extern_bridge.sh`
   - `bash ./tests/verify_exec_vm_globals.sh`
 - 2026-05-18 已用新生成编译器二进制验证通过：
   - `./bin/uya build src/main.uya -o /tmp/uya_exec_todo_bin`
@@ -524,17 +526,23 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 16：extern/libc bridge
 
-- [ ] 设计 extern ABI 白名单
-- [ ] 支持最小类型集：
-  - [ ] `i32/u32/i64/u64`
-  - [ ] `bool`
-  - [ ] `*byte`
-  - [ ] `&byte` / `&const byte`
-- [ ] 支持返回标量
-- [ ] 对复杂 ABI 先报不支持
-- [ ] 测试：
-  - [ ] 常见 libc 调用
-  - [ ] `printf` 类是否需要白名单或禁用 varargs
+- [x] 设计 extern ABI 白名单
+- [x] 支持最小类型集：
+  - [x] `i32/u32/i64/u64`
+  - [x] `bool`
+  - [x] `*byte`
+  - [x] `&byte` / `&const byte`
+- [x] 支持返回标量
+- [x] 对复杂 ABI 先报不支持
+- [x] 测试：
+  - [x] 常见 libc 调用
+  - [x] `printf` 类是否需要白名单或禁用 varargs
+
+备注：
+
+- 2026-05-18 已新增固定白名单 extern bridge，当前先覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名；VM 热路径通过 `BC_CALL_EXTERN` + 固定 bridge id 直接分发，不再按函数名做线性扫描。
+- 2026-05-18 已把 `i64/u64` 数字字面量放通到 exec lowering / const pool / VM value，保证宽整数 extern 参数与返回值不会在 lowering 阶段被误判 unsupported。
+- 2026-05-18 已明确禁用 varargs extern bridge；`printf` 这类调用在 `--vm` 下继续稳定报 `extern_abi`，在 `--exec` / `test --exec` 下继续走清晰的 fallback 到 C99。
 
 ---
 

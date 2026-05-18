@@ -303,6 +303,10 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
         const_value = exec_make_bool(expr.bool_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
         const_value = exec_make_byte(expr.int_value as i32);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_I64 {
+        const_value = exec_make_i64(expr.int_value);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_U64 {
+        const_value = exec_make_u64(expr.int_value as u64);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 || expr.type_ref.type.kind == TypeKind.TYPE_U32 {
         const_value = exec_make_i32(expr.int_value as i32);
     }
@@ -1116,6 +1120,20 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             }
             i = i + 1;
         }
+        if expr.call_extern_id != ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_CALL_EXTERN,
+                a: dst,
+                b: arg_base,
+                c: expr.call_arg_count,
+                imm: expr.call_extern_id as i64,
+                text: expr.callee_name,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst;
+        }
         if expr.callee_decl == null {
             exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 无法解析被调用函数" as *byte);
             return -1;
@@ -1821,6 +1839,27 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             const dst_slot9: i32 = instr.a;
             if dst_slot9 >= 0 && dst_slot9 < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot9] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_CALL_EXTERN {
+            var ai2: i32 = 0;
+            while ai2 < instr.c {
+                if exec_builder_validate_slot_read(fn_hir, instr.b + ai2, out_fn.slot_count, &slot_written[0], "exec: CALL_EXTERN 参数槽位非法" as *byte) != 0 {
+                    return -1;
+                }
+                ai2 = ai2 + 1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: CALL_EXTERN 返回槽位非法" as *byte, 0);
+                return -1;
+            }
+            if instr.imm <= ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE as i64 ||
+                instr.imm > ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS as i64 {
+                exec_backend_set_error(fn_hir.decl, "exec: CALL_EXTERN 目标非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot10: i32 = instr.a;
+            if dst_slot10 >= 0 && dst_slot10 < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot10] = 1;
             }
         } else if instr.opcode == BCOpcode.BC_PRINT || instr.opcode == BCOpcode.BC_PRINTLN {
             if exec_builder_validate_slot_read(fn_hir, instr.a, out_fn.slot_count, &slot_written[0], "exec: print 槽位非法" as *byte) != 0 {

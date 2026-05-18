@@ -1,0 +1,29 @@
+use std.runtime.entry;
+use libc.puts;
+use libc.atoi;
+use libc.atoll;
+use libc.isqrt;
+
+export fn main() i32 {
+    const puts_rc: i32 = puts("test_exec_vm_extern_bridge.uya");
+    if puts_rc < 0 {
+        return 1;
+    }
+
+    const parsed_i32: i32 = atoi("12345");
+    if parsed_i32 != 12345 {
+        return 2;
+    }
+
+    const parsed_i64: i64 = atoll("5000000000");
+    if parsed_i64 != 5000000000i64 {
+        return 3;
+    }
+
+    const root: u64 = isqrt(81u64);
+    if root != 9u64 {
+        return 4;
+    }
+
+    return 0;
+}
