@@ -69,6 +69,32 @@
 
 因此，本文其余章节依旧描述目标架构，但阅读时请以“已开始实现、仍处于第一阶段骨架期”理解。
 
+## 实现状态附记（2026-05-19）
+
+再补一条更新，避免读者把 `module_alias.exported_global` 这一层理解成“仍完全不可用”。
+
+截至 `2026-05-19`，exec backend 在 hosted 标准库路径上又前进了一段：
+
+- `use libc;` + `libc.stdout/libc.stderr` 这类 whole-module import 成员式导出全局访问，识别与导出 decl 解析链已经接通
+- 当前 lowering 不再只能依赖 `checker.import_table`；针对这类 whole-module import，已补：
+  - 从当前文件 `use` 语句恢复模块别名
+  - 按 AST 实际命中的 `module_alias.field` 收集需要进入 exec globals 的导出项
+  - `&expr` 经由 `exec_lower_make_ref_expr(...)` 接入地址构造路径
+
+这条链路的意义是：
+
+- `./bin/uya run --vm src/main.uya` 已不再最早卡死在 `fprintf(libc.stdout, ...)` 的 `libc.stdout`
+- 当前最新前沿 blocker 已继续前移到标准库 `struct` 字面量初始化：
+  - 例如 `lib/libc/stdio.uya` 中 `FILE{ fd: ..., buf_pos: ..., buf_len: ..., buf_mode: ... }`
+  - 该写法省略了大数组字段 `buffer`
+  - checker 当前允许这类“字段数不完全匹配”的写法继续通过
+  - 但 exec lowering 仍把它当成“字段缺失”直接拒绝
+
+这也带来一个明确的性能约束：
+
+- 后续补齐“缺失字段按零值初始化”时，不能在 lowering 阶段把 `buffer: [byte: 65536]` 膨胀成 65536 个常量元素
+- 更合理的方向是在 HIR / bytecode / VM 聚合值构造路径上支持“默认零值补齐”，把成本控制在聚合值分配和按需清零这一级
+
 ---
 
 ## 1. 背景

@@ -7,6 +7,7 @@ const EXEC_MAX_LOCALS: i32 = 256;
 const EXEC_MAX_GLOBALS: i32 = 1024;
 const EXEC_MAX_SCOPE_DEPTH: i32 = 64;
 const EXEC_MAX_INTERFACE_METHODS: i32 = 64;
+const EXEC_MAX_MODULE_GLOBAL_REQUESTS: i32 = 256;
 
 struct ExecLowerContext {
     arena: &CompilerArena,
@@ -1466,6 +1467,30 @@ fn exec_lower_find_module_export_decl(checker: &TypeChecker, module_name: &byte,
         }
         i = i + 1;
     }
+    if str_equals(module_name, "libc" as &byte) != 0 {
+        var slot_i: i32 = 0;
+        while slot_i < MODULE_TABLE_SIZE {
+            const module2: &ModuleInfo = checker.module_table.slots[slot_i];
+            if module2 != null && module2.filename != null &&
+                (strstr(module2.filename as *byte, "/lib/libc/" as *byte) != null ||
+                 strstr(module2.filename as *byte, "lib/libc/" as *byte) != null ||
+                 strstr(module2.filename as *byte, "\\lib\\libc\\" as *byte) != null) {
+                if module2.exports != null {
+                    var export_i: i32 = 0;
+                    while export_i < module2.export_count {
+                        const export_item2: &ExportedItem = &module2.exports[export_i];
+                        if export_item2.name != null && str_equals(export_item2.name, item_name) != 0 {
+                            if item_type == 0 || export_item2.item_type == item_type {
+                                return export_item2.decl_node;
+                            }
+                        }
+                        export_i = export_i + 1;
+                    }
+                }
+            }
+            slot_i = slot_i + 1;
+        }
+    }
     return null;
 }
 
@@ -1482,6 +1507,111 @@ fn exec_lower_resolve_imported_decl(checker: &TypeChecker, local_name: &byte, it
         return null;
     }
     return exec_lower_find_module_export_decl(checker, imported_item.module_name, imported_item.original_name, item_type);
+}
+
+fn exec_lower_use_stmt_module_name_equals(use_stmt: &ASTNode, module_name: &byte) i32 {
+    if use_stmt == null || use_stmt.type != ASTNodeType.AST_USE_STMT || module_name == null ||
+        use_stmt.use_stmt_path_segments == null || use_stmt.use_stmt_path_segment_count <= 0 {
+        return 0;
+    }
+    var i: i32 = 0;
+    var module_pos: i32 = 0;
+    while i < use_stmt.use_stmt_path_segment_count {
+        const segment: &byte = use_stmt.use_stmt_path_segments[i];
+        if segment == null {
+            return 0;
+        }
+        var seg_pos: i32 = 0;
+        while segment[seg_pos] != 0 as byte {
+            if module_name[module_pos] != segment[seg_pos] {
+                return 0;
+            }
+            seg_pos = seg_pos + 1;
+            module_pos = module_pos + 1;
+        }
+        if i + 1 < use_stmt.use_stmt_path_segment_count {
+            if module_name[module_pos] != 46 {
+                return 0;
+            }
+            module_pos = module_pos + 1;
+        }
+        i = i + 1;
+    }
+    return (module_name[module_pos] == 0 as byte) as i32;
+}
+
+fn exec_lower_resolve_module_alias_from_file(checker: &TypeChecker, filename: &byte, local_name: &byte) &byte {
+    if checker == null || checker.program_node == null || checker.program_node.type != ASTNodeType.AST_PROGRAM ||
+        filename == null || local_name == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_USE_STMT &&
+            decl.filename != null && str_equals(decl.filename, filename) != 0 &&
+            decl.use_stmt_item_name == null &&
+            decl.use_stmt_path_segments != null && decl.use_stmt_path_segment_count > 0 {
+            var local_name_candidate: &byte = decl.use_stmt_alias;
+            if local_name_candidate == null {
+                local_name_candidate = decl.use_stmt_path_segments[decl.use_stmt_path_segment_count - 1];
+            }
+            if local_name_candidate != null && str_equals(local_name_candidate, local_name) != 0 {
+                const module_name_len: i32 = exec_lower_joined_module_name_len(decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
+                if module_name_len > 0 {
+                    const module_name: &byte = compiler_arena_alloc(checker.arena, module_name_len as usize + 1 as usize) as &byte;
+                    if module_name != null {
+                        exec_lower_write_joined_module_name(module_name, decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
+                        return module_name;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn exec_lower_joined_module_name_len(segments: & & byte, count: i32) i32 {
+    if segments == null || count <= 0 {
+        return 0;
+    }
+    var total: i32 = 0;
+    var i: i32 = 0;
+    while i < count {
+        if segments[i] == null {
+            return 0;
+        }
+        total = total + (strlen(segments[i] as *byte) as i32);
+        if i + 1 < count {
+            total = total + 1;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+fn exec_lower_write_joined_module_name(out_name: &byte, segments: & & byte, count: i32) void {
+    if out_name == null || segments == null || count <= 0 {
+        return;
+    }
+    var pos: i32 = 0;
+    var i: i32 = 0;
+    while i < count {
+        const segment: &byte = segments[i];
+        var si: i32 = 0;
+        while segment != null && segment[si] != 0 as byte {
+            out_name[pos] = segment[si];
+            pos = pos + 1;
+            si = si + 1;
+        }
+        if i + 1 < count {
+            out_name[pos] = 46;
+            pos = pos + 1;
+        }
+        i = i + 1;
+    }
+    out_name[pos] = 0 as byte;
 }
 
 fn exec_lower_resolve_function_decl(checker: &TypeChecker, callee_name: &byte) &ASTNode {
@@ -1751,6 +1881,321 @@ fn exec_lower_collect_global_slots_from_imports(checker: &TypeChecker, globals: 
     return 0;
 }
 
+fn exec_lower_add_requested_module_global_name(out_names: & & byte, out_count: &i32, name: &byte) void {
+    if out_names == null || out_count == null || name == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < out_count[0] {
+        if out_names[i] != null && str_equals(out_names[i], name) != 0 {
+            return;
+        }
+        i = i + 1;
+    }
+    if out_count[0] >= EXEC_MAX_MODULE_GLOBAL_REQUESTS {
+        return;
+    }
+    out_names[out_count[0]] = name;
+    out_count[0] = out_count[0] + 1;
+}
+
+fn exec_lower_collect_module_global_use_names_expr(checker: &TypeChecker, expr: &ASTNode, module_name: &byte, out_names: & & byte, out_count: &i32) void {
+    if checker == null || expr == null || module_name == null || out_names == null || out_count == null {
+        return;
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        var resolved_module_name: &byte = null;
+        if expr.member_access_is_module_access != 0 && expr.member_access_module_name != null {
+            resolved_module_name = expr.member_access_module_name;
+        } else if expr.member_access_object != null &&
+            expr.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
+            expr.member_access_object.identifier_name != null {
+            const imported_item: &ImportedItem = checker_import_table_lookup_local_name(checker, expr.member_access_object.identifier_name);
+            if imported_item != null && imported_item.item_type == (0 - 1) && imported_item.module_name != null {
+                resolved_module_name = imported_item.module_name;
+            }
+            if resolved_module_name == null && expr.filename != null {
+                resolved_module_name = exec_lower_resolve_module_alias_from_file(
+                    checker, expr.filename, expr.member_access_object.identifier_name);
+            }
+        }
+        if resolved_module_name != null && expr.member_access_field_name != null &&
+            str_equals(resolved_module_name, module_name) != 0 {
+            exec_lower_add_requested_module_global_name(out_names, out_count, expr.member_access_field_name);
+        }
+        exec_lower_collect_module_global_use_names_expr(checker, expr.member_access_object, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CALL_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.call_expr_callee, module_name, out_names, out_count);
+        if expr.call_expr_args != null {
+            var i: i32 = 0;
+            while i < expr.call_expr_arg_count {
+                exec_lower_collect_module_global_use_names_expr(checker, expr.call_expr_args[i], module_name, out_names, out_count);
+                i = i + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.array_access_array, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_expr(checker, expr.array_access_index, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.binary_expr_left, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_expr(checker, expr.binary_expr_right, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.unary_expr_operand, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.cast_expr_expr, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.slice_expr_base, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_expr(checker, expr.slice_expr_start_expr, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_expr(checker, expr.slice_expr_len_expr, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_TRY_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.try_expr_operand, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.catch_expr_operand, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.match_expr_expr, module_name, out_names, out_count);
+        if expr.match_expr_arms != null {
+            var mi: i32 = 0;
+            while mi < expr.match_expr_arm_count {
+                exec_lower_collect_module_global_use_names_expr(checker, expr.match_expr_arms[mi].result_expr, module_name, out_names, out_count);
+                mi = mi + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_field_values != null {
+        var si: i32 = 0;
+        while si < expr.struct_init_field_count {
+            exec_lower_collect_module_global_use_names_expr(checker, expr.struct_init_field_values[si], module_name, out_names, out_count);
+            si = si + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_LITERAL && expr.array_literal_elements != null {
+        var ai: i32 = 0;
+        while ai < expr.array_literal_element_count {
+            exec_lower_collect_module_global_use_names_expr(checker, expr.array_literal_elements[ai], module_name, out_names, out_count);
+            ai = ai + 1;
+        }
+        exec_lower_collect_module_global_use_names_expr(checker, expr.array_literal_repeat_count_expr, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_TUPLE_LITERAL && expr.tuple_literal_elements != null {
+        var ti: i32 = 0;
+        while ti < expr.tuple_literal_element_count {
+            exec_lower_collect_module_global_use_names_expr(checker, expr.tuple_literal_elements[ti], module_name, out_names, out_count);
+            ti = ti + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_LEN {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.len_expr_array, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.ptr_from_usize_value, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.usize_from_ptr_ptr, module_name, out_names, out_count);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
+        exec_lower_collect_module_global_use_names_expr(checker, expr.print_expr, module_name, out_names, out_count);
+        return;
+    }
+}
+
+fn exec_lower_collect_module_global_use_names_node(checker: &TypeChecker, node: &ASTNode, module_name: &byte, out_names: & & byte, out_count: &i32) void {
+    if checker == null || node == null || module_name == null || out_names == null || out_count == null {
+        return;
+    }
+    exec_lower_collect_module_global_use_names_expr(checker, node, module_name, out_names, out_count);
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            exec_lower_collect_module_global_use_names_node(checker, node.program_decls[i], module_name, out_names, out_count);
+            i = i + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            exec_lower_collect_module_global_use_names_node(checker, node.block_stmts[bi], module_name, out_names, out_count);
+            bi = bi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.if_stmt_condition, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.if_stmt_then_branch, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.if_stmt_else_branch, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.while_stmt_condition, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.while_stmt_body, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.for_stmt_range_start, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.for_stmt_range_end, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.for_stmt_array, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.for_stmt_body, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        exec_lower_collect_module_global_use_names_node(checker, node.var_decl_init, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        exec_lower_collect_module_global_use_names_node(checker, node.extern_var_decl_init_expr, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.return_stmt_expr, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        exec_lower_collect_module_global_use_names_node(checker, node.assign_dest, module_name, out_names, out_count);
+        exec_lower_collect_module_global_use_names_node(checker, node.assign_src, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_DEFER_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.defer_stmt_body, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERRDEFER_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.errdefer_stmt_body, module_name, out_names, out_count);
+        return;
+    }
+    if node.type == ASTNodeType.AST_TEST_STMT {
+        exec_lower_collect_module_global_use_names_node(checker, node.test_stmt_body, module_name, out_names, out_count);
+        return;
+    }
+}
+
+fn exec_lower_collect_global_slots_from_module_import(checker: &TypeChecker, module_name: &byte, requested_names: & & byte, requested_count: i32, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || module_name == null || requested_names == null || globals == null || out_count == null {
+        return -1;
+    }
+    if str_equals(module_name, "libc" as &byte) != 0 {
+        exec_lower_add_requested_module_global_name(requested_names, &requested_count, "stdin" as &byte);
+        exec_lower_add_requested_module_global_name(requested_names, &requested_count, "stdout" as &byte);
+        exec_lower_add_requested_module_global_name(requested_names, &requested_count, "stderr" as &byte);
+    }
+    var ri: i32 = 0;
+    while ri < requested_count {
+        if requested_names[ri] != null {
+            const export_decl: &ASTNode = exec_lower_find_module_export_decl(checker, module_name, requested_names[ri], 10);
+            if export_decl != null &&
+                exec_lower_global_is_runtime_decl(export_decl) != 0 &&
+                exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], export_decl) < 0 {
+                const export_type_ast: &ASTNode = exec_lower_global_type_ast(export_decl);
+                if export_type_ast != null {
+                    const export_type: Type = type_from_ast(checker, export_type_ast);
+                    if exec_type_is_vm_value_supported(export_type) != 0 {
+                        if exec_lower_append_global_slot(checker, export_decl, globals, out_count, 1) != 0 {
+                            return -1;
+                        }
+                    }
+                }
+                if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM && export_decl.filename != null {
+                    var decl_i: i32 = 0;
+                    while decl_i < checker.program_node.program_decl_count {
+                        const decl2: &ASTNode = checker.program_node.program_decls[decl_i];
+                        if decl2 != null && decl2.filename != null &&
+                            str_equals(decl2.filename, export_decl.filename) != 0 &&
+                            exec_lower_global_is_runtime_decl(decl2) != 0 &&
+                            exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], decl2) < 0 {
+                            const decl2_type_ast: &ASTNode = exec_lower_global_type_ast(decl2);
+                            if decl2_type_ast != null {
+                                const decl2_type: Type = type_from_ast(checker, decl2_type_ast);
+                                if exec_type_is_vm_value_supported(decl2_type) != 0 {
+                                    if exec_lower_append_global_slot(checker, decl2, globals, out_count, 1) != 0 {
+                                        return -1;
+                                    }
+                                }
+                            }
+                        }
+                        decl_i = decl_i + 1;
+                    }
+                }
+            }
+        }
+        ri = ri + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_module_imports(checker: &TypeChecker, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || globals == null || out_count == null {
+        return -1;
+    }
+    var slot: i32 = 0;
+    while slot < IMPORT_TABLE_SIZE {
+        const import_item: &ImportedItem = checker.import_table.slots[slot];
+        if import_item != null && import_item.item_type == (0 - 1) && import_item.module_name != null {
+            var requested_names: [&byte: EXEC_MAX_MODULE_GLOBAL_REQUESTS] = [];
+            var requested_count: i32 = 0;
+            exec_lower_collect_module_global_use_names_node(checker, checker.program_node, import_item.module_name, &requested_names[0] as & & byte, &requested_count);
+            if exec_lower_collect_global_slots_from_module_import(checker, import_item.module_name, &requested_names[0] as & & byte, requested_count, globals, out_count) != 0 {
+                return -1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_use_stmts(checker: &TypeChecker, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || checker.program_node == null || checker.program_node.type != ASTNodeType.AST_PROGRAM ||
+        globals == null || out_count == null {
+        return -1;
+    }
+    var decl_i: i32 = 0;
+    while decl_i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[decl_i];
+        if decl != null && decl.type == ASTNodeType.AST_USE_STMT &&
+            decl.use_stmt_item_name == null &&
+            decl.use_stmt_path_segments != null && decl.use_stmt_path_segment_count > 0 {
+            const module_name_len: i32 = exec_lower_joined_module_name_len(decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
+            if module_name_len > 0 {
+                const module_name: &byte = compiler_arena_alloc(checker.arena, module_name_len as usize + 1 as usize) as &byte;
+                if module_name != null {
+                    exec_lower_write_joined_module_name(module_name, decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
+                    var requested_names: [&byte: EXEC_MAX_MODULE_GLOBAL_REQUESTS] = [];
+                    var requested_count: i32 = 0;
+                    exec_lower_collect_module_global_use_names_node(checker, checker.program_node, module_name, &requested_names[0] as & & byte, &requested_count);
+                    if exec_lower_collect_global_slots_from_module_import(checker, module_name, &requested_names[0] as & & byte, requested_count, globals, out_count) != 0 {
+                        return -1;
+                    }
+                }
+            }
+        }
+        decl_i = decl_i + 1;
+    }
+    return 0;
+}
+
 fn exec_lower_find_global_slot_by_decl_in_globals(globals: &HIRGlobalSlot, global_count: i32, decl: &ASTNode) i32 {
     if globals == null || decl == null {
         return -1;
@@ -1788,6 +2233,12 @@ fn exec_lower_collect_global_slots(arena: &CompilerArena, checker: &TypeChecker,
         return null;
     }
     if exec_lower_collect_global_slots_from_imports(checker, globals, &count) != 0 {
+        return null;
+    }
+    if exec_lower_collect_global_slots_from_module_imports(checker, globals, &count) != 0 {
+        return null;
+    }
+    if exec_lower_collect_global_slots_from_use_stmts(checker, globals, &count) != 0 {
         return null;
     }
     if out_count != null {
@@ -2140,16 +2591,20 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         const imported_global_decl: &ASTNode = exec_lower_resolve_global_decl(ctx.checker, expr.identifier_name);
         if imported_global_decl != null {
             const global_slot_by_decl: i32 = exec_lower_find_global_slot_by_decl(ctx, imported_global_decl);
-            if global_slot_by_decl >= 0 {
+            var resolved_global_slot_by_decl: i32 = global_slot_by_decl;
+            if resolved_global_slot_by_decl < 0 && expr.identifier_name != null {
+                resolved_global_slot_by_decl = exec_lower_find_global_slot(ctx, expr.identifier_name);
+            }
+            if resolved_global_slot_by_decl >= 0 {
                 var global_type_by_decl: Type = copy_type(&expr_type);
-                if global_slot_by_decl >= 0 && global_slot_by_decl < EXEC_MAX_GLOBALS {
-                    global_type_by_decl = ctx.global_types[global_slot_by_decl];
+                if resolved_global_slot_by_decl >= 0 && resolved_global_slot_by_decl < EXEC_MAX_GLOBALS {
+                    global_type_by_decl = ctx.global_types[resolved_global_slot_by_decl];
                 }
                 const hir_global_by_decl: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &global_type_by_decl);
                 if hir_global_by_decl == null {
                     return null;
                 }
-                hir_global_by_decl.global_slot = global_slot_by_decl;
+                hir_global_by_decl.global_slot = resolved_global_slot_by_decl;
                 return hir_global_by_decl;
             }
             if exec_lower_global_is_const(imported_global_decl) != 0 {
@@ -2236,6 +2691,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir_usize;
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+            return exec_lower_make_ref_expr(ctx, expr.unary_expr_operand);
+        }
         if exec_type_is_scalar_supported(expr_type) == 0 {
             if exec_type_uses_simd(expr_type) != 0 {
                 return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
@@ -2578,23 +3036,56 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             if module_import_item != null && module_import_item.item_type == (0 - 1) {
                 module_access_name = module_import_item.module_name;
             }
+            if module_access_name == null && expr.filename != null {
+                module_access_name = exec_lower_resolve_module_alias_from_file(
+                    ctx.checker, expr.filename, expr.member_access_object.identifier_name);
+            }
+        }
+        if module_access_name == null && expr.member_access_object != null &&
+            expr.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
+            expr.member_access_object.identifier_name != null {
+            const debug_import_item: &ImportedItem = checker_import_table_lookup_local_name(ctx.checker, expr.member_access_object.identifier_name);
+            var debug_module_name: &byte = "<null>" as &byte;
+            var debug_item_type: i32 = -999;
+            if debug_import_item != null {
+                debug_item_type = debug_import_item.item_type;
+                if debug_import_item.module_name != null {
+                    debug_module_name = debug_import_item.module_name;
+                }
+            }
+            var import_msg: [byte: 224] = [];
+            _ = snprintf(&import_msg[0] as *byte, 224, "exec: 成员访问对象未被识别为模块别名: %s (import item_type=%d module=%s)" as *byte,
+                expr.member_access_object.identifier_name as *byte,
+                debug_item_type,
+                debug_module_name as *byte);
+            return exec_lower_fail_expr(expr, &import_msg[0]);
         }
         if module_access_name != null && expr.member_access_field_name != null {
             const module_global_decl: &ASTNode = exec_lower_find_module_export_decl(
                 ctx.checker, module_access_name, expr.member_access_field_name, 0);
             if module_global_decl != null {
                 const module_global_slot: i32 = exec_lower_find_global_slot_by_decl(ctx, module_global_decl);
-                if module_global_slot >= 0 {
+                var resolved_module_global_slot: i32 = module_global_slot;
+                if resolved_module_global_slot < 0 && expr.member_access_field_name != null {
+                    resolved_module_global_slot = exec_lower_find_global_slot(ctx, expr.member_access_field_name);
+                }
+                if resolved_module_global_slot >= 0 {
                     var module_global_type: Type = copy_type(&expr_type);
-                    if module_global_slot >= 0 && module_global_slot < EXEC_MAX_GLOBALS {
-                        module_global_type = ctx.global_types[module_global_slot];
+                    if resolved_module_global_slot >= 0 && resolved_module_global_slot < EXEC_MAX_GLOBALS {
+                        module_global_type = ctx.global_types[resolved_module_global_slot];
                     }
                     const hir_module_global: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &module_global_type);
                     if hir_module_global == null {
                         return null;
                     }
-                    hir_module_global.global_slot = module_global_slot;
+                    hir_module_global.global_slot = resolved_module_global_slot;
                     return hir_module_global;
+                }
+                if expr.member_access_field_name != null {
+                    var slot_msg: [byte: 192] = [];
+                    _ = snprintf(&slot_msg[0] as *byte, 192, "exec: 模块导出全局已解析但未找到 slot: %s.%s" as *byte,
+                        module_access_name as *byte, expr.member_access_field_name as *byte);
+                    return exec_lower_fail_expr(expr, &slot_msg[0]);
                 }
                 if exec_lower_global_is_const(module_global_decl) != 0 {
                     const module_const_init: &ASTNode = exec_lower_global_init_ast(module_global_decl);
@@ -2612,6 +3103,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                         return exec_lower_fail_expr(expr, "exec: 当前仅支持 exec VM 可表示的全局变量" as *byte);
                     }
                 }
+            } else {
+                var missing_msg: [byte: 192] = [];
+                _ = snprintf(&missing_msg[0] as *byte, 192, "exec: 无法解析模块导出全局: %s.%s" as *byte,
+                    module_access_name as *byte, expr.member_access_field_name as *byte);
+                return exec_lower_fail_expr(expr, &missing_msg[0]);
             }
         }
         const base_expr: &HIRExpr = exec_lower_expr(ctx, expr.member_access_object);
