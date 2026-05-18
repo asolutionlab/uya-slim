@@ -121,10 +121,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
-- 缺口：扩编译器主路径最小 extern/libc bridge；当前固定白名单只够最小 smoke，离 `fopen/fread/fwrite/fclose/fprintf/snprintf/getenv/opendir/readdir/closedir` 这批编译器路径常用接口还有距离
-- 缺口：为 `fprintf/snprintf/printf` 这类 varargs 接口明确长期策略；继续 fallback、做特化 bridge、或改走 builtin helper，都需要显式决策，不能长期依赖“碰到再报 unsupported”
+- 缺口：把 `extern` / `extern "libc"` 收敛到最终通用执行模型；对“有 Uya 函数体的 extern 实现”按普通函数 lower/执行，仅对真正无函数体或宿主专属符号保留最小 host bridge，避免继续扩编译器主路径的单函数白名单
+- 缺口：为 `fprintf/snprintf/printf` 这类 varargs 接口明确最终策略；普通 fixed-arity extern 应归入统一调用模型，varargs 需单独收敛到专用 bridge、builtin helper 或明确 fallback，不能长期依赖“碰到再报 unsupported”
 - 缺口：扩大语义覆盖面，包括 `interface / 间接调用`、更完整的 `union` 语义、更复杂标准库程序，以及面向编译器本体路径的 staged regressions
-- 推荐推进顺序：先补基础数值类型与通用指针表示，再补地址型 builtin，然后补编译器主路径 extern bridge，最后用 `src/main.uya` 的 `run --vm` / 更大 hosted 程序回归收口
+- 推荐推进顺序：先补基础数值类型与通用指针表示，再补地址型 builtin，然后补 `extern/libc` 通用执行模型与最小 host bridge，最后用 `src/main.uya` 的 `run --vm` / 更大 hosted 程序回归收口
 
 ---
 
@@ -546,7 +546,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ---
 
-## Phase 16：extern/libc bridge
+## Phase 16：最小 extern/libc bridge（过渡）
 
 - [x] 设计 extern ABI 白名单
 - [x] 支持最小类型集：
@@ -565,6 +565,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-18 已新增固定白名单 extern bridge，当前先覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名；VM 热路径通过 `BC_CALL_EXTERN` + 固定 bridge id 直接分发，不再按函数名做线性扫描。
 - 2026-05-18 已把 `i64/u64` 数字字面量放通到 exec lowering / const pool / VM value，保证宽整数 extern 参数与返回值不会在 lowering 阶段被误判 unsupported。
 - 2026-05-18 已明确禁用 varargs extern bridge；`printf` 这类调用在 `--vm` 下继续稳定报 `extern_abi`，在 `--exec` / `test --exec` 下继续走清晰的 fallback 到 C99。
+- 该阶段只是过渡里程碑；最终目标不是继续扩函数名白名单，而是让“带函数体的 `extern` / `extern "libc"` 实现”进入统一 lowering/VM 路径，仅对真正宿主边界保留最小 bridge。
 
 ---
 
@@ -592,7 +593,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] 编译器本体所需基础值类型：`u8/u16/usize/isize`
 - [ ] 通用指针值表示：`&T/*T`、`&void/*void`，而不只 `&byte`
 - [ ] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
-- [ ] 编译器主路径 extern/libc bridge：`fopen/fread/fwrite/fclose/fprintf/snprintf/getenv/opendir/readdir/closedir`
+- [ ] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
+- [ ] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
 - [ ] interface / 间接调用
 - [ ] union 更完整语义
 - [ ] 更复杂标准库程序

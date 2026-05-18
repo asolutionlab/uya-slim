@@ -989,7 +989,8 @@ obj.method(a, b) -> Type_method(obj, a, b)
 
 ### Phase 3
 
-- extern/libc bridge
+- `extern` / `extern "libc"` 通用执行（带函数体直接 lower，宿主符号最小 bridge）
+- varargs extern 的长期策略
 - interface / 间接调用
 - 更完整标准库支持
 - fallback 机制稳定化
