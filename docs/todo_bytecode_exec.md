@@ -618,9 +618,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - VM 新增内部引用地址与 `CALL_INDIRECT`，interface 值运行时保存“方法表函数索引 + data 引用”
   - `self.field` / `self.field = ...` 已可透过 `&Self` receiver 在 VM 中读写
   - `tests/test_exec_vm_interface_dispatch.uya` 与 `tests/test_exec_vm_interface_stateful.uya` 已在 `--vm/--exec` 下通过，并纳入 `tests/verify_exec_vm_smoke.sh`
+- 2026-05-18 继续把编译器本体 hosted 子集往前推了一段：
+  - exec VM 现已补上 `i8/i16` 值表示、算术/比较、聚合值与全局路径，新增回归 `tests/test_exec_vm_scalar_pointer.uya`
+  - enum 常量/全局值现已可进入 exec lowering / const pool / VM，新增 `tests/test_exec_vm_enum_value.uya`
+  - `@max/@min` (`AST_INT_LIMIT`) 已接通到 exec lowering 的常量折叠与全局初始化，新增 `tests/test_exec_vm_int_limit.uya`
+  - `EXEC_MAX_GLOBALS` 已扩到 `1024`，`EXEC_MAX_CALL_ARGS` 已扩到 `32`，避免编译器本体在全局槽位和 `parse_args(...)` 这类大签名调用上过早卡死
+  - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有两个明确残留：
   - `tests/test_exec_vm_union_dispatch.uya` 运行路径已打通，但 checker 仍会打印一条历史诊断 `match 所有分支的返回类型必须一致`
-  - `./bin/uya run --vm src/main.uya` 当前已能通过 parse / check / opt，但仍会在 exec lowering 阶段卡在“全局变量类型尚不可表示”；最新观测点为 `src/checker/check_expr.uya:82:1`
+  - `./bin/uya run --vm src/main.uya` 当前已能通过 parse / check / opt，并越过“全局类型 / enum / @max/@min / call-args 上限”等旧阻塞；最新观测点已前推到 `src/main.uya:7842:9`，卡在 `fprintf/2` 这类 varargs `extern ABI`，下一步应按本阶段计划把 `fprintf/snprintf/printf` 收敛到专用 bridge、builtin helper 或明确 fallback
 
 ---
 

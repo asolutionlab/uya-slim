@@ -1,0 +1,26 @@
+use std.runtime.entry;
+
+const I8_MAX_EXEC: i8 = @max;
+const I8_MIN_EXEC: i8 = @min;
+const I32_MAX_EXEC: i32 = @max;
+const I32_MIN_EXEC: i32 = @min;
+const U16_MAX_EXEC: u16 = @max;
+
+export fn main() i32 {
+    if I8_MAX_EXEC != 127 as i8 {
+        return 1;
+    }
+    if I8_MIN_EXEC != -128 as i8 {
+        return 2;
+    }
+    if I32_MAX_EXEC != 2147483647 {
+        return 3;
+    }
+    if I32_MIN_EXEC != (-2147483647 - 1) {
+        return 4;
+    }
+    if U16_MAX_EXEC != 65535 as u16 {
+        return 5;
+    }
+    return 0;
+}

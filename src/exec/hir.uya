@@ -1,6 +1,6 @@
 // exec/hir.uya - Exec backend HIR definitions
 
-const EXEC_MAX_CALL_ARGS: i32 = 16;
+const EXEC_MAX_CALL_ARGS: i32 = 32;
 
 enum ExecExternBridgeId {
     EXEC_EXTERN_BRIDGE_NONE,

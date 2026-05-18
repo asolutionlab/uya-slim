@@ -49,6 +49,12 @@ fn exec_vm_value_kind_is_unsigned(kind: ExecValueKind) i32 {
 }
 
 fn exec_vm_make_integer_by_kind(kind: ExecValueKind, signed_value: i64, unsigned_value: u64) ExecValue {
+    if kind == ExecValueKind.EXEC_VALUE_I8 {
+        return exec_make_i8(signed_value as i8);
+    }
+    if kind == ExecValueKind.EXEC_VALUE_I16 {
+        return exec_make_i16(signed_value as i16);
+    }
     if kind == ExecValueKind.EXEC_VALUE_I64 {
         return exec_make_i64(signed_value);
     }
@@ -77,6 +83,12 @@ fn exec_vm_make_integer_by_kind(kind: ExecValueKind, signed_value: i64, unsigned
 }
 
 fn exec_vm_value_kind_from_type_code(kind_code: i32, fallback: ExecValueKind) ExecValueKind {
+    if kind_code == TypeKind.TYPE_I8 as i32 {
+        return ExecValueKind.EXEC_VALUE_I8;
+    }
+    if kind_code == TypeKind.TYPE_I16 as i32 {
+        return ExecValueKind.EXEC_VALUE_I16;
+    }
     if kind_code == TypeKind.TYPE_I64 as i32 {
         return ExecValueKind.EXEC_VALUE_I64;
     }
@@ -100,6 +112,9 @@ fn exec_vm_value_kind_from_type_code(kind_code: i32, fallback: ExecValueKind) Ex
     }
     if kind_code == TypeKind.TYPE_BOOL as i32 {
         return ExecValueKind.EXEC_VALUE_BOOL;
+    }
+    if kind_code == TypeKind.TYPE_ENUM as i32 {
+        return ExecValueKind.EXEC_VALUE_I32;
     }
     if kind_code == TypeKind.TYPE_POINTER as i32 {
         return ExecValueKind.EXEC_VALUE_POINTER;
@@ -128,13 +143,19 @@ fn exec_vm_compare_values(left: ExecValue, right: ExecValue) i32 {
 }
 
 fn exec_vm_type_kind_size(kind_code: i32) usize {
-    if kind_code == TypeKind.TYPE_BOOL as i32 || kind_code == TypeKind.TYPE_BYTE as i32 || kind_code == TypeKind.TYPE_U8 as i32 {
+    if kind_code == TypeKind.TYPE_BOOL as i32 ||
+        kind_code == TypeKind.TYPE_BYTE as i32 ||
+        kind_code == TypeKind.TYPE_I8 as i32 ||
+        kind_code == TypeKind.TYPE_U8 as i32 {
         return 1 as usize;
     }
-    if kind_code == TypeKind.TYPE_U16 as i32 {
+    if kind_code == TypeKind.TYPE_I16 as i32 || kind_code == TypeKind.TYPE_U16 as i32 {
         return 2 as usize;
     }
     if kind_code == TypeKind.TYPE_I32 as i32 || kind_code == TypeKind.TYPE_U32 as i32 {
+        return 4 as usize;
+    }
+    if kind_code == TypeKind.TYPE_ENUM as i32 {
         return 4 as usize;
     }
     if kind_code == TypeKind.TYPE_I64 as i32 || kind_code == TypeKind.TYPE_U64 as i32 ||
@@ -276,6 +297,11 @@ fn exec_vm_load_pointer_index(function: &BCFunction, base: ExecValue, index_valu
         out_value[0] = exec_make_bool((ptr_bool[0] != 0) as i32);
         return 0;
     }
+    if pointee_kind == TypeKind.TYPE_I8 as i32 {
+        const ptr_i8: &i8 = @ptr_from_usize(addr) as &i8;
+        out_value[0] = exec_make_i8(ptr_i8[0]);
+        return 0;
+    }
     if pointee_kind == TypeKind.TYPE_BYTE as i32 || pointee_kind == TypeKind.TYPE_U8 as i32 {
         const ptr_u8: &byte = @ptr_from_usize(addr) as &byte;
         if pointee_kind == TypeKind.TYPE_U8 as i32 {
@@ -283,6 +309,11 @@ fn exec_vm_load_pointer_index(function: &BCFunction, base: ExecValue, index_valu
         } else {
             out_value[0] = exec_make_byte(ptr_u8[0] as i32);
         }
+        return 0;
+    }
+    if pointee_kind == TypeKind.TYPE_I16 as i32 {
+        const ptr_i16: &i16 = @ptr_from_usize(addr) as &i16;
+        out_value[0] = exec_make_i16(ptr_i16[0]);
         return 0;
     }
     if pointee_kind == TypeKind.TYPE_U16 as i32 {
@@ -350,9 +381,19 @@ fn exec_vm_store_pointer_index(function: &BCFunction, base: ExecValue, index_val
         ptr_bool[0] = src_value.i64_value as byte;
         return 0;
     }
+    if pointee_kind == TypeKind.TYPE_I8 as i32 {
+        const ptr_i8: &i8 = @ptr_from_usize(addr) as &i8;
+        ptr_i8[0] = src_value.i64_value as i8;
+        return 0;
+    }
     if pointee_kind == TypeKind.TYPE_BYTE as i32 || pointee_kind == TypeKind.TYPE_U8 as i32 {
         const ptr_u8: &byte = @ptr_from_usize(addr) as &byte;
         ptr_u8[0] = src_value.i64_value as byte;
+        return 0;
+    }
+    if pointee_kind == TypeKind.TYPE_I16 as i32 {
+        const ptr_i16: &i16 = @ptr_from_usize(addr) as &i16;
+        ptr_i16[0] = src_value.i64_value as i16;
         return 0;
     }
     if pointee_kind == TypeKind.TYPE_U16 as i32 {
@@ -395,6 +436,12 @@ fn exec_vm_store_pointer_index(function: &BCFunction, base: ExecValue, index_val
 }
 
 fn exec_vm_cast_value(value: ExecValue, target_kind: i32, target_pointee_kind: i32) ExecValue {
+    if target_kind == TypeKind.TYPE_I8 as i32 {
+        return exec_make_i8(value.i64_value as i8);
+    }
+    if target_kind == TypeKind.TYPE_I16 as i32 {
+        return exec_make_i16(value.i64_value as i16);
+    }
     if target_kind == TypeKind.TYPE_I32 as i32 {
         return exec_make_i32(value.i64_value as i32);
     }
@@ -435,6 +482,22 @@ fn exec_vm_cast_value(value: ExecValue, target_kind: i32, target_pointee_kind: i
 }
 
 fn exec_vm_print_value(value: ExecValue, newline: i32) void {
+    if value.kind == ExecValueKind.EXEC_VALUE_I8 {
+        if newline != 0 {
+            fprintf(libc.stdout, "%d\n" as *byte, value.i64_value as i8);
+        } else {
+            fprintf(libc.stdout, "%d" as *byte, value.i64_value as i8);
+        }
+        return;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_I16 {
+        if newline != 0 {
+            fprintf(libc.stdout, "%d\n" as *byte, value.i64_value as i16);
+        } else {
+            fprintf(libc.stdout, "%d" as *byte, value.i64_value as i16);
+        }
+        return;
+    }
     if value.kind == ExecValueKind.EXEC_VALUE_I32 {
         if newline != 0 {
             fprintf(libc.stdout, "%d\n" as *byte, value.i64_value as i32);
@@ -1310,6 +1373,8 @@ export fn vm_run_program(program: &BCProgram, trace_vm: i32) i32 {
         return 1;
     }
     if result.kind == ExecValueKind.EXEC_VALUE_I32 ||
+        result.kind == ExecValueKind.EXEC_VALUE_I8 ||
+        result.kind == ExecValueKind.EXEC_VALUE_I16 ||
         result.kind == ExecValueKind.EXEC_VALUE_ISIZE ||
         result.kind == ExecValueKind.EXEC_VALUE_U8 ||
         result.kind == ExecValueKind.EXEC_VALUE_U16 ||

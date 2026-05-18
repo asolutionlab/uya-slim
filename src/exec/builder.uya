@@ -312,6 +312,10 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
         const_value = exec_make_string(expr.string_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
         const_value = exec_make_error(expr.int_value as i32);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_I8 {
+        const_value = exec_make_i8(expr.int_value as i8);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_I16 {
+        const_value = exec_make_i16(expr.int_value as i16);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
         const_value = exec_make_bool(expr.bool_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
@@ -322,6 +326,8 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
         const_value = exec_make_u16(expr.int_value as u16);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_U32 {
         const_value = exec_make_u32(expr.int_value as u32);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_ENUM {
+        const_value = exec_make_i32(expr.int_value as i32);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_I64 {
         const_value = exec_make_i64(expr.int_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_U64 {

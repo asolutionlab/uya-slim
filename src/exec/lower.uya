@@ -3,7 +3,8 @@
 use libc;
 
 const EXEC_MAX_LOCALS: i32 = 256;
-const EXEC_MAX_GLOBALS: i32 = 256;
+// 保持平铺数组查找的热路径简单，同时给编译器本体 staged smoke 留足全局槽位。
+const EXEC_MAX_GLOBALS: i32 = 1024;
 const EXEC_MAX_SCOPE_DEPTH: i32 = 64;
 const EXEC_MAX_INTERFACE_METHODS: i32 = 64;
 
@@ -61,7 +62,9 @@ fn exec_lower_fail_block_reason(node: &ASTNode, reason: &byte, code: ExecUnsuppo
 }
 
 fn exec_type_is_scalar_supported(type: Type) i32 {
-    if type.kind == TypeKind.TYPE_I32 ||
+    if type.kind == TypeKind.TYPE_I8 ||
+        type.kind == TypeKind.TYPE_I16 ||
+        type.kind == TypeKind.TYPE_I32 ||
         type.kind == TypeKind.TYPE_I64 ||
         type.kind == TypeKind.TYPE_U8 ||
         type.kind == TypeKind.TYPE_U16 ||
@@ -203,6 +206,9 @@ fn exec_type_is_aggregate_supported(ty: Type) i32 {
 
 fn exec_type_is_vm_value_supported(type: Type) i32 {
     if exec_type_is_scalar_supported(type) != 0 {
+        return 1;
+    }
+    if type.kind == TypeKind.TYPE_ENUM {
         return 1;
     }
     if type.kind == TypeKind.TYPE_INTERFACE {
@@ -891,6 +897,14 @@ fn exec_lower_coerce_expr(ctx: &ExecLowerContext, expr: &ASTNode, expected_type:
     if ctx == null || expr == null {
         return null;
     }
+    if expected_type != null && expr.type == ASTNodeType.AST_INT_LIMIT && is_integer_type(expected_type.kind) != 0 {
+        expr.int_limit_resolved_kind = expected_type.kind;
+        var int_limit_ok: i32 = 0;
+        const int_limit_value: i64 = exec_lower_eval_int_limit(expr, expected_type.kind, &int_limit_ok);
+        if int_limit_ok != 0 {
+            return exec_lower_make_int_const_expr(ctx, expr, expected_type, int_limit_value);
+        }
+    }
     var actual_type: Type = exec_lower_expr_type(ctx, expr);
     if actual_type.kind == TypeKind.TYPE_VOID {
         actual_type = exec_lower_member_base_type(ctx, expr);
@@ -1510,6 +1524,114 @@ fn exec_lower_resolve_global_decl(checker: &TypeChecker, name: &byte) &ASTNode {
     return null;
 }
 
+fn exec_lower_find_enum_variant_value(enum_decl: &ASTNode, variant_name: &byte) i32 {
+    if enum_decl == null || enum_decl.type != ASTNodeType.AST_ENUM_DECL || variant_name == null ||
+        enum_decl.enum_decl_variants == null {
+        return -1;
+    }
+    var current_value: i32 = 0;
+    var i: i32 = 0;
+    while i < enum_decl.enum_decl_variant_count {
+        const variant: &EnumVariant = enum_decl.enum_decl_variants + i;
+        if variant == null || variant.name == null {
+            i = i + 1;
+            continue;
+        }
+        if variant.value != null {
+            current_value = atoi(variant.value as *byte);
+        }
+        if str_equals(variant.name, variant_name) != 0 {
+            return current_value;
+        }
+        current_value = current_value + 1;
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_lower_try_enum_member_const(ctx: &ExecLowerContext, expr: &ASTNode, out_found: &i32) i32 {
+    if out_found != null {
+        out_found[0] = 0;
+    }
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
+        expr == null || expr.type != ASTNodeType.AST_MEMBER_ACCESS ||
+        expr.member_access_object == null || expr.member_access_field_name == null {
+        return -1;
+    }
+    const object: &ASTNode = expr.member_access_object;
+    if object.type != ASTNodeType.AST_IDENTIFIER || object.identifier_name == null {
+        return -1;
+    }
+    const enum_decl: &ASTNode = find_enum_decl_from_program(ctx.checker.program_node, object.identifier_name);
+    if enum_decl == null {
+        return -1;
+    }
+    const value: i32 = exec_lower_find_enum_variant_value(enum_decl, expr.member_access_field_name);
+    if value < 0 {
+        return -1;
+    }
+    if out_found != null {
+        out_found[0] = 1;
+    }
+    return value;
+}
+
+fn exec_lower_eval_int_limit(expr: &ASTNode, fallback_kind: TypeKind, out_ok: &i32) i64 {
+    if out_ok != null {
+        out_ok[0] = 0;
+    }
+    if expr == null || expr.type != ASTNodeType.AST_INT_LIMIT {
+        return 0;
+    }
+    var kind: TypeKind = fallback_kind;
+    if expr.int_limit_resolved_kind != 0 {
+        const kind_tmp: !TypeKind = expr.int_limit_resolved_kind as! TypeKind;
+        kind = kind_tmp.value;
+    }
+    if is_integer_type(kind) == 0 {
+        return 0;
+    }
+    if out_ok != null {
+        out_ok[0] = 1;
+    }
+    if kind == TypeKind.TYPE_I8 {
+        if expr.int_limit_is_max != 0 { return 127; }
+        return 0 - 128;
+    }
+    if kind == TypeKind.TYPE_I16 {
+        if expr.int_limit_is_max != 0 { return 32767; }
+        return 0 - 32768;
+    }
+    if kind == TypeKind.TYPE_I32 {
+        if expr.int_limit_is_max != 0 { return 2147483647; }
+        return 0 - 2147483647 - 1;
+    }
+    if kind == TypeKind.TYPE_I64 {
+        if expr.int_limit_is_max != 0 { return 9223372036854775807; }
+        return 0 - 9223372036854775807 - 1;
+    }
+    if kind == TypeKind.TYPE_U8 || kind == TypeKind.TYPE_BYTE {
+        if expr.int_limit_is_max != 0 { return 255; }
+        return 0;
+    }
+    if kind == TypeKind.TYPE_U16 {
+        if expr.int_limit_is_max != 0 { return 65535; }
+        return 0;
+    }
+    if kind == TypeKind.TYPE_U32 {
+        if expr.int_limit_is_max != 0 { return 4294967295; }
+        return 0;
+    }
+    if kind == TypeKind.TYPE_U64 || kind == TypeKind.TYPE_USIZE {
+        if expr.int_limit_is_max != 0 { return 0 - 1; }
+        return 0;
+    }
+    if out_ok != null {
+        out_ok[0] = 0;
+    }
+    return 0;
+}
+
 fn exec_lower_append_global_slot(checker: &TypeChecker, decl: &ASTNode, globals: &HIRGlobalSlot, out_count: &i32, allow_uya_root_runtime: i32) i32 {
     if checker == null || decl == null || globals == null || out_count == null {
         return -1;
@@ -1947,8 +2069,18 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         return exec_lower_make_string_const_expr(ctx, expr, &expr_type, func_name);
     }
+    if expr.type == ASTNodeType.AST_INT_LIMIT {
+        var int_limit_ok: i32 = 0;
+        const int_limit_value: i64 = exec_lower_eval_int_limit(expr, expr_type.kind, &int_limit_ok);
+        if int_limit_ok == 0 {
+            return exec_lower_fail_expr(expr, "exec: @max/@min 尚未解析为可表示的整数类型" as *byte);
+        }
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, int_limit_value);
+    }
     if expr.type == ASTNodeType.AST_NUMBER {
-        if expr_type.kind != TypeKind.TYPE_I32 &&
+        if expr_type.kind != TypeKind.TYPE_I8 &&
+            expr_type.kind != TypeKind.TYPE_I16 &&
+            expr_type.kind != TypeKind.TYPE_I32 &&
             expr_type.kind != TypeKind.TYPE_U32 &&
             expr_type.kind != TypeKind.TYPE_I64 &&
             expr_type.kind != TypeKind.TYPE_U64 &&
@@ -2054,6 +2186,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return hir_global;
         }
         return exec_lower_fail_expr(expr, "exec: 当前仅支持局部变量/参数/全局标识符" as *byte);
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        var enum_found: i32 = 0;
+        const enum_value: i32 = exec_lower_try_enum_member_const(ctx, expr, &enum_found);
+        if enum_found != 0 {
+            return exec_lower_make_int_const_expr(ctx, expr, &expr_type, enum_value as i64);
+        }
     }
     if expr.type == ASTNodeType.AST_CAST_EXPR {
         if expr.cast_expr_is_force_cast != 0 {
