@@ -46,7 +46,7 @@ enum BCOpcode {
     BC_JMP_IF_FALSE,
     BC_CALL,
     BC_CALL_INDIRECT,
-    BC_CALL_EXTERN,
+    BC_HOSTCALL,
     BC_RET,
     BC_PRINT,
     BC_PRINTLN,
@@ -57,6 +57,12 @@ enum BCOpcode {
 struct BCErrorNameEntry {
     error_id: i32,
     name: &byte,
+}
+
+struct BCHostCallSite {
+    id: ExecHostCallId,
+    name: &byte,
+    arg_count: i32,
 }
 
 struct BCConstPool {
@@ -96,6 +102,8 @@ struct BCProgram {
     entry_function_index: i32,
     global_init_function_index: i32,
     const_pool: BCConstPool,
+    host_calls: &BCHostCallSite,
+    host_call_count: i32,
     error_names: &BCErrorNameEntry,
     error_name_count: i32,
     globals: &ExecValue,

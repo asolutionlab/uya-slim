@@ -2,18 +2,18 @@
 
 const EXEC_MAX_CALL_ARGS: i32 = 32;
 
-enum ExecExternBridgeId {
-    EXEC_EXTERN_BRIDGE_NONE,
-    EXEC_EXTERN_BRIDGE_PUTS,
-    EXEC_EXTERN_BRIDGE_ATOI,
-    EXEC_EXTERN_BRIDGE_ATOLL,
-    EXEC_EXTERN_BRIDGE_ISQRT,
-    EXEC_EXTERN_BRIDGE_STRCMP,
-    EXEC_EXTERN_BRIDGE_LLABS,
-    EXEC_EXTERN_BRIDGE_FPRINTF_FIXED,
-    EXEC_EXTERN_BRIDGE_PRINTF_FIXED,
-    EXEC_EXTERN_BRIDGE_SPRINTF_FIXED,
-    EXEC_EXTERN_BRIDGE_SNPRINTF_FIXED,
+enum ExecHostCallId {
+    EXEC_HOST_CALL_NONE,
+    EXEC_HOST_CALL_PUTS,
+    EXEC_HOST_CALL_ATOI,
+    EXEC_HOST_CALL_ATOLL,
+    EXEC_HOST_CALL_ISQRT,
+    EXEC_HOST_CALL_STRCMP,
+    EXEC_HOST_CALL_LLABS,
+    EXEC_HOST_CALL_FPRINTF_FIXED,
+    EXEC_HOST_CALL_PRINTF_FIXED,
+    EXEC_HOST_CALL_SPRINTF_FIXED,
+    EXEC_HOST_CALL_SNPRINTF_FIXED,
 }
 
 enum HIRStmtKind {
@@ -100,7 +100,7 @@ struct HIRExpr {
     right: &HIRExpr,
     callee_name: &byte,
     callee_decl: &ASTNode,
-    call_extern_id: ExecExternBridgeId,
+    call_host_id: ExecHostCallId,
     call_args: & & HIRExpr,
     call_arg_count: i32,
     dispatch_decls: & & ASTNode,

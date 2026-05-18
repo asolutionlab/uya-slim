@@ -48,7 +48,7 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_JMP_IF_FALSE { return "BC_JMP_IF_FALSE" as &byte; }
     if opcode == BCOpcode.BC_CALL { return "BC_CALL" as &byte; }
     if opcode == BCOpcode.BC_CALL_INDIRECT { return "BC_CALL_INDIRECT" as &byte; }
-    if opcode == BCOpcode.BC_CALL_EXTERN { return "BC_CALL_EXTERN" as &byte; }
+    if opcode == BCOpcode.BC_HOSTCALL { return "BC_HOSTCALL" as &byte; }
     if opcode == BCOpcode.BC_RET { return "BC_RET" as &byte; }
     if opcode == BCOpcode.BC_PRINT { return "BC_PRINT" as &byte; }
     if opcode == BCOpcode.BC_PRINTLN { return "BC_PRINTLN" as &byte; }
@@ -330,6 +330,7 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
     }
     fprintf(libc.stderr, "\n=== exec bytecode ===\n" as *byte);
     fprintf(libc.stderr, "const_pool=%d\n" as *byte, program.const_pool.count);
+    fprintf(libc.stderr, "host_calls=%d\n" as *byte, program.host_call_count);
     fprintf(libc.stderr, "error_names=%d\n" as *byte, program.error_name_count);
     var ci: i32 = 0;
     while ci < program.const_pool.count {
@@ -342,6 +343,13 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
         } else {
             fprintf(libc.stderr, "%ld\n" as *byte, value.i64_value);
         }
+        ci = ci + 1;
+    }
+    ci = 0;
+    while ci < program.host_call_count {
+        const site: &BCHostCallSite = program.host_calls + ci;
+        fprintf(libc.stderr, "  host[%d] id=%d argc=%d name=%s\n" as *byte,
+            ci, site.id as i32, site.arg_count, site.name as *byte);
         ci = ci + 1;
     }
     ci = 0;

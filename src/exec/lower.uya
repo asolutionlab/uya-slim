@@ -109,57 +109,75 @@ fn exec_lower_is_exact_scalar_type(type: Type, kind: TypeKind) i32 {
     return 0;
 }
 
-fn exec_lower_match_extern_bridge_signature(checker: &TypeChecker, fn_decl: &ASTNode) ExecExternBridgeId {
-    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+fn exec_lower_match_host_call(fn_decl: &ASTNode, call_arg_count: i32) ExecHostCallId {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return ExecHostCallId.EXEC_HOST_CALL_NONE;
     }
     if fn_decl.fn_decl_is_extern == 0 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
-    }
-    if fn_decl.fn_decl_body != null {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+        return ExecHostCallId.EXEC_HOST_CALL_NONE;
     }
     if fn_decl.fn_decl_name == null || fn_decl.fn_decl_return_type == null {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+        return ExecHostCallId.EXEC_HOST_CALL_NONE;
     }
-    if fn_decl.fn_decl_is_varargs != 0 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
-    }
-    if str_equals(fn_decl.fn_decl_name, "puts" as &byte) != 0 &&
-        fn_decl.fn_decl_param_count == 1 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_PUTS;
-    }
-    if str_equals(fn_decl.fn_decl_name, "atoll" as &byte) != 0 &&
-        fn_decl.fn_decl_param_count == 1 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOLL;
-    }
-    if str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 &&
-        fn_decl.fn_decl_param_count == 1 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS;
-    }
-    return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
-}
-
-fn exec_lower_match_varargs_stdio_bridge(fn_decl: &ASTNode, call_arg_count: i32) ExecExternBridgeId {
-    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
-    }
-    if fn_decl.fn_decl_is_extern == 0 || fn_decl.fn_decl_is_varargs == 0 || fn_decl.fn_decl_name == null {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    if fn_decl.fn_decl_is_varargs == 0 {
+        if str_equals(fn_decl.fn_decl_name, "puts" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 1 && call_arg_count == 1 {
+            return ExecHostCallId.EXEC_HOST_CALL_PUTS;
+        }
+        if str_equals(fn_decl.fn_decl_name, "atoi" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 1 && call_arg_count == 1 {
+            return ExecHostCallId.EXEC_HOST_CALL_ATOI;
+        }
+        if str_equals(fn_decl.fn_decl_name, "atoll" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 1 && call_arg_count == 1 {
+            return ExecHostCallId.EXEC_HOST_CALL_ATOLL;
+        }
+        if str_equals(fn_decl.fn_decl_name, "isqrt" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 1 && call_arg_count == 1 {
+            return ExecHostCallId.EXEC_HOST_CALL_ISQRT;
+        }
+        if str_equals(fn_decl.fn_decl_name, "strcmp" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 2 && call_arg_count == 2 {
+            return ExecHostCallId.EXEC_HOST_CALL_STRCMP;
+        }
+        if str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 1 && call_arg_count == 1 {
+            return ExecHostCallId.EXEC_HOST_CALL_LLABS;
+        }
+        return ExecHostCallId.EXEC_HOST_CALL_NONE;
     }
     if str_equals(fn_decl.fn_decl_name, "fprintf" as &byte) != 0 && call_arg_count == 2 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_FPRINTF_FIXED;
+        return ExecHostCallId.EXEC_HOST_CALL_FPRINTF_FIXED;
     }
     if str_equals(fn_decl.fn_decl_name, "printf" as &byte) != 0 && call_arg_count == 1 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_PRINTF_FIXED;
+        return ExecHostCallId.EXEC_HOST_CALL_PRINTF_FIXED;
     }
     if str_equals(fn_decl.fn_decl_name, "sprintf" as &byte) != 0 && call_arg_count == 2 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_SPRINTF_FIXED;
+        return ExecHostCallId.EXEC_HOST_CALL_SPRINTF_FIXED;
     }
     if str_equals(fn_decl.fn_decl_name, "snprintf" as &byte) != 0 && call_arg_count == 3 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_SNPRINTF_FIXED;
+        return ExecHostCallId.EXEC_HOST_CALL_SNPRINTF_FIXED;
     }
-    return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    return ExecHostCallId.EXEC_HOST_CALL_NONE;
+}
+
+fn exec_lower_extern_prefers_host_call(fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_name == null {
+        return 0;
+    }
+    if str_equals(fn_decl.fn_decl_name, "puts" as &byte) != 0 ||
+        str_equals(fn_decl.fn_decl_name, "atoll" as &byte) != 0 ||
+        str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_lower_host_call_overrides_body(fn_decl: &ASTNode, host_call_id: ExecHostCallId) i32 {
+    if fn_decl == null || host_call_id == ExecHostCallId.EXEC_HOST_CALL_NONE {
+        return 0;
+    }
+    return exec_lower_extern_prefers_host_call(fn_decl);
 }
 
 fn exec_lower_extern_can_run_in_vm(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
@@ -172,13 +190,10 @@ fn exec_lower_extern_can_run_in_vm(checker: &TypeChecker, fn_decl: &ASTNode) i32
     if fn_decl.fn_decl_is_varargs != 0 {
         return 0;
     }
-    if fn_decl.fn_decl_body == null {
+    if exec_lower_extern_prefers_host_call(fn_decl) != 0 {
         return 0;
     }
-    if exec_lower_match_extern_bridge_signature(checker, fn_decl) != ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
-        return 0;
-    }
-    return 1;
+    return (fn_decl.fn_decl_body != null) as i32;
 }
 
 fn exec_type_uses_simd(ty: Type) i32 {
@@ -1469,31 +1484,9 @@ fn exec_lower_resolve_imported_decl(checker: &TypeChecker, local_name: &byte, it
     return exec_lower_find_module_export_decl(checker, imported_item.module_name, imported_item.original_name, item_type);
 }
 
-fn exec_lower_find_extern_stub_decl_by_name(checker: &TypeChecker, callee_name: &byte) &ASTNode {
-    if checker == null || callee_name == null || checker.program_node == null ||
-        checker.program_node.type != ASTNodeType.AST_PROGRAM {
-        return null;
-    }
-    var i: i32 = 0;
-    while i < checker.program_node.program_decl_count {
-        const decl: &ASTNode = checker.program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
-            decl.fn_decl_name != null && str_equals(decl.fn_decl_name, callee_name) != 0 &&
-            decl.fn_decl_is_extern != 0 && decl.fn_decl_body == null {
-            return decl;
-        }
-        i = i + 1;
-    }
-    return null;
-}
-
 fn exec_lower_resolve_function_decl(checker: &TypeChecker, callee_name: &byte) &ASTNode {
     if checker == null || callee_name == null {
         return null;
-    }
-    const stub_decl: &ASTNode = exec_lower_find_extern_stub_decl_by_name(checker, callee_name);
-    if stub_decl != null {
-        return stub_decl;
     }
     var decl: &ASTNode = exec_lower_resolve_imported_decl(checker, callee_name, 1);
     if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
@@ -1512,26 +1505,6 @@ fn exec_lower_resolve_function_decl(checker: &TypeChecker, callee_name: &byte) &
         return checker_canonicalize_fn_decl(checker, decl);
     }
     return null;
-}
-
-fn exec_lower_has_extern_stub_override(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
-    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
-        fn_decl.fn_decl_name == null || fn_decl.fn_decl_body == null ||
-        fn_decl.fn_decl_is_extern == 0 || checker.program_node == null ||
-        checker.program_node.type != ASTNodeType.AST_PROGRAM {
-        return 0;
-    }
-    var i: i32 = 0;
-    while i < checker.program_node.program_decl_count {
-        const decl: &ASTNode = checker.program_node.program_decls[i];
-        if decl != null && decl != fn_decl && decl.type == ASTNodeType.AST_FN_DECL &&
-            decl.fn_decl_name != null && str_equals(decl.fn_decl_name, fn_decl.fn_decl_name) != 0 &&
-            decl.fn_decl_is_extern != 0 && decl.fn_decl_body == null {
-            return 1;
-        }
-        i = i + 1;
-    }
-    return 0;
 }
 
 fn exec_lower_resolve_global_decl(checker: &TypeChecker, name: &byte) &ASTNode {
@@ -1829,7 +1802,8 @@ fn exec_lower_collect_called_decls_from_expr(expr: &HIRExpr, out_decls: & & ASTN
     }
     if expr.kind == HIRExprKind.HIR_EXPR_CALL && expr.callee_decl != null &&
         expr.callee_decl.type == ASTNodeType.AST_FN_DECL &&
-        expr.callee_decl.fn_decl_is_extern == 0 &&
+        expr.callee_decl.fn_decl_body != null &&
+        expr.call_host_id == ExecHostCallId.EXEC_HOST_CALL_NONE &&
         exec_lower_decl_index(out_decls, out_count[0], expr.callee_decl) < 0 {
         if out_count[0] < MAX_REACHABLE_FN_DECLS {
             out_decls[out_count[0]] = expr.callee_decl;
@@ -2427,7 +2401,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 }
                 call_method.callee_name = method_decl.fn_decl_name;
                 call_method.callee_decl = method_decl;
-                call_method.call_extern_id = ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+                call_method.call_host_id = ExecHostCallId.EXEC_HOST_CALL_NONE;
                 call_method.call_args = args_method;
                 call_method.call_arg_count = total_arg_count;
                 return call_method;
@@ -2440,16 +2414,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return exec_lower_fail_expr(expr, "exec: 当前仅支持直接函数调用" as *byte);
         }
         const callee_decl: &ASTNode = exec_lower_resolve_function_decl(ctx.checker, expr.call_expr_callee.identifier_name);
-        var extern_bridge_id: ExecExternBridgeId = ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+        var host_call_id: ExecHostCallId = ExecHostCallId.EXEC_HOST_CALL_NONE;
         if callee_decl != null &&
             callee_decl.type == ASTNodeType.AST_FN_DECL &&
             callee_decl.fn_decl_is_extern != 0 {
-            extern_bridge_id = exec_lower_match_extern_bridge_signature(ctx.checker, callee_decl);
-            if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
-                extern_bridge_id = exec_lower_match_varargs_stdio_bridge(callee_decl, expr.call_expr_arg_count);
+            const extern_can_run: i32 = exec_lower_extern_can_run_in_vm(ctx.checker, callee_decl);
+            const matched_host_call: ExecHostCallId = exec_lower_match_host_call(callee_decl, expr.call_expr_arg_count);
+            if extern_can_run == 0 || exec_lower_host_call_overrides_body(callee_decl, matched_host_call) != 0 {
+                host_call_id = matched_host_call;
             }
-            if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE &&
-                exec_lower_extern_can_run_in_vm(ctx.checker, callee_decl) == 0 {
+            if host_call_id == ExecHostCallId.EXEC_HOST_CALL_NONE &&
+                extern_can_run == 0 {
                 var extern_msg: [byte: 160] = [];
                 if callee_decl.fn_decl_name != null {
                     _ = snprintf(&extern_msg[0] as *byte, 160, "exec: 当前不支持 extern ABI: %s/%d" as *byte,
@@ -2489,7 +2464,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         hir.callee_name = expr.call_expr_callee.identifier_name;
         hir.callee_decl = callee_decl;
-        hir.call_extern_id = extern_bridge_id;
+        hir.call_host_id = host_call_id;
         hir.call_args = args;
         hir.call_arg_count = expr.call_expr_arg_count;
         return hir;
@@ -3403,7 +3378,6 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
                 const to_decl: &ASTNode = checker.fn_call_edge_to[edge_idx];
                 if to_decl != null &&
                     to_decl.type == ASTNodeType.AST_FN_DECL &&
-                    exec_lower_has_extern_stub_override(checker, to_decl) == 0 &&
                     exec_lower_extern_can_run_in_vm(checker, to_decl) != 0 &&
                     exec_lower_decl_index(&exec_reachable[0] as & & ASTNode, exec_reachable_count, to_decl) < 0 {
                     if exec_reachable_count >= MAX_REACHABLE_FN_DECLS || tail >= MAX_REACHABLE_FN_DECLS {

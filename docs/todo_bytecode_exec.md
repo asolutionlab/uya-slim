@@ -550,9 +550,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ---
 
-## Phase 16：最小 extern/libc bridge（过渡）
+## Phase 16：最小 hostcall 边界（过渡）
 
-- [x] 设计 extern ABI 白名单
+- [x] 设计 hostcall ABI 边界
 - [x] 支持最小类型集：
   - [x] `i32/u32/i64/u64`
   - [x] `bool`
@@ -566,13 +566,20 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 备注：
 
-- 2026-05-18 已新增固定白名单 extern bridge，当前先覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名；VM 热路径通过 `BC_CALL_EXTERN` + 固定 bridge id 直接分发，不再按函数名做线性扫描。
+- 2026-05-18 已把最初的固定白名单 extern bridge 收敛为 `body-first + compile-time hostcall registry + runtime BC_HOSTCALL`：
+  - lowering 默认优先走 extern 自带函数体；只有函数体当前不可执行、或命中少量 hostcall override 时，才落到 hostcall
+  - builder 会在编译期把 hostcall site intern 到 `BCProgram.host_calls`
+  - VM 热路径按数值 `host_call_id` 分发，不再按函数名线性扫描，也不再为调用额外克隆参数数组
+- 当前 hostcall 仍覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名，其中 `puts` / `atoll` / `llabs` 还被标记为 `prefer hostcall`：
+  - `puts` 的 Uya body 会进入当前 exec lowering 尚未完整覆盖的 `catch` 路径
+  - `atoll` / `llabs` 会触发 `errno` 等宿主状态写入路径
+  - 因此它们暂时保留宿主快路径，等 lowering/VM 语义补齐后再收回
 - 2026-05-18 已把 `i64/u64` 数字字面量放通到 exec lowering / const pool / VM value，保证宽整数 extern 参数与返回值不会在 lowering 阶段被误判 unsupported。
-- 2026-05-18 已新增第一版“固定参数、无额外 varargs 实参”的 stdio 过渡 bridge：
-  - 当前已覆盖 `printf(format_only)` 这一类最小 hosted 路径
+- 2026-05-18 已新增第一版“固定参数、无额外 varargs 实参”的 stdio hostcall 过渡路径：
+  - 当前已覆盖 `printf(format_only)` 与 `fprintf/sprintf/snprintf` 的 fixed/no-varargs 形式
   - 新增 `tests/test_exec_vm_stdio_no_varargs.uya` 与 `tests/verify_exec_vm_stdio_no_varargs.sh`
-  - 当前仍未把 `fprintf/sprintf/snprintf` 的更一般 varargs 语义纳入 exec，只是把最先挡住 `src/main.uya --vm` 的最小无额外实参路径向前推进了一步
-- 该阶段只是过渡里程碑；最终目标不是继续扩函数名白名单，而是让“带函数体的 `extern` / `extern "libc"` 实现”进入统一 lowering/VM 路径，仅对真正宿主边界保留最小 bridge。
+  - 当前仍未把更一般的 stdio varargs 语义纳入 exec，只是把最先挡住 `src/main.uya --vm` 的最小 hosted 路径向前推进了一步
+- 该阶段只是过渡里程碑；最终目标不是继续扩函数名白名单，而是让“带函数体的 `extern` / `extern "libc"` 实现”进入统一 lowering/VM 路径，仅对真正宿主边界保留最小 hostcall。
 
 ---
 

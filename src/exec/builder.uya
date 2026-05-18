@@ -4,9 +4,15 @@ use libc;
 
 const EXEC_MAX_BYTECODE_INSTRS: i32 = 4096;
 const EXEC_MAX_CONST_POOL_VALUES: i32 = 1024;
+const EXEC_MAX_HOST_CALL_SITES: i32 = 64;
 
 struct ExecConstPoolBuilder {
     values: [ExecValue: EXEC_MAX_CONST_POOL_VALUES],
+    count: i32,
+}
+
+struct ExecHostCallSiteBuilder {
+    sites: [BCHostCallSite: EXEC_MAX_HOST_CALL_SITES],
     count: i32,
 }
 
@@ -28,6 +34,7 @@ struct ExecCleanupScope {
 struct ExecFunctionBuildContext {
     arena: &CompilerArena,
     const_pool: &ExecConstPoolBuilder,
+    host_calls: &ExecHostCallSiteBuilder,
     module: &HIRModule,
     function: &HIRFunction,
     instrs: [BCInstr: EXEC_MAX_BYTECODE_INSTRS],
@@ -48,6 +55,52 @@ fn exec_builder_const_pool_value_ref(const_pool: &ExecConstPoolBuilder, idx: i32
         return &const_pool.values[idx];
     }
     return null;
+}
+
+fn exec_builder_host_call_site_ref(host_calls: &ExecHostCallSiteBuilder, idx: i32) &BCHostCallSite {
+    if host_calls == null || idx < 0 || idx >= EXEC_MAX_HOST_CALL_SITES {
+        return null;
+    }
+    if idx >= 0 && idx < EXEC_MAX_HOST_CALL_SITES {
+        return &host_calls.sites[idx];
+    }
+    return null;
+}
+
+fn exec_builder_intern_host_call(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32 {
+    if ctx == null || ctx.host_calls == null || expr == null ||
+        expr.call_host_id == ExecHostCallId.EXEC_HOST_CALL_NONE {
+        exec_backend_set_error(null, "exec: hostcall builder 输入无效" as *byte, 0);
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < ctx.host_calls.count {
+        const site: &BCHostCallSite = &ctx.host_calls.sites[i];
+        if site.id == expr.call_host_id &&
+            site.arg_count == expr.call_arg_count &&
+            site.name != null && expr.callee_name != null &&
+            str_equals(site.name, expr.callee_name) != 0 {
+            return i;
+        }
+        i = i + 1;
+    }
+    if ctx.host_calls.count >= EXEC_MAX_HOST_CALL_SITES {
+        exec_backend_set_error(ctx.function.decl, "exec: hostcall site 超出上限" as *byte, 0);
+        return -1;
+    }
+    const site_idx: i32 = ctx.host_calls.count;
+    const site_ref: &BCHostCallSite = exec_builder_host_call_site_ref(ctx.host_calls, site_idx);
+    if site_ref == null {
+        exec_backend_set_error(ctx.function.decl, "exec: hostcall site 写入失败" as *byte, 0);
+        return -1;
+    }
+    site_ref[0] = BCHostCallSite {
+        id: expr.call_host_id,
+        name: expr.callee_name,
+        arg_count: expr.call_arg_count,
+    };
+    ctx.host_calls.count = site_idx + 1;
+    return site_idx;
 }
 
 fn exec_builder_instr_slot(ctx: &ExecFunctionBuildContext, idx: i32) &BCInstr {
@@ -496,7 +549,7 @@ fn exec_builder_emit_i32_const_slot(ctx: &ExecFunctionBuildContext, ast_node: &A
         right: null,
         callee_name: null,
         callee_decl: null,
-        call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
+        call_host_id: ExecHostCallId.EXEC_HOST_CALL_NONE,
         call_args: null,
         call_arg_count: 0,
         dispatch_decls: null,
@@ -1160,7 +1213,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                         right: null,
                         callee_name: null,
                         callee_decl: null,
-                        call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
+                        call_host_id: ExecHostCallId.EXEC_HOST_CALL_NONE,
                         call_args: null,
                         call_arg_count: 0,
                         dispatch_decls: null,
@@ -1299,7 +1352,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                     right: null,
                     callee_name: null,
                     callee_decl: null,
-                    call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
+                    call_host_id: ExecHostCallId.EXEC_HOST_CALL_NONE,
                     call_args: null,
                     call_arg_count: 0,
                     dispatch_decls: null,
@@ -1562,13 +1615,17 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             }
             i = i + 1;
         }
-        if expr.call_extern_id != ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
+        if expr.call_host_id != ExecHostCallId.EXEC_HOST_CALL_NONE {
+            const host_call_site: i32 = exec_builder_intern_host_call(ctx, expr);
+            if host_call_site < 0 {
+                return -1;
+            }
             if exec_builder_emit(ctx, BCInstr {
-                opcode: BCOpcode.BC_CALL_EXTERN,
+                opcode: BCOpcode.BC_HOSTCALL,
                 a: dst,
                 b: arg_base,
                 c: expr.call_arg_count,
-                imm: expr.call_extern_id as i64,
+                imm: host_call_site as i64,
                 text: expr.callee_name,
                 source: exec_builder_make_source(expr.ast_node),
             }) < 0 {
@@ -2447,21 +2504,20 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             if dst_slot_indirect >= 0 && dst_slot_indirect < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot_indirect] = 1;
             }
-        } else if instr.opcode == BCOpcode.BC_CALL_EXTERN {
+        } else if instr.opcode == BCOpcode.BC_HOSTCALL {
             var ai2: i32 = 0;
             while ai2 < instr.c {
-                if exec_builder_validate_slot_read(fn_hir, instr.b + ai2, out_fn.slot_count, &slot_written[0], "exec: CALL_EXTERN 参数槽位非法" as *byte) != 0 {
+                if exec_builder_validate_slot_read(fn_hir, instr.b + ai2, out_fn.slot_count, &slot_written[0], "exec: HOSTCALL 参数槽位非法" as *byte) != 0 {
                     return -1;
                 }
                 ai2 = ai2 + 1;
             }
             if instr.a < 0 || instr.a >= out_fn.slot_count {
-                exec_backend_set_error(fn_hir.decl, "exec: CALL_EXTERN 返回槽位非法" as *byte, 0);
+                exec_backend_set_error(fn_hir.decl, "exec: HOSTCALL 返回槽位非法" as *byte, 0);
                 return -1;
             }
-            if instr.imm <= ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE as i64 ||
-                instr.imm > ExecExternBridgeId.EXEC_EXTERN_BRIDGE_SNPRINTF_FIXED as i64 {
-                exec_backend_set_error(fn_hir.decl, "exec: CALL_EXTERN 目标非法" as *byte, 0);
+            if instr.imm < 0 {
+                exec_backend_set_error(fn_hir.decl, "exec: HOSTCALL 目标非法" as *byte, 0);
                 return -1;
             }
             const dst_slot10: i32 = instr.a;
@@ -2532,13 +2588,14 @@ fn exec_builder_validate_return_types_in_block(fn_hir: &HIRFunction, block: &HIR
     return 0;
 }
 
-fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPoolBuilder, module: &HIRModule, fn_hir: &HIRFunction) &BCFunction {
-    if arena == null || const_pool == null || module == null || fn_hir == null {
+fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPoolBuilder, host_calls: &ExecHostCallSiteBuilder, module: &HIRModule, fn_hir: &HIRFunction) &BCFunction {
+    if arena == null || const_pool == null || host_calls == null || module == null || fn_hir == null {
         return null;
     }
     var ctx: ExecFunctionBuildContext = ExecFunctionBuildContext {
         arena: arena,
         const_pool: const_pool,
+        host_calls: host_calls,
         module: module,
         function: fn_hir,
         instrs: [],
@@ -2603,6 +2660,10 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
         values: [],
         count: 0,
     };
+    var host_call_builder: ExecHostCallSiteBuilder = ExecHostCallSiteBuilder {
+        sites: [],
+        count: 0,
+    };
     var total_function_count: i32 = module.function_count;
     if module.global_init_function != null {
         total_function_count = total_function_count + 1;
@@ -2617,7 +2678,7 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
     var global_init_index: i32 = -1;
     var i: i32 = 0;
     while i < module.function_count {
-        const built: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, module, module.functions[i]);
+        const built: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, &host_call_builder, module, module.functions[i]);
         if built == null {
             return null;
         }
@@ -2628,7 +2689,7 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
         i = i + 1;
     }
     if module.global_init_function != null {
-        const built_global_init: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, module, module.global_init_function);
+        const built_global_init: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, &host_call_builder, module, module.global_init_function);
         if built_global_init == null {
             return null;
         }
@@ -2660,6 +2721,19 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
             values: null,
             count: 0,
         };
+    }
+    if host_call_builder.count > 0 {
+        const host_calls: &BCHostCallSite = compiler_arena_alloc(arena, @size_of(BCHostCallSite) * host_call_builder.count as usize) as &BCHostCallSite;
+        if host_calls == null {
+            exec_backend_set_error(module.entry_function.decl, "exec: hostcall 表分配失败" as *byte, 0);
+            return null;
+        }
+        memcpy(host_calls as *void, &host_call_builder.sites[0] as *void, @size_of(BCHostCallSite) * host_call_builder.count as usize);
+        program.host_calls = host_calls;
+        program.host_call_count = host_call_builder.count;
+    } else {
+        program.host_calls = null;
+        program.host_call_count = 0;
     }
     var needs_runtime_error_name_table: i32 = 0;
     i = 0;
