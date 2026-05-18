@@ -70,6 +70,16 @@ fn exec_type_is_scalar_supported(type: Type) i32 {
     return 0;
 }
 
+fn exec_type_is_string_pointer_supported(type: Type) i32 {
+    if type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
+        return 0;
+    }
+    if type.pointer_to.kind == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    return 0;
+}
+
 fn exec_type_uses_simd(ty: Type) i32 {
     if ty.kind == TypeKind.TYPE_VECTOR || ty.kind == TypeKind.TYPE_MASK {
         return 1;
@@ -122,6 +132,9 @@ fn exec_type_is_vm_value_supported(type: Type) i32 {
     if exec_type_is_scalar_supported(type) != 0 {
         return 1;
     }
+    if exec_type_is_string_pointer_supported(type) != 0 {
+        return 1;
+    }
     if type.kind == TypeKind.TYPE_ERROR {
         return 1;
     }
@@ -164,7 +177,19 @@ fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
             union_type_arg_count: 0,
         };
     }
-    return checker_infer_type(ctx.checker, expr);
+    if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
+        return make_i32_type();
+    }
+    const prev_in_function: i32 = ctx.checker.in_function;
+    const prev_function_decl: &ASTNode = ctx.checker.current_function_decl;
+    if ctx.function_decl != null {
+        ctx.checker.in_function = 1;
+        ctx.checker.current_function_decl = ctx.function_decl;
+    }
+    const inferred: Type = checker_infer_type(ctx.checker, expr);
+    ctx.checker.in_function = prev_in_function;
+    ctx.checker.current_function_decl = prev_function_decl;
+    return inferred;
 }
 
 fn exec_lower_push_scope(ctx: &ExecLowerContext) void {
@@ -330,6 +355,91 @@ fn exec_lower_make_bool_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, v
     }
     expr.bool_value = value;
     return expr;
+}
+
+fn exec_lower_make_int_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &Type, value: i64) &HIRExpr {
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_CONST, type);
+    if expr == null {
+        return null;
+    }
+    expr.int_value = value;
+    return expr;
+}
+
+fn exec_lower_make_string_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &Type, value: &byte) &HIRExpr {
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_CONST, type);
+    if expr == null {
+        return null;
+    }
+    expr.string_value = value;
+    return expr;
+}
+
+fn exec_lower_basename(path: &byte) &byte {
+    if path == null {
+        return "(unknown)" as &byte;
+    }
+    var basename: &byte = strrchr(path as *byte, 47) as &byte;
+    if basename == null {
+        basename = strrchr(path as *byte, 92) as &byte;
+    }
+    if basename != null {
+        return (basename as i64 + 1) as &byte;
+    }
+    return path;
+}
+
+fn exec_lower_known_len(expr_type: &Type) i32 {
+    if expr_type == null {
+        return -1;
+    }
+    if expr_type.kind == TypeKind.TYPE_ARRAY {
+        const array_len: i32 = type_get_array_size(expr_type);
+        if array_len > 0 {
+            return array_len;
+        }
+        if expr_type.array_size > 0 {
+            return expr_type.array_size;
+        }
+        return -1;
+    }
+    if expr_type.kind == TypeKind.TYPE_SLICE {
+        if expr_type.slice_len > 0 {
+            return expr_type.slice_len;
+        }
+    }
+    return -1;
+}
+
+fn exec_lower_known_len_for_expr(ctx: &ExecLowerContext, expr: &ASTNode) i32 {
+    if ctx == null || expr == null {
+        return -1;
+    }
+    if expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
+        const local_slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
+        if local_slot >= 0 && local_slot < EXEC_MAX_LOCALS {
+            return exec_lower_known_len(&ctx.slot_types[local_slot]);
+        }
+        const global_slot: i32 = exec_lower_find_global_slot(ctx, expr.identifier_name);
+        if global_slot >= 0 && global_slot < EXEC_MAX_GLOBALS {
+            return exec_lower_known_len(&ctx.global_types[global_slot]);
+        }
+    }
+    const expr_type: Type = exec_lower_expr_type(ctx, expr);
+    return exec_lower_known_len(&expr_type);
+}
+
+fn exec_lower_named_error_literal(expr: &ASTNode) &ASTNode {
+    if expr == null {
+        return null;
+    }
+    if expr.type == ASTNodeType.AST_ERROR_VALUE {
+        return expr;
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR && expr.cast_expr_expr != null {
+        return exec_lower_named_error_literal(expr.cast_expr_expr);
+    }
+    return null;
 }
 
 fn exec_lower_make_local_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, slot: i32, type: &Type) &HIRExpr {
@@ -1048,16 +1158,41 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return null;
     }
     const expr_type: Type = exec_lower_expr_type(ctx, expr);
+    if expr.type == ASTNodeType.AST_SIZEOF || expr.type == ASTNodeType.AST_ALIGNOF {
+        const folded_value: i32 = checker_eval_const_expr(ctx.checker, expr);
+        if folded_value < 0 {
+            return exec_lower_fail_expr(expr, "exec: 编译期 builtin 折叠失败" as *byte);
+        }
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, folded_value as i64);
+    }
+    if expr.type == ASTNodeType.AST_SRC_NAME {
+        return exec_lower_make_string_const_expr(ctx, expr, &expr_type, exec_lower_basename(expr.filename));
+    }
+    if expr.type == ASTNodeType.AST_SRC_PATH {
+        var source_path: &byte = expr.filename;
+        if source_path == null {
+            source_path = "(unknown)" as &byte;
+        }
+        return exec_lower_make_string_const_expr(ctx, expr, &expr_type, source_path);
+    }
+    if expr.type == ASTNodeType.AST_SRC_LINE {
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr.line as i64);
+    }
+    if expr.type == ASTNodeType.AST_SRC_COL {
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr.column as i64);
+    }
+    if expr.type == ASTNodeType.AST_FUNC_NAME {
+        var func_name: &byte = "(unknown)" as &byte;
+        if ctx.function_decl != null && ctx.function_decl.fn_decl_name != null {
+            func_name = ctx.function_decl.fn_decl_name;
+        }
+        return exec_lower_make_string_const_expr(ctx, expr, &expr_type, func_name);
+    }
     if expr.type == ASTNodeType.AST_NUMBER {
         if expr_type.kind != TypeKind.TYPE_I32 && expr_type.kind != TypeKind.TYPE_U32 {
             return exec_lower_fail_expr(expr, "exec: 仅支持 i32/u32 数字字面量" as *byte);
         }
-        const hir: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
-        if hir == null {
-            return null;
-        }
-        hir.int_value = expr.number_value_i64;
-        return hir;
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr.number_value_i64);
     }
     if expr.type == ASTNodeType.AST_BOOL {
         const hir: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
@@ -1076,23 +1211,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir;
     }
     if expr.type == ASTNodeType.AST_STRING {
-        const hir: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
-        if hir == null {
-            return null;
-        }
-        hir.string_value = expr.string_literal_value;
-        return hir;
+        return exec_lower_make_string_const_expr(ctx, expr, &expr_type, expr.string_literal_value);
     }
     if expr.type == ASTNodeType.AST_STRING_INTERP {
         return exec_lower_fail_expr_reason(expr, "exec: 当前不支持字符串插值" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_STRING_INTERP);
     }
     if expr.type == ASTNodeType.AST_ERROR_VALUE {
-        const hir_error: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
-        if hir_error == null {
-            return null;
-        }
-        hir_error.int_value = expr_type.error_error_id as i64;
-        return hir_error;
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr_type.error_error_id as i64);
     }
     if expr.type == ASTNodeType.AST_IDENTIFIER {
         const slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
@@ -1230,6 +1355,10 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir;
     }
     if expr.type == ASTNodeType.AST_LEN {
+        const known_len: i32 = exec_lower_known_len_for_expr(ctx, expr.len_expr_array);
+        if known_len >= 0 {
+            return exec_lower_make_int_const_expr(ctx, expr, &expr_type, known_len as i64);
+        }
         const inner_len: &HIRExpr = exec_lower_expr(ctx, expr.len_expr_array);
         if inner_len == null {
             return null;
@@ -1402,6 +1531,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir;
     }
     if expr.type == ASTNodeType.AST_ERROR_ID {
+        const operand_literal: &ASTNode = exec_lower_named_error_literal(expr.error_id_operand);
+        if operand_literal != null {
+            const literal_type: Type = exec_lower_expr_type(ctx, operand_literal);
+            return exec_lower_make_int_const_expr(ctx, expr, &expr_type, literal_type.error_error_id as i64);
+        }
         const operand_error_id: &HIRExpr = exec_lower_expr(ctx, expr.error_id_operand);
         if operand_error_id == null {
             return null;
@@ -1414,6 +1548,10 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir_error_id;
     }
     if expr.type == ASTNodeType.AST_ERROR_NAME {
+        const operand_name_literal: &ASTNode = exec_lower_named_error_literal(expr.error_name_operand);
+        if operand_name_literal != null {
+            return exec_lower_make_string_const_expr(ctx, expr, &expr_type, operand_name_literal.error_value_name);
+        }
         const operand_error_name: &HIRExpr = exec_lower_expr(ctx, expr.error_name_operand);
         if operand_error_name == null {
             return null;
@@ -1608,7 +1746,16 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             stmt_node.type == ASTNodeType.AST_STRUCT_INIT ||
             stmt_node.type == ASTNodeType.AST_ARRAY_LITERAL ||
             stmt_node.type == ASTNodeType.AST_TUPLE_LITERAL ||
+            stmt_node.type == ASTNodeType.AST_SIZEOF ||
             stmt_node.type == ASTNodeType.AST_LEN ||
+            stmt_node.type == ASTNodeType.AST_ALIGNOF ||
+            stmt_node.type == ASTNodeType.AST_SRC_NAME ||
+            stmt_node.type == ASTNodeType.AST_SRC_PATH ||
+            stmt_node.type == ASTNodeType.AST_SRC_LINE ||
+            stmt_node.type == ASTNodeType.AST_SRC_COL ||
+            stmt_node.type == ASTNodeType.AST_FUNC_NAME ||
+            stmt_node.type == ASTNodeType.AST_ERROR_ID ||
+            stmt_node.type == ASTNodeType.AST_ERROR_NAME ||
             stmt_node.type == ASTNodeType.AST_MATCH_EXPR ||
             stmt_node.type == ASTNodeType.AST_TRY_EXPR ||
             stmt_node.type == ASTNodeType.AST_CATCH_EXPR {

@@ -268,6 +268,16 @@ collect_test_files() {
     fi
 }
 
+is_default_excluded_test_name() {
+    local name="$1"
+    case "$name" in
+        check_cli_no_main|test_exec_vm_globals|test_exec_vm_global_init_fail|test_exec_vm_globals_multi)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 # 如果指定了目标路径
 if [ -n "$TARGET_PATH" ]; then
     # 转换为绝对路径
@@ -297,6 +307,10 @@ else
     
     # 单文件测试
     while IFS= read -r -d '' file; do
+        bn=$(basename "$file" .uya)
+        if is_default_excluded_test_name "$bn"; then
+            continue
+        fi
         TEST_FILES+=("$file")
     done < <(find "$TEST_DIR" -maxdepth 1 -name "*.uya" -type f -print0 2>/dev/null)
 fi

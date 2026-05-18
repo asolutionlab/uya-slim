@@ -17,6 +17,7 @@ TESTS=(
     "test_exec_vm_match_basic.uya"
     "test_exec_vm_error_union.uya"
     "test_exec_vm_error_builtin.uya"
+    "test_exec_vm_builtin_bridge.uya"
     "test_exec_vm_aggregates.uya"
 )
 

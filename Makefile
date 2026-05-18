@@ -572,6 +572,41 @@ check: uya
 		echo "✗ nested async split-C codegen 验证失败"; \
 		exit 1; \
 	fi; \
+	echo ""; \
+	echo "验证 check 子命令..."; \
+	if bash ./tests/verify_check_cli.sh > /tmp/verify_out.txt 2>&1; then \
+		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ check 子命令验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "验证 exec vm 专项回归..."; \
+	VERIFY_EXIT=0; \
+	for script in \
+		./tests/verify_exec_vm_smoke.sh \
+		./tests/verify_exec_vm_globals.sh \
+		./tests/verify_exec_vm_error_builtin.sh \
+		./tests/verify_exec_vm_builtin_bridge.sh \
+		./tests/verify_exec_vm_defer.sh \
+		./tests/verify_exec_vm_aggregates.sh; do \
+		if bash "$$script" > /tmp/verify_out.txt 2>&1; then \
+			grep -E "passed$$|checks passed$$|ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		else \
+			cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=1; \
+			break; \
+		fi; \
+	done; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ exec vm 专项回归验证失败"; \
+		exit 1; \
+	fi; \
 		echo ""; \
 		echo "验证 microapp 聚合套件..."; \
 		if $(MAKE) microapp-check > /tmp/verify_out.txt 2>&1; then \

@@ -86,8 +86,8 @@ fn exec_vm_trace(trace_vm: i32, fn_name: &byte, ip: i32, instr: &BCInstr) void {
     if trace_vm == 0 || instr == null {
         return;
     }
-    fprintf(libc.stderr, "[vm] fn=%s ip=%d op=%d a=%d b=%d c=%d imm=%ld\n" as *byte,
-        fn_name as *byte, ip, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
+    fprintf(libc.stderr, "[vm] fn=%s ip=%d op=%s(%d) a=%d b=%d c=%d imm=%ld\n" as *byte,
+        fn_name as *byte, ip, exec_debug_opcode_name(instr.opcode) as *byte, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
 }
 
 fn exec_vm_trace_call_enter(trace_vm: i32, fn_name: &byte, arg_count: i32) void {
@@ -133,16 +133,28 @@ fn exec_vm_get_aggregate_for_slice(function: &BCFunction, value: ExecValue) &Exe
 }
 
 fn exec_vm_lookup_error_name(program: &BCProgram, error_id: i32) &byte {
-    if program == null || error_id == 0 {
+    if program == null || error_id == 0 || program.error_names == null || program.error_name_count <= 0 {
         return "UnknownError" as &byte;
     }
-    var i: i32 = 0;
-    while i < program.error_name_count {
-        const entry: &BCErrorNameEntry = program.error_names + i;
-        if entry != null && entry.error_id == error_id && entry.name != null {
-            return entry.name;
+    var left: i32 = 0;
+    var right: i32 = program.error_name_count - 1;
+    while left <= right {
+        const mid: i32 = left + (right - left) / 2;
+        const entry: &BCErrorNameEntry = program.error_names + mid;
+        if entry == null {
+            break;
         }
-        i = i + 1;
+        if entry.error_id == error_id {
+            if entry.name != null {
+                return entry.name;
+            }
+            break;
+        }
+        if entry.error_id < error_id {
+            left = mid + 1;
+        } else {
+            right = mid - 1;
+        }
     }
     return "UnknownError" as &byte;
 }

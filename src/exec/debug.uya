@@ -2,6 +2,50 @@
 
 use libc;
 
+fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
+    if opcode == BCOpcode.BC_LOAD_CONST { return "BC_LOAD_CONST" as &byte; }
+    if opcode == BCOpcode.BC_MOV { return "BC_MOV" as &byte; }
+    if opcode == BCOpcode.BC_LOAD_GLOBAL { return "BC_LOAD_GLOBAL" as &byte; }
+    if opcode == BCOpcode.BC_STORE_GLOBAL { return "BC_STORE_GLOBAL" as &byte; }
+    if opcode == BCOpcode.BC_ADD { return "BC_ADD" as &byte; }
+    if opcode == BCOpcode.BC_SUB { return "BC_SUB" as &byte; }
+    if opcode == BCOpcode.BC_MUL { return "BC_MUL" as &byte; }
+    if opcode == BCOpcode.BC_DIV { return "BC_DIV" as &byte; }
+    if opcode == BCOpcode.BC_REM { return "BC_REM" as &byte; }
+    if opcode == BCOpcode.BC_NEG { return "BC_NEG" as &byte; }
+    if opcode == BCOpcode.BC_NOT { return "BC_NOT" as &byte; }
+    if opcode == BCOpcode.BC_LOAD_LEN { return "BC_LOAD_LEN" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_STRUCT { return "BC_MAKE_STRUCT" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_ARRAY { return "BC_MAKE_ARRAY" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_TUPLE { return "BC_MAKE_TUPLE" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_SLICE { return "BC_MAKE_SLICE" as &byte; }
+    if opcode == BCOpcode.BC_LOAD_FIELD { return "BC_LOAD_FIELD" as &byte; }
+    if opcode == BCOpcode.BC_STORE_FIELD { return "BC_STORE_FIELD" as &byte; }
+    if opcode == BCOpcode.BC_LOAD_INDEX { return "BC_LOAD_INDEX" as &byte; }
+    if opcode == BCOpcode.BC_STORE_INDEX { return "BC_STORE_INDEX" as &byte; }
+    if opcode == BCOpcode.BC_CMP_EQ { return "BC_CMP_EQ" as &byte; }
+    if opcode == BCOpcode.BC_CMP_NE { return "BC_CMP_NE" as &byte; }
+    if opcode == BCOpcode.BC_CMP_LT { return "BC_CMP_LT" as &byte; }
+    if opcode == BCOpcode.BC_CMP_LE { return "BC_CMP_LE" as &byte; }
+    if opcode == BCOpcode.BC_CMP_GT { return "BC_CMP_GT" as &byte; }
+    if opcode == BCOpcode.BC_CMP_GE { return "BC_CMP_GE" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_OK { return "BC_MAKE_OK" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_ERR { return "BC_MAKE_ERR" as &byte; }
+    if opcode == BCOpcode.BC_IS_ERR { return "BC_IS_ERR" as &byte; }
+    if opcode == BCOpcode.BC_UNWRAP_OK { return "BC_UNWRAP_OK" as &byte; }
+    if opcode == BCOpcode.BC_UNWRAP_ERR { return "BC_UNWRAP_ERR" as &byte; }
+    if opcode == BCOpcode.BC_JMP { return "BC_JMP" as &byte; }
+    if opcode == BCOpcode.BC_JMP_IF_TRUE { return "BC_JMP_IF_TRUE" as &byte; }
+    if opcode == BCOpcode.BC_JMP_IF_FALSE { return "BC_JMP_IF_FALSE" as &byte; }
+    if opcode == BCOpcode.BC_CALL { return "BC_CALL" as &byte; }
+    if opcode == BCOpcode.BC_RET { return "BC_RET" as &byte; }
+    if opcode == BCOpcode.BC_PRINT { return "BC_PRINT" as &byte; }
+    if opcode == BCOpcode.BC_PRINTLN { return "BC_PRINTLN" as &byte; }
+    if opcode == BCOpcode.BC_ERROR_ID { return "BC_ERROR_ID" as &byte; }
+    if opcode == BCOpcode.BC_ERROR_NAME { return "BC_ERROR_NAME" as &byte; }
+    return "BC_UNKNOWN" as &byte;
+}
+
 fn exec_debug_print_type(type_ref: HIRTypeRef) void {
     if type_ref.type.kind == TypeKind.TYPE_I32 {
         fprintf(libc.stderr, "i32" as *byte);
@@ -255,8 +299,8 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
         var ii: i32 = 0;
         while ii < func.instr_count {
             const instr: &BCInstr = func.instrs + ii;
-            fprintf(libc.stderr, "  %d: op=%d a=%d b=%d c=%d imm=%ld\n" as *byte,
-                ii, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
+            fprintf(libc.stderr, "  %d: op=%s(%d) a=%d b=%d c=%d imm=%ld\n" as *byte,
+                ii, exec_debug_opcode_name(instr.opcode) as *byte, instr.opcode as i32, instr.a, instr.b, instr.c, instr.imm);
             ii = ii + 1;
         }
         fi = fi + 1;

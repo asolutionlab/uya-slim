@@ -453,15 +453,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 13：builtin bridge
 
-- [ ] 编译期可折叠 builtin 前移，不进入 VM
+- [x] 编译期可折叠 builtin 前移，不进入 VM
 - [ ] VM 内支持：
   - [x] `@print`
   - [x] `@println`
   - [x] `@len`
   - [x] `@error_id`
   - [x] `@error_name`
-- [ ] 错误信息与当前运行体验对齐
-- [ ] 测试输出文本与现有路径一致
+- [x] 错误信息与当前运行体验对齐
+- [x] 测试输出文本与现有路径一致
 
 备注：
 
@@ -470,6 +470,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - `@error_id` / `@error_name` 已接通命名错误字面量的 exec lowering、bytecode、VM 查表路径，并新增：
   - `tests/test_exec_vm_error_builtin.uya`
   - `tests/verify_exec_vm_error_builtin.sh`
+- `@size_of` / `@align_of` / `@src_name` / `@src_path` / `@src_line` / `@src_col` 已在 exec lowering 前折叠；`@len(array)`、`@error_id(error.X)`、`@error_name(error.X)` 不再生成 VM opcode
+- 新增 `tests/test_exec_vm_builtin_bridge.uya` 与 `tests/verify_exec_vm_builtin_bridge.sh`，覆盖 builtin bridge 输出与 bytecode 折叠断言
 - 其余 builtin bridge 仍未系统整理到统一模块
 
 ---

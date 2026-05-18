@@ -110,6 +110,41 @@ fn exec_builder_intern_const(ctx: &ExecFunctionBuildContext, value: ExecValue) i
     return const_idx;
 }
 
+fn exec_builder_function_has_opcode(fn_bc: &BCFunction, opcode: BCOpcode) i32 {
+    if fn_bc == null || fn_bc.instrs == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < fn_bc.instr_count {
+        if fn_bc.instrs[i].opcode == opcode {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn exec_builder_sort_error_names(entries: &BCErrorNameEntry, count: i32) void {
+    if entries == null || count <= 1 {
+        return;
+    }
+    var i: i32 = 1;
+    while i < count {
+        const current_id: i32 = entries[i].error_id;
+        const current_name: &byte = entries[i].name;
+        var j: i32 = i - 1;
+        while j >= 0 && entries[j].error_id > current_id {
+            entries[j + 1] = entries[j];
+            j = j - 1;
+        }
+        entries[j + 1] = BCErrorNameEntry {
+            error_id: current_id,
+            name: current_name,
+        };
+        i = i + 1;
+    }
+}
+
 fn exec_builder_loop_patch_ref(ctx: &ExecFunctionBuildContext, idx: i32) &ExecLoopPatch {
     if ctx == null || idx < 0 || idx >= 32 {
         return null;
@@ -1951,7 +1986,16 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
             count: 0,
         };
     }
-    if checker.error_name_count > 0 {
+    var needs_runtime_error_name_table: i32 = 0;
+    i = 0;
+    while i < program.function_count {
+        if exec_builder_function_has_opcode(program.functions + i, BCOpcode.BC_ERROR_NAME) != 0 {
+            needs_runtime_error_name_table = 1;
+            break;
+        }
+        i = i + 1;
+    }
+    if checker.error_name_count > 0 && needs_runtime_error_name_table != 0 {
         const error_names: &BCErrorNameEntry = compiler_arena_alloc(arena, @size_of(BCErrorNameEntry) * checker.error_name_count as usize) as &BCErrorNameEntry;
         if error_names == null {
             exec_backend_set_error(module.entry_function.decl, "exec: error name 表分配失败" as *byte, 0);
@@ -1965,6 +2009,7 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
             };
             i = i + 1;
         }
+        exec_builder_sort_error_names(error_names, checker.error_name_count);
         program.error_names = error_names;
         program.error_name_count = checker.error_name_count;
     } else {
