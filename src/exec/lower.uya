@@ -112,6 +112,9 @@ fn exec_lower_match_extern_bridge_signature(checker: &TypeChecker, fn_decl: &AST
     if fn_decl.fn_decl_is_extern == 0 {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
     }
+    if fn_decl.fn_decl_body != null {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
     if fn_decl.fn_decl_is_varargs != 0 || fn_decl.fn_decl_name == null || fn_decl.fn_decl_return_type == null {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
     }
@@ -199,6 +202,9 @@ fn exec_type_is_aggregate_supported(ty: Type) i32 {
 
 fn exec_type_is_vm_value_supported(type: Type) i32 {
     if exec_type_is_scalar_supported(type) != 0 {
+        return 1;
+    }
+    if type.kind == TypeKind.TYPE_UNION {
         return 1;
     }
     if type.kind == TypeKind.TYPE_POINTER {
@@ -594,6 +600,98 @@ fn exec_lower_struct_field_index(ctx: &ExecLowerContext, struct_type: Type, fiel
     return -1;
 }
 
+fn exec_lower_union_variant_index(ctx: &ExecLowerContext, union_type: Type, variant_name: &byte) i32 {
+    const union_name: &byte = type_get_union_name(&union_type);
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
+        union_name == null || variant_name == null {
+        return -1;
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(ctx.checker.program_node, union_name);
+    if union_decl == null || union_decl.union_decl_variants == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < union_decl.union_decl_variant_count {
+        const variant_decl: &ASTNode = union_decl.union_decl_variants[i];
+        if variant_decl != null && variant_decl.type == ASTNodeType.AST_VAR_DECL &&
+            variant_decl.var_decl_name != null && str_equals(variant_decl.var_decl_name, variant_name) != 0 {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_lower_union_variant_type(ctx: &ExecLowerContext, union_type: Type, variant_name: &byte) Type {
+    const union_name: &byte = type_get_union_name(&union_type);
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null || union_name == null {
+        return make_void_type();
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(ctx.checker.program_node, union_name);
+    if union_decl == null || union_decl.union_decl_variants == null {
+        return make_void_type();
+    }
+    var i: i32 = 0;
+    while i < union_decl.union_decl_variant_count {
+        const variant_decl: &ASTNode = union_decl.union_decl_variants[i];
+        if variant_decl != null && variant_decl.type == ASTNodeType.AST_VAR_DECL &&
+            variant_decl.var_decl_name != null && str_equals(variant_decl.var_decl_name, variant_name) != 0 &&
+            variant_decl.var_decl_type != null {
+            return type_from_ast(ctx.checker, variant_decl.var_decl_type);
+        }
+        i = i + 1;
+    }
+    return make_void_type();
+}
+
+fn exec_lower_try_union_ctor_expr(ctx: &ExecLowerContext, expr: &ASTNode, expr_type: &Type) &HIRExpr {
+    if ctx == null || expr == null || expr.type != ASTNodeType.AST_CALL_EXPR ||
+        expr.call_expr_callee == null || expr.call_expr_callee.type != ASTNodeType.AST_MEMBER_ACCESS {
+        return null;
+    }
+    const callee: &ASTNode = expr.call_expr_callee;
+    const object: &ASTNode = callee.member_access_object;
+    var union_name: &byte = null;
+    if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
+        union_name = object.identifier_name;
+    } else if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_name != null {
+        union_name = object.type_named_name;
+    }
+    if union_name == null || callee.member_access_field_name == null || ctx.checker == null || ctx.checker.program_node == null {
+        return null;
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(ctx.checker.program_node, union_name);
+    if union_decl == null {
+        return null;
+    }
+    const variant_index: i32 = exec_lower_union_variant_index(ctx, expr_type[0], callee.member_access_field_name);
+    if variant_index < 0 {
+        return null;
+    }
+    const variant_type: Type = exec_lower_union_variant_type(ctx, expr_type[0], callee.member_access_field_name);
+    var payload_expr: &HIRExpr = null;
+    if variant_type.kind == TypeKind.TYPE_VOID {
+        if expr.call_expr_arg_count != 0 {
+            return exec_lower_fail_expr(expr, "exec: union void 变体当前仅支持空参数构造" as *byte);
+        }
+    } else {
+        if expr.call_expr_arg_count != 1 || expr.call_expr_args == null {
+            return exec_lower_fail_expr(expr, "exec: union 变体当前仅支持单参数构造" as *byte);
+        }
+        payload_expr = exec_lower_expr(ctx, expr.call_expr_args[0]);
+        if payload_expr == null {
+            return null;
+        }
+    }
+    const hir_union: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_UNION_INIT, expr_type);
+    if hir_union == null {
+        return null;
+    }
+    hir_union.int_value = variant_index as i64;
+    hir_union.left = payload_expr;
+    return hir_union;
+}
+
 fn exec_lower_alloc_items(ctx: &ExecLowerContext, count: i32) & & HIRExpr {
     if count <= 0 {
         return null;
@@ -928,11 +1026,139 @@ fn exec_lower_decl_is_uya_root_runtime(checker: &TypeChecker, decl: &ASTNode) i3
     return (strncmp(decl.filename as *byte, checker.uya_root_dir as *byte, root_len) == 0) as i32;
 }
 
-fn exec_lower_append_global_slot(checker: &TypeChecker, decl: &ASTNode, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+fn exec_lower_find_module_export_decl(checker: &TypeChecker, module_name: &byte, item_name: &byte, item_type: i32) &ASTNode {
+    if checker == null || module_name == null || item_name == null {
+        return null;
+    }
+    var mh: u32 = hash_string(module_name);
+    var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
+    var i: i32 = 0;
+    while i < MODULE_TABLE_SIZE {
+        const slot: i32 = (mi + i) & (MODULE_TABLE_SIZE - 1);
+        const module: &ModuleInfo = checker.module_table.slots[slot];
+        if module == null {
+            break;
+        }
+        if module.module_name != null && str_equals(module.module_name, module_name) != 0 {
+            if module.exports != null {
+                var ei: i32 = 0;
+                while ei < module.export_count {
+                    const export_item: &ExportedItem = &module.exports[ei];
+                    if export_item.name != null && str_equals(export_item.name, item_name) != 0 {
+                        if item_type == 0 || export_item.item_type == item_type {
+                            return export_item.decl_node;
+                        }
+                    }
+                    ei = ei + 1;
+                }
+            }
+            break;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn exec_lower_resolve_imported_decl(checker: &TypeChecker, local_name: &byte, item_type: i32) &ASTNode {
+    if checker == null || local_name == null {
+        return null;
+    }
+    const imported_item: &ImportedItem = checker_import_table_lookup_local_name(checker, local_name);
+    if imported_item == null || imported_item.item_type == (0 - 1) ||
+        imported_item.original_name == null || imported_item.module_name == null {
+        return null;
+    }
+    if item_type != 0 && imported_item.item_type != 0 && imported_item.item_type != item_type {
+        return null;
+    }
+    return exec_lower_find_module_export_decl(checker, imported_item.module_name, imported_item.original_name, item_type);
+}
+
+fn exec_lower_find_extern_stub_decl_by_name(checker: &TypeChecker, callee_name: &byte) &ASTNode {
+    if checker == null || callee_name == null || checker.program_node == null ||
+        checker.program_node.type != ASTNodeType.AST_PROGRAM {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
+            decl.fn_decl_name != null && str_equals(decl.fn_decl_name, callee_name) != 0 &&
+            decl.fn_decl_is_extern != 0 && decl.fn_decl_body == null {
+            return decl;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn exec_lower_resolve_function_decl(checker: &TypeChecker, callee_name: &byte) &ASTNode {
+    if checker == null || callee_name == null {
+        return null;
+    }
+    const stub_decl: &ASTNode = exec_lower_find_extern_stub_decl_by_name(checker, callee_name);
+    if stub_decl != null {
+        return stub_decl;
+    }
+    var decl: &ASTNode = exec_lower_resolve_imported_decl(checker, callee_name, 1);
+    if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
+        const reachable_decl: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, decl.fn_decl_name);
+        if reachable_decl != null && reachable_decl.type == ASTNodeType.AST_FN_DECL {
+            return reachable_decl;
+        }
+        return decl;
+    }
+    decl = checker_find_reachable_fn_decl_by_name(checker, callee_name);
+    if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+        return decl;
+    }
+    decl = find_fn_decl_from_program(checker.program_node, callee_name);
+    if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+        return checker_canonicalize_fn_decl(checker, decl);
+    }
+    return null;
+}
+
+fn exec_lower_has_extern_stub_override(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        fn_decl.fn_decl_name == null || fn_decl.fn_decl_body == null ||
+        fn_decl.fn_decl_is_extern == 0 || checker.program_node == null ||
+        checker.program_node.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl != fn_decl && decl.type == ASTNodeType.AST_FN_DECL &&
+            decl.fn_decl_name != null && str_equals(decl.fn_decl_name, fn_decl.fn_decl_name) != 0 &&
+            decl.fn_decl_is_extern != 0 && decl.fn_decl_body == null {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_resolve_global_decl(checker: &TypeChecker, name: &byte) &ASTNode {
+    if checker == null || name == null {
+        return null;
+    }
+    const imported_decl: &ASTNode = exec_lower_resolve_imported_decl(checker, name, 10);
+    if imported_decl != null {
+        return imported_decl;
+    }
+    const symbol: &Symbol = symbol_table_lookup(checker, name);
+    if symbol != null && exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 {
+        return symbol.decl_node;
+    }
+    return null;
+}
+
+fn exec_lower_append_global_slot(checker: &TypeChecker, decl: &ASTNode, globals: &HIRGlobalSlot, out_count: &i32, allow_uya_root_runtime: i32) i32 {
     if checker == null || decl == null || globals == null || out_count == null {
         return -1;
     }
-    if exec_lower_decl_is_uya_root_runtime(checker, decl) != 0 {
+    if allow_uya_root_runtime == 0 && exec_lower_decl_is_uya_root_runtime(checker, decl) != 0 {
         return 0;
     }
     if out_count[0] >= EXEC_MAX_GLOBALS {
@@ -980,7 +1206,7 @@ fn exec_lower_collect_global_slots_from_program(checker: &TypeChecker, program: 
                 return -1;
             }
         } else if exec_lower_global_is_runtime_decl(decl) != 0 {
-            if exec_lower_append_global_slot(checker, decl, globals, out_count) != 0 {
+            if exec_lower_append_global_slot(checker, decl, globals, out_count, 0) != 0 {
                 return -1;
             }
         }
@@ -999,7 +1225,7 @@ fn exec_lower_collect_global_slots_from_symbols(checker: &TypeChecker, globals: 
         while symbol != null {
             if exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 &&
                 exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], symbol.decl_node) < 0 {
-                if exec_lower_append_global_slot(checker, symbol.decl_node, globals, out_count) != 0 {
+                if exec_lower_append_global_slot(checker, symbol.decl_node, globals, out_count, 0) != 0 {
                     return -1;
                 }
             }
@@ -1020,8 +1246,28 @@ fn exec_lower_collect_global_slots_from_symbol_table(checker: &TypeChecker, glob
         if symbol != null &&
             exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 &&
             exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], symbol.decl_node) < 0 {
-            if exec_lower_append_global_slot(checker, symbol.decl_node, globals, out_count) != 0 {
+            if exec_lower_append_global_slot(checker, symbol.decl_node, globals, out_count, 0) != 0 {
                 return -1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_imports(checker: &TypeChecker, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || globals == null || out_count == null {
+        return -1;
+    }
+    var slot: i32 = 0;
+    while slot < IMPORT_TABLE_SIZE {
+        const import_item: &ImportedItem = checker.import_table.slots[slot];
+        if import_item != null && import_item.item_type != (0 - 1) && import_item.local_name != null {
+            const decl: &ASTNode = exec_lower_resolve_global_decl(checker, import_item.local_name);
+            if decl != null && exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], decl) < 0 {
+                if exec_lower_append_global_slot(checker, decl, globals, out_count, 1) != 0 {
+                    return -1;
+                }
             }
         }
         slot = slot + 1;
@@ -1063,6 +1309,9 @@ fn exec_lower_collect_global_slots(arena: &CompilerArena, checker: &TypeChecker,
         return null;
     }
     if exec_lower_collect_global_slots_from_symbol_table(checker, globals, &count) != 0 {
+        return null;
+    }
+    if exec_lower_collect_global_slots_from_imports(checker, globals, &count) != 0 {
         return null;
     }
     if out_count != null {
@@ -1350,9 +1599,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             hir_local.local_slot = slot;
             return hir_local;
         }
-        const symbol: &Symbol = symbol_table_lookup(ctx.checker, expr.identifier_name);
-        if symbol != null && exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 {
-            const global_slot_by_decl: i32 = exec_lower_find_global_slot_by_decl(ctx, symbol.decl_node);
+        const imported_global_decl: &ASTNode = exec_lower_resolve_global_decl(ctx.checker, expr.identifier_name);
+        if imported_global_decl != null {
+            const global_slot_by_decl: i32 = exec_lower_find_global_slot_by_decl(ctx, imported_global_decl);
             if global_slot_by_decl >= 0 {
                 var global_type_by_decl: Type = copy_type(&expr_type);
                 if global_slot_by_decl >= 0 && global_slot_by_decl < EXEC_MAX_GLOBALS {
@@ -1365,8 +1614,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 hir_global_by_decl.global_slot = global_slot_by_decl;
                 return hir_global_by_decl;
             }
-            if symbol.decl_node != null {
-                const global_type_ast2: &ASTNode = exec_lower_global_type_ast(symbol.decl_node);
+            if exec_lower_global_is_const(imported_global_decl) != 0 {
+                const const_init_expr: &ASTNode = exec_lower_global_init_ast(imported_global_decl);
+                if const_init_expr != null && const_init_expr != expr {
+                    return exec_lower_expr(ctx, const_init_expr);
+                }
+            }
+            if imported_global_decl != null {
+                const global_type_ast2: &ASTNode = exec_lower_global_type_ast(imported_global_decl);
                 if global_type_ast2 != null {
                     const global_type2: Type = type_from_ast(ctx.checker, global_type_ast2);
                     if exec_type_is_vm_value_supported(global_type2) == 0 {
@@ -1480,6 +1735,10 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir;
     }
     if expr.type == ASTNodeType.AST_CALL_EXPR {
+        const union_ctor: &HIRExpr = exec_lower_try_union_ctor_expr(ctx, expr, &expr_type);
+        if union_ctor != null {
+            return union_ctor;
+        }
         if expr.call_expr_callee == null || expr.call_expr_callee.type != ASTNodeType.AST_IDENTIFIER {
             return exec_lower_fail_expr(expr, "exec: 当前仅支持直接函数调用" as *byte);
         }
@@ -1489,7 +1748,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if expr.call_expr_arg_count > EXEC_MAX_CALL_ARGS {
             return exec_lower_fail_expr(expr, "exec: 调用参数过多" as *byte);
         }
-        const callee_decl: &ASTNode = find_fn_decl_from_program(ctx.checker.program_node, expr.call_expr_callee.identifier_name);
+        const callee_decl: &ASTNode = exec_lower_resolve_function_decl(ctx.checker, expr.call_expr_callee.identifier_name);
         var extern_bridge_id: ExecExternBridgeId = ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
         if callee_decl != null &&
             callee_decl.type == ASTNodeType.AST_FN_DECL &&
@@ -1792,6 +2051,76 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if subject_expr == null {
             return null;
         }
+        if subject_expr.type_ref.type.kind == TypeKind.TYPE_UNION {
+            const arms_union: &HIRMatchArm = compiler_arena_alloc(ctx.arena, @size_of(HIRMatchArm) * expr.match_expr_arm_count as usize) as &HIRMatchArm;
+            if arms_union == null {
+                exec_backend_set_error(expr, "exec: union match arms 分配失败" as *byte, 0);
+                return null;
+            }
+            var umi: i32 = 0;
+            while umi < expr.match_expr_arm_count {
+                const arm_union: ASTMatchArm = expr.match_expr_arms[umi];
+                if arm_union.kind != MatchPatternKind.MATCH_PAT_UNION &&
+                    arm_union.kind != MatchPatternKind.MATCH_PAT_ELSE &&
+                    arm_union.kind != MatchPatternKind.MATCH_PAT_WILDCARD {
+                    return exec_lower_fail_expr_reason(expr, "exec: 当前仅支持 union/else/wildcard match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+                }
+                var bind_slot: i32 = -1;
+                var arm_result_expr2: &HIRExpr = null;
+                var variant_index2: i32 = -1;
+                if arm_union.kind == MatchPatternKind.MATCH_PAT_UNION {
+                    variant_index2 = exec_lower_union_variant_index(ctx, subject_expr.type_ref.type, arm_union.variant_name);
+                    if variant_index2 < 0 {
+                        return exec_lower_fail_expr_reason(expr, "exec: union match 变体无效" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+                    }
+                    exec_lower_push_scope(ctx);
+                    if arm_union.var_name != null && str_equals(arm_union.var_name, "_" as *byte) == 0 {
+                        const bind_type: Type = exec_lower_union_variant_type(ctx, subject_expr.type_ref.type, arm_union.variant_name);
+                        if exec_type_is_vm_value_supported(bind_type) == 0 {
+                            exec_lower_pop_scope(ctx);
+                            return exec_lower_fail_expr_reason(expr, "exec: union match 绑定类型当前不可表示" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
+                        }
+                        bind_slot = exec_lower_append_local(ctx, arm_union.var_name, &bind_type, 0);
+                        if bind_slot < 0 {
+                            exec_lower_pop_scope(ctx);
+                            exec_backend_set_error(expr, "exec: union match 绑定槽位不足" as *byte, 0);
+                            return null;
+                        }
+                    }
+                    if arm_union.result_is_block != 0 {
+                        arm_result_expr2 = exec_lower_extract_block_result_expr(ctx, arm_union.result_expr);
+                    } else {
+                        arm_result_expr2 = exec_lower_expr(ctx, arm_union.result_expr);
+                    }
+                    exec_lower_pop_scope(ctx);
+                } else {
+                    if arm_union.result_is_block != 0 {
+                        arm_result_expr2 = exec_lower_extract_block_result_expr(ctx, arm_union.result_expr);
+                    } else {
+                        arm_result_expr2 = exec_lower_expr(ctx, arm_union.result_expr);
+                    }
+                }
+                if arm_result_expr2 == null {
+                    return null;
+                }
+                arms_union[umi] = HIRMatchArm {
+                    kind: arm_union.kind,
+                    int_value: variant_index2 as i64,
+                    bool_value: 0,
+                    bind_local_slot: bind_slot,
+                    result_expr: arm_result_expr2,
+                };
+                umi = umi + 1;
+            }
+            const hir_union_match: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_MATCH, &expr_type);
+            if hir_union_match == null {
+                return null;
+            }
+            hir_union_match.left = subject_expr;
+            hir_union_match.match_arms = arms_union;
+            hir_union_match.match_arm_count = expr.match_expr_arm_count;
+            return hir_union_match;
+        }
         if exec_type_is_scalar_supported(subject_expr.type_ref.type) == 0 {
             return exec_lower_fail_expr_reason(expr, "exec: 当前仅支持标量 match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
         }
@@ -1821,6 +2150,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 kind: arm.kind,
                 int_value: arm.literal_int_value as i64,
                 bool_value: arm.literal_is_bool,
+                bind_local_slot: -1,
                 result_expr: arm_result_expr,
             };
             mi = mi + 1;
@@ -2293,6 +2623,7 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
                 const to_decl: &ASTNode = checker.fn_call_edge_to[edge_idx];
                 if to_decl != null &&
                     to_decl.type == ASTNodeType.AST_FN_DECL &&
+                    exec_lower_has_extern_stub_override(checker, to_decl) == 0 &&
                     exec_lower_extern_can_run_in_vm(checker, to_decl) != 0 &&
                     exec_lower_decl_index(&exec_reachable[0] as & & ASTNode, exec_reachable_count, to_decl) < 0 {
                     if exec_reachable_count >= MAX_REACHABLE_FN_DECLS || tail >= MAX_REACHABLE_FN_DECLS {

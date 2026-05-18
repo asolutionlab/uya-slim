@@ -36,6 +36,7 @@ enum HIRExprKind {
     HIR_EXPR_STRUCT_INIT,
     HIR_EXPR_ARRAY_INIT,
     HIR_EXPR_TUPLE_INIT,
+    HIR_EXPR_UNION_INIT,
     HIR_EXPR_FIELD,
     HIR_EXPR_INDEX,
     HIR_EXPR_SLICE,
@@ -53,6 +54,7 @@ struct HIRMatchArm {
     kind: MatchPatternKind,
     int_value: i64,
     bool_value: i32,
+    bind_local_slot: i32,
     result_expr: &HIRExpr,
 }
 

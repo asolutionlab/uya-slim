@@ -604,6 +604,31 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         return dst_init;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_UNION_INIT {
+        const dst_union: i32 = exec_builder_new_temp(ctx);
+        if dst_union < 0 {
+            return -1;
+        }
+        var payload_slot: i32 = -1;
+        if expr.left != null {
+            payload_slot = exec_builder_compile_expr(ctx, expr.left);
+            if payload_slot < 0 {
+                return -1;
+            }
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_UNION,
+            a: dst_union,
+            b: payload_slot,
+            c: 0,
+            imm: expr.int_value,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_union;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_FIELD {
         const base_slot_field: i32 = exec_builder_compile_expr(ctx, expr.left);
         const dst_field: i32 = exec_builder_new_temp(ctx);
@@ -854,6 +879,155 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         const match_dst: i32 = exec_builder_new_temp(ctx);
         if match_dst < 0 {
             return -1;
+        }
+        if expr.left != null && expr.left.type_ref.type.kind == TypeKind.TYPE_UNION {
+            const tag_slot: i32 = exec_builder_new_temp(ctx);
+            if tag_slot < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_LOAD_UNION_TAG,
+                a: tag_slot,
+                b: subject_slot,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            var union_end_jumps: [i32: 64] = [];
+            var union_end_jump_count: i32 = 0;
+            var umi: i32 = 0;
+            while umi < expr.match_arm_count {
+                const union_arm: &HIRMatchArm = expr.match_arms + umi;
+                if union_arm.kind == MatchPatternKind.MATCH_PAT_ELSE || union_arm.kind == MatchPatternKind.MATCH_PAT_WILDCARD {
+                    const else_slot: i32 = exec_builder_compile_expr(ctx, union_arm.result_expr);
+                    if else_slot < 0 {
+                        return -1;
+                    }
+                    if exec_builder_emit(ctx, BCInstr {
+                        opcode: BCOpcode.BC_MOV,
+                        a: match_dst,
+                        b: else_slot,
+                        c: 0,
+                        imm: 0,
+                        text: null,
+                        source: exec_builder_make_source(expr.ast_node),
+                    }) < 0 {
+                        return -1;
+                    }
+                } else {
+                    const pattern_slot2: i32 = exec_builder_new_temp(ctx);
+                    const cmp_slot2: i32 = exec_builder_new_temp(ctx);
+                    if pattern_slot2 < 0 || cmp_slot2 < 0 {
+                        return -1;
+                    }
+                    var union_pattern_expr: HIRExpr = HIRExpr {
+                        kind: HIRExprKind.HIR_EXPR_CONST,
+                        ast_node: expr.ast_node,
+                        type_ref: HIRTypeRef {
+                            type: make_i32_type(),
+                        },
+                        local_slot: -1,
+                        global_slot: -1,
+                        unary_op: 0,
+                        binary_op: 0,
+                        int_value: union_arm.int_value,
+                        bool_value: 0,
+                        string_value: null,
+                        left: null,
+                        right: null,
+                        callee_name: null,
+                        callee_decl: null,
+                        call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
+                        call_args: null,
+                        call_arg_count: 0,
+                        items: null,
+                        item_count: 0,
+                        extra: null,
+                        match_arms: null,
+                        match_arm_count: 0,
+                    };
+                    if exec_builder_emit_const(ctx, pattern_slot2, &union_pattern_expr) < 0 {
+                        return -1;
+                    }
+                    if exec_builder_emit(ctx, BCInstr {
+                        opcode: BCOpcode.BC_CMP_EQ,
+                        a: cmp_slot2,
+                        b: tag_slot,
+                        c: pattern_slot2,
+                        imm: 0,
+                        text: null,
+                        source: exec_builder_make_source(expr.ast_node),
+                    }) < 0 {
+                        return -1;
+                    }
+                    const next_union_arm_jump: i32 = exec_builder_emit(ctx, BCInstr {
+                        opcode: BCOpcode.BC_JMP_IF_FALSE,
+                        a: cmp_slot2,
+                        b: 0,
+                        c: 0,
+                        imm: 0,
+                        text: null,
+                        source: exec_builder_make_source(expr.ast_node),
+                    });
+                    if next_union_arm_jump < 0 {
+                        return -1;
+                    }
+                    if union_arm.bind_local_slot >= 0 {
+                        if exec_builder_emit(ctx, BCInstr {
+                            opcode: BCOpcode.BC_LOAD_UNION_PAYLOAD,
+                            a: union_arm.bind_local_slot,
+                            b: subject_slot,
+                            c: 0,
+                            imm: 0,
+                            text: null,
+                            source: exec_builder_make_source(expr.ast_node),
+                        }) < 0 {
+                            return -1;
+                        }
+                    }
+                    const matched_slot2: i32 = exec_builder_compile_expr(ctx, union_arm.result_expr);
+                    if matched_slot2 < 0 {
+                        return -1;
+                    }
+                    if exec_builder_emit(ctx, BCInstr {
+                        opcode: BCOpcode.BC_MOV,
+                        a: match_dst,
+                        b: matched_slot2,
+                        c: 0,
+                        imm: 0,
+                        text: null,
+                        source: exec_builder_make_source(expr.ast_node),
+                    }) < 0 {
+                        return -1;
+                    }
+                    if union_end_jump_count < 64 {
+                        union_end_jumps[union_end_jump_count] = exec_builder_emit(ctx, BCInstr {
+                            opcode: BCOpcode.BC_JMP,
+                            a: 0,
+                            b: 0,
+                            c: 0,
+                            imm: 0,
+                            text: null,
+                            source: exec_builder_make_source(expr.ast_node),
+                        });
+                        if union_end_jumps[union_end_jump_count] < 0 {
+                            return -1;
+                        }
+                        union_end_jump_count = union_end_jump_count + 1;
+                    }
+                    exec_builder_patch_jump(ctx, next_union_arm_jump, ctx.instr_count);
+                }
+                umi = umi + 1;
+            }
+            umi = 0;
+            while umi < union_end_jump_count {
+                exec_builder_patch_jump(ctx, union_end_jumps[umi], ctx.instr_count);
+                umi = umi + 1;
+            }
+            return match_dst;
         }
         var end_jumps: [i32: 64] = [];
         var end_jump_count: i32 = 0;
@@ -1767,6 +1941,8 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
         } else if instr.opcode == BCOpcode.BC_NEG || instr.opcode == BCOpcode.BC_NOT ||
             instr.opcode == BCOpcode.BC_CAST ||
             instr.opcode == BCOpcode.BC_LOAD_LEN ||
+            instr.opcode == BCOpcode.BC_LOAD_UNION_TAG ||
+            instr.opcode == BCOpcode.BC_LOAD_UNION_PAYLOAD ||
             instr.opcode == BCOpcode.BC_MAKE_OK || instr.opcode == BCOpcode.BC_MAKE_ERR ||
             instr.opcode == BCOpcode.BC_IS_ERR || instr.opcode == BCOpcode.BC_UNWRAP_OK ||
             instr.opcode == BCOpcode.BC_UNWRAP_ERR ||
@@ -1799,6 +1975,20 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             const dst_slot5: i32 = instr.a;
             if dst_slot5 >= 0 && dst_slot5 < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot5] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_MAKE_UNION {
+            if instr.b >= 0 {
+                if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MAKE_UNION 载荷槽位非法" as *byte) != 0 {
+                    return -1;
+                }
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: MAKE_UNION 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_union: i32 = instr.a;
+            if dst_slot_union >= 0 && dst_slot_union < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_union] = 1;
             }
         } else if instr.opcode == BCOpcode.BC_MAKE_SLICE {
             if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MAKE_SLICE 基槽位非法" as *byte) != 0 ||

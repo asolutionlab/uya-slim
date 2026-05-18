@@ -21,6 +21,7 @@ enum ExecValueKind {
     EXEC_VALUE_ARRAY,
     EXEC_VALUE_SLICE,
     EXEC_VALUE_TUPLE,
+    EXEC_VALUE_UNION,
     EXEC_VALUE_ERROR,
     EXEC_VALUE_ERROR_UNION,
 }
@@ -34,6 +35,11 @@ struct ExecSliceData {
     aggregate: &ExecAggregate,
     start: i32,
     len: i32,
+}
+
+struct ExecUnionData {
+    tag: i32,
+    payload: ExecValue,
 }
 
 struct ExecValue {
@@ -222,6 +228,24 @@ fn exec_make_error(error_id: i32) ExecValue {
     };
 }
 
+fn exec_make_union(tag: i32, payload: ExecValue) ExecValue {
+    const union_data: &ExecUnionData = exec_value_alloc_bytes(@size_of(ExecUnionData)) as &ExecUnionData;
+    if union_data == null {
+        return exec_make_void();
+    }
+    union_data.tag = tag;
+    union_data.payload = exec_value_clone(&payload);
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_UNION,
+        i64_value: tag as i64,
+        ptr_value: union_data as &byte,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
 fn exec_make_error_union_ok(value: ExecValue) ExecValue {
     return ExecValue {
         kind: ExecValueKind.EXEC_VALUE_ERROR_UNION,
@@ -371,6 +395,13 @@ fn exec_value_as_slice(value: &ExecValue) &ExecSliceData {
     return value.ptr_value as &ExecSliceData;
 }
 
+fn exec_value_as_union(value: &ExecValue) &ExecUnionData {
+    if value == null || value.kind != ExecValueKind.EXEC_VALUE_UNION {
+        return null;
+    }
+    return value.ptr_value as &ExecUnionData;
+}
+
 fn exec_value_clone(value: &ExecValue) ExecValue {
     if value == null {
         return exec_make_void();
@@ -401,6 +432,13 @@ fn exec_value_clone(value: &ExecValue) ExecValue {
         }
         return exec_make_slice(slice_data.aggregate, slice_data.start, slice_data.len);
     }
+    if value.kind == ExecValueKind.EXEC_VALUE_UNION {
+        const union_data: &ExecUnionData = exec_value_as_union(value);
+        if union_data == null {
+            return exec_make_void();
+        }
+        return exec_make_union(union_data.tag, union_data.payload);
+    }
     if value.kind == ExecValueKind.EXEC_VALUE_ERROR_UNION {
         if value.i64_value != 0 {
             return exec_make_error_union_err(value.error_id);
@@ -428,6 +466,9 @@ fn exec_value_count(value: &ExecValue) i32 {
         if slice_data != null {
             return slice_data.len;
         }
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_UNION {
+        return 1;
     }
     return 0;
 }
@@ -516,7 +557,8 @@ fn exec_value_truthy(value: ExecValue) i32 {
     if value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
         value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
         value.kind == ExecValueKind.EXEC_VALUE_TUPLE ||
-        value.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        value.kind == ExecValueKind.EXEC_VALUE_SLICE ||
+        value.kind == ExecValueKind.EXEC_VALUE_UNION {
         if exec_value_count(&value) != 0 {
             return 1;
         }

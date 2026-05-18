@@ -606,7 +606,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 2026-05-18 已把 `u8/u16/usize/isize` 放通到 exec lowering / const pool / VM 算术与比较路径；其中 `isize` 继续遵循当前 checker 的既有实现，内部沿用 `TYPE_I64` 映射，而不是额外引入一套平行类型枚举。
 - 2026-05-18 已新增通用 pointer value kind，并支持 pointer/null 比较、pointer cast、`ptr[idx]` 的 byte/整数 pointee 读写，以及 `@ptr_from_usize` / `@usize_from_ptr` 的运行期执行。
-- 2026-05-18 已让一批“带函数体且非 varargs”的 `extern "libc"` 走普通 lowering/VM 路径，当前已用回归覆盖 `atoi` / `isqrt` / `strcmp`；`puts` / `atoll` / `llabs` 仍暂留 host bridge，`printf` 这类 varargs 继续明确报 unsupported 并在 `--exec` 下 fallback 到 C99。
+- 2026-05-18 已让一批“带函数体且非 varargs”的 `extern "libc"` 走普通 lowering/VM 路径，当前已用回归覆盖 `atoi` / `isqrt` / `strcmp`；并且当程序显式声明同名无函数体 `extern` stub 时，exec 现在会优先按 stub 走最小 host bridge，而不是误把 stdlib 里的实现体也拉进 reachable 队列。
+- `puts` / `atoll` / `llabs` 当前建议继续通过 stub bridge 走宿主边界；`printf` 这类 varargs 继续明确报 unsupported 并在 `--exec` 下 fallback 到 C99。
+- 2026-05-18 已新增第一版 tagged union 子集：
+  - `union` 值现在可进入 exec VM 表示
+  - `UnionName.variant(payload)` 构造已接通 lowering / bytecode / VM
+  - `match union_value { .Variant(x) => ..., else => ... }` 基础路径已可执行
+  - 新增 `tests/test_exec_vm_union_dispatch.uya`
+- 当前仍有两个明确残留：
+  - `tests/test_exec_vm_union_dispatch.uya` 运行路径已打通，但 checker 仍会打印一条历史诊断 `match 所有分支的返回类型必须一致`
+  - `tests/test_exec_vm_interface_dispatch.uya` 作为 TDD 覆盖已加入，当前首个 blocker 仍是 interface 参数/值表示与动态分发尚未接通
 
 ---
 
