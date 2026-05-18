@@ -8,6 +8,8 @@ use libc.isqrt;
 use libc.strcmp;
 use libc.llabs;
 
+const EXEC_VM_REF_KIND_BASE: i32 = 65536;
+
 fn exec_vm_slot_ref(frame: &ExecFrame, idx: i32) &ExecValue {
     if frame == null || idx < 0 || idx >= EXEC_MAX_FRAME_SLOTS {
         return null;
@@ -148,6 +150,104 @@ fn exec_vm_pointer_address(value: &ExecValue) usize {
         return 0 as usize;
     }
     return value.i64_value as usize;
+}
+
+fn exec_vm_encode_ref_kind(pointee_kind: i32) i32 {
+    return EXEC_VM_REF_KIND_BASE + pointee_kind;
+}
+
+fn exec_vm_decode_ref_kind(encoded_kind: i32) i32 {
+    if encoded_kind >= EXEC_VM_REF_KIND_BASE {
+        return encoded_kind - EXEC_VM_REF_KIND_BASE;
+    }
+    return TypeKind.TYPE_VOID as i32;
+}
+
+fn exec_vm_pointer_is_internal_ref(value: &ExecValue) i32 {
+    if value == null || value.kind != ExecValueKind.EXEC_VALUE_POINTER {
+        return 0;
+    }
+    return (value.aux_i64_value as i32 >= EXEC_VM_REF_KIND_BASE) as i32;
+}
+
+fn exec_vm_make_value_ref(target: &ExecValue, pointee_kind: i32) ExecValue {
+    if target == null {
+        return exec_make_pointer_with_kind(0 as usize, exec_vm_encode_ref_kind(pointee_kind));
+    }
+    const target_addr: usize = @usize_from_ptr(target as &void);
+    return exec_make_pointer_with_kind(target_addr, exec_vm_encode_ref_kind(pointee_kind));
+}
+
+fn exec_vm_ref_target_value(value: &ExecValue) &ExecValue {
+    if exec_vm_pointer_is_internal_ref(value) == 0 {
+        return null;
+    }
+    const target_addr: usize = exec_vm_pointer_address(value);
+    if target_addr == 0 as usize {
+        return null;
+    }
+    return @ptr_from_usize(target_addr) as &ExecValue;
+}
+
+fn exec_vm_box_value_ref(value: ExecValue, pointee_kind: i32) ExecValue {
+    const boxed: &ExecValue = exec_value_alloc_bytes(@size_of(ExecValue)) as &ExecValue;
+    if boxed == null {
+        return exec_make_pointer_with_kind(0 as usize, exec_vm_encode_ref_kind(pointee_kind));
+    }
+    boxed[0] = exec_value_clone(&value);
+    return exec_vm_make_value_ref(boxed, pointee_kind);
+}
+
+fn exec_vm_aggregate_ref_from_value(value: &ExecValue) &ExecAggregate {
+    if value == null {
+        return null;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
+        value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
+        value.kind == ExecValueKind.EXEC_VALUE_TUPLE {
+        return exec_value_as_aggregate(value);
+    }
+    if exec_vm_pointer_is_internal_ref(value) != 0 {
+        const target: &ExecValue = exec_vm_ref_target_value(value);
+        if target == null {
+            return null;
+        }
+        return exec_value_as_aggregate(target);
+    }
+    return null;
+}
+
+fn exec_vm_field_ref(value: &ExecValue, field_idx: i32) &ExecValue {
+    const aggregate: &ExecAggregate = exec_vm_aggregate_ref_from_value(value);
+    if aggregate == null || field_idx < 0 || field_idx >= aggregate.count {
+        return null;
+    }
+    return &aggregate.values[field_idx];
+}
+
+fn exec_vm_index_ref(value: &ExecValue, index_value: i32) &ExecValue {
+    if value == null || index_value < 0 {
+        return null;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_SLICE {
+        const slice_data: &ExecSliceData = exec_value_as_slice(value);
+        if slice_data == null || slice_data.aggregate == null || index_value >= slice_data.len {
+            return null;
+        }
+        return &slice_data.aggregate.values[slice_data.start + index_value];
+    }
+    if exec_vm_pointer_is_internal_ref(value) != 0 {
+        const target: &ExecValue = exec_vm_ref_target_value(value);
+        if target == null {
+            return null;
+        }
+        return exec_vm_index_ref(target, index_value);
+    }
+    const aggregate: &ExecAggregate = exec_value_as_aggregate(value);
+    if aggregate == null || index_value >= aggregate.count {
+        return null;
+    }
+    return &aggregate.values[index_value];
 }
 
 fn exec_vm_load_pointer_index(function: &BCFunction, base: ExecValue, index_value: i64, out_value: &ExecValue) i32 {
@@ -623,6 +723,47 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         exec_vm_store_slot(slot_a, slot_b[0]);
+    } else if instr.opcode == BCOpcode.BC_ADDR_LOCAL {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: ADDR_LOCAL 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_vm_make_value_ref(slot_b, instr.c);
+    } else if instr.opcode == BCOpcode.BC_ADDR_GLOBAL {
+        const global_slot3: &ExecValue = exec_vm_global_ref(program, instr.b);
+        if slot_a == null || global_slot3 == null {
+            exec_backend_set_error(function.decl, "exec: ADDR_GLOBAL 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_vm_make_value_ref(global_slot3, instr.c);
+    } else if instr.opcode == BCOpcode.BC_ADDR_FIELD {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: ADDR_FIELD 槽位越界" as *byte, 0);
+            return -1;
+        }
+        const field_ref: &ExecValue = exec_vm_field_ref(slot_b, instr.imm as i32);
+        if field_ref == null {
+            exec_backend_set_error(function.decl, "exec: ADDR_FIELD 字段越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_vm_make_value_ref(field_ref, instr.c);
+    } else if instr.opcode == BCOpcode.BC_ADDR_INDEX {
+        if slot_a == null || slot_b == null || slot_c == null {
+            exec_backend_set_error(function.decl, "exec: ADDR_INDEX 槽位越界" as *byte, 0);
+            return -1;
+        }
+        const index_ref: &ExecValue = exec_vm_index_ref(slot_b, slot_c.i64_value as i32);
+        if index_ref == null {
+            exec_backend_set_error(function.decl, "exec: ADDR_INDEX 越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_vm_make_value_ref(index_ref, instr.imm as i32);
+    } else if instr.opcode == BCOpcode.BC_BOX_VALUE {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: BOX_VALUE 槽位越界" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_vm_box_value_ref(slot_b[0], instr.c);
     } else if instr.opcode == BCOpcode.BC_ADD {
         if slot_a == null || slot_b == null || slot_c == null {
             exec_backend_set_error(function.decl, "exec: ADD 槽位越界" as *byte, 0);
@@ -806,29 +947,37 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             exec_backend_set_error(function.decl, "exec: LOAD_FIELD 槽位越界" as *byte, 0);
             return -1;
         }
-        const field_value: ExecValue = exec_value_get_index(slot_b, instr.imm as i32);
-        if field_value.kind == ExecValueKind.EXEC_VALUE_VOID &&
-            exec_value_count(slot_b) <= instr.imm as i32 {
+        const field_ref: &ExecValue = exec_vm_field_ref(slot_b, instr.imm as i32);
+        if field_ref == null {
             exec_backend_set_error(function.decl, "exec: LOAD_FIELD 字段越界" as *byte, 0);
             return -1;
         }
-        exec_vm_store_slot(slot_a, field_value);
+        exec_vm_store_slot(slot_a, field_ref[0]);
     } else if instr.opcode == BCOpcode.BC_STORE_FIELD {
         if slot_a == null || slot_b == null {
             exec_backend_set_error(function.decl, "exec: STORE_FIELD 槽位越界" as *byte, 0);
             return -1;
         }
-        if exec_value_set_index(slot_a, instr.imm as i32, slot_b) != 0 {
+        const field_ref2: &ExecValue = exec_vm_field_ref(slot_a, instr.imm as i32);
+        if field_ref2 == null {
             exec_backend_set_error(function.decl, "exec: STORE_FIELD 字段越界" as *byte, 0);
             return -1;
         }
+        exec_vm_store_slot(field_ref2, slot_b[0]);
     } else if instr.opcode == BCOpcode.BC_LOAD_INDEX {
         if slot_a == null || slot_b == null || slot_c == null {
             exec_backend_set_error(function.decl, "exec: LOAD_INDEX 槽位越界" as *byte, 0);
             return -1;
         }
         const index_value: i32 = slot_c.i64_value as i32;
-        if exec_value_is_pointer_like(slot_b[0]) != 0 {
+        if exec_vm_pointer_is_internal_ref(slot_b) != 0 {
+            const index_ref2: &ExecValue = exec_vm_index_ref(slot_b, index_value);
+            if index_ref2 == null {
+                exec_backend_set_error(function.decl, "exec: LOAD_INDEX 越界" as *byte, 0);
+                return -1;
+            }
+            exec_vm_store_slot(slot_a, index_ref2[0]);
+        } else if exec_value_is_pointer_like(slot_b[0]) != 0 {
             if exec_vm_load_pointer_index(function, slot_b[0], slot_c.i64_value, slot_a) != 0 {
                 return -1;
             }
@@ -845,7 +994,14 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         const index_value2: i32 = slot_b.i64_value as i32;
-        if exec_value_is_pointer_like(slot_a[0]) != 0 {
+        if exec_vm_pointer_is_internal_ref(slot_a) != 0 {
+            const index_ref3: &ExecValue = exec_vm_index_ref(slot_a, index_value2);
+            if index_ref3 == null {
+                exec_backend_set_error(function.decl, "exec: STORE_INDEX 越界" as *byte, 0);
+                return -1;
+            }
+            exec_vm_store_slot(index_ref3, slot_c[0]);
+        } else if exec_value_is_pointer_like(slot_a[0]) != 0 {
             if exec_vm_store_pointer_index(function, slot_a[0], slot_b.i64_value, slot_c[0]) != 0 {
                 return -1;
             }
@@ -1013,6 +1169,32 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         exec_vm_store_slot(slot_a, call_result);
+    } else if instr.opcode == BCOpcode.BC_CALL_INDIRECT {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: CALL_INDIRECT 槽位越界" as *byte, 0);
+            return -1;
+        }
+        const callee_idx2: i32 = slot_b.i64_value as i32;
+        if callee_idx2 < 0 || callee_idx2 >= program.function_count {
+            exec_backend_set_error(function.decl, "exec: CALL_INDIRECT 目标非法" as *byte, 0);
+            return -1;
+        }
+        var call_args3: [ExecValue: EXEC_MAX_CALL_ARGS] = [];
+        var ai3: i32 = 0;
+        while ai3 < instr.imm as i32 && ai3 < EXEC_MAX_CALL_ARGS {
+            const arg_slot3: &ExecValue = exec_vm_slot_ref(frame, instr.c + ai3);
+            if arg_slot3 == null {
+                exec_backend_set_error(function.decl, "exec: CALL_INDIRECT 参数槽位越界" as *byte, 0);
+                return -1;
+            }
+            call_args3[ai3] = exec_value_clone(arg_slot3);
+            ai3 = ai3 + 1;
+        }
+        var indirect_result: ExecValue = exec_make_void();
+        if exec_vm_call_function(program, callee_idx2, &call_args3[0], instr.imm as i32, trace_vm, &indirect_result) != 0 {
+            return -1;
+        }
+        exec_vm_store_slot(slot_a, indirect_result);
     } else if instr.opcode == BCOpcode.BC_CALL_EXTERN {
         var call_args2: [ExecValue: EXEC_MAX_CALL_ARGS] = [];
         var ai2: i32 = 0;

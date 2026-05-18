@@ -21,6 +21,8 @@ TESTS=(
     "test_exec_vm_aggregates.uya"
     "test_exec_vm_scalar_pointer.uya"
     "test_exec_vm_extern_impl.uya"
+    "test_exec_vm_interface_dispatch.uya"
+    "test_exec_vm_interface_stateful.uya"
 )
 
 TMP_STDOUT="$(mktemp)"

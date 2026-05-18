@@ -443,6 +443,70 @@ fn exec_builder_compile_item_pack(ctx: &ExecFunctionBuildContext, items: & & HIR
     return item_base;
 }
 
+fn exec_builder_pack_source_slots(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, src_slots: &i32, slot_count: i32) i32 {
+    var item_base: i32 = -1;
+    var i: i32 = 0;
+    while i < slot_count {
+        const dst_slot: i32 = exec_builder_new_temp(ctx);
+        if dst_slot < 0 {
+            return -1;
+        }
+        if i == 0 {
+            item_base = dst_slot;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MOV,
+            a: dst_slot,
+            b: src_slots[i],
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        i = i + 1;
+    }
+    return item_base;
+}
+
+fn exec_builder_emit_i32_const_slot(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, value: i32) i32 {
+    const dst_slot: i32 = exec_builder_new_temp(ctx);
+    if dst_slot < 0 {
+        return -1;
+    }
+    var expr_const: HIRExpr = HIRExpr {
+        kind: HIRExprKind.HIR_EXPR_CONST,
+        ast_node: ast_node,
+        type_ref: HIRTypeRef { type: make_i32_type() },
+        local_slot: -1,
+        global_slot: -1,
+        unary_op: 0,
+        binary_op: 0,
+        int_value: value as i64,
+        bool_value: 0,
+        string_value: null,
+        left: null,
+        right: null,
+        callee_name: null,
+        callee_decl: null,
+        call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
+        call_args: null,
+        call_arg_count: 0,
+        dispatch_decls: null,
+        dispatch_decl_count: 0,
+        items: null,
+        item_count: 0,
+        extra: null,
+        match_arms: null,
+        match_arm_count: 0,
+    };
+    if exec_builder_emit_const(ctx, dst_slot, &expr_const) < 0 {
+        return -1;
+    }
+    return dst_slot;
+}
+
 fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HIRExpr, src_slot: i32, ast_node: &ASTNode) i32 {
     if ctx == null || target == null || src_slot < 0 {
         return -1;
@@ -529,6 +593,98 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         return dst_global;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_ADDR {
+        const dst_addr: i32 = exec_builder_new_temp(ctx);
+        if dst_addr < 0 {
+            return -1;
+        }
+        const pointee_kind: i32 = exec_builder_pointer_pointee_kind_code(expr.type_ref.type);
+        if expr.local_slot >= 0 {
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_ADDR_LOCAL,
+                a: dst_addr,
+                b: expr.local_slot,
+                c: pointee_kind,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst_addr;
+        }
+        if expr.global_slot >= 0 {
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_ADDR_GLOBAL,
+                a: dst_addr,
+                b: expr.global_slot,
+                c: pointee_kind,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst_addr;
+        }
+        if expr.right != null {
+            const base_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.left);
+            const index_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.right);
+            if base_slot_addr < 0 || index_slot_addr < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_ADDR_INDEX,
+                a: dst_addr,
+                b: base_slot_addr,
+                c: index_slot_addr,
+                imm: pointee_kind as i64,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst_addr;
+        }
+        if expr.left != null && expr.int_value >= 0 {
+            const base_slot_addr2: i32 = exec_builder_compile_expr(ctx, expr.left);
+            if base_slot_addr2 < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_ADDR_FIELD,
+                a: dst_addr,
+                b: base_slot_addr2,
+                c: pointee_kind,
+                imm: expr.int_value,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst_addr;
+        }
+        if expr.left != null {
+            const src_box_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
+            if src_box_slot < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_BOX_VALUE,
+                a: dst_addr,
+                b: src_box_slot,
+                c: pointee_kind,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst_addr;
+        }
+        exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 无法为表达式构造地址" as *byte);
+        return -1;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_CONST {
         const dst: i32 = exec_builder_new_temp(ctx);
         if dst < 0 {
@@ -603,6 +759,64 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return -1;
         }
         return dst_init;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_INTERFACE_BOX {
+        if expr.dispatch_decl_count <= 0 || expr.dispatch_decls == null {
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: interface 装箱缺少方法表" as *byte);
+            return -1;
+        }
+        if expr.dispatch_decl_count + 1 > 256 {
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: interface 方法表过大" as *byte);
+            return -1;
+        }
+        var item_sources: [i32: 256] = [];
+        var di: i32 = 0;
+        while di < expr.dispatch_decl_count {
+            const decl: &ASTNode = expr.dispatch_decls[di];
+            if decl == null {
+                exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: interface dispatch decl 为空" as *byte);
+                return -1;
+            }
+            const fn_index: i32 = exec_builder_find_function_index(ctx.module, decl, decl.fn_decl_name);
+            if fn_index < 0 {
+                exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: interface 方法未进入 reachable 集合" as *byte);
+                return -1;
+            }
+            const method_slot: i32 = exec_builder_emit_i32_const_slot(ctx, expr.ast_node, fn_index);
+            if method_slot < 0 {
+                return -1;
+            }
+            item_sources[di] = method_slot;
+            di = di + 1;
+        }
+        const data_ref_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if data_ref_slot < 0 {
+            return -1;
+        }
+        const dispatch_slot_idx: i32 = expr.dispatch_decl_count;
+        if dispatch_slot_idx >= 0 && dispatch_slot_idx < 256 {
+            item_sources[dispatch_slot_idx] = data_ref_slot;
+        } else {
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: interface 方法表下标越界" as *byte);
+            return -1;
+        }
+        const packed_base: i32 = exec_builder_pack_source_slots(ctx, expr.ast_node, &item_sources[0], expr.dispatch_decl_count + 1);
+        const dst_iface: i32 = exec_builder_new_temp(ctx);
+        if packed_base < 0 || dst_iface < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_STRUCT,
+            a: dst_iface,
+            b: packed_base,
+            c: expr.dispatch_decl_count + 1,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_iface;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_UNION_INIT {
         const dst_union: i32 = exec_builder_new_temp(ctx);
@@ -943,6 +1157,8 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                         call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
                         call_args: null,
                         call_arg_count: 0,
+                        dispatch_decls: null,
+                        dispatch_decl_count: 0,
                         items: null,
                         item_count: 0,
                         extra: null,
@@ -1067,6 +1283,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                         type: pattern_type,
                     },
                     local_slot: -1,
+                    global_slot: -1,
                     unary_op: 0,
                     binary_op: 0,
                     int_value: arm.int_value,
@@ -1076,8 +1293,11 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                     right: null,
                     callee_name: null,
                     callee_decl: null,
+                    call_extern_id: ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE,
                     call_args: null,
                     call_arg_count: 0,
+                    dispatch_decls: null,
+                    dispatch_decl_count: 0,
                     items: null,
                     item_count: 0,
                     extra: null,
@@ -1371,6 +1591,73 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return -1;
         }
         return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_IMETHOD_CALL {
+        const dst_icall: i32 = exec_builder_new_temp(ctx);
+        if dst_icall < 0 {
+            return -1;
+        }
+        const iface_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if iface_slot < 0 {
+            return -1;
+        }
+        const callee_slot: i32 = exec_builder_new_temp(ctx);
+        const receiver_slot_src: i32 = exec_builder_new_temp(ctx);
+        if callee_slot < 0 || receiver_slot_src < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_LOAD_FIELD,
+            a: callee_slot,
+            b: iface_slot,
+            c: 0,
+            imm: expr.int_value,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_LOAD_FIELD,
+            a: receiver_slot_src,
+            b: iface_slot,
+            c: 0,
+            imm: expr.dispatch_decl_count as i64,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        var arg_sources2: [i32: EXEC_MAX_CALL_ARGS] = [];
+        arg_sources2[0] = receiver_slot_src;
+        var ai3: i32 = 0;
+        while ai3 < expr.call_arg_count {
+            const arg_slot3: i32 = exec_builder_compile_expr(ctx, expr.call_args[ai3]);
+            if arg_slot3 < 0 {
+                return -1;
+            }
+            if ai3 + 1 >= 0 && ai3 + 1 < EXEC_MAX_CALL_ARGS {
+                arg_sources2[ai3 + 1] = arg_slot3;
+            }
+            ai3 = ai3 + 1;
+        }
+        const total_args2: i32 = expr.call_arg_count + 1;
+        const arg_base2: i32 = exec_builder_pack_source_slots(ctx, expr.ast_node, &arg_sources2[0], total_args2);
+        if arg_base2 < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_CALL_INDIRECT,
+            a: dst_icall,
+            b: callee_slot,
+            c: arg_base2,
+            imm: total_args2 as i64,
+            text: expr.callee_name,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_icall;
     }
     exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: builder 不支持该表达式" as *byte);
     return -1;
@@ -1938,6 +2225,68 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             if dst_slot3 >= 0 && dst_slot3 < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot3] = 1;
             }
+        } else if instr.opcode == BCOpcode.BC_ADDR_LOCAL {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: ADDR_LOCAL 源槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: ADDR_LOCAL 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_addr_local: i32 = instr.a;
+            if dst_slot_addr_local >= 0 && dst_slot_addr_local < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_addr_local] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_ADDR_GLOBAL {
+            if instr.b < 0 || instr.b >= module.global_count {
+                exec_backend_set_error(fn_hir.decl, "exec: ADDR_GLOBAL 目标全局非法" as *byte, 0);
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: ADDR_GLOBAL 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_addr_global: i32 = instr.a;
+            if dst_slot_addr_global >= 0 && dst_slot_addr_global < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_addr_global] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_ADDR_FIELD {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: ADDR_FIELD 基槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: ADDR_FIELD 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_addr_field: i32 = instr.a;
+            if dst_slot_addr_field >= 0 && dst_slot_addr_field < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_addr_field] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_ADDR_INDEX {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: ADDR_INDEX 基槽位非法" as *byte) != 0 ||
+                exec_builder_validate_slot_read(fn_hir, instr.c, out_fn.slot_count, &slot_written[0], "exec: ADDR_INDEX 下标槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: ADDR_INDEX 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_addr_index: i32 = instr.a;
+            if dst_slot_addr_index >= 0 && dst_slot_addr_index < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_addr_index] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_BOX_VALUE {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: BOX_VALUE 源槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: BOX_VALUE 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_box_value: i32 = instr.a;
+            if dst_slot_box_value >= 0 && dst_slot_box_value < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_box_value] = 1;
+            }
         } else if instr.opcode == BCOpcode.BC_NEG || instr.opcode == BCOpcode.BC_NOT ||
             instr.opcode == BCOpcode.BC_CAST ||
             instr.opcode == BCOpcode.BC_LOAD_LEN ||
@@ -2072,6 +2421,25 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             const dst_slot9: i32 = instr.a;
             if dst_slot9 >= 0 && dst_slot9 < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot9] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_CALL_INDIRECT {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: CALL_INDIRECT 目标槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            var ai_indirect: i32 = 0;
+            while ai_indirect < instr.imm as i32 {
+                if exec_builder_validate_slot_read(fn_hir, instr.c + ai_indirect, out_fn.slot_count, &slot_written[0], "exec: CALL_INDIRECT 参数槽位非法" as *byte) != 0 {
+                    return -1;
+                }
+                ai_indirect = ai_indirect + 1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: CALL_INDIRECT 返回槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_indirect: i32 = instr.a;
+            if dst_slot_indirect >= 0 && dst_slot_indirect < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_indirect] = 1;
             }
         } else if instr.opcode == BCOpcode.BC_CALL_EXTERN {
             var ai2: i32 = 0;

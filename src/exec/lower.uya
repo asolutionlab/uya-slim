@@ -5,6 +5,7 @@ use libc;
 const EXEC_MAX_LOCALS: i32 = 256;
 const EXEC_MAX_GLOBALS: i32 = 256;
 const EXEC_MAX_SCOPE_DEPTH: i32 = 64;
+const EXEC_MAX_INTERFACE_METHODS: i32 = 64;
 
 struct ExecLowerContext {
     arena: &CompilerArena,
@@ -202,6 +203,9 @@ fn exec_type_is_aggregate_supported(ty: Type) i32 {
 
 fn exec_type_is_vm_value_supported(type: Type) i32 {
     if exec_type_is_scalar_supported(type) != 0 {
+        return 1;
+    }
+    if type.kind == TypeKind.TYPE_INTERFACE {
         return 1;
     }
     if type.kind == TypeKind.TYPE_UNION {
@@ -579,6 +583,327 @@ fn exec_lower_make_binary_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, op: i
     return expr;
 }
 
+fn exec_lower_make_pointer_type_copy(ctx: &ExecLowerContext, pointee_type: Type) Type {
+    if ctx == null || ctx.arena == null {
+        return exec_lower_make_void_pointer_type();
+    }
+    const pointee_copy: &Type = compiler_arena_alloc(ctx.arena, @size_of(Type)) as &Type;
+    if pointee_copy == null {
+        return exec_lower_make_void_pointer_type();
+    }
+    pointee_copy[0] = copy_type(&pointee_type);
+    return make_pointer_type(ctx.arena, pointee_copy, 0);
+}
+
+fn exec_lower_add_unique_decl(out_decls: & & ASTNode, out_count: &i32, decl: &ASTNode) i32 {
+    if out_count == null || decl == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < out_count[0] {
+        if out_decls[i] == decl {
+            return 0;
+        }
+        i = i + 1;
+    }
+    if out_count[0] >= EXEC_MAX_INTERFACE_METHODS {
+        return -1;
+    }
+    out_decls[out_count[0]] = decl;
+    out_count[0] = out_count[0] + 1;
+    return 0;
+}
+
+fn exec_lower_collect_interface_method_sigs_recursive(ctx: &ExecLowerContext, interface_name: &byte, out_decls: & & ASTNode, out_count: &i32) i32 {
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
+        interface_name == null || out_count == null {
+        return -1;
+    }
+    const iface: &ASTNode = find_interface_decl_from_program(ctx.checker.program_node, interface_name);
+    if iface == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < iface.interface_decl_method_sig_count {
+        const sig: &ASTNode = iface.interface_decl_method_sigs[i];
+        if sig != null && exec_lower_add_unique_decl(out_decls, out_count, sig) != 0 {
+            return -1;
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while i < iface.interface_decl_composed_count {
+        const composed_name: &byte = iface.interface_decl_composed_interfaces[i];
+        if composed_name != null &&
+            exec_lower_collect_interface_method_sigs_recursive(ctx, composed_name, out_decls, out_count) != 0 {
+            return -1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_interface_method_sigs(ctx: &ExecLowerContext, interface_type: &Type, out_decls: & & ASTNode, out_count: &i32) i32 {
+    const interface_name: &byte = type_get_interface_name(interface_type);
+    if interface_name == null {
+        return -1;
+    }
+    return exec_lower_collect_interface_method_sigs_recursive(ctx, interface_name, out_decls, out_count);
+}
+
+fn exec_lower_interface_method_index(ctx: &ExecLowerContext, interface_type: &Type, method_name: &byte) i32 {
+    if ctx == null || method_name == null {
+        return -1;
+    }
+    var sigs: [&ASTNode: EXEC_MAX_INTERFACE_METHODS] = [];
+    var sig_count: i32 = 0;
+    if exec_lower_collect_interface_method_sigs(ctx, interface_type, &sigs[0] as & & ASTNode, &sig_count) != 0 {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < sig_count {
+        const sig: &ASTNode = sigs[i];
+        if sig != null && sig.fn_decl_name != null && str_equals(sig.fn_decl_name, method_name) != 0 {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_lower_struct_field_type(ctx: &ExecLowerContext, struct_type: Type, field_name: &byte) Type {
+    const struct_name: &byte = type_get_struct_name(&struct_type);
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
+        struct_name == null || field_name == null {
+        return make_void_type();
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(ctx.checker.program_node, struct_name);
+    if struct_decl == null {
+        return make_void_type();
+    }
+    return find_struct_field_type(ctx.checker, struct_decl, field_name);
+}
+
+fn exec_lower_make_addr_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, pointee_type: &Type) &HIRExpr {
+    if pointee_type == null {
+        return null;
+    }
+    const pointer_type: Type = exec_lower_make_pointer_type_copy(ctx, pointee_type[0]);
+    return exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_ADDR, &pointer_type);
+}
+
+fn exec_lower_make_ref_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
+    if ctx == null || expr == null {
+        return null;
+    }
+    const expr_type: Type = exec_lower_expr_type(ctx, expr);
+    if expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
+        const local_slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
+        if local_slot >= 0 && local_slot < EXEC_MAX_LOCALS {
+            const addr_local: &HIRExpr = exec_lower_make_addr_expr(ctx, expr, &ctx.slot_types[local_slot]);
+            if addr_local == null {
+                return null;
+            }
+            addr_local.local_slot = local_slot;
+            return addr_local;
+        }
+        const global_slot: i32 = exec_lower_find_global_slot(ctx, expr.identifier_name);
+        if global_slot >= 0 && global_slot < EXEC_MAX_GLOBALS {
+            const addr_global: &HIRExpr = exec_lower_make_addr_expr(ctx, expr, &ctx.global_types[global_slot]);
+            if addr_global == null {
+                return null;
+            }
+            addr_global.global_slot = global_slot;
+            return addr_global;
+        }
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS && expr.member_access_object != null && expr.member_access_field_name != null {
+        const object_raw_type: Type = exec_lower_expr_type(ctx, expr.member_access_object);
+        var base_type: Type = exec_lower_member_base_type(ctx, expr.member_access_object);
+        const field_type: Type = exec_lower_expr_type(ctx, expr);
+        if base_type.kind == TypeKind.TYPE_POINTER && base_type.pointer_to != null {
+            base_type = base_type.pointer_to[0];
+        }
+        var field_index: i32 = -1;
+        if base_type.kind == TypeKind.TYPE_TUPLE {
+            field_index = atoi(expr.member_access_field_name as *byte);
+        } else {
+            field_index = exec_lower_struct_field_index(ctx, base_type, expr.member_access_field_name);
+        }
+        if field_index < 0 {
+            return null;
+        }
+        var base_ref: &HIRExpr = null;
+        if object_raw_type.kind == TypeKind.TYPE_POINTER {
+            base_ref = exec_lower_expr(ctx, expr.member_access_object);
+        } else {
+            base_ref = exec_lower_make_ref_expr(ctx, expr.member_access_object);
+        }
+        if base_ref == null {
+            base_ref = exec_lower_expr(ctx, expr.member_access_object);
+        }
+        if base_ref == null {
+            return null;
+        }
+        const addr_field: &HIRExpr = exec_lower_make_addr_expr(ctx, expr, &field_type);
+        if addr_field == null {
+            return null;
+        }
+        addr_field.left = base_ref;
+        addr_field.int_value = field_index as i64;
+        return addr_field;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_ACCESS && expr.array_access_array != null && expr.array_access_index != null {
+        const array_raw_type: Type = exec_lower_expr_type(ctx, expr.array_access_array);
+        var base_expr: &HIRExpr = null;
+        if array_raw_type.kind == TypeKind.TYPE_POINTER {
+            base_expr = exec_lower_expr(ctx, expr.array_access_array);
+        } else {
+            base_expr = exec_lower_make_ref_expr(ctx, expr.array_access_array);
+        }
+        if base_expr == null {
+            base_expr = exec_lower_expr(ctx, expr.array_access_array);
+        }
+        const index_expr: &HIRExpr = exec_lower_expr(ctx, expr.array_access_index);
+        if base_expr == null || index_expr == null {
+            return null;
+        }
+        const addr_index: &HIRExpr = exec_lower_make_addr_expr(ctx, expr, &expr_type);
+        if addr_index == null {
+            return null;
+        }
+        addr_index.left = base_expr;
+        addr_index.right = index_expr;
+        return addr_index;
+    }
+    const source_expr: &HIRExpr = exec_lower_expr(ctx, expr);
+    if source_expr == null {
+        return null;
+    }
+    const addr_value: &HIRExpr = exec_lower_make_addr_expr(ctx, expr, &expr_type);
+    if addr_value == null {
+        return null;
+    }
+    addr_value.left = source_expr;
+    return addr_value;
+}
+
+fn exec_lower_method_receiver_expr(ctx: &ExecLowerContext, object_expr: &ASTNode, method_decl: &ASTNode) &HIRExpr {
+    if ctx == null || object_expr == null || method_decl == null ||
+        method_decl.type != ASTNodeType.AST_FN_DECL ||
+        method_decl.fn_decl_param_count <= 0 || method_decl.fn_decl_params == null {
+        return null;
+    }
+    const receiver_param: &ASTNode = method_decl.fn_decl_params[0];
+    if receiver_param == null || receiver_param.type != ASTNodeType.AST_VAR_DECL || receiver_param.var_decl_type == null {
+        return null;
+    }
+    const receiver_type: Type = type_from_ast(ctx.checker, receiver_param.var_decl_type);
+    const object_type: Type = exec_lower_expr_type(ctx, object_expr);
+    if receiver_type.kind == TypeKind.TYPE_POINTER {
+        if object_type.kind == TypeKind.TYPE_POINTER {
+            return exec_lower_expr(ctx, object_expr);
+        }
+        return exec_lower_make_ref_expr(ctx, object_expr);
+    }
+    return exec_lower_expr(ctx, object_expr);
+}
+
+fn exec_lower_collect_interface_dispatch_decls(ctx: &ExecLowerContext, interface_type: &Type, concrete_type: &Type, out_decls: & & ASTNode, out_count: &i32) i32 {
+    const struct_name: &byte = type_get_struct_name(concrete_type);
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null || struct_name == null || out_count == null {
+        return -1;
+    }
+    var sigs: [&ASTNode: EXEC_MAX_INTERFACE_METHODS] = [];
+    var sig_count: i32 = 0;
+    if exec_lower_collect_interface_method_sigs(ctx, interface_type, &sigs[0] as & & ASTNode, &sig_count) != 0 {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < sig_count {
+        const sig: &ASTNode = sigs[i];
+        if sig == null || sig.fn_decl_name == null {
+            return -1;
+        }
+        const impl_decl: &ASTNode = find_instance_method_in_struct(ctx.checker.program_node, struct_name, sig.fn_decl_name);
+        if impl_decl == null {
+            return -1;
+        }
+        out_decls[i] = impl_decl;
+        i = i + 1;
+    }
+    out_count[0] = sig_count;
+    return 0;
+}
+
+fn exec_lower_box_interface_expr(ctx: &ExecLowerContext, expr: &ASTNode, interface_type: &Type) &HIRExpr {
+    if ctx == null || expr == null {
+        return null;
+    }
+    var actual_type: Type = exec_lower_expr_type(ctx, expr);
+    if actual_type.kind == TypeKind.TYPE_VOID {
+        actual_type = exec_lower_member_base_type(ctx, expr);
+    }
+    if actual_type.kind == TypeKind.TYPE_INTERFACE && type_equals(actual_type, interface_type[0]) != 0 {
+        return exec_lower_expr(ctx, expr);
+    }
+    if actual_type.kind != TypeKind.TYPE_STRUCT ||
+        actual_type.struct_name == null ||
+        interface_type.kind != TypeKind.TYPE_INTERFACE ||
+        interface_type.interface_name == null ||
+        struct_implements_interface(ctx.checker, actual_type.struct_name, interface_type.interface_name) == 0 {
+        return exec_lower_fail_expr(expr, "exec: 无法装箱为 interface" as *byte);
+    }
+    var dispatch_buf: [&ASTNode: EXEC_MAX_INTERFACE_METHODS] = [];
+    var dispatch_count: i32 = 0;
+    if exec_lower_collect_interface_dispatch_decls(ctx, interface_type, &actual_type, &dispatch_buf[0] as & & ASTNode, &dispatch_count) != 0 {
+        return exec_lower_fail_expr(expr, "exec: interface 方法表构建失败" as *byte);
+    }
+    const dispatch_decls: & & ASTNode = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * dispatch_count as usize) as & & ASTNode;
+    if dispatch_count > 0 && dispatch_decls == null {
+        exec_backend_set_error(expr, "exec: interface dispatch 表分配失败" as *byte, 0);
+        return null;
+    }
+    var di: i32 = 0;
+    while di < dispatch_count {
+        dispatch_decls[di] = dispatch_buf[di];
+        di = di + 1;
+    }
+    const source_ref: &HIRExpr = exec_lower_make_ref_expr(ctx, expr);
+    var source_expr: &HIRExpr = source_ref;
+    if source_expr == null {
+        source_expr = exec_lower_expr(ctx, expr);
+    }
+    if source_expr == null {
+        return null;
+    }
+    const boxed: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_INTERFACE_BOX, interface_type);
+    if boxed == null {
+        return null;
+    }
+    boxed.left = source_expr;
+    boxed.dispatch_decls = dispatch_decls;
+    boxed.dispatch_decl_count = dispatch_count;
+    return boxed;
+}
+
+fn exec_lower_coerce_expr(ctx: &ExecLowerContext, expr: &ASTNode, expected_type: &Type) &HIRExpr {
+    if ctx == null || expr == null {
+        return null;
+    }
+    var actual_type: Type = exec_lower_expr_type(ctx, expr);
+    if actual_type.kind == TypeKind.TYPE_VOID {
+        actual_type = exec_lower_member_base_type(ctx, expr);
+    }
+    if expected_type != null &&
+        expected_type.kind == TypeKind.TYPE_INTERFACE && expected_type.interface_name != null &&
+        actual_type.kind == TypeKind.TYPE_STRUCT && actual_type.struct_name != null &&
+        struct_implements_interface(ctx.checker, actual_type.struct_name, expected_type.interface_name) != 0 {
+        return exec_lower_box_interface_expr(ctx, expr, expected_type);
+    }
+    return exec_lower_expr(ctx, expr);
+}
+
 fn exec_lower_struct_field_index(ctx: &ExecLowerContext, struct_type: Type, field_name: &byte) i32 {
     const struct_name: &byte = type_get_struct_name(&struct_type);
     if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
@@ -722,18 +1047,49 @@ fn exec_lower_member_base_type(ctx: &ExecLowerContext, object: &ASTNode) Type {
     if base_type.kind == TypeKind.TYPE_STRUCT && type_get_struct_name(&base_type) != null {
         return base_type;
     }
+    if base_type.kind == TypeKind.TYPE_POINTER && base_type.pointer_to != null {
+        return base_type.pointer_to[0];
+    }
     if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
         const symbol: &Symbol = symbol_table_lookup(ctx.checker, object.identifier_name);
         if symbol != null {
+            if symbol.type.kind == TypeKind.TYPE_POINTER && symbol.type.pointer_to != null {
+                return symbol.type.pointer_to[0];
+            }
             return symbol.type;
         }
         const slot: i32 = exec_lower_find_slot(ctx, object.identifier_name);
         if slot >= 0 && slot < EXEC_MAX_LOCALS {
+            if ctx.slot_types[slot].kind == TypeKind.TYPE_POINTER && ctx.slot_types[slot].pointer_to != null {
+                return ctx.slot_types[slot].pointer_to[0];
+            }
             return ctx.slot_types[slot];
         }
         const global_slot: i32 = exec_lower_find_global_slot(ctx, object.identifier_name);
         if global_slot >= 0 && global_slot < EXEC_MAX_GLOBALS {
+            if ctx.global_types[global_slot].kind == TypeKind.TYPE_POINTER && ctx.global_types[global_slot].pointer_to != null {
+                return ctx.global_types[global_slot].pointer_to[0];
+            }
             return ctx.global_types[global_slot];
+        }
+    }
+    if object != null && object.type == ASTNodeType.AST_MEMBER_ACCESS &&
+        object.member_access_object != null && object.member_access_field_name != null {
+        var parent_type: Type = exec_lower_member_base_type(ctx, object.member_access_object);
+        if parent_type.kind == TypeKind.TYPE_POINTER && parent_type.pointer_to != null {
+            parent_type = parent_type.pointer_to[0];
+        }
+        if parent_type.kind == TypeKind.TYPE_TUPLE && parent_type.tuple_element_types != null {
+            const tuple_index: i32 = atoi(object.member_access_field_name as *byte);
+            if tuple_index >= 0 && tuple_index < parent_type.tuple_count {
+                return parent_type.tuple_element_types[tuple_index];
+            }
+        }
+        if parent_type.kind == TypeKind.TYPE_STRUCT {
+            const field_type: Type = exec_lower_struct_field_type(ctx, parent_type, object.member_access_field_name);
+            if field_type.kind != TypeKind.TYPE_VOID {
+                return field_type;
+            }
         }
     }
     return base_type;
@@ -1333,6 +1689,19 @@ fn exec_lower_collect_called_decls_from_expr(expr: &HIRExpr, out_decls: & & ASTN
             out_count[0] = out_count[0] + 1;
         }
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_INTERFACE_BOX && expr.dispatch_decls != null {
+        var di: i32 = 0;
+        while di < expr.dispatch_decl_count {
+            const dispatch_decl: &ASTNode = expr.dispatch_decls[di];
+            if dispatch_decl != null &&
+                exec_lower_decl_index(out_decls, out_count[0], dispatch_decl) < 0 &&
+                out_count[0] < MAX_REACHABLE_FN_DECLS {
+                out_decls[out_count[0]] = dispatch_decl;
+                out_count[0] = out_count[0] + 1;
+            }
+            di = di + 1;
+        }
+    }
     if expr.left != null {
         exec_lower_collect_called_decls_from_expr(expr.left, out_decls, out_count);
     }
@@ -1355,6 +1724,44 @@ fn exec_lower_collect_called_decls_from_expr(expr: &HIRExpr, out_decls: & & ASTN
     i = 0;
     while i < expr.match_arm_count {
         exec_lower_collect_called_decls_from_expr(expr.match_arms[i].result_expr, out_decls, out_count);
+        i = i + 1;
+    }
+}
+
+fn exec_lower_collect_called_decls_from_stmt(stmt: &HIRStmt, out_decls: & & ASTNode, out_count: &i32) void {
+    if stmt == null {
+        return;
+    }
+    if stmt.expr != null {
+        exec_lower_collect_called_decls_from_expr(stmt.expr, out_decls, out_count);
+    }
+    if stmt.assign_expr != null {
+        exec_lower_collect_called_decls_from_expr(stmt.assign_expr, out_decls, out_count);
+    }
+    if stmt.assign_target != null {
+        exec_lower_collect_called_decls_from_expr(stmt.assign_target, out_decls, out_count);
+    }
+    if stmt.then_block != null {
+        exec_lower_collect_called_decls_from_block(stmt.then_block, out_decls, out_count);
+    }
+    if stmt.else_block != null {
+        exec_lower_collect_called_decls_from_block(stmt.else_block, out_decls, out_count);
+    }
+    if stmt.loop_body != null {
+        exec_lower_collect_called_decls_from_block(stmt.loop_body, out_decls, out_count);
+    }
+    if stmt.cleanup_block != null {
+        exec_lower_collect_called_decls_from_block(stmt.cleanup_block, out_decls, out_count);
+    }
+}
+
+fn exec_lower_collect_called_decls_from_block(block: &HIRBlock, out_decls: & & ASTNode, out_count: &i32) void {
+    if block == null || out_count == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < block.stmt_count {
+        exec_lower_collect_called_decls_from_stmt(block.stmts[i], out_decls, out_count);
         i = i + 1;
     }
 }
@@ -1391,7 +1798,7 @@ fn exec_lower_lower_global_init_exprs(arena: &CompilerArena, checker: &TypeCheck
                 scope_depth: 0,
             };
             exec_lower_seed_globals(&ctx, globals, global_count);
-            const lowered_init: &HIRExpr = exec_lower_expr(&ctx, init_expr_ast);
+            const lowered_init: &HIRExpr = exec_lower_coerce_expr(&ctx, init_expr_ast, &globals[i].type_ref.type);
             if lowered_init == null {
                 return -1;
             }
@@ -1739,14 +2146,134 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if union_ctor != null {
             return union_ctor;
         }
-        if expr.call_expr_callee == null || expr.call_expr_callee.type != ASTNodeType.AST_IDENTIFIER {
-            return exec_lower_fail_expr(expr, "exec: 当前仅支持直接函数调用" as *byte);
-        }
         if expr.call_expr_type_arg_count > 0 || expr.call_expr_has_ellipsis_forward != 0 {
             return exec_lower_fail_expr(expr, "exec: 当前不支持泛型调用或 varargs 转发" as *byte);
         }
         if expr.call_expr_arg_count > EXEC_MAX_CALL_ARGS {
             return exec_lower_fail_expr(expr, "exec: 调用参数过多" as *byte);
+        }
+        if exec_type_is_vm_value_supported(expr_type) == 0 {
+            if exec_type_uses_simd(expr_type) != 0 {
+                return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+            }
+            return exec_lower_fail_expr(expr, "exec: 当前仅支持标量/错误联合函数返回值" as *byte);
+        }
+        if expr.call_expr_callee != null && expr.call_expr_callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+            expr.call_expr_callee.member_access_object != null &&
+            expr.call_expr_callee.member_access_field_name != null {
+            const object_ast: &ASTNode = expr.call_expr_callee.member_access_object;
+            const method_name: &byte = expr.call_expr_callee.member_access_field_name;
+            const owner_type: Type = exec_lower_member_base_type(ctx, object_ast);
+            if owner_type.kind == TypeKind.TYPE_INTERFACE && owner_type.interface_name != null {
+                const method_sig: &ASTNode = find_interface_method_sig(ctx.checker.program_node, owner_type.interface_name, method_name);
+                const method_index: i32 = exec_lower_interface_method_index(ctx, &owner_type, method_name);
+                if method_sig == null || method_index < 0 {
+                    return exec_lower_fail_expr(expr, "exec: 无法解析 interface 方法调用" as *byte);
+                }
+                if expr.call_expr_arg_count + 1 > EXEC_MAX_CALL_ARGS {
+                    return exec_lower_fail_expr(expr, "exec: interface 方法调用参数过多" as *byte);
+                }
+                const args_iface: & & HIRExpr = compiler_arena_alloc(ctx.arena, @size_of(&HIRExpr) * expr.call_expr_arg_count as usize) as & & HIRExpr;
+                if expr.call_expr_arg_count > 0 && args_iface == null {
+                    exec_backend_set_error(expr, "exec: interface 调用参数分配失败" as *byte, 0);
+                    return null;
+                }
+                var ia: i32 = 0;
+                while ia < expr.call_expr_arg_count {
+                    var lowered_arg_iface: &HIRExpr = null;
+                    if method_sig.fn_decl_params != null && ia + 1 < method_sig.fn_decl_param_count &&
+                        method_sig.fn_decl_params[ia + 1] != null &&
+                        method_sig.fn_decl_params[ia + 1].type == ASTNodeType.AST_VAR_DECL &&
+                        method_sig.fn_decl_params[ia + 1].var_decl_type != null {
+                        const expected_iface: Type = type_from_ast(ctx.checker, method_sig.fn_decl_params[ia + 1].var_decl_type);
+                        lowered_arg_iface = exec_lower_coerce_expr(ctx, expr.call_expr_args[ia], &expected_iface);
+                    } else {
+                        lowered_arg_iface = exec_lower_expr(ctx, expr.call_expr_args[ia]);
+                    }
+                    if lowered_arg_iface == null {
+                        return null;
+                    }
+                    args_iface[ia] = lowered_arg_iface;
+                    ia = ia + 1;
+                }
+                const object_expr: &HIRExpr = exec_lower_expr(ctx, object_ast);
+                if object_expr == null {
+                    return null;
+                }
+                var iface_method_sigs: [&ASTNode: EXEC_MAX_INTERFACE_METHODS] = [];
+                var iface_method_count: i32 = 0;
+                if exec_lower_collect_interface_method_sigs(ctx, &owner_type, &iface_method_sigs[0] as & & ASTNode, &iface_method_count) != 0 {
+                    return exec_lower_fail_expr(expr, "exec: interface 方法表索引计算失败" as *byte);
+                }
+                const iface_call: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_IMETHOD_CALL, &expr_type);
+                if iface_call == null {
+                    return null;
+                }
+                iface_call.left = object_expr;
+                iface_call.int_value = method_index as i64;
+                iface_call.callee_name = method_name;
+                iface_call.call_args = args_iface;
+                iface_call.call_arg_count = expr.call_expr_arg_count;
+                iface_call.callee_decl = method_sig;
+                iface_call.dispatch_decl_count = iface_method_count;
+                return iface_call;
+            }
+            var method_decl: &ASTNode = null;
+            if owner_type.kind == TypeKind.TYPE_STRUCT && owner_type.struct_name != null {
+                method_decl = find_instance_method_in_struct(ctx.checker.program_node, owner_type.struct_name, method_name);
+            } else if owner_type.kind == TypeKind.TYPE_UNION && owner_type.union_name != null {
+                method_decl = find_instance_method_in_union(ctx.checker.program_node, owner_type.union_name, method_name);
+            }
+            if method_decl != null {
+                const total_arg_count: i32 = expr.call_expr_arg_count + 1;
+                if total_arg_count > EXEC_MAX_CALL_ARGS {
+                    return exec_lower_fail_expr(expr, "exec: 方法调用参数过多" as *byte);
+                }
+                const args_method: & & HIRExpr = compiler_arena_alloc(ctx.arena, @size_of(&HIRExpr) * total_arg_count as usize) as & & HIRExpr;
+                if total_arg_count > 0 && args_method == null {
+                    exec_backend_set_error(expr, "exec: 方法调用参数分配失败" as *byte, 0);
+                    return null;
+                }
+                const receiver_arg: &HIRExpr = exec_lower_method_receiver_expr(ctx, object_ast, method_decl);
+                if receiver_arg == null {
+                    return exec_lower_fail_expr(expr, "exec: 当前无法为方法 receiver 构造引用" as *byte);
+                }
+                args_method[0] = receiver_arg;
+                var ma: i32 = 0;
+                while ma < expr.call_expr_arg_count {
+                    var lowered_arg_method: &HIRExpr = null;
+                    if method_decl.fn_decl_params != null && ma + 1 < method_decl.fn_decl_param_count &&
+                        method_decl.fn_decl_params[ma + 1] != null &&
+                        method_decl.fn_decl_params[ma + 1].type == ASTNodeType.AST_VAR_DECL &&
+                        method_decl.fn_decl_params[ma + 1].var_decl_type != null {
+                        const expected_method: Type = type_from_ast(ctx.checker, method_decl.fn_decl_params[ma + 1].var_decl_type);
+                        lowered_arg_method = exec_lower_coerce_expr(ctx, expr.call_expr_args[ma], &expected_method);
+                    } else {
+                        lowered_arg_method = exec_lower_expr(ctx, expr.call_expr_args[ma]);
+                    }
+                    if lowered_arg_method == null {
+                        return null;
+                    }
+                    args_method[ma + 1] = lowered_arg_method;
+                    ma = ma + 1;
+                }
+                const call_method: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CALL, &expr_type);
+                if call_method == null {
+                    return null;
+                }
+                call_method.callee_name = method_decl.fn_decl_name;
+                call_method.callee_decl = method_decl;
+                call_method.call_extern_id = ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+                call_method.call_args = args_method;
+                call_method.call_arg_count = total_arg_count;
+                return call_method;
+            }
+            var method_msg: [byte: 160] = [];
+            _ = snprintf(&method_msg[0] as *byte, 160, "exec: 无法解析成员方法调用(kind=%d)" as *byte, owner_type.kind as i32);
+            return exec_lower_fail_expr(expr, &method_msg[0]);
+        }
+        if expr.call_expr_callee == null || expr.call_expr_callee.type != ASTNodeType.AST_IDENTIFIER {
+            return exec_lower_fail_expr(expr, "exec: 当前仅支持直接函数调用" as *byte);
         }
         const callee_decl: &ASTNode = exec_lower_resolve_function_decl(ctx.checker, expr.call_expr_callee.identifier_name);
         var extern_bridge_id: ExecExternBridgeId = ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
@@ -1765,12 +2292,6 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
             }
         }
-        if exec_type_is_vm_value_supported(expr_type) == 0 {
-            if exec_type_uses_simd(expr_type) != 0 {
-                return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
-            }
-            return exec_lower_fail_expr(expr, "exec: 当前仅支持标量/错误联合函数返回值" as *byte);
-        }
         const args: & & HIRExpr = compiler_arena_alloc(ctx.arena, @size_of(&HIRExpr) * expr.call_expr_arg_count as usize) as & & HIRExpr;
         if expr.call_expr_arg_count > 0 && args == null {
             exec_backend_set_error(expr, "exec: 调用参数分配失败" as *byte, 0);
@@ -1778,7 +2299,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         var i: i32 = 0;
         while i < expr.call_expr_arg_count {
-            const arg_expr: &HIRExpr = exec_lower_expr(ctx, expr.call_expr_args[i]);
+            var arg_expr: &HIRExpr = null;
+            if callee_decl != null && callee_decl.type == ASTNodeType.AST_FN_DECL &&
+                callee_decl.fn_decl_params != null && i < callee_decl.fn_decl_param_count &&
+                callee_decl.fn_decl_params[i] != null &&
+                callee_decl.fn_decl_params[i].type == ASTNodeType.AST_VAR_DECL &&
+                callee_decl.fn_decl_params[i].var_decl_type != null {
+                const expected_type: Type = type_from_ast(ctx.checker, callee_decl.fn_decl_params[i].var_decl_type);
+                arg_expr = exec_lower_coerce_expr(ctx, expr.call_expr_args[i], &expected_type);
+            } else {
+                arg_expr = exec_lower_expr(ctx, expr.call_expr_args[i]);
+            }
             if arg_expr == null {
                 return null;
             }
@@ -1844,7 +2375,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             if src_idx < 0 {
                 return exec_lower_fail_expr(expr, "exec: 结构体字面量字段缺失" as *byte);
             }
-            const field_expr: &HIRExpr = exec_lower_expr(ctx, expr.struct_init_field_values[src_idx]);
+            var field_expr: &HIRExpr = null;
+            if field_decl.var_decl_type != null {
+                const expected_field_type: Type = type_from_ast(ctx.checker, field_decl.var_decl_type);
+                field_expr = exec_lower_coerce_expr(ctx, expr.struct_init_field_values[src_idx], &expected_field_type);
+            } else {
+                field_expr = exec_lower_expr(ctx, expr.struct_init_field_values[src_idx]);
+            }
             if field_expr == null {
                 return null;
             }
@@ -2214,7 +2751,7 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 exec_backend_set_error(stmt_node, "exec: 局部变量槽位不足" as *byte, 0);
                 return null;
             }
-            const init_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.var_decl_init);
+            const init_expr: &HIRExpr = exec_lower_coerce_expr(ctx, stmt_node.var_decl_init, &local_type);
             if init_expr == null {
                 exec_lower_pop_scope(ctx);
                 return null;
@@ -2232,7 +2769,7 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 exec_lower_pop_scope(ctx);
                 return null;
             }
-            const value_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.assign_src);
+            const value_expr: &HIRExpr = exec_lower_coerce_expr(ctx, stmt_node.assign_src, &assign_target.type_ref.type);
             if value_expr == null {
                 exec_lower_pop_scope(ctx);
                 return null;
@@ -2405,13 +2942,13 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 return null;
             }
             if stmt_node.return_stmt_expr != null {
-                stmt.expr = exec_lower_expr(ctx, stmt_node.return_stmt_expr);
-                if stmt.expr == null {
-                    exec_lower_pop_scope(ctx);
-                    return null;
-                }
                 if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
                     const return_type: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+                    stmt.expr = exec_lower_coerce_expr(ctx, stmt_node.return_stmt_expr, &return_type);
+                    if stmt.expr == null {
+                        exec_lower_pop_scope(ctx);
+                        return null;
+                    }
                     if return_type.kind != TypeKind.TYPE_ERROR_UNION &&
                         type_equals(stmt.expr.type_ref.type, return_type) == 0 &&
                         exec_type_is_vm_value_supported(return_type) != 0 {
@@ -2422,6 +2959,12 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                         }
                         cast_return.left = stmt.expr;
                         stmt.expr = cast_return;
+                    }
+                } else {
+                    stmt.expr = exec_lower_expr(ctx, stmt_node.return_stmt_expr);
+                    if stmt.expr == null {
+                        exec_lower_pop_scope(ctx);
+                        return null;
                     }
                 }
             }
@@ -2468,8 +3011,18 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
         return null;
     }
+    const saved_self_type_name: &byte = checker.current_self_type_name;
+    const saved_self_is_union: i32 = checker.current_self_is_union;
+    var owner_is_union: i32 = 0;
+    const owner_type_name: &byte = checker_fn_decl_owner_type_name(checker, fn_decl, &owner_is_union);
+    if owner_type_name != null {
+        checker.current_self_type_name = owner_type_name;
+        checker.current_self_is_union = owner_is_union;
+    }
     const return_type: Type = type_from_ast(checker, fn_decl.fn_decl_return_type);
     if exec_type_is_vm_value_supported(return_type) == 0 {
+        checker.current_self_type_name = saved_self_type_name;
+        checker.current_self_is_union = saved_self_is_union;
         if exec_type_uses_simd(return_type) != 0 {
             exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
             return null;
@@ -2504,11 +3057,15 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
     while i < fn_decl.fn_decl_param_count {
         const param: &ASTNode = fn_decl.fn_decl_params[i];
         if param == null || param.type != ASTNodeType.AST_VAR_DECL {
+            checker.current_self_type_name = saved_self_type_name;
+            checker.current_self_is_union = saved_self_is_union;
             exec_lower_set_unsupported(fn_decl, "exec: 参数节点异常" as *byte);
             return null;
         }
         const param_type: Type = type_from_ast(checker, param.var_decl_type);
         if exec_type_is_vm_value_supported(param_type) == 0 {
+            checker.current_self_type_name = saved_self_type_name;
+            checker.current_self_is_union = saved_self_is_union;
             if exec_type_uses_simd(param_type) != 0 {
                 exec_lower_set_unsupported_reason(param, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
                 return null;
@@ -2517,6 +3074,8 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
             return null;
         }
         if exec_lower_append_local(&ctx, param.var_decl_name, &param_type, 1) < 0 {
+            checker.current_self_type_name = saved_self_type_name;
+            checker.current_self_is_union = saved_self_is_union;
             exec_backend_set_error(param, "exec: 参数槽位不足" as *byte, 0);
             return null;
         }
@@ -2524,10 +3083,14 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
     }
     const body: &HIRBlock = exec_lower_block(&ctx, fn_decl.fn_decl_body);
     if body == null {
+        checker.current_self_type_name = saved_self_type_name;
+        checker.current_self_is_union = saved_self_is_union;
         return null;
     }
     const hir_fn: &HIRFunction = compiler_arena_alloc(arena, @size_of(HIRFunction)) as &HIRFunction;
     if hir_fn == null {
+        checker.current_self_type_name = saved_self_type_name;
+        checker.current_self_is_union = saved_self_is_union;
         exec_backend_set_error(fn_decl, "exec: HIRFunction 分配失败" as *byte, 0);
         return null;
     }
@@ -2538,6 +3101,8 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
     if ctx.max_slot_count > 0 {
         const locals: &HIRLocalSlot = compiler_arena_alloc(arena, @size_of(HIRLocalSlot) * ctx.max_slot_count as usize) as &HIRLocalSlot;
         if locals == null {
+            checker.current_self_type_name = saved_self_type_name;
+            checker.current_self_is_union = saved_self_is_union;
             exec_backend_set_error(fn_decl, "exec: local slot 表分配失败" as *byte, 0);
             return null;
         }
@@ -2554,6 +3119,8 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
     }
     hir_fn.param_count = fn_decl.fn_decl_param_count;
     hir_fn.body = body;
+    checker.current_self_type_name = saved_self_type_name;
+    checker.current_self_is_union = saved_self_is_union;
     return hir_fn;
 }
 
@@ -2650,6 +3217,9 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
             functions[count] = lowered;
             if decl == main_decl {
                 entry_fn = lowered;
+            }
+            if lowered.body != null {
+                exec_lower_collect_called_decls_from_block(lowered.body, &exec_reachable[0] as & & ASTNode, &exec_reachable_count);
             }
             count = count + 1;
         }

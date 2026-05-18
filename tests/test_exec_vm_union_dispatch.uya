@@ -8,7 +8,7 @@ union IntOrFlag {
 fn read_union(value: IntOrFlag) i32 {
     return match value {
         .number(n) => n,
-        else => 0,
+        else => 0i32,
     };
 }
 

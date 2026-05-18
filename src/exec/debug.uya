@@ -5,6 +5,11 @@ use libc;
 fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_LOAD_CONST { return "BC_LOAD_CONST" as &byte; }
     if opcode == BCOpcode.BC_MOV { return "BC_MOV" as &byte; }
+    if opcode == BCOpcode.BC_ADDR_LOCAL { return "BC_ADDR_LOCAL" as &byte; }
+    if opcode == BCOpcode.BC_ADDR_GLOBAL { return "BC_ADDR_GLOBAL" as &byte; }
+    if opcode == BCOpcode.BC_ADDR_FIELD { return "BC_ADDR_FIELD" as &byte; }
+    if opcode == BCOpcode.BC_ADDR_INDEX { return "BC_ADDR_INDEX" as &byte; }
+    if opcode == BCOpcode.BC_BOX_VALUE { return "BC_BOX_VALUE" as &byte; }
     if opcode == BCOpcode.BC_LOAD_GLOBAL { return "BC_LOAD_GLOBAL" as &byte; }
     if opcode == BCOpcode.BC_STORE_GLOBAL { return "BC_STORE_GLOBAL" as &byte; }
     if opcode == BCOpcode.BC_ADD { return "BC_ADD" as &byte; }
@@ -42,6 +47,7 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_JMP_IF_TRUE { return "BC_JMP_IF_TRUE" as &byte; }
     if opcode == BCOpcode.BC_JMP_IF_FALSE { return "BC_JMP_IF_FALSE" as &byte; }
     if opcode == BCOpcode.BC_CALL { return "BC_CALL" as &byte; }
+    if opcode == BCOpcode.BC_CALL_INDIRECT { return "BC_CALL_INDIRECT" as &byte; }
     if opcode == BCOpcode.BC_CALL_EXTERN { return "BC_CALL_EXTERN" as &byte; }
     if opcode == BCOpcode.BC_RET { return "BC_RET" as &byte; }
     if opcode == BCOpcode.BC_PRINT { return "BC_PRINT" as &byte; }
@@ -106,8 +112,20 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
         fprintf(libc.stderr, "global #%d" as *byte, expr.global_slot);
         return;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_ADDR {
+        fprintf(libc.stderr, "addr(...)" as *byte);
+        return;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_CALL {
         fprintf(libc.stderr, "call %s(...)" as *byte, expr.callee_name as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_IMETHOD_CALL {
+        fprintf(libc.stderr, "icall %s(...)" as *byte, expr.callee_name as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_INTERFACE_BOX {
+        fprintf(libc.stderr, "iface_box(...)" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_UNION_INIT {

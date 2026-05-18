@@ -3419,8 +3419,16 @@ fn infer_match_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         if first != 0 {
             unified = copy_type(&t);
             first = 0;
-        } else if type_equals(unified, copy_type(&t)) == 0 {
+        } else {
+            if unified.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(t.kind) != 0 {
+                unified = copy_type(&t);
+            } else if t.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(unified.kind) != 0 {
+                resolve_int_limit_node(arm.result_expr, copy_type(&unified));
+                t = copy_type(&unified);
+            }
+            if type_equals(unified, copy_type(&t)) == 0 {
             checker_report_error(checker, arm.result_expr, "match 所有分支的返回类型必须一致" as *byte);
+            }
         }
         i = i + 1;
     }

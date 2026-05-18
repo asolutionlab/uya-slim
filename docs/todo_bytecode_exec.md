@@ -595,7 +595,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
 - [ ] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
 - [ ] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
-- [ ] interface / 间接调用
+- [x] interface / 间接调用
 - [ ] union 更完整语义
 - [ ] 更复杂标准库程序
 - [ ] 更大回归测试集
@@ -613,9 +613,14 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `UnionName.variant(payload)` 构造已接通 lowering / bytecode / VM
   - `match union_value { .Variant(x) => ..., else => ... }` 基础路径已可执行
   - 新增 `tests/test_exec_vm_union_dispatch.uya`
+- 2026-05-18 已打通第一版 interface / 间接调用：
+  - 结构体实例方法 `obj.method(...)` 现在会在 lowering 阶段改写为带 receiver 引用的普通调用
+  - VM 新增内部引用地址与 `CALL_INDIRECT`，interface 值运行时保存“方法表函数索引 + data 引用”
+  - `self.field` / `self.field = ...` 已可透过 `&Self` receiver 在 VM 中读写
+  - `tests/test_exec_vm_interface_dispatch.uya` 与 `tests/test_exec_vm_interface_stateful.uya` 已在 `--vm/--exec` 下通过，并纳入 `tests/verify_exec_vm_smoke.sh`
 - 当前仍有两个明确残留：
   - `tests/test_exec_vm_union_dispatch.uya` 运行路径已打通，但 checker 仍会打印一条历史诊断 `match 所有分支的返回类型必须一致`
-  - `tests/test_exec_vm_interface_dispatch.uya` 作为 TDD 覆盖已加入，当前首个 blocker 仍是 interface 参数/值表示与动态分发尚未接通
+  - `./bin/uya run --vm src/main.uya` 当前已能通过 parse / check / opt，但仍会在 exec lowering 阶段卡在“全局变量类型尚不可表示”；最新观测点为 `src/checker/check_expr.uya:82:1`
 
 ---
 
