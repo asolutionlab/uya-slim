@@ -3,12 +3,18 @@
 use libc;
 
 const EXEC_MAX_LOCALS: i32 = 256;
+const EXEC_MAX_GLOBALS: i32 = 256;
 const EXEC_MAX_SCOPE_DEPTH: i32 = 64;
 
 struct ExecLowerContext {
     arena: &CompilerArena,
     checker: &TypeChecker,
     function_decl: &ASTNode,
+    global_names: [&byte: EXEC_MAX_GLOBALS],
+    global_decls: [&ASTNode: EXEC_MAX_GLOBALS],
+    global_types: [Type: EXEC_MAX_GLOBALS],
+    global_is_const: [i32: EXEC_MAX_GLOBALS],
+    global_count: i32,
     local_names: [&byte: EXEC_MAX_LOCALS],
     local_slots: [i32: EXEC_MAX_LOCALS],
     local_types: [Type: EXEC_MAX_LOCALS],
@@ -198,6 +204,55 @@ fn exec_lower_find_slot(ctx: &ExecLowerContext, name: &byte) i32 {
     return -1;
 }
 
+fn exec_lower_find_global_slot(ctx: &ExecLowerContext, name: &byte) i32 {
+    if ctx == null || name == null {
+        return -1;
+    }
+    var i: i32 = ctx.global_count - 1;
+    while i >= 0 {
+        if i >= 0 && i < EXEC_MAX_GLOBALS {
+            if ctx.global_names[i] != null && str_equals(ctx.global_names[i], name) != 0 {
+                return i;
+            }
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+fn exec_lower_find_global_slot_by_decl(ctx: &ExecLowerContext, decl: &ASTNode) i32 {
+    if ctx == null || decl == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < ctx.global_count {
+        if i >= 0 && i < EXEC_MAX_GLOBALS && ctx.global_decls[i] == decl {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_lower_seed_globals(ctx: &ExecLowerContext, globals: &HIRGlobalSlot, global_count: i32) void {
+    if ctx == null {
+        return;
+    }
+    ctx.global_count = 0;
+    if globals == null || global_count <= 0 {
+        return;
+    }
+    var i: i32 = 0;
+    while i < global_count && i < EXEC_MAX_GLOBALS {
+        ctx.global_names[i] = globals[i].name;
+        ctx.global_decls[i] = globals[i].decl;
+        ctx.global_types[i] = copy_type(&globals[i].type_ref.type);
+        ctx.global_is_const[i] = globals[i].is_const;
+        i = i + 1;
+    }
+    ctx.global_count = i;
+}
+
 fn exec_lower_append_local(ctx: &ExecLowerContext, name: &byte, type: &Type, is_param: i32) i32 {
     if ctx == null || name == null || ctx.active_local_count >= EXEC_MAX_LOCALS || ctx.next_slot >= EXEC_MAX_LOCALS {
         return -1;
@@ -239,6 +294,7 @@ fn exec_lower_alloc_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, kind: HIREx
     expr.ast_node = ast_node;
     expr.type_ref = exec_lower_make_type_ref(type);
     expr.local_slot = -1;
+    expr.global_slot = -1;
     return expr;
 }
 
@@ -282,6 +338,15 @@ fn exec_lower_make_local_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, slot: 
         return null;
     }
     expr.local_slot = slot;
+    return expr;
+}
+
+fn exec_lower_make_global_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, slot: i32, type: &Type) &HIRExpr {
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_GLOBAL, type);
+    if expr == null {
+        return null;
+    }
+    expr.global_slot = slot;
     return expr;
 }
 
@@ -355,6 +420,10 @@ fn exec_lower_member_base_type(ctx: &ExecLowerContext, object: &ASTNode) Type {
         const slot: i32 = exec_lower_find_slot(ctx, object.identifier_name);
         if slot >= 0 && slot < EXEC_MAX_LOCALS {
             return ctx.slot_types[slot];
+        }
+        const global_slot: i32 = exec_lower_find_global_slot(ctx, object.identifier_name);
+        if global_slot >= 0 && global_slot < EXEC_MAX_GLOBALS {
+            return ctx.global_types[global_slot];
         }
     }
     return base_type;
@@ -571,6 +640,367 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
     return result_stmt;
 }
 
+fn exec_lower_global_name(decl: &ASTNode) &byte {
+    if decl == null {
+        return null;
+    }
+    if decl.type == ASTNodeType.AST_VAR_DECL {
+        return decl.var_decl_name;
+    }
+    if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return decl.extern_var_decl_name;
+    }
+    return null;
+}
+
+fn exec_lower_global_type_ast(decl: &ASTNode) &ASTNode {
+    if decl == null {
+        return null;
+    }
+    if decl.type == ASTNodeType.AST_VAR_DECL {
+        return decl.var_decl_type;
+    }
+    if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return decl.extern_var_decl_var_type;
+    }
+    return null;
+}
+
+fn exec_lower_global_init_ast(decl: &ASTNode) &ASTNode {
+    if decl == null {
+        return null;
+    }
+    if decl.type == ASTNodeType.AST_VAR_DECL {
+        return decl.var_decl_init;
+    }
+    if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return decl.extern_var_decl_init_expr;
+    }
+    return null;
+}
+
+fn exec_lower_global_is_const(decl: &ASTNode) i32 {
+    if decl == null {
+        return 0;
+    }
+    if decl.type == ASTNodeType.AST_VAR_DECL {
+        return decl.var_decl_is_const;
+    }
+    if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return decl.extern_var_decl_is_const;
+    }
+    return 0;
+}
+
+fn exec_lower_global_is_runtime_decl(decl: &ASTNode) i32 {
+    if decl == null {
+        return 0;
+    }
+    if decl.type == ASTNodeType.AST_VAR_DECL {
+        return (decl.var_decl_name != null) as i32;
+    }
+    if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL && decl.extern_var_decl_is_extern == 0 {
+        return (decl.extern_var_decl_name != null) as i32;
+    }
+    return 0;
+}
+
+fn exec_lower_decl_is_uya_root_runtime(checker: &TypeChecker, decl: &ASTNode) i32 {
+    if checker == null || decl == null || decl.filename == null || checker.uya_root_dir == null {
+        return 0;
+    }
+    const root_len: i32 = strlen(checker.uya_root_dir as *byte) as i32;
+    if root_len <= 0 {
+        return 0;
+    }
+    return (strncmp(decl.filename as *byte, checker.uya_root_dir as *byte, root_len) == 0) as i32;
+}
+
+fn exec_lower_append_global_slot(checker: &TypeChecker, decl: &ASTNode, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || decl == null || globals == null || out_count == null {
+        return -1;
+    }
+    if out_count[0] >= EXEC_MAX_GLOBALS {
+        exec_backend_set_error(decl, "exec: global 数量超出上限" as *byte, 0);
+        return -1;
+    }
+    const global_type_ast: &ASTNode = exec_lower_global_type_ast(decl);
+    if global_type_ast == null {
+        exec_backend_set_error(decl, "exec: global 缺少类型" as *byte, 0);
+        return -1;
+    }
+    const global_type: Type = type_from_ast(checker, global_type_ast);
+    if exec_type_is_vm_value_supported(global_type) == 0 {
+        if exec_type_uses_simd(global_type) != 0 {
+            exec_lower_set_unsupported_reason(decl, "exec: 当前不支持 SIMD" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+            return -1;
+        }
+        exec_lower_set_unsupported(decl, "exec: 当前仅支持 exec VM 可表示的全局变量" as *byte);
+        return -1;
+    }
+    globals[out_count[0]] = HIRGlobalSlot {
+        name: exec_lower_global_name(decl),
+        decl: decl,
+        slot: out_count[0],
+        type_ref: exec_lower_make_type_ref(&global_type),
+        is_const: exec_lower_global_is_const(decl),
+        init_expr: null,
+    };
+    out_count[0] = out_count[0] + 1;
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_program(checker: &TypeChecker, program: &ASTNode, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || program == null || globals == null || out_count == null {
+        return -1;
+    }
+    if program.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var decl_idx: i32 = 0;
+    while decl_idx < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[decl_idx];
+        if decl != null && decl.type == ASTNodeType.AST_PROGRAM {
+            if exec_lower_collect_global_slots_from_program(checker, decl, globals, out_count) != 0 {
+                return -1;
+            }
+        } else if exec_lower_global_is_runtime_decl(decl) != 0 {
+            if exec_lower_append_global_slot(checker, decl, globals, out_count) != 0 {
+                return -1;
+            }
+        }
+        decl_idx = decl_idx + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_symbols(checker: &TypeChecker, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || globals == null || out_count == null {
+        return -1;
+    }
+    var scope: i32 = 0;
+    while scope < @len(checker.scope_heads) {
+        var symbol: &Symbol = checker.scope_heads[scope];
+        while symbol != null {
+            if exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 &&
+                exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], symbol.decl_node) < 0 {
+                if exec_lower_append_global_slot(checker, symbol.decl_node, globals, out_count) != 0 {
+                    return -1;
+                }
+            }
+            symbol = symbol.next_in_scope;
+        }
+        scope = scope + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_symbol_table(checker: &TypeChecker, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || globals == null || out_count == null {
+        return -1;
+    }
+    var slot: i32 = 0;
+    while slot < SYMBOL_TABLE_SIZE {
+        const symbol: &Symbol = checker.symbol_table.slots[slot];
+        if symbol != null &&
+            exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 &&
+            exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], symbol.decl_node) < 0 {
+            if exec_lower_append_global_slot(checker, symbol.decl_node, globals, out_count) != 0 {
+                return -1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_find_global_slot_by_decl_in_globals(globals: &HIRGlobalSlot, global_count: i32, decl: &ASTNode) i32 {
+    if globals == null || decl == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < global_count {
+        if globals[i].decl == decl {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_lower_collect_global_slots(arena: &CompilerArena, checker: &TypeChecker, program: &ASTNode, out_count: &i32) &HIRGlobalSlot {
+    if out_count != null {
+        out_count[0] = 0;
+    }
+    if arena == null || checker == null || program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return null;
+    }
+    const globals: &HIRGlobalSlot = compiler_arena_alloc(arena, @size_of(HIRGlobalSlot) * EXEC_MAX_GLOBALS as usize) as &HIRGlobalSlot;
+    if globals == null {
+        exec_backend_set_error(program, "exec: global slot 表分配失败" as *byte, 0);
+        return null;
+    }
+    var count: i32 = 0;
+    if exec_lower_collect_global_slots_from_program(checker, program, globals, &count) != 0 {
+        return null;
+    }
+    if exec_lower_collect_global_slots_from_symbols(checker, globals, &count) != 0 {
+        return null;
+    }
+    if exec_lower_collect_global_slots_from_symbol_table(checker, globals, &count) != 0 {
+        return null;
+    }
+    if out_count != null {
+        out_count[0] = count;
+    }
+    return globals;
+}
+
+fn exec_lower_collect_called_decls_from_expr(expr: &HIRExpr, out_decls: & & ASTNode, out_count: &i32) void {
+    if expr == null || out_count == null {
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CALL && expr.callee_decl != null &&
+        expr.callee_decl.type == ASTNodeType.AST_FN_DECL &&
+        exec_lower_decl_index(out_decls, out_count[0], expr.callee_decl) < 0 {
+        if out_count[0] < MAX_REACHABLE_FN_DECLS {
+            out_decls[out_count[0]] = expr.callee_decl;
+            out_count[0] = out_count[0] + 1;
+        }
+    }
+    if expr.left != null {
+        exec_lower_collect_called_decls_from_expr(expr.left, out_decls, out_count);
+    }
+    if expr.right != null {
+        exec_lower_collect_called_decls_from_expr(expr.right, out_decls, out_count);
+    }
+    if expr.extra != null {
+        exec_lower_collect_called_decls_from_expr(expr.extra, out_decls, out_count);
+    }
+    var i: i32 = 0;
+    while i < expr.call_arg_count {
+        exec_lower_collect_called_decls_from_expr(expr.call_args[i], out_decls, out_count);
+        i = i + 1;
+    }
+    i = 0;
+    while i < expr.item_count {
+        exec_lower_collect_called_decls_from_expr(expr.items[i], out_decls, out_count);
+        i = i + 1;
+    }
+    i = 0;
+    while i < expr.match_arm_count {
+        exec_lower_collect_called_decls_from_expr(expr.match_arms[i].result_expr, out_decls, out_count);
+        i = i + 1;
+    }
+}
+
+fn exec_lower_lower_global_init_exprs(arena: &CompilerArena, checker: &TypeChecker, globals: &HIRGlobalSlot, global_count: i32, seed_decls: & & ASTNode, seed_count: &i32) i32 {
+    if arena == null || checker == null || seed_count == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < global_count {
+        const decl: &ASTNode = globals[i].decl;
+        const init_expr_ast: &ASTNode = exec_lower_global_init_ast(decl);
+        if init_expr_ast != null {
+            var ctx: ExecLowerContext = ExecLowerContext {
+                arena: arena,
+                checker: checker,
+                function_decl: decl,
+                global_names: [],
+                global_decls: [],
+                global_types: [],
+                global_is_const: [],
+                global_count: 0,
+                local_names: [],
+                local_slots: [],
+                local_types: [],
+                local_is_param: [],
+                slot_names: [],
+                slot_types: [],
+                slot_is_param: [],
+                active_local_count: 0,
+                next_slot: 0,
+                max_slot_count: 0,
+                scope_markers: [],
+                scope_depth: 0,
+            };
+            exec_lower_seed_globals(&ctx, globals, global_count);
+            const lowered_init: &HIRExpr = exec_lower_expr(&ctx, init_expr_ast);
+            if lowered_init == null {
+                return -1;
+            }
+            globals[i].init_expr = lowered_init;
+            exec_lower_collect_called_decls_from_expr(lowered_init, seed_decls, seed_count);
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn exec_lower_build_global_init_function(arena: &CompilerArena, globals: &HIRGlobalSlot, global_count: i32) &HIRFunction {
+    if arena == null || globals == null || global_count <= 0 {
+        return null;
+    }
+    var stmt_count: i32 = 0;
+    var i: i32 = 0;
+    while i < global_count {
+        if globals[i].init_expr != null {
+            stmt_count = stmt_count + 1;
+        }
+        i = i + 1;
+    }
+    if stmt_count == 0 {
+        return null;
+    }
+    const body: &HIRBlock = compiler_arena_alloc(arena, @size_of(HIRBlock)) as &HIRBlock;
+    const stmts: & & HIRStmt = compiler_arena_alloc(arena, @size_of(&HIRStmt) * stmt_count as usize) as & & HIRStmt;
+    const fn_hir: &HIRFunction = compiler_arena_alloc(arena, @size_of(HIRFunction)) as &HIRFunction;
+    if body == null || stmts == null || fn_hir == null {
+        exec_backend_set_error(globals[0].decl, "exec: global init function 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(body as *byte, 0, @size_of(HIRBlock));
+    _ = memset(fn_hir as *byte, 0, @size_of(HIRFunction));
+    var stmt_idx: i32 = 0;
+    i = 0;
+    while i < global_count {
+        if globals[i].init_expr != null {
+            const stmt: &HIRStmt = compiler_arena_alloc(arena, @size_of(HIRStmt)) as &HIRStmt;
+            const target: &HIRExpr = compiler_arena_alloc(arena, @size_of(HIRExpr)) as &HIRExpr;
+            if stmt == null || target == null {
+                exec_backend_set_error(globals[i].decl, "exec: global init stmt 分配失败" as *byte, 0);
+                return null;
+            }
+            _ = memset(stmt as *byte, 0, @size_of(HIRStmt));
+            _ = memset(target as *byte, 0, @size_of(HIRExpr));
+            stmt.kind = HIRStmtKind.HIR_STMT_ASSIGN;
+            stmt.ast_node = globals[i].decl;
+            target.kind = HIRExprKind.HIR_EXPR_GLOBAL;
+            target.ast_node = globals[i].decl;
+            target.type_ref = exec_lower_make_type_ref(&globals[i].type_ref.type);
+            target.local_slot = -1;
+            target.global_slot = globals[i].slot;
+            stmt.assign_target = target;
+            stmt.assign_expr = globals[i].init_expr;
+            stmts[stmt_idx] = stmt;
+            stmt_idx = stmt_idx + 1;
+        }
+        i = i + 1;
+    }
+    body.stmts = stmts;
+    body.stmt_count = stmt_count;
+    const void_type: Type = make_void_type();
+    fn_hir.name = "__exec_global_init" as &byte;
+    fn_hir.decl = globals[0].decl;
+    fn_hir.return_type = exec_lower_make_type_ref(&void_type);
+    fn_hir.locals = null;
+    fn_hir.local_count = 0;
+    fn_hir.param_count = 0;
+    fn_hir.body = body;
+    return fn_hir;
+}
+
 fn exec_lower_find_entry_decl(checker: &TypeChecker) &ASTNode {
     if checker == null {
         return null;
@@ -663,15 +1093,48 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     }
     if expr.type == ASTNodeType.AST_IDENTIFIER {
         const slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
-        if slot < 0 {
-            return exec_lower_fail_expr(expr, "exec: 当前仅支持局部变量/参数标识符" as *byte);
+        if slot >= 0 {
+            const hir_local: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_LOCAL, &expr_type);
+            if hir_local == null {
+                return null;
+            }
+            hir_local.local_slot = slot;
+            return hir_local;
         }
-        const hir: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_LOCAL, &expr_type);
-        if hir == null {
-            return null;
+        const symbol: &Symbol = symbol_table_lookup(ctx.checker, expr.identifier_name);
+        if symbol != null && exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 {
+            const global_slot_by_decl: i32 = exec_lower_find_global_slot_by_decl(ctx, symbol.decl_node);
+            if global_slot_by_decl >= 0 {
+                const hir_global_by_decl: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &expr_type);
+                if hir_global_by_decl == null {
+                    return null;
+                }
+                hir_global_by_decl.global_slot = global_slot_by_decl;
+                return hir_global_by_decl;
+            }
+            if symbol.decl_node != null {
+                const global_type_ast2: &ASTNode = exec_lower_global_type_ast(symbol.decl_node);
+                if global_type_ast2 != null {
+                    const global_type2: Type = type_from_ast(ctx.checker, global_type_ast2);
+                    if exec_type_is_vm_value_supported(global_type2) == 0 {
+                        if exec_type_uses_simd(global_type2) != 0 {
+                            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD 全局变量" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+                        }
+                        return exec_lower_fail_expr(expr, "exec: 当前仅支持 exec VM 可表示的全局变量" as *byte);
+                    }
+                }
+            }
         }
-        hir.local_slot = slot;
-        return hir;
+        const global_slot: i32 = exec_lower_find_global_slot(ctx, expr.identifier_name);
+        if global_slot >= 0 {
+            const hir_global: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &expr_type);
+            if hir_global == null {
+                return null;
+            }
+            hir_global.global_slot = global_slot;
+            return hir_global;
+        }
+        return exec_lower_fail_expr(expr, "exec: 当前仅支持局部变量/参数/全局标识符" as *byte);
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR {
         if exec_type_is_scalar_supported(expr_type) == 0 {
@@ -1345,7 +1808,7 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
     return hir_block;
 }
 
-fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &ASTNode) &HIRFunction {
+fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &ASTNode, globals: &HIRGlobalSlot, global_count: i32) &HIRFunction {
     if arena == null || checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return null;
     }
@@ -1370,6 +1833,11 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         arena: arena,
         checker: checker,
         function_decl: fn_decl,
+        global_names: [],
+        global_decls: [],
+        global_types: [],
+        global_is_const: [],
+        global_count: 0,
         local_names: [],
         local_slots: [],
         local_types: [],
@@ -1383,6 +1851,7 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         scope_markers: [],
         scope_depth: 0,
     };
+    exec_lower_seed_globals(&ctx, globals, global_count);
     var i: i32 = 0;
     while i < fn_decl.fn_decl_param_count {
         const param: &ASTNode = fn_decl.fn_decl_params[i];
@@ -1463,27 +1932,108 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
             decl_idx = decl_idx + 1;
         }
     }
+    var global_count: i32 = 0;
+    var globals: &HIRGlobalSlot = compiler_arena_alloc(arena, @size_of(HIRGlobalSlot) * EXEC_MAX_GLOBALS as usize) as &HIRGlobalSlot;
+    if globals == null {
+        exec_backend_set_error(program, "exec: global slot 表分配失败" as *byte, 0);
+        return null;
+    }
+    var global_scope: i32 = 0;
+    while global_scope < @len(checker.scope_heads) {
+        var global_symbol: &Symbol = checker.scope_heads[global_scope];
+        while global_symbol != null {
+            if exec_lower_global_is_runtime_decl(global_symbol.decl_node) != 0 &&
+                exec_lower_decl_is_uya_root_runtime(checker, global_symbol.decl_node) == 0 &&
+                exec_lower_find_global_slot_by_decl_in_globals(globals, global_count, global_symbol.decl_node) < 0 {
+                if global_count >= EXEC_MAX_GLOBALS {
+                    exec_backend_set_error(global_symbol.decl_node, "exec: global 数量超出上限" as *byte, 0);
+                    return null;
+                }
+                const global_type_ast: &ASTNode = exec_lower_global_type_ast(global_symbol.decl_node);
+                if global_type_ast == null {
+                    global_symbol = global_symbol.next_in_scope;
+                    continue;
+                }
+                const global_type: Type = type_from_ast(checker, global_type_ast);
+                if exec_type_is_vm_value_supported(global_type) == 0 {
+                    global_symbol = global_symbol.next_in_scope;
+                    continue;
+                }
+                globals[global_count] = HIRGlobalSlot {
+                    name: exec_lower_global_name(global_symbol.decl_node),
+                    decl: global_symbol.decl_node,
+                    slot: global_count,
+                    type_ref: exec_lower_make_type_ref(&global_type),
+                    is_const: exec_lower_global_is_const(global_symbol.decl_node),
+                    init_expr: null,
+                };
+                global_count = global_count + 1;
+            }
+            global_symbol = global_symbol.next_in_scope;
+        }
+        global_scope = global_scope + 1;
+    }
+    if global_count > 1 {
+        const ordered_globals: &HIRGlobalSlot = compiler_arena_alloc(arena, @size_of(HIRGlobalSlot) * EXEC_MAX_GLOBALS as usize) as &HIRGlobalSlot;
+        if ordered_globals == null {
+            exec_backend_set_error(program, "exec: ordered global slot 表分配失败" as *byte, 0);
+            return null;
+        }
+        var ordered_count: i32 = 0;
+        var decl_idx2: i32 = 0;
+        while decl_idx2 < program.program_decl_count {
+            const decl2: &ASTNode = program.program_decls[decl_idx2];
+            if exec_lower_global_is_runtime_decl(decl2) != 0 {
+                const found_idx: i32 = exec_lower_find_global_slot_by_decl_in_globals(globals, global_count, decl2);
+                if found_idx >= 0 {
+                    ordered_globals[ordered_count] = globals[found_idx];
+                    ordered_globals[ordered_count].slot = ordered_count;
+                    ordered_count = ordered_count + 1;
+                }
+            }
+            decl_idx2 = decl_idx2 + 1;
+        }
+        var gi2: i32 = 0;
+        while gi2 < global_count {
+            if exec_lower_find_global_slot_by_decl_in_globals(ordered_globals, ordered_count, globals[gi2].decl) < 0 {
+                ordered_globals[ordered_count] = globals[gi2];
+                ordered_globals[ordered_count].slot = ordered_count;
+                ordered_count = ordered_count + 1;
+            }
+            gi2 = gi2 + 1;
+        }
+        globals = ordered_globals;
+        global_count = ordered_count;
+    }
     var main_decl: &ASTNode = exec_lower_find_entry_decl(checker);
     if main_decl == null {
         exec_lower_set_unsupported(program, "exec: 当前仅支持包含显式 fn/export fn main 的程序" as *byte);
         return null;
     }
-    const functions: & & HIRFunction = compiler_arena_alloc(arena, @size_of(&HIRFunction) * checker.reachable_fn_decl_count as usize) as & & HIRFunction;
-    if checker.reachable_fn_decl_count > 0 && functions == null {
+    var exec_reachable: [&ASTNode: MAX_REACHABLE_FN_DECLS] = [];
+    var exec_reachable_count: i32 = 0;
+    exec_reachable[0] = main_decl;
+    exec_reachable_count = 1;
+    if exec_lower_lower_global_init_exprs(arena, checker, globals, global_count, &exec_reachable[0] as & & ASTNode, &exec_reachable_count) != 0 {
+        return null;
+    }
+    const global_init_function: &HIRFunction = exec_lower_build_global_init_function(arena, globals, global_count);
+    const functions: & & HIRFunction = compiler_arena_alloc(arena, @size_of(&HIRFunction) * MAX_REACHABLE_FN_DECLS as usize) as & & HIRFunction;
+    if functions == null {
         exec_backend_set_error(program, "exec: HIR function 列表分配失败" as *byte, 0);
         return null;
     }
     var count: i32 = 0;
     var entry_fn: &HIRFunction = null;
-    var exec_reachable: [&ASTNode: MAX_REACHABLE_FN_DECLS] = [];
     var queue: [&ASTNode: MAX_REACHABLE_FN_DECLS] = [];
-    var exec_reachable_count: i32 = 0;
     var head: i32 = 0;
     var tail: i32 = 0;
-    exec_reachable[0] = main_decl;
-    queue[0] = main_decl;
-    exec_reachable_count = 1;
-    tail = 1;
+    var seed_idx: i32 = 0;
+    while seed_idx < exec_reachable_count {
+        queue[seed_idx] = exec_reachable[seed_idx];
+        seed_idx = seed_idx + 1;
+    }
+    tail = exec_reachable_count;
     while head < tail {
         const from_decl: &ASTNode = queue[head];
         head = head + 1;
@@ -1512,7 +2062,7 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
     while i < exec_reachable_count {
         const decl: &ASTNode = exec_reachable[i];
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
-            const lowered: &HIRFunction = exec_lower_function(arena, checker, decl);
+            const lowered: &HIRFunction = exec_lower_function(arena, checker, decl, globals, global_count);
             if lowered == null {
                 return null;
             }
@@ -1537,5 +2087,8 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
     module.functions = functions;
     module.function_count = count;
     module.entry_function = entry_fn;
+    module.globals = globals;
+    module.global_count = global_count;
+    module.global_init_function = global_init_function;
     return module;
 }

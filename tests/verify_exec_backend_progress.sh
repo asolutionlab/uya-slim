@@ -45,7 +45,7 @@ echo "验证 defer/errdefer 清理顺序..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_defer.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
-tail -n 4 "$TMP_STDOUT" | diff -u <(printf 'B1\nCC2\nDO7\nEDR0\n') -
+tail -n 5 "$TMP_STDOUT" | diff -u <(printf 'NSIK\nOB1\nCC2\nDO7\nEDR0\n') -
 echo "  defer/errdefer exec path ✓"
 
 echo "验证 @c_import unsupported 原因..."

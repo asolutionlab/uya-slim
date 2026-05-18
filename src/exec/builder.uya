@@ -28,6 +28,7 @@ struct ExecCleanupScope {
 struct ExecFunctionBuildContext {
     arena: &CompilerArena,
     const_pool: &ExecConstPoolBuilder,
+    module: &HIRModule,
     function: &HIRFunction,
     instrs: [BCInstr: EXEC_MAX_BYTECODE_INSTRS],
     instr_count: i32,
@@ -375,6 +376,17 @@ fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HI
             source: exec_builder_make_source(ast_node),
         });
     }
+    if target.kind == HIRExprKind.HIR_EXPR_GLOBAL {
+        return exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_STORE_GLOBAL,
+            a: target.global_slot,
+            b: src_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        });
+    }
     if target.kind == HIRExprKind.HIR_EXPR_FIELD {
         const base_slot: i32 = exec_builder_compile_expr(ctx, target.left);
         if base_slot < 0 {
@@ -416,6 +428,24 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
     }
     if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
         return expr.local_slot;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_GLOBAL {
+        const dst_global: i32 = exec_builder_new_temp(ctx);
+        if dst_global < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_LOAD_GLOBAL,
+            a: dst_global,
+            b: expr.global_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_global;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_CONST {
         const dst: i32 = exec_builder_new_temp(ctx);
@@ -1541,8 +1571,8 @@ fn exec_builder_validate_slot_read(fn_hir: &HIRFunction, slot: i32, slot_count: 
     return 0;
 }
 
-fn exec_builder_validate_function(fn_hir: &HIRFunction, out_fn: &BCFunction) i32 {
-    if fn_hir == null || out_fn == null {
+fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_fn: &BCFunction) i32 {
+    if module == null || fn_hir == null || out_fn == null {
         return -1;
     }
     var slot_written: [i32: EXEC_MAX_FRAME_SLOTS] = [];
@@ -1562,6 +1592,27 @@ fn exec_builder_validate_function(fn_hir: &HIRFunction, out_fn: &BCFunction) i32
             const dst_slot: i32 = instr.a;
             if dst_slot >= 0 && dst_slot < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_LOAD_GLOBAL {
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: LOAD_GLOBAL 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            if instr.b < 0 || instr.b >= module.global_count {
+                exec_backend_set_error(fn_hir.decl, "exec: LOAD_GLOBAL 全局槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_global: i32 = instr.a;
+            if dst_slot_global >= 0 && dst_slot_global < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_global] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_STORE_GLOBAL {
+            if instr.a < 0 || instr.a >= module.global_count {
+                exec_backend_set_error(fn_hir.decl, "exec: STORE_GLOBAL 全局槽位非法" as *byte, 0);
+                return -1;
+            }
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: STORE_GLOBAL 源槽位非法" as *byte) != 0 {
+                return -1;
             }
         } else if instr.opcode == BCOpcode.BC_MOV {
             if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MOV 源槽位非法" as *byte) != 0 {
@@ -1771,13 +1822,14 @@ fn exec_builder_validate_return_types_in_block(fn_hir: &HIRFunction, block: &HIR
     return 0;
 }
 
-fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPoolBuilder, fn_hir: &HIRFunction) &BCFunction {
-    if arena == null || const_pool == null || fn_hir == null {
+fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPoolBuilder, module: &HIRModule, fn_hir: &HIRFunction) &BCFunction {
+    if arena == null || const_pool == null || module == null || fn_hir == null {
         return null;
     }
     var ctx: ExecFunctionBuildContext = ExecFunctionBuildContext {
         arena: arena,
         const_pool: const_pool,
+        module: module,
         function: fn_hir,
         instrs: [],
         instr_count: 0,
@@ -1823,7 +1875,7 @@ fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPool
     out_fn.slot_count = ctx.max_slot_count;
     out_fn.param_count = fn_hir.param_count;
     out_fn.return_type = copy_type(&fn_hir.return_type.type);
-    if exec_builder_validate_function(fn_hir, out_fn) != 0 {
+    if exec_builder_validate_function(module, fn_hir, out_fn) != 0 {
         return null;
     }
     return out_fn;
@@ -1841,16 +1893,21 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
         values: [],
         count: 0,
     };
-    const functions: &BCFunction = compiler_arena_alloc(arena, @size_of(BCFunction) * module.function_count as usize) as &BCFunction;
+    var total_function_count: i32 = module.function_count;
+    if module.global_init_function != null {
+        total_function_count = total_function_count + 1;
+    }
+    const functions: &BCFunction = compiler_arena_alloc(arena, @size_of(BCFunction) * total_function_count as usize) as &BCFunction;
     const program: &BCProgram = compiler_arena_alloc(arena, @size_of(BCProgram)) as &BCProgram;
-    if (module.function_count > 0 && functions == null) || program == null {
+    if (total_function_count > 0 && functions == null) || program == null {
         exec_backend_set_error(module.entry_function.decl, "exec: BCProgram 分配失败" as *byte, 0);
         return null;
     }
     var entry_index: i32 = -1;
+    var global_init_index: i32 = -1;
     var i: i32 = 0;
     while i < module.function_count {
-        const built: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, module.functions[i]);
+        const built: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, module, module.functions[i]);
         if built == null {
             return null;
         }
@@ -1860,14 +1917,23 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
         }
         i = i + 1;
     }
+    if module.global_init_function != null {
+        const built_global_init: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, module, module.global_init_function);
+        if built_global_init == null {
+            return null;
+        }
+        functions[i] = built_global_init[0];
+        global_init_index = i;
+    }
     if entry_index < 0 {
         exec_backend_set_error(module.entry_function.decl, "exec: 未找到 entry bytecode 函数" as *byte, 0);
         return null;
     }
     _ = memset(program as *byte, 0, @size_of(BCProgram));
     program.functions = functions;
-    program.function_count = module.function_count;
+    program.function_count = total_function_count;
     program.entry_function_index = entry_index;
+    program.global_init_function_index = global_init_index;
     if const_pool_builder.count > 0 {
         const const_values: &ExecValue = compiler_arena_alloc(arena, @size_of(ExecValue) * const_pool_builder.count as usize) as &ExecValue;
         if const_values == null {
@@ -1904,6 +1970,23 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
     } else {
         program.error_names = null;
         program.error_name_count = 0;
+    }
+    if module.global_count > 0 {
+        const globals: &ExecValue = compiler_arena_alloc(arena, @size_of(ExecValue) * module.global_count as usize) as &ExecValue;
+        if globals == null {
+            exec_backend_set_error(module.entry_function.decl, "exec: global 存储分配失败" as *byte, 0);
+            return null;
+        }
+        i = 0;
+        while i < module.global_count {
+            globals[i] = exec_make_void();
+            i = i + 1;
+        }
+        program.globals = globals;
+        program.global_count = module.global_count;
+    } else {
+        program.globals = null;
+        program.global_count = 0;
     }
     return program;
 }

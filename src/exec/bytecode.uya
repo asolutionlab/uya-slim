@@ -3,6 +3,8 @@
 enum BCOpcode {
     BC_LOAD_CONST,
     BC_MOV,
+    BC_LOAD_GLOBAL,
+    BC_STORE_GLOBAL,
     BC_ADD,
     BC_SUB,
     BC_MUL,
@@ -81,7 +83,10 @@ struct BCProgram {
     functions: &BCFunction,
     function_count: i32,
     entry_function_index: i32,
+    global_init_function_index: i32,
     const_pool: BCConstPool,
     error_names: &BCErrorNameEntry,
     error_name_count: i32,
+    globals: &ExecValue,
+    global_count: i32,
 }

@@ -18,6 +18,7 @@ enum HIRStmtKind {
 enum HIRExprKind {
     HIR_EXPR_CONST,
     HIR_EXPR_LOCAL,
+    HIR_EXPR_GLOBAL,
     HIR_EXPR_UNARY,
     HIR_EXPR_BINARY,
     HIR_EXPR_CALL,
@@ -55,11 +56,21 @@ struct HIRLocalSlot {
     is_param: i32,
 }
 
+struct HIRGlobalSlot {
+    name: &byte,
+    decl: &ASTNode,
+    slot: i32,
+    type_ref: HIRTypeRef,
+    is_const: i32,
+    init_expr: &HIRExpr,
+}
+
 struct HIRExpr {
     kind: HIRExprKind,
     ast_node: &ASTNode,
     type_ref: HIRTypeRef,
     local_slot: i32,
+    global_slot: i32,
     unary_op: i32,
     binary_op: i32,
     int_value: i64,
@@ -110,4 +121,7 @@ struct HIRModule {
     functions: & & HIRFunction,
     function_count: i32,
     entry_function: &HIRFunction,
+    globals: &HIRGlobalSlot,
+    global_count: i32,
+    global_init_function: &HIRFunction,
 }

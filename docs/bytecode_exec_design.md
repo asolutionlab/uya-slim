@@ -65,6 +65,7 @@
 
 - 还未验证更大覆盖面的 `uya run/test --vm`
 - 当前实现远未覆盖 `struct/array/slice`、`!T`、`try/catch`、`defer` 等设计目标
+- 顶层 global init / global read-write 已开始接入第一版执行链路，但目前只在单文件 hosted 子集回归通过；跨模块 global 访问与多模块初始化顺序仍未收口
 
 因此，本文其余章节依旧描述目标架构，但阅读时请以“已开始实现、仍处于第一阶段骨架期”理解。
 

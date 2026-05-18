@@ -62,6 +62,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `catch`（当前仅无 `|err|` 绑定的基础恢复路径）
   - `return`
   - `@print` / `@println`
+  - 第一版 top-level global init / global load-store（当前先覆盖单文件 hosted 子集）
 
 当前限制也必须明确记录：
 
@@ -78,21 +79,27 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `tests/test_exec_vm_match_basic.uya`
   - `tests/test_exec_vm_error_union.uya`
   - `tests/test_exec_vm_aggregates.uya`
+  - `tests/test_exec_vm_globals.uya`
+  - `tests/test_exec_vm_global_init_fail.uya`
   - `tests/test_exec_vm_simd_unsupported.uya`
   - `tests/test_exec_vm_extern_unsupported.uya`
   - `bash ./tests/verify_exec_backend_progress.sh`
+  - `bash ./tests/verify_exec_vm_globals.sh`
 - 2026-05-18 已用新生成编译器二进制验证通过：
   - `./bin/uya build src/main.uya -o /tmp/uya_exec_todo_bin`
   - `bash ./tests/verify_exec_vm_aggregates.sh`
   - `bash ./tests/verify_exec_vm_smoke.sh`
+  - `bash ./tests/verify_exec_vm_globals.sh`
   - `tests/test_exec_vm_aggregates.uya` 的 `run --vm`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
   - `verify_exec_backend_progress.sh`
+  - `verify_exec_vm_globals.sh`
   - 现在都会显式校验 `后端类型: EXEC`、`exec backend 构建完成` 或 fallback 原因
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
+  - 当前已打通“单文件 hosted 场景”的 global init / global read-write / global init failure；但跨模块 `use module.item` 导入后的 global 访问与“多模块全局初始化顺序”仍未完成，Phase 12 还不能算全部收口
 
 ---
 
@@ -413,13 +420,30 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 12：全局与启动流程
 
-- [ ] 支持全局常量初始化
-- [ ] 支持全局变量初始化
-- [ ] 冻结全局初始化顺序
-- [ ] `main` 启动前执行 global init list
+- [x] 支持全局常量初始化（当前先覆盖单文件 hosted 子集）
+- [x] 支持全局变量初始化（当前先覆盖单文件 hosted 子集）
+- [x] 冻结全局初始化顺序（当前按 merged AST 顶层声明顺序）
+- [x] `main` 启动前执行 global init list
 - [ ] 测试：
   - [ ] 多模块全局初始化
-  - [ ] 全局初始化失败
+  - [x] 全局初始化失败
+
+备注：
+
+- 2026-05-18 已接入第一版 global runtime 模型：
+  - HIR 已新增 `HIRGlobalSlot` 与 `HIR_EXPR_GLOBAL`
+  - bytecode 已新增 `LOAD_GLOBAL` / `STORE_GLOBAL`
+  - VM 已新增 global 存储区与 `global_init_function_index`
+  - 入口执行顺序已变为“先 global init，再 `main`”
+- 当前 global 收集会过滤 `UYA_ROOT` 下 runtime 自身的顶层全局，避免把当前 VM 不可表示的 runtime state 误拉进用户程序的 global init list，也避免无意义扩大 const pool / init 开销
+- 当前已验证：
+  - `tests/test_exec_vm_globals.uya`
+  - `tests/test_exec_vm_global_init_fail.uya`
+  - `bash ./tests/verify_exec_vm_globals.sh`
+- 当前尚未完成：
+  - 跨模块 `use module.item` 后的 global 访问
+  - 多模块全局初始化顺序回归
+  - 更复杂全局类型（当前仍以 exec VM 可表示子集为准）
 
 ---
 

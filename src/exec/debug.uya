@@ -41,6 +41,10 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
         fprintf(libc.stderr, "local #%d" as *byte, expr.local_slot);
         return;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_GLOBAL {
+        fprintf(libc.stderr, "global #%d" as *byte, expr.global_slot);
+        return;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_CALL {
         fprintf(libc.stderr, "call %s(...)" as *byte, expr.callee_name as *byte);
         return;
@@ -101,7 +105,9 @@ fn exec_debug_dump_block(block: &HIRBlock, indent: i32) void {
             exec_debug_dump_expr(stmt.expr);
             fprintf(libc.stderr, "\n" as *byte);
         } else if stmt.kind == HIRStmtKind.HIR_STMT_ASSIGN {
-            fprintf(libc.stderr, "assign slot=%d <- " as *byte, stmt.local_slot);
+            fprintf(libc.stderr, "assign " as *byte);
+            exec_debug_dump_expr(stmt.assign_target);
+            fprintf(libc.stderr, " <- " as *byte);
             exec_debug_dump_expr(stmt.assign_expr);
             fprintf(libc.stderr, "\n" as *byte);
         } else if stmt.kind == HIRStmtKind.HIR_STMT_EXPR {
@@ -174,6 +180,19 @@ fn exec_debug_dump_hir_module(module: &HIRModule) void {
         return;
     }
     fprintf(libc.stderr, "\n=== exec hir ===\n" as *byte);
+    fprintf(libc.stderr, "globals=%d\n" as *byte, module.global_count);
+    var gi: i32 = 0;
+    while gi < module.global_count {
+        const global_slot: &HIRGlobalSlot = module.globals + gi;
+        fprintf(libc.stderr, "global[%d] %s: " as *byte, gi, global_slot.name as *byte);
+        exec_debug_print_type(global_slot.type_ref);
+        if global_slot.init_expr != null {
+            fprintf(libc.stderr, " = " as *byte);
+            exec_debug_dump_expr(global_slot.init_expr);
+        }
+        fprintf(libc.stderr, "\n" as *byte);
+        gi = gi + 1;
+    }
     var i: i32 = 0;
     while i < module.function_count {
         const fn_hir: &HIRFunction = module.functions[i];
@@ -192,6 +211,13 @@ fn exec_debug_dump_hir_module(module: &HIRModule) void {
         exec_debug_dump_block(fn_hir.body, 1);
         fprintf(libc.stderr, "}\n" as *byte);
         i = i + 1;
+    }
+    if module.global_init_function != null {
+        fprintf(libc.stderr, "fn %s() -> " as *byte, module.global_init_function.name as *byte);
+        exec_debug_print_type(module.global_init_function.return_type);
+        fprintf(libc.stderr, " {\n" as *byte);
+        exec_debug_dump_block(module.global_init_function.body, 1);
+        fprintf(libc.stderr, "}\n" as *byte);
     }
 }
 
