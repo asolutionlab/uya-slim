@@ -632,15 +632,15 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
         return null;
     }
     if stmt_node.for_stmt_var_name == null {
-        exec_backend_set_error(stmt_node, "exec: 当前 for range 必须显式绑定迭代变量" as *byte, 1);
+        exec_backend_set_generic_unsupported_error(stmt_node, "exec: 当前 for range 必须显式绑定迭代变量" as *byte);
         return null;
     }
     if stmt_node.for_stmt_is_ref != 0 {
-        exec_backend_set_error(stmt_node, "exec: 当前不支持 for range 引用绑定" as *byte, 1);
+        exec_backend_set_generic_unsupported_error(stmt_node, "exec: 当前不支持 for range 引用绑定" as *byte);
         return null;
     }
     if stmt_node.for_stmt_range_end == null {
-        exec_backend_set_error(stmt_node, "exec: 当前不支持无上界 for range" as *byte, 1);
+        exec_backend_set_generic_unsupported_error(stmt_node, "exec: 当前不支持无上界 for range" as *byte);
         return null;
     }
     const start_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.for_stmt_range_start);
@@ -649,7 +649,7 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
         return null;
     }
     if start_expr.type_ref.type.kind != TypeKind.TYPE_I32 || end_expr.type_ref.type.kind != TypeKind.TYPE_I32 {
-        exec_backend_set_error(stmt_node, "exec: 当前仅支持 i32 for range" as *byte, 1);
+        exec_backend_set_generic_unsupported_error(stmt_node, "exec: 当前仅支持 i32 for range" as *byte);
         return null;
     }
 

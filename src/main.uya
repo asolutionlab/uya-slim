@@ -7696,6 +7696,9 @@ fn compile_files(
         fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
 
         if exec_result != 0 {
+            if exec_backend_error_is_unsupported() != 0 {
+                fprintf(libc.stderr, "exec unsupported 原因码: %s\n" as *byte, exec_backend_get_last_unsupported_reason_name() as *byte);
+            }
             const exec_err: &byte = exec_backend_get_last_error();
             if exec_err != null {
                 fprintf(libc.stderr, "exec backend 失败: %s\n" as *byte, exec_err as *byte);
@@ -8064,11 +8067,18 @@ export fn main() i32 {
     }
     var result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
     if result == 2 && selected_backend == BackendType.BACKEND_EXEC && exec_only == 0 {
+        if exec_backend_should_fallback() == 0 {
+            fprintf(libc.stderr, "错误: exec backend 命中未登记的 fallback 原因码: %s\n" as *byte, exec_backend_get_last_unsupported_reason_name() as *byte);
+            return 1;
+        }
         const exec_err: &byte = exec_backend_get_last_error();
         if exec_err != null {
-            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99: %s\n" as *byte, exec_err as *byte);
+            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99 (原因码: %s): %s\n" as *byte,
+                exec_backend_get_last_unsupported_reason_name() as *byte,
+                exec_err as *byte);
         } else {
-            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99\n" as *byte);
+            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99 (原因码: %s)\n" as *byte,
+                exec_backend_get_last_unsupported_reason_name() as *byte);
         }
         selected_backend = BackendType.BACKEND_C99;
         result = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);

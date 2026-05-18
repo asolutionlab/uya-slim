@@ -60,6 +60,26 @@ fn exec_builder_instr_slot(ctx: &ExecFunctionBuildContext, idx: i32) &BCInstr {
     return null;
 }
 
+fn exec_builder_find_function_index(module: &HIRModule, callee_decl: &ASTNode, callee_name: &byte) i32 {
+    if module == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < module.function_count {
+        const fn_hir: &HIRFunction = module.functions[i];
+        if fn_hir != null {
+            if callee_decl != null && fn_hir.decl == callee_decl {
+                return i;
+            }
+            if callee_name != null && fn_hir.name != null && str_equals(fn_hir.name, callee_name) != 0 {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
 fn exec_builder_const_value_equals(left: ExecValue, right: ExecValue) i32 {
     if left.kind != right.kind {
         return 0;
@@ -453,7 +473,7 @@ fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HI
             source: exec_builder_make_source(ast_node),
         });
     }
-    exec_backend_set_error(ast_node, "exec: 当前不支持该赋值目标" as *byte, 1);
+    exec_backend_set_generic_unsupported_error(ast_node, "exec: 当前不支持该赋值目标" as *byte);
     return -1;
 }
 
@@ -924,7 +944,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         if expr.unary_op == TokenType.TOKEN_EXCLAMATION as i32 {
             opcode = BCOpcode.BC_NOT;
         } else if expr.unary_op != TokenType.TOKEN_MINUS as i32 {
-            exec_backend_set_error(expr.ast_node, "exec: 当前仅支持 ! 与 - unary" as *byte, 1);
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 当前仅支持 ! 与 - unary" as *byte);
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -980,7 +1000,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         } else if expr.binary_op == TokenType.TOKEN_GREATER_EQUAL as i32 {
             opcode = BCOpcode.BC_CMP_GE;
         } else {
-            exec_backend_set_error(expr.ast_node, "exec: 当前不支持该 binary 运算符" as *byte, 1);
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 当前不支持该 binary 运算符" as *byte);
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -1068,10 +1088,10 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             if arg_slot < 0 {
                 return -1;
             }
-        if i >= 0 && i < EXEC_MAX_CALL_ARGS {
-            arg_sources[i] = arg_slot;
-        }
-        i = i + 1;
+            if i >= 0 && i < EXEC_MAX_CALL_ARGS {
+                arg_sources[i] = arg_slot;
+            }
+            i = i + 1;
         }
         var arg_base: i32 = ctx.next_temp_slot;
         i = 0;
@@ -1097,7 +1117,12 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             i = i + 1;
         }
         if expr.callee_decl == null {
-            exec_backend_set_error(expr.ast_node, "exec: 无法解析被调用函数" as *byte, 1);
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 无法解析被调用函数" as *byte);
+            return -1;
+        }
+        const callee_index: i32 = exec_builder_find_function_index(ctx.module, expr.callee_decl, expr.callee_name);
+        if callee_index < 0 {
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 无法解析被调用函数" as *byte);
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -1105,7 +1130,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             a: dst,
             b: arg_base,
             c: expr.call_arg_count,
-            imm: 0,
+            imm: callee_index as i64,
             text: expr.callee_name,
             source: exec_builder_make_source(expr.ast_node),
         }) < 0 {
@@ -1113,7 +1138,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         return dst;
     }
-    exec_backend_set_error(expr.ast_node, "exec: builder 不支持该表达式" as *byte, 1);
+    exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: builder 不支持该表达式" as *byte);
     return -1;
 }
 
@@ -1580,7 +1605,7 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
             continue_jump_dst[0] = jump_idx2;
             loop_patch_for_continue.continue_count = patch_idx2 + 1;
         } else {
-            exec_backend_set_error(stmt.ast_node, "exec: builder 不支持该语句" as *byte, 1);
+            exec_backend_set_generic_unsupported_error(stmt.ast_node, "exec: builder 不支持该语句" as *byte);
             exec_builder_pop_cleanup_scope(ctx);
             return -1;
         }
@@ -1787,6 +1812,10 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             }
             if instr.a < 0 || instr.a >= out_fn.slot_count {
                 exec_backend_set_error(fn_hir.decl, "exec: CALL 返回槽位非法" as *byte, 0);
+                return -1;
+            }
+            if instr.imm < 0 || instr.imm >= module.function_count as i64 {
+                exec_backend_set_error(fn_hir.decl, "exec: CALL 目标函数索引非法" as *byte, 0);
                 return -1;
             }
             const dst_slot9: i32 = instr.a;

@@ -20,6 +20,19 @@ grep -q '总计: 1 个测试' "$TMP_STDERR"
 grep -q '通过: 1' "$TMP_STDERR"
 echo "  test --vm smoke ✓"
 
+echo "验证 test --exec 支持路径不发生 fallback..."
+"$COMPILER" test --exec "$SCRIPT_DIR/test_exec_vm_if_else.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+grep -q '总计: 1 个测试' "$TMP_STDERR"
+grep -q '通过: 1' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ supported test --exec unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  test --exec smoke ✓"
+
 echo "验证 const pool 去重..."
 "$COMPILER" run --vm --dump-bytecode "$SCRIPT_DIR/test_exec_vm_const_pool.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
@@ -72,9 +85,25 @@ if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP
     cat "$TMP_STDERR"
     exit 1
 fi
+grep -q 'exec unsupported 原因码: extern_abi' "$TMP_STDERR"
 grep -q 'exec: 当前不支持 extern ABI' "$TMP_STDERR"
 "$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
-grep -q '信息: exec backend 不支持，回退 C99:' "$TMP_STDERR"
+grep -q '信息: exec backend 不支持，回退 C99 (原因码: extern_abi):' "$TMP_STDERR"
 echo "  extern unsupported/fallback ✓"
+
+echo "验证 test --vm/test --exec 的 extern fallback 行为..."
+if "$COMPILER" test --vm "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
+    echo "✗ extern unsupported test should fail under test --vm"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+grep -q 'exec unsupported 原因码: extern_abi' "$TMP_STDERR"
+grep -q 'exec: 当前不支持 extern ABI' "$TMP_STDERR"
+"$COMPILER" test --exec "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '信息: exec backend 不支持，回退 C99 (原因码: extern_abi):' "$TMP_STDERR"
+grep -q '后端类型: C99' "$TMP_STDERR"
+grep -q '总计: 1 个测试' "$TMP_STDERR"
+grep -q '通过: 1' "$TMP_STDERR"
+echo "  test extern fallback ✓"
 
 echo "✓ exec backend progress checks passed"

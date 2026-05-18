@@ -77,6 +77,10 @@ fn exec_backend_set_unsupported_error(node: &ASTNode, message: &byte, reason: Ex
     g_exec_last_unsupported_reason = reason;
 }
 
+fn exec_backend_set_generic_unsupported_error(node: &ASTNode, message: &byte) void {
+    exec_backend_set_unsupported_error(node, message, ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC);
+}
+
 fn exec_backend_get_last_error() &byte {
     if g_exec_last_error_message[0] == 0 as byte {
         return null;
@@ -90,6 +94,91 @@ fn exec_backend_error_is_unsupported() i32 {
 
 fn exec_backend_get_last_unsupported_reason() ExecUnsupportedReason {
     return g_exec_last_unsupported_reason;
+}
+
+fn exec_backend_reason_name(reason: ExecUnsupportedReason) &byte {
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_NONE {
+        return "none" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC {
+        return "generic" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_C_IMPORT {
+        return "c_import" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_ASYNC {
+        return "async" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI {
+        return "extern_abi" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_TRY_EXPR {
+        return "try_expr" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR {
+        return "catch_expr" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR {
+        return "match_expr" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_STRING_INTERP {
+        return "string_interp" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_ASM {
+        return "asm" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD {
+        return "simd" as &byte;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_MICROAPP {
+        return "microapp" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
+fn exec_backend_get_last_unsupported_reason_name() &byte {
+    return exec_backend_reason_name(g_exec_last_unsupported_reason);
+}
+
+fn exec_backend_reason_allows_fallback(reason: ExecUnsupportedReason) i32 {
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_C_IMPORT {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_ASYNC {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_TRY_EXPR {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_STRING_INTERP {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_ASM {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD {
+        return 1;
+    }
+    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_MICROAPP {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_backend_should_fallback() i32 {
+    return exec_backend_reason_allows_fallback(g_exec_last_unsupported_reason);
 }
 
 /// 构建 exec backend 程序。

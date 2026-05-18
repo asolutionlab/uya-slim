@@ -504,7 +504,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 ## Phase 15：fallback 机制
 
 - [x] 定义“不支持原因码”
-- [ ] 定义 fallback 条件：
+- [x] 定义 fallback 条件：
   - [x] `@c_import`
   - [x] async
   - [x] asm
@@ -513,6 +513,12 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] `--exec` 时自动回退 C99
 - [x] `--vm` 时直接失败
 - [x] 打印清晰原因，不要静默切换
+
+备注：
+
+- 2026-05-18 已把 fallback 判定集中到 `exec_backend_reason_allows_fallback()`，避免用“任意 unsupported 都默认回退”的隐式策略。
+- 当前所有 builder/lower 主路径里的 unsupported 分支都会带稳定 reason code；`test --vm` / `test --exec` / `run --vm` / `run --exec` 现在都会打印原因码，便于回归脚本精确断言。
+- `BC_CALL` 已把 callee 解析前移到 bytecode build 阶段，VM 热路径不再按函数名线性扫描，减少解释执行时的调用分发开销。
 
 ---
 

@@ -68,20 +68,6 @@ fn exec_vm_print_value(value: ExecValue, newline: i32) void {
     }
 }
 
-fn exec_vm_find_function(program: &BCProgram, name: &byte) i32 {
-    if program == null || name == null {
-        return -1;
-    }
-    var i: i32 = 0;
-    while i < program.function_count {
-        if program.functions[i].name != null && str_equals(program.functions[i].name, name) != 0 {
-            return i;
-        }
-        i = i + 1;
-    }
-    return -1;
-}
-
 fn exec_vm_trace(trace_vm: i32, fn_name: &byte, ip: i32, instr: &BCInstr) void {
     if trace_vm == 0 || instr == null {
         return;
@@ -483,8 +469,8 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return 0;
         }
     } else if instr.opcode == BCOpcode.BC_CALL {
-        const callee_idx: i32 = exec_vm_find_function(program, instr.text);
-        if callee_idx < 0 {
+        const callee_idx: i32 = instr.imm as i32;
+        if callee_idx < 0 || callee_idx >= program.function_count {
             exec_backend_set_error(function.decl, "exec: 无法找到被调用函数" as *byte, 0);
             return -1;
         }
