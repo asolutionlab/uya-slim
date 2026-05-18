@@ -119,7 +119,10 @@ fn exec_lower_match_extern_bridge_signature(checker: &TypeChecker, fn_decl: &AST
     if fn_decl.fn_decl_body != null {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
     }
-    if fn_decl.fn_decl_is_varargs != 0 || fn_decl.fn_decl_name == null || fn_decl.fn_decl_return_type == null {
+    if fn_decl.fn_decl_name == null || fn_decl.fn_decl_return_type == null {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
+    if fn_decl.fn_decl_is_varargs != 0 {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
     }
     if str_equals(fn_decl.fn_decl_name, "puts" as &byte) != 0 &&
@@ -133,6 +136,28 @@ fn exec_lower_match_extern_bridge_signature(checker: &TypeChecker, fn_decl: &AST
     if str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 &&
         fn_decl.fn_decl_param_count == 1 {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS;
+    }
+    return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+}
+
+fn exec_lower_match_varargs_stdio_bridge(fn_decl: &ASTNode, call_arg_count: i32) ExecExternBridgeId {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
+    if fn_decl.fn_decl_is_extern == 0 || fn_decl.fn_decl_is_varargs == 0 || fn_decl.fn_decl_name == null {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+    }
+    if str_equals(fn_decl.fn_decl_name, "fprintf" as &byte) != 0 && call_arg_count == 2 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_FPRINTF_FIXED;
+    }
+    if str_equals(fn_decl.fn_decl_name, "printf" as &byte) != 0 && call_arg_count == 1 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_PRINTF_FIXED;
+    }
+    if str_equals(fn_decl.fn_decl_name, "sprintf" as &byte) != 0 && call_arg_count == 2 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_SPRINTF_FIXED;
+    }
+    if str_equals(fn_decl.fn_decl_name, "snprintf" as &byte) != 0 && call_arg_count == 3 {
+        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_SNPRINTF_FIXED;
     }
     return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
 }
@@ -2420,6 +2445,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             callee_decl.type == ASTNodeType.AST_FN_DECL &&
             callee_decl.fn_decl_is_extern != 0 {
             extern_bridge_id = exec_lower_match_extern_bridge_signature(ctx.checker, callee_decl);
+            if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
+                extern_bridge_id = exec_lower_match_varargs_stdio_bridge(callee_decl, expr.call_expr_arg_count);
+            }
             if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE &&
                 exec_lower_extern_can_run_in_vm(ctx.checker, callee_decl) == 0 {
                 var extern_msg: [byte: 160] = [];
@@ -2565,6 +2593,52 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir_tuple;
     }
     if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        var module_access_name: &byte = null;
+        if expr.member_access_is_module_access != 0 && expr.member_access_module_name != null {
+            module_access_name = expr.member_access_module_name;
+        } else if expr.member_access_object != null &&
+            expr.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
+            expr.member_access_object.identifier_name != null {
+            const module_import_item: &ImportedItem = checker_import_table_lookup_local_name(ctx.checker, expr.member_access_object.identifier_name);
+            if module_import_item != null && module_import_item.item_type == (0 - 1) {
+                module_access_name = module_import_item.module_name;
+            }
+        }
+        if module_access_name != null && expr.member_access_field_name != null {
+            const module_global_decl: &ASTNode = exec_lower_find_module_export_decl(
+                ctx.checker, module_access_name, expr.member_access_field_name, 0);
+            if module_global_decl != null {
+                const module_global_slot: i32 = exec_lower_find_global_slot_by_decl(ctx, module_global_decl);
+                if module_global_slot >= 0 {
+                    var module_global_type: Type = copy_type(&expr_type);
+                    if module_global_slot >= 0 && module_global_slot < EXEC_MAX_GLOBALS {
+                        module_global_type = ctx.global_types[module_global_slot];
+                    }
+                    const hir_module_global: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &module_global_type);
+                    if hir_module_global == null {
+                        return null;
+                    }
+                    hir_module_global.global_slot = module_global_slot;
+                    return hir_module_global;
+                }
+                if exec_lower_global_is_const(module_global_decl) != 0 {
+                    const module_const_init: &ASTNode = exec_lower_global_init_ast(module_global_decl);
+                    if module_const_init != null && module_const_init != expr {
+                        return exec_lower_expr(ctx, module_const_init);
+                    }
+                }
+                const module_global_type_ast: &ASTNode = exec_lower_global_type_ast(module_global_decl);
+                if module_global_type_ast != null {
+                    const module_decl_type: Type = type_from_ast(ctx.checker, module_global_type_ast);
+                    if exec_type_is_vm_value_supported(module_decl_type) == 0 {
+                        if exec_type_uses_simd(module_decl_type) != 0 {
+                            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 SIMD 全局变量" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD);
+                        }
+                        return exec_lower_fail_expr(expr, "exec: 当前仅支持 exec VM 可表示的全局变量" as *byte);
+                    }
+                }
+            }
+        }
         const base_expr: &HIRExpr = exec_lower_expr(ctx, expr.member_access_object);
         const base_type: Type = exec_lower_member_base_type(ctx, expr.member_access_object);
         if base_expr == null {

@@ -95,6 +95,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `bash ./tests/verify_exec_vm_smoke.sh`
   - `bash ./tests/verify_exec_vm_globals.sh`
   - `tests/test_exec_vm_aggregates.uya` 的 `run --vm`
+- 2026-05-18 已新增并跑通：
+  - `tests/test_exec_vm_stdio_no_varargs.uya`
+  - `bash ./tests/verify_exec_vm_stdio_no_varargs.sh`
+  - 当前已确认固定参数、无额外 varargs 实参的 `printf(...)` 可走 exec bridge，不再在 `--vm` 下直接卡在 `extern_abi`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -103,13 +107,13 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - 现在都会显式校验 `后端类型: EXEC`、`exec backend 构建完成` 或 fallback 原因
 - 2026-05-18 已直接验证：
   - `./bin/uya run --vm src/main.uya`
-  - 当前并非卡在 CLI 接线或 VM 启动，而是在 lowering 阶段命中首个“编译器本体 hosted 子集尚未覆盖”的类型缺口
-- 当前已知首个 blocker：
-  - `src/main.uya:197:1: exec: 当前仅支持 exec VM 可表示的全局变量`
-  - 首个命中点是 `const POBJ_VERSION: u16 = 8`
+  - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
+- 当前已知最新 blocker：
+  - `src/main.uya:7842:17: exec: 当前仅支持局部变量/参数/全局标识符`
+  - 当前观测命中点是 `fprintf(libc.stdout, "v0.9.7\n" as *byte);` 中的 `libc.stdout`
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
-  - 当前 global 路径已打通单文件 hosted，以及多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集；更复杂全局类型与更大覆盖面回归仍待继续扩大
+  - 当前 global 路径已打通单文件 hosted，以及多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集；但 `module_alias.exported_global` 这类成员式访问仍未完全收口，更复杂全局类型与更大覆盖面回归仍待继续扩大
 
 ---
 
@@ -117,7 +121,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
-- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，但会在 lowering 阶段因为 `u16` 顶层全局常量而停止，说明眼前主阻塞已从“接线”转为“类型面与运行时表示覆盖度”
+- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口与 `fprintf/2` varargs ABI 卡点；当前会在 lowering 阶段因为 `libc.stdout` 这类模块别名导出全局访问而停止，说明主阻塞已进一步收敛到“qualified global access + 更完整 hosted stdlib 路径覆盖”
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
@@ -564,7 +568,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 2026-05-18 已新增固定白名单 extern bridge，当前先覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名；VM 热路径通过 `BC_CALL_EXTERN` + 固定 bridge id 直接分发，不再按函数名做线性扫描。
 - 2026-05-18 已把 `i64/u64` 数字字面量放通到 exec lowering / const pool / VM value，保证宽整数 extern 参数与返回值不会在 lowering 阶段被误判 unsupported。
-- 2026-05-18 已明确禁用 varargs extern bridge；`printf` 这类调用在 `--vm` 下继续稳定报 `extern_abi`，在 `--exec` / `test --exec` 下继续走清晰的 fallback 到 C99。
+- 2026-05-18 已新增第一版“固定参数、无额外 varargs 实参”的 stdio 过渡 bridge：
+  - 当前已覆盖 `printf(format_only)` 这一类最小 hosted 路径
+  - 新增 `tests/test_exec_vm_stdio_no_varargs.uya` 与 `tests/verify_exec_vm_stdio_no_varargs.sh`
+  - 当前仍未把 `fprintf/sprintf/snprintf` 的更一般 varargs 语义纳入 exec，只是把最先挡住 `src/main.uya --vm` 的最小无额外实参路径向前推进了一步
 - 该阶段只是过渡里程碑；最终目标不是继续扩函数名白名单，而是让“带函数体的 `extern` / `extern "libc"` 实现”进入统一 lowering/VM 路径，仅对真正宿主边界保留最小 bridge。
 
 ---
@@ -576,6 +583,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] bytecode build
   - [x] VM run
 - [ ] 对比 C99 run/test 的 wall time
+- [x] 记录最小 wall time 对比样本（当前先补 smoke 级样本）
 - [ ] 查找热点：
   - [ ] Value 拷贝
   - [ ] 聚合值构造
@@ -585,6 +593,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [ ] 文件 hash
   - [ ] 模块依赖 hash
   - [ ] checker 输出版本号
+
+备注：
+
+- 2026-05-18 已补一条最小 wall time 对比样本：
+  - `./bin/uya run tests/test_exec_vm_multi_fn.uya`：约 `0.08s`
+  - `./bin/uya run --vm tests/test_exec_vm_multi_fn.uya`：约 `0.01s`
+- 同一用例的编译统计中：
+  - C99 路径 `总耗时` 约 `9 ms`，随后仍需宿主工具链链接
+  - exec 路径 `总耗时` 约 `8 ms`，`exec lowering` 约 `1 ms`，`VM run` 约 `0 ms`
+- 这组数据只说明“跳过宿主工具链”方向正确，不代表已经完成系统化性能评估；后续仍需扩大样本并拆解 `Value` 拷贝、聚合值构造与 dispatch 热点
 
 ---
 
@@ -607,7 +625,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-18 已把 `u8/u16/usize/isize` 放通到 exec lowering / const pool / VM 算术与比较路径；其中 `isize` 继续遵循当前 checker 的既有实现，内部沿用 `TYPE_I64` 映射，而不是额外引入一套平行类型枚举。
 - 2026-05-18 已新增通用 pointer value kind，并支持 pointer/null 比较、pointer cast、`ptr[idx]` 的 byte/整数 pointee 读写，以及 `@ptr_from_usize` / `@usize_from_ptr` 的运行期执行。
 - 2026-05-18 已让一批“带函数体且非 varargs”的 `extern "libc"` 走普通 lowering/VM 路径，当前已用回归覆盖 `atoi` / `isqrt` / `strcmp`；并且当程序显式声明同名无函数体 `extern` stub 时，exec 现在会优先按 stub 走最小 host bridge，而不是误把 stdlib 里的实现体也拉进 reachable 队列。
-- `puts` / `atoll` / `llabs` 当前建议继续通过 stub bridge 走宿主边界；`printf` 这类 varargs 继续明确报 unsupported 并在 `--exec` 下 fallback 到 C99。
+- `puts` / `atoll` / `llabs` 当前建议继续通过 stub bridge 走宿主边界。
+- 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；但 `fprintf/snprintf/printf` 的完整 varargs 收敛仍未完成，当前不应误解为“varargs extern 已普遍支持”。
 - 2026-05-18 已新增第一版 tagged union 子集：
   - `union` 值现在可进入 exec VM 表示
   - `UnionName.variant(payload)` 构造已接通 lowering / bytecode / VM
@@ -618,6 +637,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - VM 新增内部引用地址与 `CALL_INDIRECT`，interface 值运行时保存“方法表函数索引 + data 引用”
   - `self.field` / `self.field = ...` 已可透过 `&Self` receiver 在 VM 中读写
   - `tests/test_exec_vm_interface_dispatch.uya` 与 `tests/test_exec_vm_interface_stateful.uya` 已在 `--vm/--exec` 下通过，并纳入 `tests/verify_exec_vm_smoke.sh`
+- 2026-05-18 当前 `src/main.uya --vm` 的 staged smoke 已从：
+  - `u16` 顶层全局常量不可表示
+  - `fprintf/2` varargs ABI unsupported
+  继续前移到：
+  - `libc.stdout` 这类 `module_alias.exported_global` 成员式访问尚未完全被 exec lowering 识别为 global load
 - 2026-05-18 继续把编译器本体 hosted 子集往前推了一段：
   - exec VM 现已补上 `i8/i16` 值表示、算术/比较、聚合值与全局路径，新增回归 `tests/test_exec_vm_scalar_pointer.uya`
   - enum 常量/全局值现已可进入 exec lowering / const pool / VM，新增 `tests/test_exec_vm_enum_value.uya`

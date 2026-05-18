@@ -2460,7 +2460,7 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
                 return -1;
             }
             if instr.imm <= ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE as i64 ||
-                instr.imm > ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS as i64 {
+                instr.imm > ExecExternBridgeId.EXEC_EXTERN_BRIDGE_SNPRINTF_FIXED as i64 {
                 exec_backend_set_error(fn_hir.decl, "exec: CALL_EXTERN 目标非法" as *byte, 0);
                 return -1;
             }
