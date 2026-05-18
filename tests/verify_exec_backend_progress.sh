@@ -54,6 +54,12 @@ grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
 echo "  aggregate exec path ✓"
 
+echo "验证 u8/u16/usize/isize 与通用指针 builtin 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_scalar_pointer.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  scalar/pointer exec path ✓"
+
 echo "验证 defer/errdefer 清理顺序..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_defer.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
@@ -105,6 +111,17 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     exit 1
 fi
 echo "  extern bridge exec path ✓"
+
+echo "验证 extern 带函数体走普通 lowering/VM 路径..."
+"$COMPILER" run --vm --dump-bytecode "$SCRIPT_DIR/test_exec_vm_extern_impl.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q 'BC_CALL_EXTERN' "$TMP_STDERR"; then
+    echo "✗ extern impl test unexpectedly used CALL_EXTERN bridge"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  extern impl lowered as normal call ✓"
 
 echo "验证 test --vm/test --exec 的 extern fallback 行为..."
 if "$COMPILER" test --vm "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then

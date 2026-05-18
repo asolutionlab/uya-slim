@@ -93,6 +93,12 @@ fn exec_builder_const_value_equals(left: ExecValue, right: ExecValue) i32 {
         }
         return (str_equals(left.ptr_value, right.ptr_value) != 0) as i32;
     }
+    if left.kind == ExecValueKind.EXEC_VALUE_POINTER {
+        if left.i64_value != right.i64_value {
+            return 0;
+        }
+        return (left.aux_i64_value == right.aux_i64_value) as i32;
+    }
     if left.i64_value == right.i64_value {
         return 1;
     }
@@ -293,6 +299,13 @@ fn exec_builder_new_temp(ctx: &ExecFunctionBuildContext) i32 {
     return slot;
 }
 
+fn exec_builder_pointer_pointee_kind_code(type: Type) i32 {
+    if type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    return type.pointer_to[0].kind as i32;
+}
+
 fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRExpr) i32 {
     var const_value: ExecValue = exec_make_void();
     if expr.string_value != null {
@@ -303,11 +316,21 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
         const_value = exec_make_bool(expr.bool_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
         const_value = exec_make_byte(expr.int_value as i32);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_U8 {
+        const_value = exec_make_u8(expr.int_value as u8);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_U16 {
+        const_value = exec_make_u16(expr.int_value as u16);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_U32 {
+        const_value = exec_make_u32(expr.int_value as u32);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_I64 {
         const_value = exec_make_i64(expr.int_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_U64 {
         const_value = exec_make_u64(expr.int_value as u64);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 || expr.type_ref.type.kind == TypeKind.TYPE_U32 {
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_USIZE {
+        const_value = exec_make_usize(expr.int_value as usize);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_POINTER {
+        const_value = exec_make_pointer_with_kind(expr.int_value as usize, exec_builder_pointer_pointee_kind_code(expr.type_ref.type));
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 {
         const_value = exec_make_i32(expr.int_value as i32);
     }
     const const_idx: i32 = exec_builder_intern_const(ctx, const_value);
@@ -515,6 +538,25 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return -1;
         }
         return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CAST {
+        const src_cast: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_cast: i32 = exec_builder_new_temp(ctx);
+        if src_cast < 0 || dst_cast < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_CAST,
+            a: dst_cast,
+            b: src_cast,
+            c: exec_builder_pointer_pointee_kind_code(expr.type_ref.type),
+            imm: expr.type_ref.type.kind as i64,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_cast;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_LEN {
         const src_len: i32 = exec_builder_compile_expr(ctx, expr.left);
@@ -956,7 +998,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             a: dst,
             b: src,
             c: 0,
-            imm: 0,
+            imm: expr.type_ref.type.kind as i64,
             text: null,
             source: exec_builder_make_source(expr.ast_node),
         }) < 0 {
@@ -1012,7 +1054,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             a: dst,
             b: left,
             c: right,
-            imm: 0,
+            imm: expr.type_ref.type.kind as i64,
             text: null,
             source: exec_builder_make_source(expr.ast_node),
         }) < 0 {
@@ -1723,6 +1765,7 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
                 slot_written[dst_slot3] = 1;
             }
         } else if instr.opcode == BCOpcode.BC_NEG || instr.opcode == BCOpcode.BC_NOT ||
+            instr.opcode == BCOpcode.BC_CAST ||
             instr.opcode == BCOpcode.BC_LOAD_LEN ||
             instr.opcode == BCOpcode.BC_MAKE_OK || instr.opcode == BCOpcode.BC_MAKE_ERR ||
             instr.opcode == BCOpcode.BC_IS_ERR || instr.opcode == BCOpcode.BC_UNWRAP_OK ||

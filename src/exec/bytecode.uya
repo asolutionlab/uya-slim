@@ -13,6 +13,7 @@ enum BCOpcode {
     BC_NEG,
     BC_NOT,
     BC_LOAD_LEN,
+    BC_CAST,
     BC_MAKE_STRUCT,
     BC_MAKE_ARRAY,
     BC_MAKE_TUPLE,

@@ -62,8 +62,11 @@ fn exec_lower_fail_block_reason(node: &ASTNode, reason: &byte, code: ExecUnsuppo
 fn exec_type_is_scalar_supported(type: Type) i32 {
     if type.kind == TypeKind.TYPE_I32 ||
         type.kind == TypeKind.TYPE_I64 ||
+        type.kind == TypeKind.TYPE_U8 ||
+        type.kind == TypeKind.TYPE_U16 ||
         type.kind == TypeKind.TYPE_U32 ||
         type.kind == TypeKind.TYPE_U64 ||
+        type.kind == TypeKind.TYPE_USIZE ||
         type.kind == TypeKind.TYPE_BOOL ||
         type.kind == TypeKind.TYPE_BYTE ||
         type.kind == TypeKind.TYPE_VOID {
@@ -116,27 +119,34 @@ fn exec_lower_match_extern_bridge_signature(checker: &TypeChecker, fn_decl: &AST
         fn_decl.fn_decl_param_count == 1 {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_PUTS;
     }
-    if str_equals(fn_decl.fn_decl_name, "atoi" as &byte) != 0 &&
-        fn_decl.fn_decl_param_count == 1 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOI;
-    }
     if str_equals(fn_decl.fn_decl_name, "atoll" as &byte) != 0 &&
         fn_decl.fn_decl_param_count == 1 {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ATOLL;
-    }
-    if str_equals(fn_decl.fn_decl_name, "isqrt" as &byte) != 0 &&
-        fn_decl.fn_decl_param_count == 1 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_ISQRT;
-    }
-    if str_equals(fn_decl.fn_decl_name, "strcmp" as &byte) != 0 &&
-        fn_decl.fn_decl_param_count == 2 {
-        return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_STRCMP;
     }
     if str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 &&
         fn_decl.fn_decl_param_count == 1 {
         return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_LLABS;
     }
     return ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE;
+}
+
+fn exec_lower_extern_can_run_in_vm(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    if fn_decl.fn_decl_is_extern == 0 {
+        return (fn_decl.fn_decl_body != null) as i32;
+    }
+    if fn_decl.fn_decl_is_varargs != 0 {
+        return 0;
+    }
+    if fn_decl.fn_decl_body == null {
+        return 0;
+    }
+    if exec_lower_match_extern_bridge_signature(checker, fn_decl) != ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
+        return 0;
+    }
+    return 1;
 }
 
 fn exec_type_uses_simd(ty: Type) i32 {
@@ -191,7 +201,7 @@ fn exec_type_is_vm_value_supported(type: Type) i32 {
     if exec_type_is_scalar_supported(type) != 0 {
         return 1;
     }
-    if exec_type_is_string_pointer_supported(type) != 0 {
+    if type.kind == TypeKind.TYPE_POINTER {
         return 1;
     }
     if type.kind == TypeKind.TYPE_ERROR {
@@ -423,6 +433,39 @@ fn exec_lower_make_int_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, ty
     }
     expr.int_value = value;
     return expr;
+}
+
+fn exec_lower_make_void_pointer_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_POINTER,
+        data: TypeData.pointer(PointerData {
+            pointee: null as &Type,
+            is_ffi: 0,
+        }),
+        enum_name: null,
+        interface_name: null,
+        interface_type_args: null,
+        interface_type_arg_count: 0,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        slice_element_is_const: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
+    };
 }
 
 fn exec_lower_make_string_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &Type, value: &byte) &HIRExpr {
@@ -1252,8 +1295,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if expr_type.kind != TypeKind.TYPE_I32 &&
             expr_type.kind != TypeKind.TYPE_U32 &&
             expr_type.kind != TypeKind.TYPE_I64 &&
-            expr_type.kind != TypeKind.TYPE_U64 {
-            return exec_lower_fail_expr(expr, "exec: 仅支持 i32/u32/i64/u64 数字字面量" as *byte);
+            expr_type.kind != TypeKind.TYPE_U64 &&
+            expr_type.kind != TypeKind.TYPE_U8 &&
+            expr_type.kind != TypeKind.TYPE_U16 &&
+            expr_type.kind != TypeKind.TYPE_USIZE {
+            return exec_lower_fail_expr(expr, "exec: 仅支持 exec VM 可表示的整数数字字面量" as *byte);
         }
         return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr.number_value_i64);
     }
@@ -1283,9 +1329,21 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr_type.error_error_id as i64);
     }
     if expr.type == ASTNodeType.AST_IDENTIFIER {
+        if expr.identifier_name != null &&
+            str_equals(expr.identifier_name, "null" as &byte) != 0 {
+            var null_type: Type = copy_type(&expr_type);
+            if null_type.kind != TypeKind.TYPE_POINTER {
+                null_type = exec_lower_make_void_pointer_type();
+            }
+            return exec_lower_make_int_const_expr(ctx, expr, &null_type, 0);
+        }
         const slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
         if slot >= 0 {
-            const hir_local: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_LOCAL, &expr_type);
+            var local_type: Type = copy_type(&expr_type);
+            if slot >= 0 && slot < EXEC_MAX_LOCALS {
+                local_type = ctx.slot_types[slot];
+            }
+            const hir_local: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_LOCAL, &local_type);
             if hir_local == null {
                 return null;
             }
@@ -1296,7 +1354,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if symbol != null && exec_lower_global_is_runtime_decl(symbol.decl_node) != 0 {
             const global_slot_by_decl: i32 = exec_lower_find_global_slot_by_decl(ctx, symbol.decl_node);
             if global_slot_by_decl >= 0 {
-                const hir_global_by_decl: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &expr_type);
+                var global_type_by_decl: Type = copy_type(&expr_type);
+                if global_slot_by_decl >= 0 && global_slot_by_decl < EXEC_MAX_GLOBALS {
+                    global_type_by_decl = ctx.global_types[global_slot_by_decl];
+                }
+                const hir_global_by_decl: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &global_type_by_decl);
                 if hir_global_by_decl == null {
                     return null;
                 }
@@ -1318,7 +1380,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         const global_slot: i32 = exec_lower_find_global_slot(ctx, expr.identifier_name);
         if global_slot >= 0 {
-            const hir_global: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &expr_type);
+            var global_type: Type = copy_type(&expr_type);
+            if global_slot >= 0 && global_slot < EXEC_MAX_GLOBALS {
+                global_type = ctx.global_types[global_slot];
+            }
+            const hir_global: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_GLOBAL, &global_type);
             if hir_global == null {
                 return null;
             }
@@ -1326,6 +1392,48 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return hir_global;
         }
         return exec_lower_fail_expr(expr, "exec: 当前仅支持局部变量/参数/全局标识符" as *byte);
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR {
+        if expr.cast_expr_is_force_cast != 0 {
+            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 as! cast" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC);
+        }
+        if exec_type_is_vm_value_supported(expr_type) == 0 {
+            return exec_lower_fail_expr(expr, "exec: cast 目标类型当前不可被 exec VM 表示" as *byte);
+        }
+        const cast_operand: &HIRExpr = exec_lower_expr(ctx, expr.cast_expr_expr);
+        if cast_operand == null {
+            return null;
+        }
+        const hir_cast: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CAST, &expr_type);
+        if hir_cast == null {
+            return null;
+        }
+        hir_cast.left = cast_operand;
+        return hir_cast;
+    }
+    if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        const ptr_operand: &HIRExpr = exec_lower_expr(ctx, expr.ptr_from_usize_value);
+        if ptr_operand == null {
+            return null;
+        }
+        const hir_ptr: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CAST, &expr_type);
+        if hir_ptr == null {
+            return null;
+        }
+        hir_ptr.left = ptr_operand;
+        return hir_ptr;
+    }
+    if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        const usize_operand: &HIRExpr = exec_lower_expr(ctx, expr.usize_from_ptr_ptr);
+        if usize_operand == null {
+            return null;
+        }
+        const hir_usize: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CAST, &expr_type);
+        if hir_usize == null {
+            return null;
+        }
+        hir_usize.left = usize_operand;
+        return hir_usize;
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR {
         if exec_type_is_scalar_supported(expr_type) == 0 {
@@ -1387,7 +1495,8 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             callee_decl.type == ASTNodeType.AST_FN_DECL &&
             callee_decl.fn_decl_is_extern != 0 {
             extern_bridge_id = exec_lower_match_extern_bridge_signature(ctx.checker, callee_decl);
-            if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE {
+            if extern_bridge_id == ExecExternBridgeId.EXEC_EXTERN_BRIDGE_NONE &&
+                exec_lower_extern_can_run_in_vm(ctx.checker, callee_decl) == 0 {
                 var extern_msg: [byte: 160] = [];
                 if callee_decl.fn_decl_name != null {
                     _ = snprintf(&extern_msg[0] as *byte, 160, "exec: 当前不支持 extern ABI: %s/%d" as *byte,
@@ -1886,40 +1995,11 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                         return null;
                     }
                 } else if stmt_node.if_stmt_else_branch.type == ASTNodeType.AST_IF_STMT {
-                    const synthetic: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
-                    const synthetic_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
-                    if synthetic == null || synthetic_stmts == null {
-                        exec_lower_pop_scope(ctx);
-                        exec_backend_set_error(stmt_node, "exec: else-if block 分配失败" as *byte, 0);
-                        return null;
-                    }
-                    _ = memset(synthetic as *byte, 0, @size_of(HIRBlock));
-                    const nested_if_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node.if_stmt_else_branch, HIRStmtKind.HIR_STMT_IF);
-                    if nested_if_stmt == null {
+                    else_block = exec_lower_wrap_stmt_node_as_block(ctx, stmt_node.if_stmt_else_branch);
+                    if else_block == null {
                         exec_lower_pop_scope(ctx);
                         return null;
                     }
-                    const nested_cond: &HIRExpr = exec_lower_expr(ctx, stmt_node.if_stmt_else_branch.if_stmt_condition);
-                    const nested_then: &HIRBlock = exec_lower_block(ctx, stmt_node.if_stmt_else_branch.if_stmt_then_branch);
-                    var nested_else: &HIRBlock = null;
-                        if stmt_node.if_stmt_else_branch.if_stmt_else_branch != null {
-                            if stmt_node.if_stmt_else_branch.if_stmt_else_branch.type != ASTNodeType.AST_BLOCK {
-                                exec_lower_pop_scope(ctx);
-                                return exec_lower_fail_block(stmt_node, "exec: 当前不支持链式 else-if" as *byte);
-                            }
-                            nested_else = exec_lower_block(ctx, stmt_node.if_stmt_else_branch.if_stmt_else_branch);
-                        }
-                    if nested_cond == null || nested_then == null {
-                        exec_lower_pop_scope(ctx);
-                        return null;
-                    }
-                    nested_if_stmt.expr = nested_cond;
-                    nested_if_stmt.then_block = nested_then;
-                    nested_if_stmt.else_block = nested_else;
-                    synthetic.stmts = synthetic_stmts;
-                    synthetic.stmts[0] = nested_if_stmt;
-                    synthetic.stmt_count = 1;
-                    else_block = synthetic;
                 } else {
                     exec_lower_pop_scope(ctx);
                     return exec_lower_fail_block(stmt_node, "exec: 当前仅支持 block/else-if" as *byte);
@@ -2000,6 +2080,20 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                     exec_lower_pop_scope(ctx);
                     return null;
                 }
+                if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
+                    const return_type: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+                    if return_type.kind != TypeKind.TYPE_ERROR_UNION &&
+                        type_equals(stmt.expr.type_ref.type, return_type) == 0 &&
+                        exec_type_is_vm_value_supported(return_type) != 0 {
+                        const cast_return: &HIRExpr = exec_lower_alloc_expr(ctx, stmt_node.return_stmt_expr, HIRExprKind.HIR_EXPR_CAST, &return_type);
+                        if cast_return == null {
+                            exec_lower_pop_scope(ctx);
+                            return null;
+                        }
+                        cast_return.left = stmt.expr;
+                        stmt.expr = cast_return;
+                    }
+                }
             }
         } else if stmt_node.type == ASTNodeType.AST_BLOCK {
             const nested_block: &HIRBlock = exec_lower_block(ctx, stmt_node);
@@ -2040,7 +2134,7 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 async" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_ASYNC);
         return null;
     }
-    if fn_decl.fn_decl_is_extern != 0 {
+    if fn_decl.fn_decl_is_extern != 0 && exec_lower_extern_can_run_in_vm(checker, fn_decl) == 0 {
         exec_lower_set_unsupported_reason(fn_decl, "exec: 当前不支持 extern ABI" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_EXTERN_ABI);
         return null;
     }
@@ -2199,8 +2293,7 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
                 const to_decl: &ASTNode = checker.fn_call_edge_to[edge_idx];
                 if to_decl != null &&
                     to_decl.type == ASTNodeType.AST_FN_DECL &&
-                    to_decl.fn_decl_is_extern == 0 &&
-                    to_decl.fn_decl_body != null &&
+                    exec_lower_extern_can_run_in_vm(checker, to_decl) != 0 &&
                     exec_lower_decl_index(&exec_reachable[0] as & & ASTNode, exec_reachable_count, to_decl) < 0 {
                     if exec_reachable_count >= MAX_REACHABLE_FN_DECLS || tail >= MAX_REACHABLE_FN_DECLS {
                         exec_backend_set_error(to_decl, "exec: reachable 函数集合超出上限" as *byte, 0);

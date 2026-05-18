@@ -7,10 +7,16 @@ enum ExecValueKind {
     EXEC_VALUE_VOID,
     EXEC_VALUE_I32,
     EXEC_VALUE_I64,
+    EXEC_VALUE_ISIZE,
+    EXEC_VALUE_U8,
+    EXEC_VALUE_U16,
+    EXEC_VALUE_U32,
     EXEC_VALUE_U64,
+    EXEC_VALUE_USIZE,
     EXEC_VALUE_BOOL,
     EXEC_VALUE_BYTE,
     EXEC_VALUE_STRING,
+    EXEC_VALUE_POINTER,
     EXEC_VALUE_STRUCT,
     EXEC_VALUE_ARRAY,
     EXEC_VALUE_SLICE,
@@ -76,11 +82,71 @@ fn exec_make_i64(value: i64) ExecValue {
     };
 }
 
+fn exec_make_isize(value: isize) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_ISIZE,
+        i64_value: value as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_u8(value: u8) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_U8,
+        i64_value: value as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_u16(value: u16) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_U16,
+        i64_value: value as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_u32(value: u32) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_U32,
+        i64_value: value as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
 fn exec_make_u64(value: u64) ExecValue {
     return ExecValue {
         kind: ExecValueKind.EXEC_VALUE_U64,
         i64_value: value as i64,
         ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_usize(value: usize) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_USIZE,
+        i64_value: value as i64,
+        ptr_value: @ptr_from_usize(value) as &byte,
         aux_kind: ExecValueKind.EXEC_VALUE_VOID,
         aux_i64_value: 0,
         aux_ptr_value: null,
@@ -117,12 +183,28 @@ fn exec_make_byte(value: i32) ExecValue {
 }
 
 fn exec_make_string(value: &byte) ExecValue {
+    var addr: usize = 0 as usize;
+    if value != null {
+        addr = @usize_from_ptr(value as &void);
+    }
     return ExecValue {
         kind: ExecValueKind.EXEC_VALUE_STRING,
-        i64_value: 0,
+        i64_value: addr as i64,
         ptr_value: value,
         aux_kind: ExecValueKind.EXEC_VALUE_VOID,
         aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_pointer_with_kind(addr: usize, pointee_kind: i32) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_POINTER,
+        i64_value: addr as i64,
+        ptr_value: @ptr_from_usize(addr) as &byte,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: pointee_kind as i64,
         aux_ptr_value: null,
         error_id: 0,
     };
@@ -407,7 +489,12 @@ fn exec_value_truthy(value: ExecValue) i32 {
     }
     if value.kind == ExecValueKind.EXEC_VALUE_I32 ||
         value.kind == ExecValueKind.EXEC_VALUE_I64 ||
+        value.kind == ExecValueKind.EXEC_VALUE_ISIZE ||
+        value.kind == ExecValueKind.EXEC_VALUE_U8 ||
+        value.kind == ExecValueKind.EXEC_VALUE_U16 ||
+        value.kind == ExecValueKind.EXEC_VALUE_U32 ||
         value.kind == ExecValueKind.EXEC_VALUE_U64 ||
+        value.kind == ExecValueKind.EXEC_VALUE_USIZE ||
         value.kind == ExecValueKind.EXEC_VALUE_BYTE {
         if value.i64_value != 0 {
             return 1;
@@ -416,6 +503,12 @@ fn exec_value_truthy(value: ExecValue) i32 {
     }
     if value.kind == ExecValueKind.EXEC_VALUE_STRING {
         if value.ptr_value != null {
+            return 1;
+        }
+        return 0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_POINTER {
+        if value.i64_value != 0 {
             return 1;
         }
         return 0;
@@ -449,4 +542,24 @@ fn exec_value_error_id(value: ExecValue) i32 {
         return value.error_id;
     }
     return 0;
+}
+
+fn exec_value_is_pointer_like(value: ExecValue) i32 {
+    if value.kind == ExecValueKind.EXEC_VALUE_POINTER || value.kind == ExecValueKind.EXEC_VALUE_STRING {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_value_pointer_pointee_kind(value: &ExecValue) i32 {
+    if value == null {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_POINTER {
+        return value.aux_i64_value as i32;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_STRING {
+        return TypeKind.TYPE_BYTE as i32;
+    }
+    return TypeKind.TYPE_VOID as i32;
 }

@@ -15,6 +15,7 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_NEG { return "BC_NEG" as &byte; }
     if opcode == BCOpcode.BC_NOT { return "BC_NOT" as &byte; }
     if opcode == BCOpcode.BC_LOAD_LEN { return "BC_LOAD_LEN" as &byte; }
+    if opcode == BCOpcode.BC_CAST { return "BC_CAST" as &byte; }
     if opcode == BCOpcode.BC_MAKE_STRUCT { return "BC_MAKE_STRUCT" as &byte; }
     if opcode == BCOpcode.BC_MAKE_ARRAY { return "BC_MAKE_ARRAY" as &byte; }
     if opcode == BCOpcode.BC_MAKE_TUPLE { return "BC_MAKE_TUPLE" as &byte; }
@@ -52,14 +53,22 @@ fn exec_debug_print_type(type_ref: HIRTypeRef) void {
         fprintf(libc.stderr, "i32" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_I64 {
         fprintf(libc.stderr, "i64" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_U8 {
+        fprintf(libc.stderr, "u8" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_U16 {
+        fprintf(libc.stderr, "u16" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_U32 {
         fprintf(libc.stderr, "u32" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_U64 {
         fprintf(libc.stderr, "u64" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_USIZE {
+        fprintf(libc.stderr, "usize" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_BOOL {
         fprintf(libc.stderr, "bool" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_BYTE {
         fprintf(libc.stderr, "byte" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_POINTER {
+        fprintf(libc.stderr, "ptr" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_VOID {
         fprintf(libc.stderr, "void" as *byte);
     } else {
@@ -116,6 +125,10 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
     }
     if expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
         fprintf(libc.stderr, "@println(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_CAST {
+        fprintf(libc.stderr, "cast(...)" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_ERROR_ID {
@@ -257,6 +270,16 @@ fn exec_debug_dump_hir_module(module: &HIRModule) void {
         fprintf(libc.stderr, ") -> " as *byte);
         exec_debug_print_type(fn_hir.return_type);
         fprintf(libc.stderr, " {\n" as *byte);
+        if fn_hir.locals != null && fn_hir.local_count > 0 {
+            var li: i32 = 0;
+            while li < fn_hir.local_count {
+                const local: &HIRLocalSlot = fn_hir.locals + li;
+                fprintf(libc.stderr, "  // local[%d] %s: " as *byte, li, local.name as *byte);
+                exec_debug_print_type(local.type_ref);
+                fprintf(libc.stderr, "\n" as *byte);
+                li = li + 1;
+            }
+        }
         exec_debug_dump_block(fn_hir.body, 1);
         fprintf(libc.stderr, "}\n" as *byte);
         i = i + 1;

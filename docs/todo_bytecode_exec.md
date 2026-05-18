@@ -590,9 +590,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 18：覆盖率扩大
 
-- [ ] 编译器本体所需基础值类型：`u8/u16/usize/isize`
-- [ ] 通用指针值表示：`&T/*T`、`&void/*void`，而不只 `&byte`
-- [ ] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
+- [x] 编译器本体所需基础值类型：`u8/u16/usize/isize`
+- [x] 通用指针值表示：`&T/*T`、`&void/*void`，而不只 `&byte`
+- [x] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
 - [ ] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
 - [ ] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
 - [ ] interface / 间接调用
@@ -601,6 +601,12 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [ ] 更大回归测试集
 - [ ] `src/main.uya` 的 `run --vm` staged smoke
 - [ ] `uya test` 默认优先 exec backend 的可行性评估
+
+备注：
+
+- 2026-05-18 已把 `u8/u16/usize/isize` 放通到 exec lowering / const pool / VM 算术与比较路径；其中 `isize` 继续遵循当前 checker 的既有实现，内部沿用 `TYPE_I64` 映射，而不是额外引入一套平行类型枚举。
+- 2026-05-18 已新增通用 pointer value kind，并支持 pointer/null 比较、pointer cast、`ptr[idx]` 的 byte/整数 pointee 读写，以及 `@ptr_from_usize` / `@usize_from_ptr` 的运行期执行。
+- 2026-05-18 已让一批“带函数体且非 varargs”的 `extern "libc"` 走普通 lowering/VM 路径，当前已用回归覆盖 `atoi` / `isqrt` / `strcmp`；`puts` / `atoll` / `llabs` 仍暂留 host bridge，`printf` 这类 varargs 继续明确报 unsupported 并在 `--exec` 下 fallback 到 C99。
 
 ---
 

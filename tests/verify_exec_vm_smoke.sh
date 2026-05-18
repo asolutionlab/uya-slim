@@ -19,6 +19,8 @@ TESTS=(
     "test_exec_vm_error_builtin.uya"
     "test_exec_vm_builtin_bridge.uya"
     "test_exec_vm_aggregates.uya"
+    "test_exec_vm_scalar_pointer.uya"
+    "test_exec_vm_extern_impl.uya"
 )
 
 TMP_STDOUT="$(mktemp)"
