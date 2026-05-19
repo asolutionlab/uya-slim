@@ -33,6 +33,7 @@ struct ExecCleanupScope {
 
 struct ExecFunctionBuildContext {
     arena: &CompilerArena,
+    checker: &TypeChecker,
     const_pool: &ExecConstPoolBuilder,
     host_calls: &ExecHostCallSiteBuilder,
     module: &HIRModule,
@@ -357,6 +358,199 @@ fn exec_builder_pointer_pointee_kind_code(type: Type) i32 {
         return TypeKind.TYPE_VOID as i32;
     }
     return type.pointer_to[0].kind as i32;
+}
+
+fn exec_builder_emit_loaded_const_value(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, value: ExecValue) i32 {
+    const dst_slot: i32 = exec_builder_new_temp(ctx);
+    if dst_slot < 0 {
+        return -1;
+    }
+    const const_idx: i32 = exec_builder_intern_const(ctx, value);
+    if const_idx < 0 {
+        return -1;
+    }
+    if exec_builder_emit(ctx, BCInstr {
+        opcode: BCOpcode.BC_LOAD_CONST,
+        a: dst_slot,
+        b: 0,
+        c: 0,
+        imm: const_idx as i64,
+        text: null,
+        source: exec_builder_make_source(ast_node),
+    }) < 0 {
+        return -1;
+    }
+    return dst_slot;
+}
+
+fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, ty: &Type) i32 {
+    if ctx == null || ty == null {
+        return -1;
+    }
+    if ty.kind == TypeKind.TYPE_I8 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_i8(0));
+    }
+    if ty.kind == TypeKind.TYPE_I16 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_i16(0));
+    }
+    if ty.kind == TypeKind.TYPE_I32 || ty.kind == TypeKind.TYPE_ENUM {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_i32(0));
+    }
+    if ty.kind == TypeKind.TYPE_I64 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_i64(0));
+    }
+    if ty.kind == TypeKind.TYPE_U8 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_u8(0));
+    }
+    if ty.kind == TypeKind.TYPE_U16 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_u16(0));
+    }
+    if ty.kind == TypeKind.TYPE_U32 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_u32(0));
+    }
+    if ty.kind == TypeKind.TYPE_U64 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_u64(0));
+    }
+    if ty.kind == TypeKind.TYPE_USIZE {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_usize(0 as usize));
+    }
+    if ty.kind == TypeKind.TYPE_BOOL {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_bool(0));
+    }
+    if ty.kind == TypeKind.TYPE_BYTE {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_byte(0));
+    }
+    if ty.kind == TypeKind.TYPE_VOID {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_void());
+    }
+    if ty.kind == TypeKind.TYPE_POINTER {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node,
+            exec_make_pointer_with_kind(0 as usize, exec_builder_pointer_pointee_kind_code(ty[0])));
+    }
+    if ty.kind == TypeKind.TYPE_SLICE {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_slice(null, 0, 0));
+    }
+    if ty.kind == TypeKind.TYPE_ERROR_UNION && ty.error_union_payload_type != null {
+        const payload_slot: i32 = exec_builder_compile_zero_value(ctx, ast_node, &ty.error_union_payload_type[0]);
+        const dst_error_union: i32 = exec_builder_new_temp(ctx);
+        if payload_slot < 0 || dst_error_union < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_OK,
+            a: dst_error_union,
+            b: payload_slot,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_error_union;
+    }
+    if ty.kind == TypeKind.TYPE_ARRAY && ty.element_type != null {
+        const zero_elem_slot: i32 = exec_builder_compile_zero_value(ctx, ast_node, &ty.element_type[0]);
+        const dst_array: i32 = exec_builder_new_temp(ctx);
+        if zero_elem_slot < 0 || dst_array < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_ARRAY_REPEAT,
+            a: dst_array,
+            b: zero_elem_slot,
+            c: ty.array_size,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_array;
+    }
+    if ty.kind == TypeKind.TYPE_TUPLE && ty.tuple_element_types != null {
+        var tuple_slots: [i32: 256] = [];
+        var ti: i32 = 0;
+        while ti < ty.tuple_count {
+            if ti < 0 || ti >= 256 {
+                exec_backend_set_error(ast_node, "exec: zero tuple 元素超出上限" as *byte, 0);
+                return -1;
+            }
+            const zero_tuple_slot: i32 = exec_builder_compile_zero_value(ctx, ast_node, &ty.tuple_element_types[ti]);
+            if zero_tuple_slot < 0 {
+                return -1;
+            }
+            tuple_slots[ti] = zero_tuple_slot;
+            ti = ti + 1;
+        }
+        const tuple_item_base: i32 = exec_builder_pack_source_slots(ctx, ast_node, &tuple_slots[0], ty.tuple_count);
+        const dst_tuple: i32 = exec_builder_new_temp(ctx);
+        if dst_tuple < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_TUPLE,
+            a: dst_tuple,
+            b: tuple_item_base,
+            c: ty.tuple_count,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_tuple;
+    }
+    if ty.kind == TypeKind.TYPE_STRUCT && type_get_struct_name(ty) != null {
+        if ctx.checker == null || ctx.checker.program_node == null {
+            exec_backend_set_error(ast_node, "exec: zero struct 缺少 checker 上下文" as *byte, 0);
+            return -1;
+        }
+        const struct_decl: &ASTNode = find_struct_decl_from_program(ctx.checker.program_node, type_get_struct_name(ty));
+        if struct_decl == null || struct_decl.struct_decl_fields == null {
+            exec_backend_set_error(ast_node, "exec: zero struct 无法解析结构体声明" as *byte, 0);
+            return -1;
+        }
+        var struct_slots: [i32: 256] = [];
+        var si: i32 = 0;
+        while si < struct_decl.struct_decl_field_count {
+            if si < 0 || si >= 256 {
+                exec_backend_set_error(ast_node, "exec: zero struct 字段超出上限" as *byte, 0);
+                return -1;
+            }
+            const field_decl: &ASTNode = struct_decl.struct_decl_fields[si];
+            if field_decl == null || field_decl.var_decl_type == null {
+                exec_backend_set_error(ast_node, "exec: zero struct 字段类型缺失" as *byte, 0);
+                return -1;
+            }
+            const field_type: Type = type_from_ast(ctx.checker, field_decl.var_decl_type);
+            const zero_struct_slot: i32 = exec_builder_compile_zero_value(ctx, field_decl, &field_type);
+            if zero_struct_slot < 0 {
+                return -1;
+            }
+            struct_slots[si] = zero_struct_slot;
+            si = si + 1;
+        }
+        const struct_item_base: i32 = exec_builder_pack_source_slots(ctx, ast_node, &struct_slots[0], struct_decl.struct_decl_field_count);
+        const dst_struct: i32 = exec_builder_new_temp(ctx);
+        if dst_struct < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_STRUCT,
+            a: dst_struct,
+            b: struct_item_base,
+            c: struct_decl.struct_decl_field_count,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_struct;
+    }
+    exec_backend_set_generic_unsupported_error(ast_node, "exec: 当前不支持该类型的零值初始化" as *byte);
+    return -1;
 }
 
 fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRExpr) i32 {
@@ -753,6 +947,9 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return -1;
         }
         return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_ZERO {
+        return exec_builder_compile_zero_value(ctx, expr.ast_node, &expr.type_ref.type);
     }
     if expr.kind == HIRExprKind.HIR_EXPR_CAST {
         const src_cast: i32 = exec_builder_compile_expr(ctx, expr.left);
@@ -1486,6 +1683,16 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             opcode = BCOpcode.BC_DIV;
         } else if expr.binary_op == TokenType.TOKEN_PERCENT as i32 {
             opcode = BCOpcode.BC_REM;
+        } else if expr.binary_op == TokenType.TOKEN_AMPERSAND as i32 {
+            opcode = BCOpcode.BC_BIT_AND;
+        } else if expr.binary_op == TokenType.TOKEN_PIPE as i32 {
+            opcode = BCOpcode.BC_BIT_OR;
+        } else if expr.binary_op == TokenType.TOKEN_CARET as i32 {
+            opcode = BCOpcode.BC_BIT_XOR;
+        } else if expr.binary_op == TokenType.TOKEN_LSHIFT as i32 {
+            opcode = BCOpcode.BC_SHL;
+        } else if expr.binary_op == TokenType.TOKEN_RSHIFT as i32 {
+            opcode = BCOpcode.BC_SHR;
         } else if expr.binary_op == TokenType.TOKEN_EQUAL as i32 {
             opcode = BCOpcode.BC_CMP_EQ;
         } else if expr.binary_op == TokenType.TOKEN_NOT_EQUAL as i32 {
@@ -2272,7 +2479,10 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             }
         } else if instr.opcode == BCOpcode.BC_ADD || instr.opcode == BCOpcode.BC_SUB ||
             instr.opcode == BCOpcode.BC_MUL || instr.opcode == BCOpcode.BC_DIV ||
-            instr.opcode == BCOpcode.BC_REM || instr.opcode == BCOpcode.BC_CMP_EQ ||
+            instr.opcode == BCOpcode.BC_REM || instr.opcode == BCOpcode.BC_BIT_AND ||
+            instr.opcode == BCOpcode.BC_BIT_OR || instr.opcode == BCOpcode.BC_BIT_XOR ||
+            instr.opcode == BCOpcode.BC_SHL || instr.opcode == BCOpcode.BC_SHR ||
+            instr.opcode == BCOpcode.BC_CMP_EQ ||
             instr.opcode == BCOpcode.BC_CMP_NE || instr.opcode == BCOpcode.BC_CMP_LT ||
             instr.opcode == BCOpcode.BC_CMP_LE || instr.opcode == BCOpcode.BC_CMP_GT ||
             instr.opcode == BCOpcode.BC_CMP_GE {
@@ -2372,13 +2582,20 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             }
         } else if instr.opcode == BCOpcode.BC_MAKE_STRUCT ||
             instr.opcode == BCOpcode.BC_MAKE_ARRAY ||
+            instr.opcode == BCOpcode.BC_MAKE_ARRAY_REPEAT ||
             instr.opcode == BCOpcode.BC_MAKE_TUPLE {
-            var si: i32 = 0;
-            while si < instr.c {
-                if exec_builder_validate_slot_read(fn_hir, instr.b + si, out_fn.slot_count, &slot_written[0], "exec: MAKE_* 源槽位非法" as *byte) != 0 {
+            if instr.opcode == BCOpcode.BC_MAKE_ARRAY_REPEAT {
+                if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MAKE_ARRAY_REPEAT 源槽位非法" as *byte) != 0 {
                     return -1;
                 }
-                si = si + 1;
+            } else {
+                var si: i32 = 0;
+                while si < instr.c {
+                    if exec_builder_validate_slot_read(fn_hir, instr.b + si, out_fn.slot_count, &slot_written[0], "exec: MAKE_* 源槽位非法" as *byte) != 0 {
+                        return -1;
+                    }
+                    si = si + 1;
+                }
             }
             if instr.a < 0 || instr.a >= out_fn.slot_count {
                 exec_backend_set_error(fn_hir.decl, "exec: MAKE_* 目标槽位非法" as *byte, 0);
@@ -2588,12 +2805,13 @@ fn exec_builder_validate_return_types_in_block(fn_hir: &HIRFunction, block: &HIR
     return 0;
 }
 
-fn exec_builder_build_function(arena: &CompilerArena, const_pool: &ExecConstPoolBuilder, host_calls: &ExecHostCallSiteBuilder, module: &HIRModule, fn_hir: &HIRFunction) &BCFunction {
-    if arena == null || const_pool == null || host_calls == null || module == null || fn_hir == null {
+fn exec_builder_build_function(arena: &CompilerArena, checker: &TypeChecker, const_pool: &ExecConstPoolBuilder, host_calls: &ExecHostCallSiteBuilder, module: &HIRModule, fn_hir: &HIRFunction) &BCFunction {
+    if arena == null || checker == null || const_pool == null || host_calls == null || module == null || fn_hir == null {
         return null;
     }
     var ctx: ExecFunctionBuildContext = ExecFunctionBuildContext {
         arena: arena,
+        checker: checker,
         const_pool: const_pool,
         host_calls: host_calls,
         module: module,
@@ -2678,7 +2896,7 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
     var global_init_index: i32 = -1;
     var i: i32 = 0;
     while i < module.function_count {
-        const built: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, &host_call_builder, module, module.functions[i]);
+        const built: &BCFunction = exec_builder_build_function(arena, checker, &const_pool_builder, &host_call_builder, module, module.functions[i]);
         if built == null {
             return null;
         }
@@ -2689,7 +2907,7 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
         i = i + 1;
     }
     if module.global_init_function != null {
-        const built_global_init: &BCFunction = exec_builder_build_function(arena, &const_pool_builder, &host_call_builder, module, module.global_init_function);
+        const built_global_init: &BCFunction = exec_builder_build_function(arena, checker, &const_pool_builder, &host_call_builder, module, module.global_init_function);
         if built_global_init == null {
             return null;
         }

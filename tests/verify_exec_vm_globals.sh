@@ -44,4 +44,16 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  multi-module globals ✓"
 
+echo "验证 whole-module import 的导出全局成员访问..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_libc_module_global.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ whole-module import globals unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+tail -n 1 "$TMP_STDOUT" | diff -u <(printf 'exec libc module global\n') -
+echo "  whole-module globals ✓"
+
 echo "✓ exec vm global checks passed"

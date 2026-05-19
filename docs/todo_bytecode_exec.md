@@ -102,6 +102,25 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-19 已新增：
   - `tests/test_exec_vm_libc_module_global.uya`
   - 用于稳定复现 `use libc;` + `libc.stdout/libc.stderr` 这类 whole-module import 成员式全局访问路径
+- 2026-05-19 已新增并跑通：
+  - `tests/test_exec_vm_struct_init_zero_fill.uya`
+  - `tests/test_exec_vm_bitwise.uya`
+  - `bash ./tests/verify_exec_vm_smoke.sh`
+  - `bash ./tests/verify_exec_vm_globals.sh`
+- 2026-05-19 已向前推进：
+  - `struct` 字面量缺失字段现已支持按零值补齐
+  - 当前实现不会在 lowering 阶段把 `[byte: 65536]` 这类大数组缺省字段膨胀成巨型常量 pack，而是走“零值表达式 + bytecode 构造期重复填充 + VM 运行期聚合值构造”
+  - 已新增 `BC_MAKE_ARRAY_REPEAT`，用于零值数组这类高重复度聚合值构造，避免编译期/bytecode 体积线性爆炸
+  - exec VM 现已补上基础位运算：
+    - `&`
+    - `|`
+    - `^`
+    - `<<`
+    - `>>`
+  - whole-module import 的 `libc.stdout` 最小固定字符串路径现已闭环：
+    - `fprintf(libc.stdout, "literal" as *byte)`
+    - `fprintf(libc.stderr, "literal" as *byte)`
+    - 当前做法是在 host bridge 中对 VM 内部 `&FILE` 引用提取 `fd` 后直接写字节，先打通 `stdout/stderr/普通 fd` 的最小 hosted 路径
 - 2026-05-19 已向前推进：
   - exec lowering 现已不再依赖 `checker.import_table` 才能识别 whole-module import 的模块别名
   - 当前已补：
@@ -119,13 +138,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `lib/libc/stdio.uya:22:20: exec: 结构体字面量字段缺失`
-  - 当前观测命中点已从 `fprintf(libc.stdout, ...)` 的模块导出全局识别，前移到：
-    - `var _stdin: FILE = FILE{ fd: 0, buf_pos: 0, buf_len: 0, buf_mode: 0 };`
-  - 根因不是 `libc.stdout` 无法解析，而是 exec lowering 当前要求 `struct` 字面量字段必须完整，而标准库里的 `FILE{...}` 省略了大数组字段 `buffer`
+  - `src/main.uya:7920:9: exec: 当前不支持 extern ABI: fprintf/2`
+  - 当前观测点已从：
+    - whole-module import 成员式全局访问识别
+    - `FILE{...}` 缺失字段零值补齐
+    - `stdio` 常量旗标里的位运算
+    继续前移到编译器本体里的 `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern` 路径
+  - 当前 fixed/no-varargs `fprintf(file, "literal")` 已不再是前沿阻塞；真正剩余的是带格式化实参的 varargs 收敛
 - 当前仍有一个已知残留：
   - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
-  - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；但“缺失字段按零值补齐”的 `struct init` 语义尚未收口，更复杂全局类型与更大覆盖面回归仍待继续扩大
+  - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
 
@@ -133,7 +155,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
-- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`fprintf/2` varargs ABI 卡点，以及 `libc.stdout` 这类模块别名导出全局访问识别问题；当前会在 lowering 阶段因为 `FILE{ ... }` 这类省略字段的标准库 `struct` 字面量而停止，说明主阻塞已进一步收敛到“标准库聚合值初始化语义 + 低开销零值补齐”
+- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零，以及 `stdio` 常量旗标中的位运算；当前最新前沿重新回到 `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern` 路径，说明主阻塞已收敛到“标准库/编译器本体格式化输出桥接”
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
@@ -647,6 +669,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-18 已让一批“带函数体且非 varargs”的 `extern "libc"` 走普通 lowering/VM 路径，当前已用回归覆盖 `atoi` / `isqrt` / `strcmp`；并且当程序显式声明同名无函数体 `extern` stub 时，exec 现在会优先按 stub 走最小 host bridge，而不是误把 stdlib 里的实现体也拉进 reachable 队列。
 - `puts` / `atoll` / `llabs` 当前建议继续通过 stub bridge 走宿主边界。
 - 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；但 `fprintf/snprintf/printf` 的完整 varargs 收敛仍未完成，当前不应误解为“varargs extern 已普遍支持”。
+- 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`
 - 2026-05-18 已新增第一版 tagged union 子集：
   - `union` 值现在可进入 exec VM 表示
   - `UnionName.variant(payload)` 构造已接通 lowering / bytecode / VM
@@ -670,7 +693,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有两个明确残留：
   - `tests/test_exec_vm_union_dispatch.uya` 运行路径已打通，但 checker 仍会打印一条历史诊断 `match 所有分支的返回类型必须一致`
-  - `./bin/uya run --vm src/main.uya` 当前已能通过 parse / check / opt，并越过“全局类型 / enum / @max/@min / call-args 上限”等旧阻塞；最新观测点已前推到 `src/main.uya:7842:9`，卡在 `fprintf/2` 这类 varargs `extern ABI`，下一步应按本阶段计划把 `fprintf/snprintf/printf` 收敛到专用 bridge、builtin helper 或明确 fallback
+  - `./bin/uya run --vm src/main.uya` 当前已能通过 parse / check / opt，并越过“全局类型 / enum / @max/@min / call-args 上限 / whole-module globals / struct 缺失字段补零 / stdio 常量位运算”等旧阻塞；最新观测点已前推到 `src/main.uya:7920:9`，卡在 `fprintf/2` 这类真正带格式化实参的 varargs `extern ABI`，下一步应按本阶段计划把 `fprintf/snprintf/printf` 收敛到专用 bridge、builtin helper 或明确 fallback
 
 ---
 

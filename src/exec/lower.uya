@@ -534,6 +534,10 @@ fn exec_lower_make_string_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode,
     return expr;
 }
 
+fn exec_lower_make_zero_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &Type) &HIRExpr {
+    return exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_ZERO, type);
+}
+
 fn exec_lower_basename(path: &byte) &byte {
     if path == null {
         return "(unknown)" as &byte;
@@ -2973,7 +2977,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 ej = ej + 1;
             }
             if src_idx < 0 {
-                return exec_lower_fail_expr(expr, "exec: 结构体字面量字段缺失" as *byte);
+                if field_decl.var_decl_type == null {
+                    return exec_lower_fail_expr(expr, "exec: 结构体字面量字段缺失且字段类型未知" as *byte);
+                }
+                const missing_field_type: Type = type_from_ast(ctx.checker, field_decl.var_decl_type);
+                const zero_field_expr: &HIRExpr = exec_lower_make_zero_expr(ctx, field_decl, &missing_field_type);
+                if zero_field_expr == null {
+                    return null;
+                }
+                items[fi] = zero_field_expr;
+                fi = fi + 1;
+                continue;
             }
             var field_expr: &HIRExpr = null;
             if field_decl.var_decl_type != null {
@@ -3040,25 +3054,6 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 module_access_name = exec_lower_resolve_module_alias_from_file(
                     ctx.checker, expr.filename, expr.member_access_object.identifier_name);
             }
-        }
-        if module_access_name == null && expr.member_access_object != null &&
-            expr.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
-            expr.member_access_object.identifier_name != null {
-            const debug_import_item: &ImportedItem = checker_import_table_lookup_local_name(ctx.checker, expr.member_access_object.identifier_name);
-            var debug_module_name: &byte = "<null>" as &byte;
-            var debug_item_type: i32 = -999;
-            if debug_import_item != null {
-                debug_item_type = debug_import_item.item_type;
-                if debug_import_item.module_name != null {
-                    debug_module_name = debug_import_item.module_name;
-                }
-            }
-            var import_msg: [byte: 224] = [];
-            _ = snprintf(&import_msg[0] as *byte, 224, "exec: 成员访问对象未被识别为模块别名: %s (import item_type=%d module=%s)" as *byte,
-                expr.member_access_object.identifier_name as *byte,
-                debug_item_type,
-                debug_module_name as *byte);
-            return exec_lower_fail_expr(expr, &import_msg[0]);
         }
         if module_access_name != null && expr.member_access_field_name != null {
             const module_global_decl: &ASTNode = exec_lower_find_module_export_decl(

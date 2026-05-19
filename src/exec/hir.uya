@@ -31,6 +31,7 @@ enum HIRStmtKind {
 
 enum HIRExprKind {
     HIR_EXPR_CONST,
+    HIR_EXPR_ZERO,
     HIR_EXPR_LOCAL,
     HIR_EXPR_GLOBAL,
     HIR_EXPR_ADDR,

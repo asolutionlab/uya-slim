@@ -19,6 +19,8 @@ TESTS=(
     "test_exec_vm_error_builtin.uya"
     "test_exec_vm_builtin_bridge.uya"
     "test_exec_vm_aggregates.uya"
+    "test_exec_vm_struct_init_zero_fill.uya"
+    "test_exec_vm_bitwise.uya"
     "test_exec_vm_scalar_pointer.uya"
     "test_exec_vm_extern_impl.uya"
     "test_exec_vm_interface_dispatch.uya"

@@ -17,12 +17,18 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_MUL { return "BC_MUL" as &byte; }
     if opcode == BCOpcode.BC_DIV { return "BC_DIV" as &byte; }
     if opcode == BCOpcode.BC_REM { return "BC_REM" as &byte; }
+    if opcode == BCOpcode.BC_BIT_AND { return "BC_BIT_AND" as &byte; }
+    if opcode == BCOpcode.BC_BIT_OR { return "BC_BIT_OR" as &byte; }
+    if opcode == BCOpcode.BC_BIT_XOR { return "BC_BIT_XOR" as &byte; }
+    if opcode == BCOpcode.BC_SHL { return "BC_SHL" as &byte; }
+    if opcode == BCOpcode.BC_SHR { return "BC_SHR" as &byte; }
     if opcode == BCOpcode.BC_NEG { return "BC_NEG" as &byte; }
     if opcode == BCOpcode.BC_NOT { return "BC_NOT" as &byte; }
     if opcode == BCOpcode.BC_LOAD_LEN { return "BC_LOAD_LEN" as &byte; }
     if opcode == BCOpcode.BC_CAST { return "BC_CAST" as &byte; }
     if opcode == BCOpcode.BC_MAKE_STRUCT { return "BC_MAKE_STRUCT" as &byte; }
     if opcode == BCOpcode.BC_MAKE_ARRAY { return "BC_MAKE_ARRAY" as &byte; }
+    if opcode == BCOpcode.BC_MAKE_ARRAY_REPEAT { return "BC_MAKE_ARRAY_REPEAT" as &byte; }
     if opcode == BCOpcode.BC_MAKE_TUPLE { return "BC_MAKE_TUPLE" as &byte; }
     if opcode == BCOpcode.BC_MAKE_UNION { return "BC_MAKE_UNION" as &byte; }
     if opcode == BCOpcode.BC_MAKE_SLICE { return "BC_MAKE_SLICE" as &byte; }
@@ -108,6 +114,10 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
         } else {
             fprintf(libc.stderr, "const %ld" as *byte, expr.int_value);
         }
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_ZERO {
+        fprintf(libc.stderr, "zero" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
