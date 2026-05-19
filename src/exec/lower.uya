@@ -241,12 +241,6 @@ fn exec_lower_type_ast_size_bytes(checker: &TypeChecker, type_ast: &ASTNode, pro
     if checker == null || type_ast == null || program_node == null {
         return -1;
     }
-    if type_ast.type == ASTNodeType.AST_TYPE_NAMED && type_ast.type_named_name != null {
-        const named_size: i32 = exec_lower_named_decl_size_bytes(checker, type_ast.type_named_name, program_node);
-        if named_size >= 0 {
-            return named_size;
-        }
-    }
     const resolved: Type = type_from_ast(checker, type_ast);
     return get_type_size_bytes_v2(checker, &resolved, program_node);
 }
@@ -255,14 +249,8 @@ fn exec_lower_type_ast_align_bytes(checker: &TypeChecker, type_ast: &ASTNode, pr
     if checker == null || type_ast == null || program_node == null {
         return -1;
     }
-    if type_ast.type == ASTNodeType.AST_TYPE_NAMED && type_ast.type_named_name != null {
-        const named_align: i32 = exec_lower_named_decl_align_bytes(checker, type_ast.type_named_name, program_node);
-        if named_align >= 0 {
-            return named_align;
-        }
-    }
     const resolved: Type = type_from_ast(checker, type_ast);
-    return exec_lower_type_align_bytes_v2(checker, &resolved, program_node);
+    return get_type_align_bytes_v2(checker, &resolved, program_node);
 }
 
 fn exec_lower_struct_decl_size_bytes(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
@@ -311,19 +299,21 @@ fn exec_lower_named_decl_size_bytes(checker: &TypeChecker, name: &byte, program_
     if checker == null || name == null || program_node == null {
         return -1;
     }
-    const struct_decl: &ASTNode = find_struct_decl_from_program(program_node, name);
-    if struct_decl != null {
-        return exec_lower_struct_decl_size_bytes(checker, struct_decl, program_node);
+    if find_struct_decl_from_program(program_node, name) != null {
+        const named_struct: Type = make_named_type(TypeKind.TYPE_STRUCT, name);
+        return get_type_size_bytes_v2(checker, &named_struct, program_node);
     }
-    const union_decl: &ASTNode = find_union_decl_from_program(program_node, name);
-    if union_decl != null {
-        return exec_lower_union_decl_size_bytes(checker, union_decl, program_node);
+    if find_union_decl_from_program(program_node, name) != null {
+        const named_union: Type = make_named_type(TypeKind.TYPE_UNION, name);
+        return get_type_size_bytes_v2(checker, &named_union, program_node);
     }
     if find_interface_decl_from_program(program_node, name) != null {
-        return 16;
+        const named_iface: Type = make_named_type(TypeKind.TYPE_INTERFACE, name);
+        return get_type_size_bytes_v2(checker, &named_iface, program_node);
     }
     if find_enum_decl_from_program(program_node, name) != null {
-        return 4;
+        const named_enum: Type = make_named_type(TypeKind.TYPE_ENUM, name);
+        return get_type_size_bytes_v2(checker, &named_enum, program_node);
     }
     return -1;
 }
@@ -332,19 +322,21 @@ fn exec_lower_named_decl_align_bytes(checker: &TypeChecker, name: &byte, program
     if checker == null || name == null || program_node == null {
         return -1;
     }
-    const struct_decl: &ASTNode = find_struct_decl_from_program(program_node, name);
-    if struct_decl != null {
-        return exec_lower_struct_decl_align_bytes(checker, struct_decl, program_node);
+    if find_struct_decl_from_program(program_node, name) != null {
+        const named_struct: Type = make_named_type(TypeKind.TYPE_STRUCT, name);
+        return get_type_align_bytes_v2(checker, &named_struct, program_node);
     }
-    const union_decl: &ASTNode = find_union_decl_from_program(program_node, name);
-    if union_decl != null {
-        return exec_lower_union_decl_align_bytes(checker, union_decl, program_node);
+    if find_union_decl_from_program(program_node, name) != null {
+        const named_union: Type = make_named_type(TypeKind.TYPE_UNION, name);
+        return get_type_align_bytes_v2(checker, &named_union, program_node);
     }
     if find_interface_decl_from_program(program_node, name) != null {
-        return 8;
+        const named_iface: Type = make_named_type(TypeKind.TYPE_INTERFACE, name);
+        return get_type_align_bytes_v2(checker, &named_iface, program_node);
     }
     if find_enum_decl_from_program(program_node, name) != null {
-        return 4;
+        const named_enum: Type = make_named_type(TypeKind.TYPE_ENUM, name);
+        return get_type_align_bytes_v2(checker, &named_enum, program_node);
     }
     return -1;
 }
@@ -399,7 +391,7 @@ fn exec_lower_eval_size_align_builtin(ctx: &ExecLowerContext, expr: &ASTNode) i3
     if expr.type == ASTNodeType.AST_SIZEOF {
         return get_type_size_bytes_v2(ctx.checker, &target_type, ctx.checker.program_node);
     }
-    return exec_lower_type_align_bytes_v2(ctx.checker, &target_type, ctx.checker.program_node);
+    return get_type_align_bytes_v2(ctx.checker, &target_type, ctx.checker.program_node);
 }
 
 fn exec_type_is_string_pointer_supported(type: Type) i32 {

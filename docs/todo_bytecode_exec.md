@@ -141,6 +141,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - 按 AST 实际命中的 `module_alias.field` 收集 whole-module import 需要的导出全局
     - `&expr` 走 `exec_lower_make_ref_expr(...)`
   - 这意味着 `libc.stdout` 这类“模块别名.导出全局访问”不再是当前最前面的 blocker
+- 2026-05-20 已继续收口：
+  - bytecode 已新增 `BC_LOAD_LOCAL` / `BC_STORE_LOCAL`
+  - local rvalue 读取、`var init`、local 赋值与 catch 绑定现已走显式 local opcode，而不再借道 `MOV`
+  - 针对 local/global/field/index 的地址型路径已统一收口到 `ADDR_*`，避免“先拷贝聚合值再写回”导致的伪写入
+  - `@size_of/@align_of` 的 struct layout 现已按字段对齐与整体补齐计算，`run` 与 `run --vm` 对 `Nested { pair: Pair, flag: bool }` 这类嵌套 struct 的输出已收敛为一致的 `8 / 4 / 12 / 4`
+  - 新增并通过：
+    - `tests/test_exec_vm_local_load_store.uya`
+    - `tests/test_exec_vm_layout_consistency.uya`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+    - `./bin/uya test tests/test_async_fn_local_fixed_array.uya`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -329,8 +339,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 增加基础 opcode：
   - [x] `LOAD_CONST`
   - [x] `MOV`
-  - [ ] `LOAD_LOCAL`
-  - [ ] `STORE_LOCAL`
+  - [x] `LOAD_LOCAL`
+  - [x] `STORE_LOCAL`
   - [x] `ADD/SUB/MUL/DIV/REM`
   - [x] `CMP_*`
   - [x] `MAKE_OK/MAKE_ERR/IS_ERR/UNWRAP_OK/UNWRAP_ERR`
@@ -340,7 +350,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 备注：
 
-- 第一版 builder 目前把 local 读写折叠进寄存器槽位和 `MOV`，尚未单独引入 `LOAD_LOCAL/STORE_LOCAL`
+- 2026-05-20 已把 local 读写从通用 `MOV` 中拆出：
+  - `HIR_EXPR_LOCAL` 现在会显式生成 `BC_LOAD_LOCAL`
+  - `HIR_STMT_VAR_INIT`、local 赋值与 catch 绑定现在会显式生成 `BC_STORE_LOCAL`
+  - 对 local/global/field/index 聚合值的可寻址写入路径已统一走 `ADDR_*`，避免因为 local rvalue 先复制后再写字段/下标而丢失写回
 
 ---
 
@@ -413,7 +426,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] array init / index load / index store
   - [x] slice 第一版视图表示与 `@len`
   - [x] tuple
-- [ ] 统一布局来源，避免和 C99 backend 漂移
+- [x] 统一布局来源，避免和 C99 backend 漂移
 - [ ] 若需要，提取共享布局模块
 - [x] 测试：
   - [x] struct 字段读写
@@ -428,6 +441,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - slice 记录 `(aggregate, start, len)`，避免切片时复制整段元素
 - 当前目标是先打通 `run/test` 的基础 hosted 子集，不追求与 C99 backend 完整共享布局元数据
 - 当前 `slice.ptr`、更复杂聚合值嵌套语义、以及与 extern ABI 对齐仍未进入支持面
+- 2026-05-20 已把 tuple / struct / `!T` / tagged union 的 size/align 规则收敛到“字段对齐 + 字段间 padding + 整体补齐”模型：
+  - exec lowering 的 `@size_of/@align_of` 不再把嵌套 struct 误算成纯字段大小求和
+  - C99 async frame 估算里的 `get_type_size_bytes_resolved(...)` / `get_type_align_bytes_resolved(...)` 也已同步成同一套 padding 规则
+  - `tests/test_exec_vm_layout_consistency.uya` 已加入默认 `run` 与 `run --vm` 的直接输出比对，持续防止 layout 漂移回归
 
 ---
 

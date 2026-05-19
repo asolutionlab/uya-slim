@@ -1288,6 +1288,136 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     c99_emit_close_brace_newline(codegen);
 }
 
+fn c99_layout_align_up_i32(value: i32, align: i32) i32 {
+    if align <= 1 || value < 0 {
+        return value;
+    }
+    const remainder: i32 = value % align;
+    if remainder == 0 {
+        return value;
+    }
+    if value > 0x7FFFFFFF - (align - remainder) {
+        return -1;
+    }
+    return value + (align - remainder);
+}
+
+fn c99_compute_struct_align_bytes(codegen: &C99CodeGenerator, decl: &ASTNode) i32 {
+    if codegen == null || decl == null || decl.struct_decl_field_count <= 0 || decl.struct_decl_fields == null {
+        return 1;
+    }
+    var max_align: i32 = 1;
+    var i: i32 = 0;
+    while i < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const ft: Type = type_from_ast(codegen.checker, field.var_decl_type);
+            const fa: i32 = get_type_align_bytes_resolved(codegen, &ft);
+            if fa < 0 {
+                return -1;
+            }
+            if fa > max_align {
+                max_align = fa;
+            }
+        }
+        i = i + 1;
+    }
+    return max_align;
+}
+
+fn c99_compute_union_align_bytes(codegen: &C99CodeGenerator, decl: &ASTNode) i32 {
+    if codegen == null || decl == null || decl.union_decl_variant_count <= 0 || decl.union_decl_variants == null {
+        return 4;
+    }
+    var max_align: i32 = 4;
+    var i: i32 = 0;
+    while i < decl.union_decl_variant_count {
+        const field: &ASTNode = decl.union_decl_variants[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const ft: Type = type_from_ast(codegen.checker, field.var_decl_type);
+            const fa: i32 = get_type_align_bytes_resolved(codegen, &ft);
+            if fa < 0 {
+                return -1;
+            }
+            if fa > max_align {
+                max_align = fa;
+            }
+        }
+        i = i + 1;
+    }
+    return max_align;
+}
+
+fn c99_compute_struct_size_bytes(codegen: &C99CodeGenerator, decl: &ASTNode) i32 {
+    if codegen == null || decl == null || decl.struct_decl_field_count <= 0 || decl.struct_decl_fields == null {
+        return 0;
+    }
+    var offset: i32 = 0;
+    var max_align: i32 = 1;
+    var i: i32 = 0;
+    while i < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[i];
+        if field == null || field.type != ASTNodeType.AST_VAR_DECL || field.var_decl_type == null {
+            i = i + 1;
+            continue;
+        }
+        const ft: Type = type_from_ast(codegen.checker, field.var_decl_type);
+        const fs: i32 = get_type_size_bytes_resolved(codegen, &ft);
+        const fa: i32 = get_type_align_bytes_resolved(codegen, &ft);
+        if fs < 0 || fa < 0 {
+            return -1;
+        }
+        offset = c99_layout_align_up_i32(offset, fa);
+        if offset < 0 || offset > 0x7FFFFFFF - fs {
+            return -1;
+        }
+        offset = offset + fs;
+        if fa > max_align {
+            max_align = fa;
+        }
+        i = i + 1;
+    }
+    return c99_layout_align_up_i32(offset, max_align);
+}
+
+fn c99_compute_union_size_bytes(codegen: &C99CodeGenerator, decl: &ASTNode) i32 {
+    if codegen == null || decl == null || decl.union_decl_variant_count <= 0 || decl.union_decl_variants == null {
+        return 4;
+    }
+    var max_payload_size: i32 = 0;
+    var max_payload_align: i32 = 1;
+    var i: i32 = 0;
+    while i < decl.union_decl_variant_count {
+        const field: &ASTNode = decl.union_decl_variants[i];
+        if field == null || field.type != ASTNodeType.AST_VAR_DECL || field.var_decl_type == null {
+            i = i + 1;
+            continue;
+        }
+        const ft: Type = type_from_ast(codegen.checker, field.var_decl_type);
+        const fs: i32 = get_type_size_bytes_resolved(codegen, &ft);
+        const fa: i32 = get_type_align_bytes_resolved(codegen, &ft);
+        if fs < 0 || fa < 0 {
+            return -1;
+        }
+        if fs > max_payload_size {
+            max_payload_size = fs;
+        }
+        if fa > max_payload_align {
+            max_payload_align = fa;
+        }
+        i = i + 1;
+    }
+    var max_align: i32 = max_payload_align;
+    if max_align < 4 {
+        max_align = 4;
+    }
+    const payload_offset: i32 = c99_layout_align_up_i32(4, max_payload_align);
+    if payload_offset < 0 || payload_offset > 0x7FFFFFFF - max_payload_size {
+        return -1;
+    }
+    return c99_layout_align_up_i32(payload_offset + max_payload_size, max_align);
+}
+
 // 从已解析的 Type 计算字节大小（用于 async 状态机估算）；递归字段使用 checker 从 AST 解析
 fn get_type_size_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
     if t == null || codegen == null || codegen.checker == null {
@@ -1296,7 +1426,7 @@ fn get_type_size_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
     const k: TypeKind = t.kind;
     if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_BOOL || k == TypeKind.TYPE_BYTE { return 1; }
     if k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_U16 { return 2; }
-    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_F32 { return 4; }
+    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_F32 || k == TypeKind.TYPE_ENUM { return 4; }
     if k == TypeKind.TYPE_I64 || k == TypeKind.TYPE_U64 || k == TypeKind.TYPE_F64 || k == TypeKind.TYPE_USIZE { return 8; }
     if k == TypeKind.TYPE_POINTER { return 8; }
     if k == TypeKind.TYPE_ATOMIC && t.atomic_inner_type != null {
@@ -1311,52 +1441,59 @@ fn get_type_size_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
         }
         return -1;
     }
-    if k == TypeKind.TYPE_SLICE { return 16; }
+    if k == TypeKind.TYPE_SLICE || k == TypeKind.TYPE_INTERFACE { return 16; }
     if k == TypeKind.TYPE_TUPLE && t.tuple_count > 0 && t.tuple_element_types != null {
         var total: i32 = 0;
+        var max_align: i32 = 1;
         var ti: i32 = 0;
         while ti < t.tuple_count {
             const et: &Type = &t.tuple_element_types[ti];
             if et != null {
                 const es: i32 = get_type_size_bytes_resolved(codegen, et);
-                if es <= 0 { return -1; }
+                const ea: i32 = get_type_align_bytes_resolved(codegen, et);
+                if es <= 0 || ea <= 0 { return -1; }
+                total = c99_layout_align_up_i32(total, ea);
+                if total < 0 || total > 0x7FFFFFFF - es {
+                    return -1;
+                }
                 total = total + es;
+                if ea > max_align {
+                    max_align = ea;
+                }
             }
             ti = ti + 1;
         }
-        return total;
+        return c99_layout_align_up_i32(total, max_align);
     }
     if k == TypeKind.TYPE_ERROR_UNION {
         if t.error_union_payload_type != null {
             const ps: i32 = get_type_size_bytes_resolved(codegen, t.error_union_payload_type);
-            if ps > 0 {
-                if ps >= 4 { return ps; } else { return 4; }
+            const pa: i32 = get_type_align_bytes_resolved(codegen, t.error_union_payload_type);
+            if ps > 0 && pa > 0 {
+                var max_align: i32 = pa;
+                if max_align < 4 {
+                    max_align = 4;
+                }
+                const payload_offset: i32 = c99_layout_align_up_i32(4, pa);
+                if payload_offset < 0 || payload_offset > 0x7FFFFFFF - ps {
+                    return -1;
+                }
+                return c99_layout_align_up_i32(payload_offset + ps, max_align);
             }
         }
         return 4;
     }
-    if k == TypeKind.TYPE_STRUCT || k == TypeKind.TYPE_UNION ||
-        k == TypeKind.TYPE_ERROR_UNION || k == TypeKind.TYPE_INTERFACE {
-        if t.struct_name == null {
-            return -1;
-        }
+    if k == TypeKind.TYPE_STRUCT && t.struct_name != null {
         const decl: &ASTNode = find_struct_decl_c99(codegen, t.struct_name);
         if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
-            var sz: i32 = 0;
-            if decl.struct_decl_fields != null {
-                var fi: i32 = 0;
-                while fi < decl.struct_decl_field_count {
-                    const field: &ASTNode = decl.struct_decl_fields[fi];
-                    if field != null && field.type == ASTNodeType.AST_VAR_DECL {
-                        const ft: Type = type_from_ast(codegen.checker, field.var_decl_type);
-                        const fsz: i32 = get_type_size_bytes_resolved(codegen, &ft);
-                        if fsz <= 0 { return -1; }
-                        sz = sz + fsz;
-                    }
-                    fi = fi + 1;
-                }
-            }
-            return sz;
+            return c99_compute_struct_size_bytes(codegen, decl);
+        }
+        return -1;
+    }
+    if k == TypeKind.TYPE_UNION && t.union_name != null {
+        const decl2: &ASTNode = find_union_decl_c99(codegen, t.union_name);
+        if decl2 != null && decl2.type == ASTNodeType.AST_UNION_DECL {
+            return c99_compute_union_size_bytes(codegen, decl2);
         }
         return -1;
     }
@@ -1380,7 +1517,7 @@ fn get_type_align_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
     const k: TypeKind = t.kind;
     if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_BOOL || k == TypeKind.TYPE_BYTE { return 1; }
     if k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_U16 { return 2; }
-    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_F32 { return 4; }
+    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_F32 || k == TypeKind.TYPE_ENUM { return 4; }
     if k == TypeKind.TYPE_I64 || k == TypeKind.TYPE_U64 || k == TypeKind.TYPE_F64 || k == TypeKind.TYPE_USIZE { return 8; }
     if k == TypeKind.TYPE_POINTER { return 8; }
     if k == TypeKind.TYPE_ATOMIC && t.atomic_inner_type != null {
@@ -1389,7 +1526,7 @@ fn get_type_align_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
     if k == TypeKind.TYPE_ARRAY && t.element_type != null {
         return get_type_align_bytes_resolved(codegen, t.element_type);
     }
-    if k == TypeKind.TYPE_SLICE { return 8; }
+    if k == TypeKind.TYPE_SLICE || k == TypeKind.TYPE_INTERFACE { return 8; }
     if k == TypeKind.TYPE_TUPLE && t.tuple_count > 0 && t.tuple_element_types != null {
         var max_align: i32 = 1;
         var ti: i32 = 0;
@@ -1410,8 +1547,19 @@ fn get_type_align_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
         }
         return 4;
     }
-    if k == TypeKind.TYPE_STRUCT || k == TypeKind.TYPE_UNION || k == TypeKind.TYPE_INTERFACE {
-        return 8;
+    if k == TypeKind.TYPE_STRUCT && t.struct_name != null {
+        const decl: &ASTNode = find_struct_decl_c99(codegen, t.struct_name);
+        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
+            return c99_compute_struct_align_bytes(codegen, decl);
+        }
+        return -1;
+    }
+    if k == TypeKind.TYPE_UNION && t.union_name != null {
+        const decl2: &ASTNode = find_union_decl_c99(codegen, t.union_name);
+        if decl2 != null && decl2.type == ASTNodeType.AST_UNION_DECL {
+            return c99_compute_union_align_bytes(codegen, decl2);
+        }
+        return -1;
     }
     return -1;
 }

@@ -788,20 +788,126 @@ fn exec_builder_emit_i32_const_slot(ctx: &ExecFunctionBuildContext, ast_node: &A
     return dst_slot;
 }
 
+fn exec_builder_emit_load_local(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, local_slot: i32) i32 {
+    const dst_slot: i32 = exec_builder_new_temp(ctx);
+    if dst_slot < 0 {
+        return -1;
+    }
+    if exec_builder_emit(ctx, BCInstr {
+        opcode: BCOpcode.BC_LOAD_LOCAL,
+        a: dst_slot,
+        b: local_slot,
+        c: 0,
+        imm: 0,
+        text: null,
+        source: exec_builder_make_source(ast_node),
+    }) < 0 {
+        return -1;
+    }
+    return dst_slot;
+}
+
+fn exec_builder_emit_store_local(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, local_slot: i32, src_slot: i32) i32 {
+    return exec_builder_emit(ctx, BCInstr {
+        opcode: BCOpcode.BC_STORE_LOCAL,
+        a: local_slot,
+        b: src_slot,
+        c: 0,
+        imm: 0,
+        text: null,
+        source: exec_builder_make_source(ast_node),
+    });
+}
+
+fn exec_builder_compile_addressable_expr_slot(ctx: &ExecFunctionBuildContext, expr: &HIRExpr, ast_node: &ASTNode) i32 {
+    if ctx == null || expr == null {
+        return -1;
+    }
+    const pointee_kind: i32 = expr.type_ref.type.kind as i32;
+    if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
+        const dst_local_addr: i32 = exec_builder_new_temp(ctx);
+        if dst_local_addr < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_ADDR_LOCAL,
+            a: dst_local_addr,
+            b: expr.local_slot,
+            c: pointee_kind,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_local_addr;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_GLOBAL {
+        const dst_global_addr: i32 = exec_builder_new_temp(ctx);
+        if dst_global_addr < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_ADDR_GLOBAL,
+            a: dst_global_addr,
+            b: expr.global_slot,
+            c: pointee_kind,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_global_addr;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_FIELD {
+        const base_slot_addr: i32 = exec_builder_compile_addressable_expr_slot(ctx, expr.left, ast_node);
+        const dst_field_addr: i32 = exec_builder_new_temp(ctx);
+        if base_slot_addr < 0 || dst_field_addr < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_ADDR_FIELD,
+            a: dst_field_addr,
+            b: base_slot_addr,
+            c: pointee_kind,
+            imm: expr.int_value,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_field_addr;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_INDEX {
+        const base_slot_index_addr: i32 = exec_builder_compile_addressable_expr_slot(ctx, expr.left, ast_node);
+        const index_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.right);
+        const dst_index_addr: i32 = exec_builder_new_temp(ctx);
+        if base_slot_index_addr < 0 || index_slot_addr < 0 || dst_index_addr < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_ADDR_INDEX,
+            a: dst_index_addr,
+            b: base_slot_index_addr,
+            c: index_slot_addr,
+            imm: pointee_kind as i64,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_index_addr;
+    }
+    return exec_builder_compile_expr(ctx, expr);
+}
+
 fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HIRExpr, src_slot: i32, ast_node: &ASTNode) i32 {
     if ctx == null || target == null || src_slot < 0 {
         return -1;
     }
     if target.kind == HIRExprKind.HIR_EXPR_LOCAL {
-        return exec_builder_emit(ctx, BCInstr {
-            opcode: BCOpcode.BC_MOV,
-            a: target.local_slot,
-            b: src_slot,
-            c: 0,
-            imm: 0,
-            text: null,
-            source: exec_builder_make_source(ast_node),
-        });
+        return exec_builder_emit_store_local(ctx, ast_node, target.local_slot, src_slot);
     }
     if target.kind == HIRExprKind.HIR_EXPR_GLOBAL {
         return exec_builder_emit(ctx, BCInstr {
@@ -815,7 +921,7 @@ fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HI
         });
     }
     if target.kind == HIRExprKind.HIR_EXPR_FIELD {
-        const base_slot: i32 = exec_builder_compile_expr(ctx, target.left);
+        const base_slot: i32 = exec_builder_compile_addressable_expr_slot(ctx, target.left, ast_node);
         if base_slot < 0 {
             return -1;
         }
@@ -830,43 +936,7 @@ fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HI
         });
     }
     if target.kind == HIRExprKind.HIR_EXPR_INDEX {
-        var base_slot2: i32 = -1;
-        if target.left != null && target.left.kind == HIRExprKind.HIR_EXPR_FIELD {
-            const field_base_slot: i32 = exec_builder_compile_expr(ctx, target.left.left);
-            base_slot2 = exec_builder_new_temp(ctx);
-            if field_base_slot < 0 || base_slot2 < 0 {
-                return -1;
-            }
-            if exec_builder_emit(ctx, BCInstr {
-                opcode: BCOpcode.BC_ADDR_FIELD,
-                a: base_slot2,
-                b: field_base_slot,
-                c: target.left.type_ref.type.kind as i32,
-                imm: target.left.int_value,
-                text: null,
-                source: exec_builder_make_source(ast_node),
-            }) < 0 {
-                return -1;
-            }
-        } else if target.left != null && target.left.kind == HIRExprKind.HIR_EXPR_GLOBAL {
-            base_slot2 = exec_builder_new_temp(ctx);
-            if base_slot2 < 0 {
-                return -1;
-            }
-            if exec_builder_emit(ctx, BCInstr {
-                opcode: BCOpcode.BC_ADDR_GLOBAL,
-                a: base_slot2,
-                b: target.left.global_slot,
-                c: target.left.type_ref.type.kind as i32,
-                imm: 0,
-                text: null,
-                source: exec_builder_make_source(ast_node),
-            }) < 0 {
-                return -1;
-            }
-        } else {
-            base_slot2 = exec_builder_compile_expr(ctx, target.left);
-        }
+        const base_slot2: i32 = exec_builder_compile_addressable_expr_slot(ctx, target.left, ast_node);
         const index_slot: i32 = exec_builder_compile_expr(ctx, target.right);
         if base_slot2 < 0 || index_slot < 0 {
             return -1;
@@ -890,7 +960,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         return -1;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
-        return expr.local_slot;
+        return exec_builder_emit_load_local(ctx, expr.ast_node, expr.local_slot);
     }
     if expr.kind == HIRExprKind.HIR_EXPR_GLOBAL {
         const dst_global: i32 = exec_builder_new_temp(ctx);
@@ -945,43 +1015,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return dst_addr;
         }
         if expr.right != null {
-            var base_slot_addr: i32 = -1;
-            if expr.left != null && expr.left.kind == HIRExprKind.HIR_EXPR_FIELD {
-                const field_base_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.left.left);
-                base_slot_addr = exec_builder_new_temp(ctx);
-                if field_base_slot_addr < 0 || base_slot_addr < 0 {
-                    return -1;
-                }
-                if exec_builder_emit(ctx, BCInstr {
-                    opcode: BCOpcode.BC_ADDR_FIELD,
-                    a: base_slot_addr,
-                    b: field_base_slot_addr,
-                    c: expr.left.type_ref.type.kind as i32,
-                    imm: expr.left.int_value,
-                    text: null,
-                    source: exec_builder_make_source(expr.ast_node),
-                }) < 0 {
-                    return -1;
-                }
-            } else if expr.left != null && expr.left.kind == HIRExprKind.HIR_EXPR_GLOBAL {
-                base_slot_addr = exec_builder_new_temp(ctx);
-                if base_slot_addr < 0 {
-                    return -1;
-                }
-                if exec_builder_emit(ctx, BCInstr {
-                    opcode: BCOpcode.BC_ADDR_GLOBAL,
-                    a: base_slot_addr,
-                    b: expr.left.global_slot,
-                    c: expr.left.type_ref.type.kind as i32,
-                    imm: 0,
-                    text: null,
-                    source: exec_builder_make_source(expr.ast_node),
-                }) < 0 {
-                    return -1;
-                }
-            } else {
-                base_slot_addr = exec_builder_compile_expr(ctx, expr.left);
-            }
+            const base_slot_addr: i32 = exec_builder_compile_addressable_expr_slot(ctx, expr.left, expr.ast_node);
             const index_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.right);
             if base_slot_addr < 0 || index_slot_addr < 0 {
                 return -1;
@@ -1000,7 +1034,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return dst_addr;
         }
         if expr.left != null && expr.int_value >= 0 {
-            const base_slot_addr2: i32 = exec_builder_compile_expr(ctx, expr.left);
+            const base_slot_addr2: i32 = exec_builder_compile_addressable_expr_slot(ctx, expr.left, expr.ast_node);
             if base_slot_addr2 < 0 {
                 return -1;
             }
@@ -1372,15 +1406,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             }) < 0 {
                 return -1;
             }
-            if exec_builder_emit(ctx, BCInstr {
-                opcode: BCOpcode.BC_MOV,
-                a: expr.local_slot,
-                b: err_value_slot,
-                c: 0,
-                imm: 0,
-                text: null,
-                source: exec_builder_make_source(expr.ast_node),
-            }) < 0 {
+            if exec_builder_emit_store_local(ctx, expr.ast_node, expr.local_slot, err_value_slot) < 0 {
                 return -1;
             }
         }
@@ -2376,15 +2402,7 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
             if src < 0 {
                 return -1;
             }
-            if exec_builder_emit(ctx, BCInstr {
-                opcode: BCOpcode.BC_MOV,
-                a: stmt.local_slot,
-                b: src,
-                c: 0,
-                imm: 0,
-                text: null,
-                source: exec_builder_make_source(stmt.ast_node),
-            }) < 0 {
+            if exec_builder_emit_store_local(ctx, stmt.ast_node, stmt.local_slot, src) < 0 {
                 return -1;
             }
         } else if stmt.kind == HIRStmtKind.HIR_STMT_ASSIGN {
@@ -2747,6 +2765,18 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             if dst_slot >= 0 && dst_slot < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot] = 1;
             }
+        } else if instr.opcode == BCOpcode.BC_LOAD_LOCAL {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: LOAD_LOCAL 源槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: LOAD_LOCAL 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_local: i32 = instr.a;
+            if dst_slot_local >= 0 && dst_slot_local < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_local] = 1;
+            }
         } else if instr.opcode == BCOpcode.BC_LOAD_GLOBAL {
             if instr.a < 0 || instr.a >= out_fn.slot_count {
                 exec_backend_set_error(fn_hir.decl, "exec: LOAD_GLOBAL 目标槽位非法" as *byte, 0);
@@ -2767,6 +2797,17 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             }
             if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: STORE_GLOBAL 源槽位非法" as *byte) != 0 {
                 return -1;
+            }
+        } else if instr.opcode == BCOpcode.BC_STORE_LOCAL {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: STORE_LOCAL 源槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: STORE_LOCAL 目标槽位非法" as *byte, 0);
+                return -1;
+            }
+            if instr.a >= 0 && instr.a < EXEC_MAX_FRAME_SLOTS {
+                slot_written[instr.a] = 1;
             }
         } else if instr.opcode == BCOpcode.BC_MOV {
             if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MOV 源槽位非法" as *byte) != 0 {

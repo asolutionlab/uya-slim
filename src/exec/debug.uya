@@ -4,6 +4,7 @@ use libc;
 
 fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_LOAD_CONST { return "BC_LOAD_CONST" as &byte; }
+    if opcode == BCOpcode.BC_LOAD_LOCAL { return "BC_LOAD_LOCAL" as &byte; }
     if opcode == BCOpcode.BC_MOV { return "BC_MOV" as &byte; }
     if opcode == BCOpcode.BC_ADDR_LOCAL { return "BC_ADDR_LOCAL" as &byte; }
     if opcode == BCOpcode.BC_ADDR_GLOBAL { return "BC_ADDR_GLOBAL" as &byte; }
@@ -11,6 +12,7 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_ADDR_INDEX { return "BC_ADDR_INDEX" as &byte; }
     if opcode == BCOpcode.BC_BOX_VALUE { return "BC_BOX_VALUE" as &byte; }
     if opcode == BCOpcode.BC_LOAD_GLOBAL { return "BC_LOAD_GLOBAL" as &byte; }
+    if opcode == BCOpcode.BC_STORE_LOCAL { return "BC_STORE_LOCAL" as &byte; }
     if opcode == BCOpcode.BC_STORE_GLOBAL { return "BC_STORE_GLOBAL" as &byte; }
     if opcode == BCOpcode.BC_ADD { return "BC_ADD" as &byte; }
     if opcode == BCOpcode.BC_SUB { return "BC_SUB" as &byte; }
