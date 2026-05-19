@@ -121,6 +121,19 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `fprintf(libc.stdout, "literal" as *byte)`
     - `fprintf(libc.stderr, "literal" as *byte)`
     - 当前做法是在 host bridge 中对 VM 内部 `&FILE` 引用提取 `fd` 后直接写字节，先打通 `stdout/stderr/普通 fd` 的最小 hosted 路径
+- 2026-05-19 已继续收口并通过回归：
+  - exec VM 已补上 `byte/i8/u8` 小元素数组的原生连续缓冲表示
+  - `stream.buffer[...]` / `ctx.buf[...]` / `&stream.buffer[0]` / `&buf[0]` 这类 hosted stdio 真实命中的地址与下标路径已在 builder + VM 两侧闭环
+  - `fprintf -> vfprintf -> _vfprintf_impl -> snprintf` 的 exec VM 路径现已完整跑通
+  - `exec_lower_expr_type(...)` 在临时推断时现已同步维护 `current_return_type`
+  - `AST_TRY_EXPR` / `AST_CATCH_EXPR` 已在 exec lowering 入口前置处理，避免再次触发 checker 误报
+  - 新增并通过：
+    - `tests/test_exec_vm_stdio_varargs.uya`
+    - `bash ./tests/verify_exec_vm_stdio_varargs.sh`
+    - `tests/test_exec_vm_compiler_typed_catch_local.uya`
+    - `tests/test_exec_vm_compiler_field_pointer_index.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
 - 2026-05-19 已向前推进：
   - exec lowering 现已不再依赖 `checker.import_table` 才能识别 whole-module import 的模块别名
   - 当前已补：
@@ -145,9 +158,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `stdio` 常量旗标里的位运算
     继续前移到编译器本体里的 `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern` 路径
   - 当前 fixed/no-varargs `fprintf(file, "literal")` 已不再是前沿阻塞；真正剩余的是带格式化实参的 varargs 收敛
-- 当前仍有一个已知残留：
-  - `tests/test_exec_vm_error_union.uya` 在 exec 路径可运行通过，但前端仍会打印两条历史诊断 `try 只能在函数中使用`；这属于 checker 现有诊断链路问题，尚未在本轮收敛
-  - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
+- 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
 

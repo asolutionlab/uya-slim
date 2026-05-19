@@ -30,16 +30,14 @@ fi
 grep -q 'test_exec_vm_extern_bridge.uya' "$TMP_STDOUT"
 echo "  run --exec extern bridge ✓"
 
-echo "验证 printf varargs 继续稳定拒绝..."
-if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
-    echo "✗ printf varargs should remain unsupported under --vm"
+echo "验证仅有 extern 声明的 varargs 继续稳定拒绝..."
+if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_extern_decl_varargs_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
+    echo "✗ extern-decl-only varargs should remain unsupported under --vm"
     cat "$TMP_STDERR"
     exit 1
 fi
 grep -q 'exec unsupported 原因码: extern_abi' "$TMP_STDERR"
 grep -q 'exec: 当前不支持 extern ABI' "$TMP_STDERR"
-"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_extern_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
-grep -q '信息: exec backend 不支持，回退 C99 (原因码: extern_abi):' "$TMP_STDERR"
-echo "  printf varargs unsupported/fallback ✓"
+echo "  extern-decl-only varargs unsupported ✓"
 
 echo "✓ exec vm extern bridge checks passed"

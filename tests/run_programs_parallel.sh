@@ -679,6 +679,12 @@ if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then
     read -r -a SKIP_TESTS_EXTRA_ARR <<< "$SKIP_TESTS_EXTRA"
     SKIP_TESTS+=("${SKIP_TESTS_EXTRA_ARR[@]}")
 fi
+if [ -z "$TARGET_PATH" ]; then
+    # exec-only 边界回归：decl-only varargs extern 在 --vm 下应保持 unsupported。
+    # 它不属于默认的 hosted C99 全量程序矩阵，改由 verify_exec_vm_extern_bridge.sh /
+    # verify_exec_backend_progress.sh 定向覆盖。
+    SKIP_TESTS+=(test_exec_vm_extern_decl_varargs_unsupported)
+fi
 SKIP_TEST_PATTERNS=()
 if [ -n "${SKIP_TEST_PATTERNS_EXTRA:-}" ]; then
     read -r -a SKIP_TEST_PATTERNS_EXTRA_ARR <<< "$SKIP_TEST_PATTERNS_EXTRA"

@@ -13,10 +13,13 @@ enum ExecValueKind {
     EXEC_VALUE_U32,
     EXEC_VALUE_U64,
     EXEC_VALUE_USIZE,
+    EXEC_VALUE_F32,
+    EXEC_VALUE_F64,
     EXEC_VALUE_BOOL,
     EXEC_VALUE_BYTE,
     EXEC_VALUE_STRING,
     EXEC_VALUE_POINTER,
+    EXEC_VALUE_VA_LIST,
     EXEC_VALUE_STRUCT,
     EXEC_VALUE_ARRAY,
     EXEC_VALUE_SLICE,
@@ -52,6 +55,26 @@ struct ExecValue {
     aux_i64_value: i64,
     aux_ptr_value: &byte,
     error_id: i32,
+}
+
+fn exec_f32_to_bits(value: f32) u32 {
+    var temp: f32 = value;
+    return *((&temp as *const f32) as *const u32);
+}
+
+fn exec_f64_to_bits(value: f64) u64 {
+    var temp: f64 = value;
+    return *((&temp as *const f64) as *const u64);
+}
+
+fn exec_f32_from_bits(bits: u32) f32 {
+    var temp: u32 = bits;
+    return *((&temp as *const u32) as *const f32);
+}
+
+fn exec_f64_from_bits(bits: u64) f64 {
+    var temp: u64 = bits;
+    return *((&temp as *const u64) as *const f64);
 }
 
 fn exec_make_void() ExecValue {
@@ -186,6 +209,38 @@ fn exec_make_usize(value: usize) ExecValue {
     };
 }
 
+fn exec_make_f32_bits(bits: u32) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_F32,
+        i64_value: bits as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_f32(value: f32) ExecValue {
+    return exec_make_f32_bits(exec_f32_to_bits(value));
+}
+
+fn exec_make_f64_bits(bits: u64) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_F64,
+        i64_value: bits as i64,
+        ptr_value: null,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_f64(value: f64) ExecValue {
+    return exec_make_f64_bits(exec_f64_to_bits(value));
+}
+
 fn exec_make_bool(value: i32) ExecValue {
     var normalized: i64 = 0;
     if value != 0 {
@@ -209,6 +264,18 @@ fn exec_make_byte(value: i32) ExecValue {
         ptr_value: null,
         aux_kind: ExecValueKind.EXEC_VALUE_VOID,
         aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_va_list(values: &ExecValue, count: i32, index: i32) ExecValue {
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_VA_LIST,
+        i64_value: index as i64,
+        ptr_value: values as &byte,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: count as i64,
         aux_ptr_value: null,
         error_id: 0,
     };
@@ -328,6 +395,79 @@ fn exec_value_alloc_bytes(size: usize) &byte {
     return mem;
 }
 
+fn exec_value_scalar_kind_from_type_kind(type_kind: i32) ExecValueKind {
+    if type_kind == TypeKind.TYPE_BOOL as i32 {
+        return ExecValueKind.EXEC_VALUE_BOOL;
+    }
+    if type_kind == TypeKind.TYPE_I8 as i32 {
+        return ExecValueKind.EXEC_VALUE_I8;
+    }
+    if type_kind == TypeKind.TYPE_U8 as i32 {
+        return ExecValueKind.EXEC_VALUE_U8;
+    }
+    if type_kind == TypeKind.TYPE_BYTE as i32 {
+        return ExecValueKind.EXEC_VALUE_BYTE;
+    }
+    return ExecValueKind.EXEC_VALUE_VOID;
+}
+
+fn exec_value_is_raw_array_element_type(type_kind: i32) i32 {
+    if type_kind == TypeKind.TYPE_BOOL as i32 ||
+        type_kind == TypeKind.TYPE_I8 as i32 ||
+        type_kind == TypeKind.TYPE_U8 as i32 ||
+        type_kind == TypeKind.TYPE_BYTE as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_value_is_raw_array(value: &ExecValue) i32 {
+    if value == null || value.kind != ExecValueKind.EXEC_VALUE_ARRAY {
+        return 0;
+    }
+    return (value.aux_kind != ExecValueKind.EXEC_VALUE_VOID) as i32;
+}
+
+fn exec_value_raw_array_element_kind(value: &ExecValue) i32 {
+    if exec_value_is_raw_array(value) == 0 {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    return value.aux_i64_value as i32;
+}
+
+fn exec_value_raw_array_ptr(value: &ExecValue) &byte {
+    if exec_value_is_raw_array(value) == 0 {
+        return null;
+    }
+    return value.ptr_value;
+}
+
+fn exec_value_make_raw_array(count: i32, elem_kind_code: i32) ExecValue {
+    if count < 0 {
+        return exec_make_void();
+    }
+    const elem_size: usize = exec_vm_type_kind_size(elem_kind_code);
+    if elem_size == 0 as usize {
+        return exec_make_void();
+    }
+    var data: &byte = null;
+    if count > 0 {
+        data = exec_value_alloc_bytes(elem_size * (count as usize));
+        if data == null {
+            return exec_make_void();
+        }
+    }
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_ARRAY,
+        i64_value: count as i64,
+        ptr_value: data,
+        aux_kind: exec_value_scalar_kind_from_type_kind(elem_kind_code),
+        aux_i64_value: elem_kind_code as i64,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
 fn exec_value_aggregate_kind(type: Type) ExecValueKind {
     if type.kind == TypeKind.TYPE_STRUCT {
         return ExecValueKind.EXEC_VALUE_STRUCT;
@@ -378,6 +518,13 @@ fn exec_make_struct(count: i32) ExecValue {
 }
 
 fn exec_make_array(count: i32) ExecValue {
+    return exec_make_array_with_element_kind(count, TypeKind.TYPE_VOID as i32);
+}
+
+fn exec_make_array_with_element_kind(count: i32, elem_kind_code: i32) ExecValue {
+    if exec_value_is_raw_array_element_type(elem_kind_code) != 0 {
+        return exec_value_make_raw_array(count, elem_kind_code);
+    }
     return exec_value_make_aggregate(ExecValueKind.EXEC_VALUE_ARRAY, count);
 }
 
@@ -411,6 +558,9 @@ fn exec_value_as_aggregate(value: &ExecValue) &ExecAggregate {
         value.kind != ExecValueKind.EXEC_VALUE_TUPLE) {
         return null;
     }
+    if exec_value_is_raw_array(value) != 0 {
+        return null;
+    }
     return value.ptr_value as &ExecAggregate;
 }
 
@@ -431,6 +581,18 @@ fn exec_value_as_union(value: &ExecValue) &ExecUnionData {
 fn exec_value_clone(value: &ExecValue) ExecValue {
     if value == null {
         return exec_make_void();
+    }
+    if exec_value_is_raw_array(value) != 0 {
+        const count: i32 = value.i64_value as i32;
+        const elem_kind_code: i32 = exec_value_raw_array_element_kind(value);
+        const cloned: ExecValue = exec_make_array_with_element_kind(count, elem_kind_code);
+        if count > 0 && cloned.ptr_value != null && value.ptr_value != null {
+            const elem_size: usize = exec_vm_type_kind_size(elem_kind_code);
+            if elem_size > 0 as usize {
+                memcpy(cloned.ptr_value as *void, value.ptr_value as *const void, elem_size * (count as usize));
+            }
+        }
+        return cloned;
     }
     if value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
         value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
@@ -479,6 +641,9 @@ fn exec_value_count(value: &ExecValue) i32 {
     if value == null {
         return 0;
     }
+    if exec_value_is_raw_array(value) != 0 {
+        return value.i64_value as i32;
+    }
     if value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
         value.kind == ExecValueKind.EXEC_VALUE_STRUCT ||
         value.kind == ExecValueKind.EXEC_VALUE_TUPLE {
@@ -501,6 +666,28 @@ fn exec_value_count(value: &ExecValue) i32 {
 
 fn exec_value_get_index(value: &ExecValue, idx: i32) ExecValue {
     if value == null {
+        return exec_make_void();
+    }
+    if exec_value_is_raw_array(value) != 0 {
+        const count: i32 = value.i64_value as i32;
+        if idx < 0 || idx >= count || value.ptr_value == null {
+            return exec_make_void();
+        }
+        const raw_kind: i32 = exec_value_raw_array_element_kind(value);
+        const raw_ptr: &byte = value.ptr_value + idx;
+        if raw_kind == TypeKind.TYPE_BOOL as i32 {
+            return exec_make_bool((raw_ptr[0] != 0) as i32);
+        }
+        if raw_kind == TypeKind.TYPE_I8 as i32 {
+            const raw_i8: &i8 = raw_ptr as &i8;
+            return exec_make_i8(raw_i8[0]);
+        }
+        if raw_kind == TypeKind.TYPE_U8 as i32 {
+            return exec_make_u8(raw_ptr[0]);
+        }
+        if raw_kind == TypeKind.TYPE_BYTE as i32 {
+            return exec_make_byte(raw_ptr[0] as i32);
+        }
         return exec_make_void();
     }
     if value.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
@@ -526,6 +713,25 @@ fn exec_value_set_index(dst: &ExecValue, idx: i32, value: &ExecValue) i32 {
     if dst == null || value == null {
         return -1;
     }
+    if exec_value_is_raw_array(dst) != 0 {
+        const count: i32 = dst.i64_value as i32;
+        if idx < 0 || idx >= count || dst.ptr_value == null {
+            return -1;
+        }
+        const raw_kind: i32 = exec_value_raw_array_element_kind(dst);
+        const raw_ptr: &byte = dst.ptr_value + idx;
+        if raw_kind == TypeKind.TYPE_BOOL as i32 {
+            raw_ptr[0] = (value.i64_value != 0) as byte;
+            return 0;
+        }
+        if raw_kind == TypeKind.TYPE_I8 as i32 {
+            const raw_i8: &i8 = raw_ptr as &i8;
+            raw_i8[0] = value.i64_value as i8;
+            return 0;
+        }
+        raw_ptr[0] = value.i64_value as byte;
+        return 0;
+    }
     if dst.kind == ExecValueKind.EXEC_VALUE_ARRAY ||
         dst.kind == ExecValueKind.EXEC_VALUE_TUPLE ||
         dst.kind == ExecValueKind.EXEC_VALUE_STRUCT {
@@ -545,6 +751,39 @@ fn exec_value_set_index(dst: &ExecValue, idx: i32, value: &ExecValue) i32 {
         return 0;
     }
     return -1;
+}
+
+fn exec_value_is_float_kind(kind: ExecValueKind) i32 {
+    if kind == ExecValueKind.EXEC_VALUE_F32 || kind == ExecValueKind.EXEC_VALUE_F64 {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_value_as_f32(value: &ExecValue) f32 {
+    if value == null {
+        return 0.0 as f32;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_F32 {
+        return exec_f32_from_bits(value.i64_value as u32);
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_F64 {
+        return exec_f64_from_bits(value.i64_value as u64) as f32;
+    }
+    return value.i64_value as f32;
+}
+
+fn exec_value_as_f64(value: &ExecValue) f64 {
+    if value == null {
+        return 0.0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_F64 {
+        return exec_f64_from_bits(value.i64_value as u64);
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_F32 {
+        return exec_f32_from_bits(value.i64_value as u32) as f64;
+    }
+    return value.i64_value as f64;
 }
 
 fn exec_value_truthy(value: ExecValue) i32 {
@@ -569,6 +808,12 @@ fn exec_value_truthy(value: ExecValue) i32 {
             return 1;
         }
         return 0;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_F32 {
+        return (exec_f32_from_bits(value.i64_value as u32) != 0.0 as f32) as i32;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_F64 {
+        return (exec_f64_from_bits(value.i64_value as u64) != 0.0) as i32;
     }
     if value.kind == ExecValueKind.EXEC_VALUE_STRING {
         if value.ptr_value != null {

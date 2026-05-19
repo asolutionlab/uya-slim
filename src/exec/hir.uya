@@ -49,6 +49,7 @@ enum HIRExprKind {
     HIR_EXPR_INDEX,
     HIR_EXPR_SLICE,
     HIR_EXPR_CAST,
+    HIR_EXPR_MAKE_OK,
     HIR_EXPR_TRY,
     HIR_EXPR_CATCH,
     HIR_EXPR_MATCH,
@@ -56,6 +57,11 @@ enum HIRExprKind {
     HIR_EXPR_PRINTLN,
     HIR_EXPR_ERROR_ID,
     HIR_EXPR_ERROR_NAME,
+    HIR_EXPR_SYSCALL,
+    HIR_EXPR_VA_START,
+    HIR_EXPR_VA_END,
+    HIR_EXPR_VA_ARG,
+    HIR_EXPR_VA_COPY,
 }
 
 struct HIRMatchArm {
@@ -95,6 +101,7 @@ struct HIRExpr {
     unary_op: i32,
     binary_op: i32,
     int_value: i64,
+    float_value: f64,
     bool_value: i32,
     string_value: &byte,
     left: &HIRExpr,
@@ -138,6 +145,7 @@ struct HIRFunction {
     locals: &HIRLocalSlot,
     local_count: i32,
     param_count: i32,
+    is_varargs: i32,
     body: &HIRBlock,
 }
 

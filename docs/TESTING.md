@@ -1,7 +1,7 @@
 # Uya 回归测试说明
 
 **版本**：v0.3.4+  
-**更新日期**：2026-04-22
+**更新日期**：2026-05-19
 
 ---
 
@@ -58,6 +58,22 @@ make tests-uya
 ```bash
 ./tests/run_programs_parallel.sh
 ```
+
+### Exec VM 专项回归
+
+当改动涉及 `src/exec/`、`lib/libc/stdio.uya`、`try/catch` lowering、`@syscall` exec 路径或 `extern ABI` 边界时，建议先跑这批脚本：
+
+```bash
+bash ./tests/verify_exec_backend_progress.sh
+bash ./tests/verify_exec_vm_stdio_varargs.sh
+bash ./tests/verify_exec_vm_extern_bridge.sh
+bash ./tests/verify_exec_vm_compiler_regressions.sh
+```
+
+其中：
+
+- `verify_exec_vm_stdio_varargs.sh` 覆盖 `va_list` / `@va_start` / `@va_arg` / `@va_copy`，以及 `fprintf -> vfprintf -> _vfprintf_impl -> snprintf` 的 exec VM 路径
+- `verify_exec_vm_compiler_regressions.sh` 覆盖“显式类型局部 + catch 标识符路径”和“字段数组 / 指针字段 / 全局数组下标写入路径”两类近期修复过的编译器回归
 
 ### 单个测试
 

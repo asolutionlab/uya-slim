@@ -2,7 +2,7 @@
 
 use libc;
 
-const EXEC_MAX_BYTECODE_INSTRS: i32 = 4096;
+const EXEC_MAX_BYTECODE_INSTRS: i32 = 16384;
 const EXEC_MAX_CONST_POOL_VALUES: i32 = 1024;
 const EXEC_MAX_HOST_CALL_SITES: i32 = 64;
 
@@ -383,6 +383,20 @@ fn exec_builder_emit_loaded_const_value(ctx: &ExecFunctionBuildContext, ast_node
     return dst_slot;
 }
 
+fn exec_builder_pack_syscall_meta(arg_base: i32, arg_count: i32, target_kind: i32, target_pointee_kind: i32) i64 {
+    return (arg_base as i64) |
+        ((arg_count as i64) << 16) |
+        ((target_kind as i64) << 24) |
+        ((target_pointee_kind as i64) << 40);
+}
+
+fn exec_builder_array_element_kind_code(type: Type) i32 {
+    if type.kind != TypeKind.TYPE_ARRAY || type.element_type == null {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    return type.element_type[0].kind as i32;
+}
+
 fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, ty: &Type) i32 {
     if ctx == null || ty == null {
         return -1;
@@ -414,6 +428,12 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
     if ty.kind == TypeKind.TYPE_USIZE {
         return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_usize(0 as usize));
     }
+    if ty.kind == TypeKind.TYPE_F32 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_f32(0.0 as f32));
+    }
+    if ty.kind == TypeKind.TYPE_F64 {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_f64(0.0));
+    }
     if ty.kind == TypeKind.TYPE_BOOL {
         return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_bool(0));
     }
@@ -426,6 +446,9 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
     if ty.kind == TypeKind.TYPE_POINTER {
         return exec_builder_emit_loaded_const_value(ctx, ast_node,
             exec_make_pointer_with_kind(0 as usize, exec_builder_pointer_pointee_kind_code(ty[0])));
+    }
+    if ty.kind == TypeKind.TYPE_VA_LIST {
+        return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_va_list(null, 0, 0));
     }
     if ty.kind == TypeKind.TYPE_SLICE {
         return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_slice(null, 0, 0));
@@ -460,7 +483,7 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
             a: dst_array,
             b: zero_elem_slot,
             c: ty.array_size,
-            imm: 0,
+            imm: exec_builder_array_element_kind_code(ty[0]),
             text: null,
             source: exec_builder_make_source(ast_node),
         }) < 0 {
@@ -557,6 +580,10 @@ fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRE
     var const_value: ExecValue = exec_make_void();
     if expr.string_value != null {
         const_value = exec_make_string(expr.string_value);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_F32 {
+        const_value = exec_make_f32(expr.float_value as f32);
+    } else if expr.type_ref.type.kind == TypeKind.TYPE_F64 {
+        const_value = exec_make_f64(expr.float_value);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
         const_value = exec_make_error(expr.int_value as i32);
     } else if expr.type_ref.type.kind == TypeKind.TYPE_I8 {
@@ -737,6 +764,7 @@ fn exec_builder_emit_i32_const_slot(ctx: &ExecFunctionBuildContext, ast_node: &A
         unary_op: 0,
         binary_op: 0,
         int_value: value as i64,
+        float_value: 0.0,
         bool_value: 0,
         string_value: null,
         left: null,
@@ -802,7 +830,43 @@ fn exec_builder_compile_lvalue_store(ctx: &ExecFunctionBuildContext, target: &HI
         });
     }
     if target.kind == HIRExprKind.HIR_EXPR_INDEX {
-        const base_slot2: i32 = exec_builder_compile_expr(ctx, target.left);
+        var base_slot2: i32 = -1;
+        if target.left != null && target.left.kind == HIRExprKind.HIR_EXPR_FIELD {
+            const field_base_slot: i32 = exec_builder_compile_expr(ctx, target.left.left);
+            base_slot2 = exec_builder_new_temp(ctx);
+            if field_base_slot < 0 || base_slot2 < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_ADDR_FIELD,
+                a: base_slot2,
+                b: field_base_slot,
+                c: target.left.type_ref.type.kind as i32,
+                imm: target.left.int_value,
+                text: null,
+                source: exec_builder_make_source(ast_node),
+            }) < 0 {
+                return -1;
+            }
+        } else if target.left != null && target.left.kind == HIRExprKind.HIR_EXPR_GLOBAL {
+            base_slot2 = exec_builder_new_temp(ctx);
+            if base_slot2 < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_ADDR_GLOBAL,
+                a: base_slot2,
+                b: target.left.global_slot,
+                c: target.left.type_ref.type.kind as i32,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(ast_node),
+            }) < 0 {
+                return -1;
+            }
+        } else {
+            base_slot2 = exec_builder_compile_expr(ctx, target.left);
+        }
         const index_slot: i32 = exec_builder_compile_expr(ctx, target.right);
         if base_slot2 < 0 || index_slot < 0 {
             return -1;
@@ -881,7 +945,43 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return dst_addr;
         }
         if expr.right != null {
-            const base_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.left);
+            var base_slot_addr: i32 = -1;
+            if expr.left != null && expr.left.kind == HIRExprKind.HIR_EXPR_FIELD {
+                const field_base_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.left.left);
+                base_slot_addr = exec_builder_new_temp(ctx);
+                if field_base_slot_addr < 0 || base_slot_addr < 0 {
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_ADDR_FIELD,
+                    a: base_slot_addr,
+                    b: field_base_slot_addr,
+                    c: expr.left.type_ref.type.kind as i32,
+                    imm: expr.left.int_value,
+                    text: null,
+                    source: exec_builder_make_source(expr.ast_node),
+                }) < 0 {
+                    return -1;
+                }
+            } else if expr.left != null && expr.left.kind == HIRExprKind.HIR_EXPR_GLOBAL {
+                base_slot_addr = exec_builder_new_temp(ctx);
+                if base_slot_addr < 0 {
+                    return -1;
+                }
+                if exec_builder_emit(ctx, BCInstr {
+                    opcode: BCOpcode.BC_ADDR_GLOBAL,
+                    a: base_slot_addr,
+                    b: expr.left.global_slot,
+                    c: expr.left.type_ref.type.kind as i32,
+                    imm: 0,
+                    text: null,
+                    source: exec_builder_make_source(expr.ast_node),
+                }) < 0 {
+                    return -1;
+                }
+            } else {
+                base_slot_addr = exec_builder_compile_expr(ctx, expr.left);
+            }
             const index_slot_addr: i32 = exec_builder_compile_expr(ctx, expr.right);
             if base_slot_addr < 0 || index_slot_addr < 0 {
                 return -1;
@@ -1008,7 +1108,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             a: dst_init,
             b: item_base,
             c: expr.item_count,
-            imm: 0,
+            imm: exec_builder_array_element_kind_code(expr.type_ref.type),
             text: null,
             source: exec_builder_make_source(expr.ast_node),
         }) < 0 {
@@ -1284,6 +1384,54 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                 return -1;
             }
         }
+        if expr.extra != null {
+            const return_slot_catch: i32 = exec_builder_compile_expr(ctx, expr.extra);
+            if return_slot_catch < 0 {
+                return -1;
+            }
+            if exec_builder_emit_all_cleanup(ctx, 1) < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_RET,
+                a: return_slot_catch,
+                b: 0,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            exec_builder_patch_jump(ctx, ok_jump, ctx.instr_count);
+            const ok_value_slot_return: i32 = exec_builder_new_temp(ctx);
+            if ok_value_slot_return < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_UNWRAP_OK,
+                a: ok_value_slot_return,
+                b: union_slot2,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MOV,
+                a: catch_dst,
+                b: ok_value_slot_return,
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return catch_dst;
+        }
         const fallback_slot: i32 = exec_builder_compile_expr(ctx, expr.right);
         if fallback_slot < 0 {
             return -1;
@@ -1340,6 +1488,25 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         exec_builder_patch_jump(ctx, end_jump, ctx.instr_count);
         return catch_dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_MAKE_OK {
+        const payload_slot_ok: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_ok: i32 = exec_builder_new_temp(ctx);
+        if payload_slot_ok < 0 || dst_ok < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_OK,
+            a: dst_ok,
+            b: payload_slot_ok,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_ok;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_MATCH {
         const subject_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
@@ -1404,6 +1571,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                         unary_op: 0,
                         binary_op: 0,
                         int_value: union_arm.int_value,
+                        float_value: 0.0,
                         bool_value: 0,
                         string_value: null,
                         left: null,
@@ -1543,6 +1711,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                     unary_op: 0,
                     binary_op: 0,
                     int_value: arm.int_value,
+                    float_value: 0.0,
                     bool_value: arm.int_value as i32,
                     string_value: null,
                     left: null,
@@ -1745,6 +1914,83 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         return dst_builtin;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_START {
+        const ap_ref_start: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_va_start: i32 = exec_builder_new_temp(ctx);
+        if ap_ref_start < 0 || dst_va_start < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_VA_START,
+            a: dst_va_start,
+            b: ap_ref_start,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_va_start;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_END {
+        const ap_ref_end: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_va_end: i32 = exec_builder_new_temp(ctx);
+        if ap_ref_end < 0 || dst_va_end < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_VA_END,
+            a: dst_va_end,
+            b: ap_ref_end,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_va_end;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_ARG {
+        const ap_ref_arg: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_va_arg: i32 = exec_builder_new_temp(ctx);
+        if ap_ref_arg < 0 || dst_va_arg < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_VA_ARG,
+            a: dst_va_arg,
+            b: ap_ref_arg,
+            c: exec_builder_pointer_pointee_kind_code(expr.type_ref.type),
+            imm: expr.type_ref.type.kind as i64,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_va_arg;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_COPY {
+        const dest_ref_copy: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const src_ref_copy: i32 = exec_builder_compile_expr(ctx, expr.right);
+        const dst_va_copy: i32 = exec_builder_new_temp(ctx);
+        if dest_ref_copy < 0 || src_ref_copy < 0 || dst_va_copy < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_VA_COPY,
+            a: dst_va_copy,
+            b: dest_ref_copy,
+            c: src_ref_copy,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_va_copy;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_PRINT || expr.kind == HIRExprKind.HIR_EXPR_PRINTLN {
         const src: i32 = exec_builder_compile_expr(ctx, expr.left);
         if src < 0 {
@@ -1861,6 +2107,63 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             return -1;
         }
         return dst;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_SYSCALL {
+        const nr_slot: i32 = exec_builder_compile_expr(ctx, expr.left);
+        if nr_slot < 0 {
+            return -1;
+        }
+        var arg_sources_sys: [i32: EXEC_MAX_CALL_ARGS] = [];
+        var si_sys: i32 = 0;
+        while si_sys < expr.item_count {
+            const arg_slot_sys: i32 = exec_builder_compile_expr(ctx, expr.items[si_sys]);
+            if arg_slot_sys < 0 {
+                return -1;
+            }
+            if si_sys >= 0 && si_sys < EXEC_MAX_CALL_ARGS {
+                arg_sources_sys[si_sys] = arg_slot_sys;
+            }
+            si_sys = si_sys + 1;
+        }
+        var arg_base_sys: i32 = 0;
+        si_sys = 0;
+        while si_sys < expr.item_count {
+            const dst_arg_sys: i32 = exec_builder_new_temp(ctx);
+            if dst_arg_sys < 0 {
+                return -1;
+            }
+            if si_sys == 0 {
+                arg_base_sys = dst_arg_sys;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MOV,
+                a: dst_arg_sys,
+                b: arg_sources_sys[si_sys],
+                c: 0,
+                imm: 0,
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            si_sys = si_sys + 1;
+        }
+        const dst_syscall: i32 = exec_builder_new_temp(ctx);
+        if dst_syscall < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_SYSCALL,
+            a: dst_syscall,
+            b: nr_slot,
+            c: 0,
+            imm: exec_builder_pack_syscall_meta(arg_base_sys, expr.item_count, expr.int_value as i32, expr.unary_op),
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_syscall;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_IMETHOD_CALL {
         const dst_icall: i32 = exec_builder_new_temp(ctx);
@@ -2670,7 +2973,7 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
                 return -1;
             }
         } else if instr.opcode == BCOpcode.BC_JMP {
-            if instr.imm < 0 || instr.imm >= out_fn.instr_count as i64 {
+            if instr.imm < 0 || instr.imm > out_fn.instr_count as i64 {
                 exec_backend_set_error(fn_hir.decl, "exec: JMP 目标越界" as *byte, 0);
                 return -1;
             }
@@ -2678,7 +2981,7 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             if exec_builder_validate_slot_read(fn_hir, instr.a, out_fn.slot_count, &slot_written[0], "exec: 条件跳转槽位非法" as *byte) != 0 {
                 return -1;
             }
-            if instr.imm < 0 || instr.imm >= out_fn.instr_count as i64 {
+            if instr.imm < 0 || instr.imm > out_fn.instr_count as i64 {
                 exec_backend_set_error(fn_hir.decl, "exec: 条件跳转目标越界" as *byte, 0);
                 return -1;
             }
@@ -2741,6 +3044,54 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             if dst_slot10 >= 0 && dst_slot10 < EXEC_MAX_FRAME_SLOTS {
                 slot_written[dst_slot10] = 1;
             }
+        } else if instr.opcode == BCOpcode.BC_SYSCALL {
+            const syscall_arg_base: i32 = (instr.imm & 65535i64) as i32;
+            const syscall_arg_count: i32 = ((instr.imm >> 16) & 255i64) as i32;
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: SYSCALL 号槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            var sai: i32 = 0;
+            while sai < syscall_arg_count {
+                if exec_builder_validate_slot_read(fn_hir, syscall_arg_base + sai, out_fn.slot_count, &slot_written[0], "exec: SYSCALL 参数槽位非法" as *byte) != 0 {
+                    return -1;
+                }
+                sai = sai + 1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: SYSCALL 返回槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_syscall: i32 = instr.a;
+            if dst_slot_syscall >= 0 && dst_slot_syscall < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_syscall] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_VA_START ||
+            instr.opcode == BCOpcode.BC_VA_END ||
+            instr.opcode == BCOpcode.BC_VA_ARG {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: va 指令槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: va 指令返回槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_va2: i32 = instr.a;
+            if dst_slot_va2 >= 0 && dst_slot_va2 < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_va2] = 1;
+            }
+        } else if instr.opcode == BCOpcode.BC_VA_COPY {
+            if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: va_copy 目标槽位非法" as *byte) != 0 ||
+                exec_builder_validate_slot_read(fn_hir, instr.c, out_fn.slot_count, &slot_written[0], "exec: va_copy 源槽位非法" as *byte) != 0 {
+                return -1;
+            }
+            if instr.a < 0 || instr.a >= out_fn.slot_count {
+                exec_backend_set_error(fn_hir.decl, "exec: va_copy 返回槽位非法" as *byte, 0);
+                return -1;
+            }
+            const dst_slot_va_copy2: i32 = instr.a;
+            if dst_slot_va_copy2 >= 0 && dst_slot_va_copy2 < EXEC_MAX_FRAME_SLOTS {
+                slot_written[dst_slot_va_copy2] = 1;
+            }
         } else if instr.opcode == BCOpcode.BC_PRINT || instr.opcode == BCOpcode.BC_PRINTLN {
             if exec_builder_validate_slot_read(fn_hir, instr.a, out_fn.slot_count, &slot_written[0], "exec: print 槽位非法" as *byte) != 0 {
                 return -1;
@@ -2775,7 +3126,7 @@ fn exec_builder_validate_return_types_in_block(fn_hir: &HIRFunction, block: &HIR
                     return -1;
                 }
                 if fn_hir.return_type.type.kind == TypeKind.TYPE_ERROR_UNION {
-                    if type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type) == 0 {
+                    if type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type) != 0 {
                     } else if stmt.expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
                     } else if fn_hir.return_type.type.error_union_payload_type != null &&
                         type_equals(stmt.expr.type_ref.type, fn_hir.return_type.type.error_union_payload_type[0]) != 0 {
@@ -2859,6 +3210,7 @@ fn exec_builder_build_function(arena: &CompilerArena, checker: &TypeChecker, con
     out_fn.instr_count = ctx.instr_count;
     out_fn.slot_count = ctx.max_slot_count;
     out_fn.param_count = fn_hir.param_count;
+    out_fn.is_varargs = fn_hir.is_varargs;
     out_fn.return_type = copy_type(&fn_hir.return_type.type);
     if exec_builder_validate_function(module, fn_hir, out_fn) != 0 {
         return null;

@@ -72,6 +72,8 @@ fn exec_type_is_scalar_supported(type: Type) i32 {
         type.kind == TypeKind.TYPE_U32 ||
         type.kind == TypeKind.TYPE_U64 ||
         type.kind == TypeKind.TYPE_USIZE ||
+        type.kind == TypeKind.TYPE_F32 ||
+        type.kind == TypeKind.TYPE_F64 ||
         type.kind == TypeKind.TYPE_BOOL ||
         type.kind == TypeKind.TYPE_BYTE ||
         type.kind == TypeKind.TYPE_VOID {
@@ -188,13 +190,13 @@ fn exec_lower_extern_can_run_in_vm(checker: &TypeChecker, fn_decl: &ASTNode) i32
     if fn_decl.fn_decl_is_extern == 0 {
         return (fn_decl.fn_decl_body != null) as i32;
     }
-    if fn_decl.fn_decl_is_varargs != 0 {
+    if fn_decl.fn_decl_body == null {
         return 0;
     }
     if exec_lower_extern_prefers_host_call(fn_decl) != 0 {
         return 0;
     }
-    return (fn_decl.fn_decl_body != null) as i32;
+    return 1;
 }
 
 fn exec_type_uses_simd(ty: Type) i32 {
@@ -261,6 +263,9 @@ fn exec_type_is_vm_value_supported(type: Type) i32 {
     if type.kind == TypeKind.TYPE_POINTER {
         return 1;
     }
+    if type.kind == TypeKind.TYPE_VA_LIST {
+        return 1;
+    }
     if type.kind == TypeKind.TYPE_ERROR {
         return 1;
     }
@@ -308,13 +313,18 @@ fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
     }
     const prev_in_function: i32 = ctx.checker.in_function;
     const prev_function_decl: &ASTNode = ctx.checker.current_function_decl;
+    const prev_return_type: Type = copy_type(&ctx.checker.current_return_type);
     if ctx.function_decl != null {
         ctx.checker.in_function = 1;
         ctx.checker.current_function_decl = ctx.function_decl;
+        if ctx.function_decl.fn_decl_return_type != null {
+            ctx.checker.current_return_type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+        }
     }
     const inferred: Type = checker_infer_type(ctx.checker, expr);
     ctx.checker.in_function = prev_in_function;
     ctx.checker.current_function_decl = prev_function_decl;
+    ctx.checker.current_return_type = prev_return_type;
     return inferred;
 }
 
@@ -490,6 +500,22 @@ fn exec_lower_make_int_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, ty
     }
     expr.int_value = value;
     return expr;
+}
+
+fn exec_lower_make_float_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &Type, value: f64) &HIRExpr {
+    const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_CONST, type);
+    if expr == null {
+        return null;
+    }
+    expr.float_value = value;
+    return expr;
+}
+
+fn exec_lower_pointer_pointee_kind(type: &Type) i32 {
+    if type == null || type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    return type.pointer_to[0].kind as i32;
 }
 
 fn exec_lower_make_void_pointer_type() Type {
@@ -839,6 +865,18 @@ fn exec_lower_make_ref_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     return addr_value;
 }
 
+fn exec_lower_make_va_storage_ref_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
+    if ctx == null || expr == null {
+        return null;
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR &&
+        (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND &&
+        expr.unary_expr_operand != null {
+        return exec_lower_make_ref_expr(ctx, expr.unary_expr_operand);
+    }
+    return exec_lower_make_ref_expr(ctx, expr);
+}
+
 fn exec_lower_method_receiver_expr(ctx: &ExecLowerContext, object_expr: &ASTNode, method_decl: &ASTNode) &HIRExpr {
     if ctx == null || object_expr == null || method_decl == null ||
         method_decl.type != ASTNodeType.AST_FN_DECL ||
@@ -942,6 +980,13 @@ fn exec_lower_coerce_expr(ctx: &ExecLowerContext, expr: &ASTNode, expected_type:
     if ctx == null || expr == null {
         return null;
     }
+    if expected_type != null &&
+        expr.type == ASTNodeType.AST_ARRAY_LITERAL &&
+        expr.array_literal_repeat_count_expr == null &&
+        expr.array_literal_element_count == 0 &&
+        (expected_type.kind == TypeKind.TYPE_ARRAY || expected_type.kind == TypeKind.TYPE_SLICE) {
+        return exec_lower_make_zero_expr(ctx, expr, expected_type);
+    }
     if expected_type != null && expr.type == ASTNodeType.AST_INT_LIMIT && is_integer_type(expected_type.kind) != 0 {
         expr.int_limit_resolved_kind = expected_type.kind;
         var int_limit_ok: i32 = 0;
@@ -950,15 +995,16 @@ fn exec_lower_coerce_expr(ctx: &ExecLowerContext, expr: &ASTNode, expected_type:
             return exec_lower_make_int_const_expr(ctx, expr, expected_type, int_limit_value);
         }
     }
-    var actual_type: Type = exec_lower_expr_type(ctx, expr);
-    if actual_type.kind == TypeKind.TYPE_VOID {
-        actual_type = exec_lower_member_base_type(ctx, expr);
-    }
     if expected_type != null &&
-        expected_type.kind == TypeKind.TYPE_INTERFACE && expected_type.interface_name != null &&
-        actual_type.kind == TypeKind.TYPE_STRUCT && actual_type.struct_name != null &&
-        struct_implements_interface(ctx.checker, actual_type.struct_name, expected_type.interface_name) != 0 {
-        return exec_lower_box_interface_expr(ctx, expr, expected_type);
+        expected_type.kind == TypeKind.TYPE_INTERFACE && expected_type.interface_name != null {
+        var actual_type: Type = exec_lower_expr_type(ctx, expr);
+        if actual_type.kind == TypeKind.TYPE_VOID {
+            actual_type = exec_lower_member_base_type(ctx, expr);
+        }
+        if actual_type.kind == TypeKind.TYPE_STRUCT && actual_type.struct_name != null &&
+            struct_implements_interface(ctx.checker, actual_type.struct_name, expected_type.interface_name) != 0 {
+            return exec_lower_box_interface_expr(ctx, expr, expected_type);
+        }
     }
     return exec_lower_expr(ctx, expr);
 }
@@ -2492,6 +2538,68 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     if ctx == null || expr == null {
         return null;
     }
+    if expr.type == ASTNodeType.AST_TRY_EXPR {
+        const operand_try_early: &HIRExpr = exec_lower_expr(ctx, expr.try_expr_operand);
+        if operand_try_early == null {
+            return null;
+        }
+        if operand_try_early.type_ref.type.kind != TypeKind.TYPE_ERROR_UNION ||
+            operand_try_early.type_ref.type.error_union_payload_type == null {
+            return exec_lower_fail_expr_reason(expr, "exec: try 操作数不是错误联合" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_TRY_EXPR);
+        }
+        const try_payload_type: Type = operand_try_early.type_ref.type.error_union_payload_type[0];
+        const hir_try_early: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_TRY, &try_payload_type);
+        if hir_try_early == null {
+            return null;
+        }
+        hir_try_early.left = operand_try_early;
+        return hir_try_early;
+    }
+    if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        if expr.catch_expr_err_name != null {
+            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持带错误绑定的 catch" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        }
+        const operand_catch_early: &HIRExpr = exec_lower_expr(ctx, expr.catch_expr_operand);
+        if operand_catch_early == null {
+            return null;
+        }
+        if operand_catch_early.type_ref.type.kind != TypeKind.TYPE_ERROR_UNION ||
+            operand_catch_early.type_ref.type.error_union_payload_type == null {
+            return exec_lower_fail_expr_reason(expr, "exec: catch 操作数不是错误联合" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        }
+        const catch_payload_type: Type = operand_catch_early.type_ref.type.error_union_payload_type[0];
+        const hir_catch_early: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CATCH, &catch_payload_type);
+        if hir_catch_early == null {
+            return null;
+        }
+        hir_catch_early.left = operand_catch_early;
+        if expr.catch_expr_catch_block != null &&
+            expr.catch_expr_catch_block.type == ASTNodeType.AST_BLOCK &&
+            expr.catch_expr_catch_block.block_stmt_count == 1 &&
+            expr.catch_expr_catch_block.block_stmts != null &&
+            expr.catch_expr_catch_block.block_stmts[0] != null &&
+            expr.catch_expr_catch_block.block_stmts[0].type == ASTNodeType.AST_RETURN_STMT {
+            const return_stmt_early: &ASTNode = expr.catch_expr_catch_block.block_stmts[0];
+            if return_stmt_early.return_stmt_expr != null {
+                if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
+                    const catch_return_type_early: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+                    hir_catch_early.extra = exec_lower_coerce_expr(ctx, return_stmt_early.return_stmt_expr, &catch_return_type_early);
+                } else {
+                    hir_catch_early.extra = exec_lower_expr(ctx, return_stmt_early.return_stmt_expr);
+                }
+                if hir_catch_early.extra == null {
+                    return null;
+                }
+            }
+            return hir_catch_early;
+        }
+        const fallback_expr_early: &HIRExpr = exec_lower_extract_block_result_expr(ctx, expr.catch_expr_catch_block);
+        if fallback_expr_early == null {
+            return null;
+        }
+        hir_catch_early.right = fallback_expr_early;
+        return hir_catch_early;
+    }
     const expr_type: Type = exec_lower_expr_type(ctx, expr);
     if expr.type == ASTNodeType.AST_SIZEOF || expr.type == ASTNodeType.AST_ALIGNOF {
         const folded_value: i32 = checker_eval_const_expr(ctx.checker, expr);
@@ -2544,6 +2652,12 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return exec_lower_fail_expr(expr, "exec: 仅支持 exec VM 可表示的整数数字字面量" as *byte);
         }
         return exec_lower_make_int_const_expr(ctx, expr, &expr_type, expr.number_value_i64);
+    }
+    if expr.type == ASTNodeType.AST_FLOAT {
+        if expr_type.kind != TypeKind.TYPE_F32 && expr_type.kind != TypeKind.TYPE_F64 {
+            return exec_lower_fail_expr(expr, "exec: 当前仅支持 f32/f64 浮点字面量" as *byte);
+        }
+        return exec_lower_make_float_const_expr(ctx, expr, &expr_type, expr.float_literal_value);
     }
     if expr.type == ASTNodeType.AST_BOOL {
         const hir: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CONST, &expr_type);
@@ -2654,7 +2768,63 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     }
     if expr.type == ASTNodeType.AST_CAST_EXPR {
         if expr.cast_expr_is_force_cast != 0 {
-            return exec_lower_fail_expr_reason(expr, "exec: 当前不支持 as! cast" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC);
+            if expr.cast_expr_expr != null &&
+                expr.cast_expr_expr.type == ASTNodeType.AST_SYSCALL &&
+                expr_type.kind == TypeKind.TYPE_ERROR_UNION &&
+                expr_type.error_union_payload_type != null {
+                const syscall_payload_type: Type = expr_type.error_union_payload_type[0];
+                if exec_type_is_vm_value_supported(syscall_payload_type) == 0 {
+                    return exec_lower_fail_expr(expr, "exec: @syscall as! 目标类型当前不可被 exec VM 表示" as *byte);
+                }
+                if expr.cast_expr_expr.syscall_number == null {
+                    return exec_lower_fail_expr(expr, "exec: @syscall 缺少系统调用号" as *byte);
+                }
+                const syscall_nr_expr: &HIRExpr = exec_lower_expr(ctx, expr.cast_expr_expr.syscall_number);
+                if syscall_nr_expr == null {
+                    return null;
+                }
+                const syscall_args_hir: & & HIRExpr = exec_lower_alloc_items(ctx, expr.cast_expr_expr.syscall_arg_count);
+                if expr.cast_expr_expr.syscall_arg_count > 0 && syscall_args_hir == null {
+                    exec_backend_set_error(expr, "exec: @syscall 参数分配失败" as *byte, 0);
+                    return null;
+                }
+                var si: i32 = 0;
+                while si < expr.cast_expr_expr.syscall_arg_count {
+                    const lowered_arg: &HIRExpr = exec_lower_expr(ctx, expr.cast_expr_expr.syscall_args[si]);
+                    if lowered_arg == null {
+                        return null;
+                    }
+                    syscall_args_hir[si] = lowered_arg;
+                    si = si + 1;
+                }
+                const hir_syscall_cast: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_SYSCALL, &expr_type);
+                if hir_syscall_cast == null {
+                    return null;
+                }
+                hir_syscall_cast.left = syscall_nr_expr;
+                hir_syscall_cast.items = syscall_args_hir;
+                hir_syscall_cast.item_count = expr.cast_expr_expr.syscall_arg_count;
+                hir_syscall_cast.int_value = syscall_payload_type.kind as i64;
+                hir_syscall_cast.unary_op = exec_lower_pointer_pointee_kind(&syscall_payload_type);
+                return hir_syscall_cast;
+            }
+            if expr_type.kind != TypeKind.TYPE_ERROR_UNION || expr_type.error_union_payload_type == null {
+                return exec_lower_fail_expr_reason(expr, "exec: as! 目标类型无效" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_GENERIC);
+            }
+            const force_payload_type: Type = expr_type.error_union_payload_type[0];
+            if exec_type_is_vm_value_supported(force_payload_type) == 0 {
+                return exec_lower_fail_expr(expr, "exec: as! 载荷类型当前不可被 exec VM 表示" as *byte);
+            }
+            const force_payload_expr: &HIRExpr = exec_lower_coerce_expr(ctx, expr.cast_expr_expr, &force_payload_type);
+            if force_payload_expr == null {
+                return null;
+            }
+            const hir_force_ok: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_MAKE_OK, &expr_type);
+            if hir_force_ok == null {
+                return null;
+            }
+            hir_force_ok.left = force_payload_expr;
+            return hir_force_ok;
         }
         if exec_type_is_vm_value_supported(expr_type) == 0 {
             return exec_lower_fail_expr(expr, "exec: cast 目标类型当前不可被 exec VM 表示" as *byte);
@@ -2931,6 +3101,39 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         hir.call_arg_count = expr.call_expr_arg_count;
         return hir;
     }
+    if expr.type == ASTNodeType.AST_SYSCALL {
+        if expr.syscall_number == null {
+            return exec_lower_fail_expr(expr, "exec: @syscall 缺少系统调用号" as *byte);
+        }
+        const nr_expr: &HIRExpr = exec_lower_expr(ctx, expr.syscall_number);
+        if nr_expr == null {
+            return null;
+        }
+        const syscall_args_exprs: & & HIRExpr = exec_lower_alloc_items(ctx, expr.syscall_arg_count);
+        if expr.syscall_arg_count > 0 && syscall_args_exprs == null {
+            exec_backend_set_error(expr, "exec: @syscall 参数分配失败" as *byte, 0);
+            return null;
+        }
+        var sci: i32 = 0;
+        while sci < expr.syscall_arg_count {
+            const lowered_arg2: &HIRExpr = exec_lower_expr(ctx, expr.syscall_args[sci]);
+            if lowered_arg2 == null {
+                return null;
+            }
+            syscall_args_exprs[sci] = lowered_arg2;
+            sci = sci + 1;
+        }
+        const hir_syscall: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_SYSCALL, &expr_type);
+        if hir_syscall == null {
+            return null;
+        }
+        hir_syscall.left = nr_expr;
+        hir_syscall.items = syscall_args_exprs;
+        hir_syscall.item_count = expr.syscall_arg_count;
+        hir_syscall.int_value = TypeKind.TYPE_I64 as i64;
+        hir_syscall.unary_op = TypeKind.TYPE_VOID as i32;
+        return hir_syscall;
+    }
     if expr.type == ASTNodeType.AST_LEN {
         const known_len: i32 = exec_lower_known_len_for_expr(ctx, expr.len_expr_array);
         if known_len >= 0 {
@@ -2948,6 +3151,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return hir_len;
     }
     if expr.type == ASTNodeType.AST_STRUCT_INIT {
+        if expr.struct_init_struct_name != null &&
+            str_equals(expr.struct_init_struct_name, "va_list" as *byte) != 0 {
+            var va_list_type: Type = copy_type(&expr_type);
+            va_list_type.kind = TypeKind.TYPE_VA_LIST;
+            va_list_type.struct_name = null;
+            return exec_lower_make_zero_expr(ctx, expr, &va_list_type);
+        }
         if expr.struct_init_struct_name == null || expr.struct_init_field_values == null {
             return exec_lower_fail_expr(expr, "exec: 结构体字面量不完整" as *byte);
         }
@@ -3014,6 +3224,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if expr.array_literal_repeat_count_expr != null {
             return exec_lower_fail_expr(expr, "exec: 当前不支持 repeat array literal" as *byte);
         }
+        if expr.array_literal_element_count == 0 {
+            return exec_lower_make_zero_expr(ctx, expr, &expr_type);
+        }
         const items2: & & HIRExpr = exec_lower_expr_list(ctx, expr.array_literal_elements, expr.array_literal_element_count);
         if expr.array_literal_element_count > 0 && items2 == null {
             return null;
@@ -3038,6 +3251,59 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         hir_tuple.items = items3;
         hir_tuple.item_count = expr.tuple_literal_element_count;
         return hir_tuple;
+    }
+    if expr.type == ASTNodeType.AST_VA_START {
+        const ap_ref_start: &HIRExpr = exec_lower_make_va_storage_ref_expr(ctx, expr.va_start_ap);
+        if ap_ref_start == null {
+            return null;
+        }
+        const hir_va_start: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_VA_START, &expr_type);
+        if hir_va_start == null {
+            return null;
+        }
+        hir_va_start.left = ap_ref_start;
+        return hir_va_start;
+    }
+    if expr.type == ASTNodeType.AST_VA_END {
+        const ap_ref_end: &HIRExpr = exec_lower_make_va_storage_ref_expr(ctx, expr.va_end_ap);
+        if ap_ref_end == null {
+            return null;
+        }
+        const hir_va_end: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_VA_END, &expr_type);
+        if hir_va_end == null {
+            return null;
+        }
+        hir_va_end.left = ap_ref_end;
+        return hir_va_end;
+    }
+    if expr.type == ASTNodeType.AST_VA_ARG {
+        if exec_type_is_vm_value_supported(expr_type) == 0 {
+            return exec_lower_fail_expr(expr, "exec: @va_arg 目标类型当前不可被 exec VM 表示" as *byte);
+        }
+        const ap_ref_arg: &HIRExpr = exec_lower_make_va_storage_ref_expr(ctx, expr.va_arg_ap);
+        if ap_ref_arg == null {
+            return null;
+        }
+        const hir_va_arg: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_VA_ARG, &expr_type);
+        if hir_va_arg == null {
+            return null;
+        }
+        hir_va_arg.left = ap_ref_arg;
+        return hir_va_arg;
+    }
+    if expr.type == ASTNodeType.AST_VA_COPY {
+        const dest_ref_copy: &HIRExpr = exec_lower_make_va_storage_ref_expr(ctx, expr.va_copy_dest);
+        const src_ref_copy: &HIRExpr = exec_lower_make_va_storage_ref_expr(ctx, expr.va_copy_src);
+        if dest_ref_copy == null || src_ref_copy == null {
+            return null;
+        }
+        const hir_va_copy: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_VA_COPY, &expr_type);
+        if hir_va_copy == null {
+            return null;
+        }
+        hir_va_copy.left = dest_ref_copy;
+        hir_va_copy.right = src_ref_copy;
+        return hir_va_copy;
     }
     if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
         var module_access_name: &byte = null;
@@ -3247,15 +3513,35 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if operand2.type_ref.type.kind != TypeKind.TYPE_ERROR_UNION {
             return exec_lower_fail_expr_reason(expr, "exec: catch 操作数不是错误联合" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
         }
-        const fallback_expr: &HIRExpr = exec_lower_extract_block_result_expr(ctx, expr.catch_expr_catch_block);
-        if fallback_expr == null {
-            return null;
-        }
         const hir_catch: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_CATCH, &expr_type);
         if hir_catch == null {
             return null;
         }
         hir_catch.left = operand2;
+        if expr.catch_expr_catch_block != null &&
+            expr.catch_expr_catch_block.type == ASTNodeType.AST_BLOCK &&
+            expr.catch_expr_catch_block.block_stmt_count == 1 &&
+            expr.catch_expr_catch_block.block_stmts != null &&
+            expr.catch_expr_catch_block.block_stmts[0] != null &&
+            expr.catch_expr_catch_block.block_stmts[0].type == ASTNodeType.AST_RETURN_STMT {
+            const return_stmt: &ASTNode = expr.catch_expr_catch_block.block_stmts[0];
+            if return_stmt.return_stmt_expr != null {
+                if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
+                    const catch_return_type: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+                    hir_catch.extra = exec_lower_coerce_expr(ctx, return_stmt.return_stmt_expr, &catch_return_type);
+                } else {
+                    hir_catch.extra = exec_lower_expr(ctx, return_stmt.return_stmt_expr);
+                }
+                if hir_catch.extra == null {
+                    return null;
+                }
+            }
+            return hir_catch;
+        }
+        const fallback_expr: &HIRExpr = exec_lower_extract_block_result_expr(ctx, expr.catch_expr_catch_block);
+        if fallback_expr == null {
+            return null;
+        }
         hir_catch.right = fallback_expr;
         return hir_catch;
     }
@@ -3413,9 +3699,11 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 exec_lower_pop_scope(ctx);
                 return exec_lower_fail_block(stmt_node, "exec: 当前不支持未初始化局部变量" as *byte);
             }
-            var local_type: Type = exec_lower_expr_type(ctx, stmt_node.var_decl_init);
+            var local_type: Type = make_void_type();
             if stmt_node.var_decl_type != null {
                 local_type = type_from_ast(ctx.checker, stmt_node.var_decl_type);
+            } else {
+                local_type = exec_lower_expr_type(ctx, stmt_node.var_decl_init);
             }
             if exec_type_is_vm_value_supported(local_type) == 0 {
                 exec_lower_pop_scope(ctx);
@@ -3466,6 +3754,10 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
         } else if stmt_node.type == ASTNodeType.AST_CALL_EXPR ||
             stmt_node.type == ASTNodeType.AST_PRINT ||
             stmt_node.type == ASTNodeType.AST_PRINTLN ||
+            stmt_node.type == ASTNodeType.AST_VA_START ||
+            stmt_node.type == ASTNodeType.AST_VA_END ||
+            stmt_node.type == ASTNodeType.AST_VA_ARG ||
+            stmt_node.type == ASTNodeType.AST_VA_COPY ||
             stmt_node.type == ASTNodeType.AST_BINARY_EXPR ||
             stmt_node.type == ASTNodeType.AST_UNARY_EXPR ||
             stmt_node.type == ASTNodeType.AST_IDENTIFIER ||
@@ -3797,6 +4089,7 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         hir_fn.local_count = ctx.max_slot_count;
     }
     hir_fn.param_count = fn_decl.fn_decl_param_count;
+    hir_fn.is_varargs = fn_decl.fn_decl_is_varargs;
     hir_fn.body = body;
     checker.current_self_type_name = saved_self_type_name;
     checker.current_self_is_union = saved_self_is_union;

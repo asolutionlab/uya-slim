@@ -594,7 +594,8 @@ check: uya
 		./tests/verify_exec_vm_error_builtin.sh \
 		./tests/verify_exec_vm_builtin_bridge.sh \
 		./tests/verify_exec_vm_defer.sh \
-		./tests/verify_exec_vm_aggregates.sh; do \
+		./tests/verify_exec_vm_aggregates.sh \
+		./tests/verify_exec_vm_compiler_regressions.sh; do \
 		if bash "$$script" > /tmp/verify_out.txt 2>&1; then \
 			grep -E "passed$$|checks passed$$|ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 		else \

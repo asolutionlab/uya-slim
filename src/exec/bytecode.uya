@@ -53,6 +53,11 @@ enum BCOpcode {
     BC_CALL,
     BC_CALL_INDIRECT,
     BC_HOSTCALL,
+    BC_SYSCALL,
+    BC_VA_START,
+    BC_VA_END,
+    BC_VA_ARG,
+    BC_VA_COPY,
     BC_RET,
     BC_PRINT,
     BC_PRINTLN,
@@ -99,6 +104,7 @@ struct BCFunction {
     instr_count: i32,
     slot_count: i32,
     param_count: i32,
+    is_varargs: i32,
     return_type: Type,
 }
 

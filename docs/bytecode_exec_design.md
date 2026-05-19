@@ -84,16 +84,20 @@
 这条链路的意义是：
 
 - `./bin/uya run --vm src/main.uya` 已不再最早卡死在 `fprintf(libc.stdout, ...)` 的 `libc.stdout`
-- 当前最新前沿 blocker 已继续前移到标准库 `struct` 字面量初始化：
-  - 例如 `lib/libc/stdio.uya` 中 `FILE{ fd: ..., buf_pos: ..., buf_len: ..., buf_mode: ... }`
-  - 该写法省略了大数组字段 `buffer`
-  - checker 当前允许这类“字段数不完全匹配”的写法继续通过
-  - 但 exec lowering 仍把它当成“字段缺失”直接拒绝
+- 此前的 `FILE{ ... }` 缺失 `buffer` 字段阻塞已收口；相关零值补齐不会在 lowering 阶段膨胀成 65536 个常量元素，而是走 HIR / bytecode / VM 聚合值构造与重复填充路径
 
-这也带来一个明确的性能约束：
+同日后续收口结果也需要一并记录：
 
-- 后续补齐“缺失字段按零值初始化”时，不能在 lowering 阶段把 `buffer: [byte: 65536]` 膨胀成 65536 个常量元素
-- 更合理的方向是在 HIR / bytecode / VM 聚合值构造路径上支持“默认零值补齐”，把成本控制在聚合值分配和按需清零这一级
+- `[byte: N]`、`[i8: N]`、`[u8: N]` 这一批小元素数组，在 exec VM 中已经有原生连续缓冲表示，不再只能落在 `ExecValue[]` 聚合副本上
+- `stream.buffer[...] = ...`、`ctx.buf[...] = ...`、`&stream.buffer[0]`、`&buf[0]` 这类 hosted stdio / 格式化真实会命中的路径已经在 builder + VM 两侧打通
+- `tests/test_exec_vm_stdio_varargs.uya` 与 `tests/verify_exec_vm_stdio_varargs.sh` 现已通过，stdout 期望值为：
+  - `exec vm fprintf 7 body`
+  - `exec vm printf|  ok|9`
+  - `snprintf:11:body`
+- `tests/verify_exec_vm_compiler_regressions.sh` 已固化两类近期修复：
+  - 显式类型局部 + catch 标识符路径
+  - 字段数组 / 指针字段 / 全局数组下标写入路径
+- `tests/verify_exec_backend_progress.sh` 现已重新回到全绿
 
 ---
 

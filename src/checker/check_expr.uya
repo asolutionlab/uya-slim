@@ -3873,6 +3873,14 @@ fn infer_catch_expr(checker: &TypeChecker, expr: &ASTNode) Type {
     var operand_type: Type = checker_infer_type(checker, expr.catch_expr_operand);
     
     if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
+        if expr.catch_expr_operand != null &&
+            expr.catch_expr_operand.type == ASTNodeType.AST_IDENTIFIER &&
+            expr.catch_expr_operand.identifier_name != null {
+            const operand_symbol: &Symbol = symbol_table_lookup(checker, expr.catch_expr_operand.identifier_name);
+            if operand_symbol != null {
+                operand_type = copy_type(&operand_symbol.type);
+            }
+        }
         // 回退：若操作数是调用表达式且被推断为 VOID，从合并后的程序中查找被调函数返回类型
         if expr.catch_expr_operand != null && expr.catch_expr_operand.type == ASTNodeType.AST_CALL_EXPR {
             const callee: &ASTNode = expr.catch_expr_operand.call_expr_callee;

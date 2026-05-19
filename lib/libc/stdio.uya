@@ -27,6 +27,10 @@ export var stdin: &FILE = &_stdin;
 export var stdout: &FILE = &_stdout;
 export var stderr: &FILE = &_stderr;
 
+fn _stdio_write_fail_isize() isize {
+    return -1 as isize;
+}
+
 // ============================================================
 // 缓冲区操作函数
 // ============================================================
@@ -42,9 +46,7 @@ export extern "libc" fn flush_buffer(stream: &FILE) i32 {
     
     // 写入缓冲区中的所有数据
     const result: !isize = sys_write(stream.fd as i32, &stream.buffer[0] as *const byte, stream.buf_len);
-    const written: isize = result catch {
-        return -1;  // 写入失败
-    };
+    const written: isize = result catch { _stdio_write_fail_isize(); };
     
     if written < 0 as isize {
         return -1;
@@ -73,9 +75,7 @@ export extern "libc" fn write_to_buffer(stream: &FILE, buf: &const byte, n: usiz
     // 如果禁用了缓冲或缓冲区太小，直接写入
     if stream.buf_mode == 0 || n >= buf_size {
         const result: !isize = sys_write(stream.fd as i32, buf as *const byte, n);
-        const written: isize = result catch {
-            return -1;
-        };
+        const written: isize = result catch { _stdio_write_fail_isize(); };
         return written as i64;
     }
     
@@ -196,9 +196,7 @@ export extern "libc" fn put_char_fd(c: i32, fd: i64) i32 {
         // 非标准流，直接写入
         var ch: byte = c as byte;
         const result: !isize = sys_write(fd as i32, &ch as *const byte, 1);
-        const written: isize = result catch {
-            return 0 - 1;
-        };
+        const written: isize = result catch { _stdio_write_fail_isize(); };
         if written == 1 as isize {
             return c;
         }
@@ -227,9 +225,7 @@ export extern "libc" fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 
     } else {
         // 非标准流，直接写入
         const result: !isize = sys_write(fd as i32, buf as *const byte, n);
-        const written: isize = result catch {
-            return 0 - 1;
-        };
+        const written: isize = result catch { _stdio_write_fail_isize(); };
         return written as i64;
     }
 }

@@ -55,6 +55,11 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_CALL { return "BC_CALL" as &byte; }
     if opcode == BCOpcode.BC_CALL_INDIRECT { return "BC_CALL_INDIRECT" as &byte; }
     if opcode == BCOpcode.BC_HOSTCALL { return "BC_HOSTCALL" as &byte; }
+    if opcode == BCOpcode.BC_SYSCALL { return "BC_SYSCALL" as &byte; }
+    if opcode == BCOpcode.BC_VA_START { return "BC_VA_START" as &byte; }
+    if opcode == BCOpcode.BC_VA_END { return "BC_VA_END" as &byte; }
+    if opcode == BCOpcode.BC_VA_ARG { return "BC_VA_ARG" as &byte; }
+    if opcode == BCOpcode.BC_VA_COPY { return "BC_VA_COPY" as &byte; }
     if opcode == BCOpcode.BC_RET { return "BC_RET" as &byte; }
     if opcode == BCOpcode.BC_PRINT { return "BC_PRINT" as &byte; }
     if opcode == BCOpcode.BC_PRINTLN { return "BC_PRINTLN" as &byte; }
@@ -80,6 +85,10 @@ fn exec_debug_print_type(type_ref: HIRTypeRef) void {
         fprintf(libc.stderr, "u32" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_U64 {
         fprintf(libc.stderr, "u64" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_F32 {
+        fprintf(libc.stderr, "f32" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_F64 {
+        fprintf(libc.stderr, "f64" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_USIZE {
         fprintf(libc.stderr, "usize" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_ENUM {
@@ -90,6 +99,8 @@ fn exec_debug_print_type(type_ref: HIRTypeRef) void {
         fprintf(libc.stderr, "byte" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_POINTER {
         fprintf(libc.stderr, "ptr" as *byte);
+    } else if type_ref.type.kind == TypeKind.TYPE_VA_LIST {
+        fprintf(libc.stderr, "va_list" as *byte);
     } else if type_ref.type.kind == TypeKind.TYPE_VOID {
         fprintf(libc.stderr, "void" as *byte);
     } else {
@@ -109,6 +120,9 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
                 bool_text = "true" as *byte;
             }
             fprintf(libc.stderr, "const %s" as *byte, bool_text);
+        } else if expr.type_ref.type.kind == TypeKind.TYPE_F32 ||
+            expr.type_ref.type.kind == TypeKind.TYPE_F64 {
+            fprintf(libc.stderr, "const %g" as *byte, expr.float_value);
         } else if expr.string_value != null {
             fprintf(libc.stderr, "const \"%s\"" as *byte, expr.string_value as *byte);
         } else {
@@ -172,12 +186,36 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
         fprintf(libc.stderr, "cast(...)" as *byte);
         return;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_MAKE_OK {
+        fprintf(libc.stderr, "ok(...)" as *byte);
+        return;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_ERROR_ID {
         fprintf(libc.stderr, "@error_id(...)" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_ERROR_NAME {
         fprintf(libc.stderr, "@error_name(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_SYSCALL {
+        fprintf(libc.stderr, "@syscall(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_START {
+        fprintf(libc.stderr, "@va_start(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_END {
+        fprintf(libc.stderr, "@va_end(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_ARG {
+        fprintf(libc.stderr, "@va_arg(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_VA_COPY {
+        fprintf(libc.stderr, "@va_copy(...)" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_UNARY {
@@ -371,8 +409,8 @@ fn exec_debug_dump_bytecode(program: &BCProgram) void {
     var fi: i32 = 0;
     while fi < program.function_count {
         const func: &BCFunction = program.functions + fi;
-        fprintf(libc.stderr, "fn[%d] %s slots=%d params=%d\n" as *byte,
-            fi, func.name as *byte, func.slot_count, func.param_count);
+        fprintf(libc.stderr, "fn[%d] %s slots=%d params=%d varargs=%d\n" as *byte,
+            fi, func.name as *byte, func.slot_count, func.param_count, func.is_varargs);
         var ii: i32 = 0;
         while ii < func.instr_count {
             const instr: &BCInstr = func.instrs + ii;
