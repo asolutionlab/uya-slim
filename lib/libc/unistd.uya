@@ -273,11 +273,12 @@ export extern "libc" fn unlink(pathname: &const byte) i32 {
 // mkdir - 创建目录
 export extern "libc" fn mkdir(pathname: &const byte, mode: i32) i32 {
     const result: !i32 = sys_mkdir(pathname as *const byte, mode);
-    result catch {
-        errno = ENOENT;
-        return 0 - 1;
-    };
-    return 0;
+    return result catch { mkdir_errno_enoent(); };
+}
+
+fn mkdir_errno_enoent() i32 {
+    errno = ENOENT;
+    return 0 - 1;
 }
 
 // rmdir - 删除目录

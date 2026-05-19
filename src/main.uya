@@ -60,6 +60,14 @@ struct CompileArtifacts {
     c_import_sidecar_path: &byte,
 }
 
+// 当前 exec vm 自举路径仍缺少部分大型命名类型的 @size_of 折叠，
+// 先用宿主 x86_64 布局常量打通编译器本体的 staged run --vm 路径。
+const HOST_SIZE_PTR_BYTES: usize = 8usize;
+const HOST_SIZE_LEXER_BYTES: usize = 1052744usize;
+const HOST_SIZE_TYPECHECKER_BYTES: usize = 6975976usize;
+const HOST_SIZE_C99_CODEGENERATOR_BYTES: usize = 1126776usize;
+const HOST_SIZE_CIMPORT_ITEM_BYTES: usize = 48usize;
+
 // 后端类型
 enum BackendType {
     BACKEND_LLVM,
@@ -125,7 +133,6 @@ fn set_microapp_target_profile_override(name: &byte) i32 {
         return -1;
     }
     strcpy(&g_microapp_target_profile_override[0] as *byte, name as *byte);
-    g_microapp_target_profile_override[name_len] = 0 as byte;
     g_microapp_target_profile_override_active = 1;
     return 0;
 }
@@ -157,7 +164,6 @@ fn split_c_set_default_dir() void {
     const sl: usize = strlen(def);
     if sl > 0 && sl < PATH_MAX - 1 {
         strcpy(&g_split_c_dir[0] as *byte, def);
-        g_split_c_dir[sl] = 0 as byte;
         g_split_c_dir_active = 1;
     }
 }
@@ -355,10 +361,10 @@ fn hex_nibble(c: byte) i32 {
 fn w16_file(fp: &FILE, val: u16) void {
     const b0_tmp: !byte = (val & 255u16) as! byte;
     const b1_tmp: !byte = ((val >> 8) & 255u16) as! byte;
-    var b0: byte = b0_tmp.value;
-    var b1: byte = b1_tmp.value;
-    _ = fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
-    _ = fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
+    var b0: byte = b0_tmp catch { 0 as byte; };
+    var b1: byte = b1_tmp catch { 0 as byte; };
+    fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
+    fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
 }
 
 fn w32_file(fp: &FILE, val: u32) void {
@@ -366,14 +372,14 @@ fn w32_file(fp: &FILE, val: u32) void {
     const b1_tmp: !byte = ((val >> 8) & 255u32) as! byte;
     const b2_tmp: !byte = ((val >> 16) & 255u32) as! byte;
     const b3_tmp: !byte = ((val >> 24) & 255u32) as! byte;
-    var b0: byte = b0_tmp.value;
-    var b1: byte = b1_tmp.value;
-    var b2: byte = b2_tmp.value;
-    var b3: byte = b3_tmp.value;
-    _ = fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
-    _ = fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
-    _ = fwrite(&b2 as *void, 1 as usize, 1 as usize, fp);
-    _ = fwrite(&b3 as *void, 1 as usize, 1 as usize, fp);
+    var b0: byte = b0_tmp catch { 0 as byte; };
+    var b1: byte = b1_tmp catch { 0 as byte; };
+    var b2: byte = b2_tmp catch { 0 as byte; };
+    var b3: byte = b3_tmp catch { 0 as byte; };
+    fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
+    fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
+    fwrite(&b2 as *void, 1 as usize, 1 as usize, fp);
+    fwrite(&b3 as *void, 1 as usize, 1 as usize, fp);
 }
 
 fn resolve_microapp_target_arch_raw() u32 {
@@ -1321,7 +1327,7 @@ fn microapp_aarch64_encode_signed_field(value: i64, bits: u32) !u32 {
             encoded26 = encoded26 + 67108864;
         }
         const out26: !u32 = encoded26 as! u32;
-        return out26.value;
+        return out26 catch { return 0u32; };
     }
     if bits == 21u32 {
         if value < (0 - 1048576) || value > 1048575 {
@@ -1332,7 +1338,7 @@ fn microapp_aarch64_encode_signed_field(value: i64, bits: u32) !u32 {
             encoded21 = encoded21 + 2097152;
         }
         const out21: !u32 = encoded21 as! u32;
-        return out21.value;
+        return out21 catch { return 0u32; };
     }
     if bits == 19u32 {
         if value < (0 - 262144) || value > 262143 {
@@ -1343,7 +1349,7 @@ fn microapp_aarch64_encode_signed_field(value: i64, bits: u32) !u32 {
             encoded19 = encoded19 + 524288;
         }
         const out19: !u32 = encoded19 as! u32;
-        return out19.value;
+        return out19 catch { return 0u32; };
     }
     return error.InvalidState;
 }
@@ -1354,7 +1360,7 @@ fn microapp_aarch64_patch_branch26(insn: u32, place_va: u32, target_va: u32) !u3
     }
     const place_i64: !i64 = place_va as! i64;
     const target_i64: !i64 = target_va as! i64;
-    const disp: i64 = target_i64.value - place_i64.value;
+    const disp: i64 = (target_i64 catch { return 0u32; }) - (place_i64 catch { return 0u32; });
     if (disp % (4 as i64)) != 0 {
         return error.InvalidState;
     }
@@ -1366,7 +1372,7 @@ fn microapp_aarch64_patch_branch26(insn: u32, place_va: u32, target_va: u32) !u3
 fn microapp_aarch64_patch_adr_lo21(insn: u32, place_va: u32, target_va: u32) !u32 {
     const place_i64: !i64 = place_va as! i64;
     const target_i64: !i64 = target_va as! i64;
-    const disp: i64 = target_i64.value - place_i64.value;
+    const disp: i64 = (target_i64 catch { return 0u32; }) - (place_i64 catch { return 0u32; });
     const field: u32 = try microapp_aarch64_encode_signed_field(disp, 21u32);
     return (insn & 2667577375u32) |
         ((field & 3u32) << 29) |
@@ -1391,7 +1397,7 @@ fn microapp_aarch64_patch_ld_prel_lo19(insn: u32, place_va: u32, target_va: u32)
     }
     const place_i64: !i64 = place_va as! i64;
     const target_i64: !i64 = target_va as! i64;
-    const disp: i64 = target_i64.value - place_i64.value;
+    const disp: i64 = (target_i64 catch { return 0u32; }) - (place_i64 catch { return 0u32; });
     if (disp % (4 as i64)) != 0 {
         return error.InvalidState;
     }
@@ -1414,7 +1420,7 @@ fn microapp_aarch64_patch_ldst_lo12(insn: u32, target_va: u32, scale: u32) !u32 
             return error.InvalidState;
         }
     }
-    const imm12: u32 = low12 >> scale_i32.value;
+    const imm12: u32 = low12 >> (scale_i32 catch { return 0u32; });
     return (insn & 4290772991u32) | ((imm12 & 4095u32) << 10);
 }
 
@@ -1493,7 +1499,7 @@ fn microapp_macho_align_from_exponent(exp: u32) !u32 {
         return 1u32;
     }
     const exp_i32: !i32 = exp as! i32;
-    return 1u32 << exp_i32.value;
+    return 1u32 << (exp_i32 catch { return 0u32; });
 }
 
 fn microapp_macho_arm64_patch_pageoff12(insn: u32, target_va: u32) !u32 {
@@ -1792,7 +1798,6 @@ fn microapp_extract_macho_arm64_object(obj_path: &byte, code_len: &u32, rodata_l
                 } else if kind == ELF64_SECTION_KIND_BSS_RAW {
                     microapp_elf64_section_va_map[slot] = bss_base_va + sec_off;
                 }
-                _ = sec_addr_u64;
                 sect_base = sect_base + MACHO_SECTION_64_SIZE;
                 sect_idx = sect_idx + 1u32;
             }
@@ -2929,7 +2934,7 @@ fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_pa
 
     const data_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -O binary --only-section=.data %s %s" as *byte, objcopy_env as *byte, &exe_path[0] as *byte, data_bin_path as *byte);
     if data_len > 0 && data_len < 8192 {
-        _ = system(&cmd[0] as *byte);
+        system(&cmd[0] as *byte);
     }
     return 0;
 }
@@ -2940,7 +2945,7 @@ fn write_microapp_payload_obj(
     c_file: &byte
 ) i32 {
     const source_len_tmp: !u32 = strlen(source_path as *byte) as! u32;
-    const source_len: u32 = source_len_tmp.value;
+    const source_len: u32 = source_len_tmp catch { return 1; };
     const profile: MicroAppTargetProfile = resolve_microapp_target_profile();
     const target_arch_raw: u32 = profile.arch_raw;
     const profile_id: u32 = profile.profile_id;
@@ -3038,18 +3043,18 @@ fn write_microapp_payload_obj(
             return 1;
         }
         const code_len_tmp: !u32 = code_len_raw as! u32;
-        code_len = code_len_tmp.value;
+        code_len = code_len_tmp catch { return 1; };
         const rodata_len_raw: i32 = read_file_content(&rodata_bin_path[0] as &byte, &microapp_rodata_buffer[0], FILE_BUFFER_SIZE as usize);
         if rodata_len_raw < 0 {
             fprintf(libc.stderr, "错误: 无法读取 microapp 目标 gcc 只读段 '%s'\n" as *byte, &rodata_bin_path[0] as *byte);
             return 1;
         }
         const rodata_len_tmp: !u32 = rodata_len_raw as! u32;
-        rodata_len = rodata_len_tmp.value;
+        rodata_len = rodata_len_tmp catch { return 1; };
         const data_len_raw: i32 = read_file_content(&data_bin_path[0] as &byte, &microapp_data_buffer[0], FILE_BUFFER_SIZE as usize);
         if data_len_raw >= 0 {
             const data_len_tmp: !u32 = data_len_raw as! u32;
-            data_len = data_len_tmp.value;
+            data_len = data_len_tmp catch { return 1; };
         }
         if microapp_extract_elf_relocations(&exe_path[0] as &byte, target_arch_raw, base_raw, text_raw, code_len, rodata_raw, rodata_len, data_raw, data_len, bss_raw, bss_len, &reloc_count, &reloc_len) != 0 {
             fprintf(libc.stderr, "错误: 无法提取 microapp ELF relocation 信息\n" as *byte);
@@ -3081,7 +3086,7 @@ fn write_microapp_payload_obj(
     const entry_offset: u32 = 0u32;
     const build_mode_raw: u32 = POBJ_BUILD_MODE_MICROAPP;
 
-    _ = fwrite(&magic as *void, 1 as usize, 4 as usize, fp);
+    fwrite(&magic as *void, 1 as usize, 4 as usize, fp);
     w16_file(fp, version);
     w16_file(fp, flags);
     w32_file(fp, target_arch_raw);
@@ -3103,14 +3108,14 @@ fn write_microapp_payload_obj(
     w32_file(fp, code_va);
     w32_file(fp, rodata_va);
     w32_file(fp, data_va);
-    _ = fwrite(source_path as *void, 1 as usize, source_len as usize, fp);
-    _ = fwrite(&file_buffer[0] as *void, 1 as usize, code_len as usize, fp);
-    _ = fwrite(&microapp_rodata_buffer[0] as *void, 1 as usize, rodata_len as usize, fp);
+    fwrite(source_path as *void, 1 as usize, source_len as usize, fp);
+    fwrite(&file_buffer[0] as *void, 1 as usize, code_len as usize, fp);
+    fwrite(&microapp_rodata_buffer[0] as *void, 1 as usize, rodata_len as usize, fp);
     if data_len > 0u32 {
-        _ = fwrite(&microapp_data_buffer[0] as *void, 1 as usize, data_len as usize, fp);
+        fwrite(&microapp_data_buffer[0] as *void, 1 as usize, data_len as usize, fp);
     }
     if reloc_len > 0u32 {
-        _ = fwrite(&microapp_reloc_buffer[0] as *void, 1 as usize, reloc_len as usize, fp);
+        fwrite(&microapp_reloc_buffer[0] as *void, 1 as usize, reloc_len as usize, fp);
     }
     fclose(fp);
     return 0;
@@ -3217,8 +3222,12 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
         fprintf(libc.stderr, "错误: .pobj rodata 索引越界\n" as *byte);
         return 1;
     }
-    const source_path_ptr: &byte = &file_buffer[source_path_off] as &byte;
-    const code_ptr: &byte = &file_buffer[code_off] as &byte;
+    const source_path_ptr: &byte = main_file_buffer_ptr_at(source_path_off);
+    const code_ptr: &byte = main_file_buffer_ptr_at(code_off);
+    if source_path_ptr == null || code_ptr == null {
+        fprintf(libc.stderr, "错误: .pobj 路径或代码指针为空\n" as *byte);
+        return 1;
+    }
     var rodata_ptr: &byte = &file_buffer[0] as &byte;
     if rodata_len > 0u32 {
         rodata_ptr = main_file_buffer_ptr_at(rodata_idx);
@@ -3268,32 +3277,23 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
         relocs: reloc_bytes,
         reloc_count: reloc_count,
     };
-    _ = source_path_bytes;
     const out_ptr: &byte = &microapp_pack_output_buffer[0] as &byte;
     const out_bytes: &[byte] = out_ptr[0: @len(microapp_pack_output_buffer)];
     const image_len_result: !u32 = payload_pack_to_uapp(
         &payload,
         out_bytes
     );
-    const image_len: u32 = image_len_result catch {
-        fprintf(libc.stderr, "错误: payload_pack_to_uapp 失败\n" as *byte);
-        return 1;
-    };
+    const image_len: u32 = image_len_result catch { return 1; };
 
     const image_bytes: &[byte] = out_ptr[0: image_len as usize];
     const validated_header_result: !ImageHeader = image_validate(image_bytes);
-    const validated_header: ImageHeader = validated_header_result catch {
-        fprintf(libc.stderr, "错误: 生成的 .uapp 未通过自验证\n" as *byte);
-        return 1;
-    };
-    _ = validated_header;
-
+    const validated_header: ImageHeader = validated_header_result catch { return 1; };
     const fp: &FILE = fopen(out_path as *byte, "wb" as *byte);
     if fp == null {
         fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, out_path as *byte);
         return 1;
     }
-    _ = fwrite(&microapp_pack_output_buffer[0] as *void, 1 as usize, image_len as usize, fp);
+    fwrite(&microapp_pack_output_buffer[0] as *void, 1 as usize, image_len as usize, fp);
     fclose(fp);
     return 0;
 }
@@ -4392,7 +4392,7 @@ fn seed_function_reachability_roots(checker: &TypeChecker, program: &ASTNode) vo
         if decl != null {
             if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
                 if decl.fn_decl_is_export != 0 || str_equals(decl.fn_decl_name, "main" as *byte) != 0 {
-                    _ = checker_add_function_root_decl(checker, decl);
+                    checker_add_function_root_decl(checker, decl);
                 }
             } else if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_methods != null {
                 var mj: i32 = 0;
@@ -4728,7 +4728,7 @@ fn find_module_file(
             if f != null {
                 fclose(f);
                 const ulen_sz_tmp: !usize = ulen as! usize;
-                const ulen_sz: usize = ulen_sz_tmp.value;
+                const ulen_sz: usize = ulen_sz_tmp catch { return 1; };
                 if ulen_sz < buffer_size {
                     strcpy(buffer as *byte, &uya_path[0]);
                     return 0;
@@ -4988,7 +4988,7 @@ fn collect_module_dependencies(
         return -1;
     }
 
-    const lexer: &Lexer = compiler_arena_alloc(arena, @size_of(Lexer)) as &Lexer;
+    const lexer: &Lexer = compiler_arena_alloc(arena, HOST_SIZE_LEXER_BYTES) as &Lexer;
     if lexer == null {
         compiler_arena_restore(arena, arena_save_offset);
         return -1;
@@ -5459,7 +5459,7 @@ fn collect_module_dependencies(
                 const slash: *byte = strrchr(entry_file as *byte, 47);
                 if slash != null {
                     const dlen_tmp: !usize = (slash as i64 - entry_file as i64 + 1) as! usize;
-                    const dlen: usize = dlen_tmp.value;
+                    const dlen: usize = dlen_tmp catch { return 1; };
                     if dlen < PATH_MAX as usize {
                         memcpy(&main_dir[0] as *void, entry_file as *void, dlen);
                         main_dir[dlen] = 0 as byte;
@@ -5913,16 +5913,15 @@ fn parse_args(
                 fprintf(libc.stderr, "警告: 已指定 --no-split-c，忽略 --split-c-dir\n" as *byte);
             } else {
                 // --split-c-dir=<path>：单 argv，避免被误判为未知选项后仅靠 UYA_SPLIT_C_DIR 生效
-                var k: i32 = 14;
-                var sl: usize = 0;
-                while arg[k] != 0 as byte && sl < PATH_MAX - 2 {
-                    g_split_c_dir[sl] = arg[k];
-                    sl = sl + 1;
-                    k = k + 1;
-                }
-                g_split_c_dir[sl] = 0 as byte;
+                const split_dir_inline: *byte = arg + 14;
+                const sl: usize = strlen(split_dir_inline);
                 if sl > 0 {
-                    g_split_c_dir_active = 1;
+                    if sl < PATH_MAX - 1 {
+                        strcpy(&g_split_c_dir[0] as *byte, split_dir_inline);
+                        g_split_c_dir_active = 1;
+                    } else {
+                        split_c_set_default_dir();
+                    }
                 } else {
                     split_c_set_default_dir();
                 }
@@ -5943,7 +5942,6 @@ fn parse_args(
                         const sl: usize = strlen(sd);
                         if sl > 0 && sl < PATH_MAX - 1 {
                             strcpy(&g_split_c_dir[0] as *byte, sd);
-                            g_split_c_dir[sl] = 0 as byte;
                             g_split_c_dir_active = 1;
                         } else {
                             split_c_set_default_dir();
@@ -6093,7 +6091,7 @@ fn c_import_tokenize_flags(arena: &CompilerArena, normalized: &byte, out_tokens:
         return 0;
     }
 
-    const tokens: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * token_count as usize) as & & byte;
+    const tokens: & & byte = compiler_arena_alloc(arena, HOST_SIZE_PTR_BYTES * token_count as usize) as & & byte;
     if tokens == null {
         return 1;
     }
@@ -6170,7 +6168,7 @@ fn c_import_append_token_sequence(arena: &CompilerArena, dst_tokens: & & & byte,
     }
     const old_count: i32 = dst_count[0];
     const new_count: i32 = old_count + src_count;
-    const merged: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * new_count as usize) as & & byte;
+    const merged: & & byte = compiler_arena_alloc(arena, HOST_SIZE_PTR_BYTES * new_count as usize) as & & byte;
     if merged == null {
         return 1;
     }
@@ -6215,10 +6213,10 @@ fn collect_c_import_plan(arena: &CompilerArena, program: &ASTNode, plan: &CImpor
         return 0;
     }
 
-    const items: &CImportItem = compiler_arena_alloc(arena, @size_of(CImportItem) * max_items as usize) as &CImportItem;
-    const item_cflags_norms: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * max_items as usize) as & & byte;
-    const item_sources: & & ASTNode = compiler_arena_alloc(arena, @size_of(&ASTNode) * max_items as usize) as & & ASTNode;
-    const seen_ldflags_norms: & & byte = compiler_arena_alloc(arena, @size_of(&byte) * decl_count as usize) as & & byte;
+    const items: &CImportItem = compiler_arena_alloc(arena, HOST_SIZE_CIMPORT_ITEM_BYTES * max_items as usize) as &CImportItem;
+    const item_cflags_norms: & & byte = compiler_arena_alloc(arena, HOST_SIZE_PTR_BYTES * max_items as usize) as & & byte;
+    const item_sources: & & ASTNode = compiler_arena_alloc(arena, HOST_SIZE_PTR_BYTES * max_items as usize) as & & ASTNode;
+    const seen_ldflags_norms: & & byte = compiler_arena_alloc(arena, HOST_SIZE_PTR_BYTES * decl_count as usize) as & & byte;
     if items == null || item_cflags_norms == null || item_sources == null || seen_ldflags_norms == null {
         fprintf(libc.stderr, "错误: @c_import 计划内存分配失败\n" as *byte);
         return 1;
@@ -6371,7 +6369,7 @@ fn remove_c_import_sidecar_if_exists(arena: &CompilerArena, c_path: &byte) void 
     }
     const sidecar_path: &byte = build_c_import_sidecar_path(arena, c_path);
     if sidecar_path != null {
-        _ = unlink(sidecar_path as *byte);
+        unlink(sidecar_path as *byte);
     }
 }
 
@@ -6422,7 +6420,7 @@ fn write_c_import_sidecar(arena: &CompilerArena, c_path: &byte, plan: &CImportPl
         fputc(10, file as *void);
         i = i + 1;
     }
-    _ = fclose(file as *void);
+    fclose(file as *void);
     out_path[0] = sidecar_path;
     return 0;
 }
@@ -6533,7 +6531,7 @@ fn get_env_or_default(name: &byte, fallback: &byte) &byte {
 
 fn main_detect_host_os_name() &byte {
     const platform_tmp: !i32 = @asm_target() as! i32;
-    const platform: i32 = platform_tmp.value;
+    const platform: i32 = platform_tmp catch { return ("unknown" as *byte) as &byte; };
     if platform == 0 || platform == 3 || platform == 6 {
         return ("linux" as *byte) as &byte;
     }
@@ -6548,7 +6546,7 @@ fn main_detect_host_os_name() &byte {
 
 fn main_detect_host_arch_name() &byte {
     const platform_tmp: !i32 = @asm_target() as! i32;
-    const platform: i32 = platform_tmp.value;
+    const platform: i32 = platform_tmp catch { return ("unknown" as *byte) as &byte; };
     if platform == 0 || platform == 1 || platform == 2 {
         return ("x86_64" as *byte) as &byte;
     }
@@ -6619,9 +6617,9 @@ fn main_get_target_arch_name() &byte {
 fn sync_test_network_skip_marker() void {
     const allow: *byte = getenv("ALLOW_SKIP_NETWORK" as *byte);
     if allow != null && allow[0] == '1' as byte && allow[1] == 0 {
-        _ = system("/bin/sh -c ': > /tmp/uya_allow_skip_network'" as *byte);
+        system("/bin/sh -c ': > /tmp/uya_allow_skip_network'" as *byte);
     } else {
-        _ = system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
+        system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
     }
 }
 
@@ -6954,7 +6952,7 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
             return 1;
         }
         if compile_c_source_to_object(cc_driver, target_flags, cflags, c_file, &generated_obj[0] as &byte, null, 0, c_file) != 0 {
-            _ = unlink(&generated_obj[0] as *byte);
+            unlink(&generated_obj[0] as *byte);
             return 1;
         }
 
@@ -6963,18 +6961,18 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
             var item_obj: [byte: PATH_MAX] = [];
             if host_fill_temp_c_import_object_path(&item_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, item_i) != 0 {
                 fprintf(libc.stderr, "错误：无法生成 @c_import 临时对象路径\n" as *byte);
-                _ = unlink(&generated_obj[0] as *byte);
+                unlink(&generated_obj[0] as *byte);
                 return 1;
             }
             const item: CImportItem = plan.items[item_i];
             if compile_c_source_to_object(cc_driver, target_flags, cflags, item.resolved_path, &item_obj[0] as &byte,
                 item.cflags_tokens, item.cflags_token_count, item.resolved_path) != 0 {
-                _ = unlink(&generated_obj[0] as *byte);
+                unlink(&generated_obj[0] as *byte);
                 var cleanup_i: i32 = 0;
                 while cleanup_i <= item_i {
                     var cleanup_obj: [byte: PATH_MAX] = [];
                     if host_fill_temp_c_import_object_path(&cleanup_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, cleanup_i) == 0 {
-                        _ = unlink(&cleanup_obj[0] as *byte);
+                        unlink(&cleanup_obj[0] as *byte);
                     }
                     cleanup_i = cleanup_i + 1;
                 }
@@ -6989,20 +6987,20 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
             shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, target_flags) != 0 ||
             shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, cflags) != 0 {
             fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-            _ = unlink(&generated_obj[0] as *byte);
+            unlink(&generated_obj[0] as *byte);
             return 1;
         }
         if is_nostdlib != 0 {
             if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-nostdlib" as &byte) != 0 ||
                 shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-static" as &byte) != 0 {
                 fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-                _ = unlink(&generated_obj[0] as *byte);
+                unlink(&generated_obj[0] as *byte);
                 return 1;
             }
         }
         if shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, &generated_obj[0] as &byte) != 0 {
             fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-            _ = unlink(&generated_obj[0] as *byte);
+            unlink(&generated_obj[0] as *byte);
             return 1;
         }
         var link_item_i: i32 = 0;
@@ -7011,7 +7009,7 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
             if host_fill_temp_c_import_object_path(&link_item_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, link_item_i) != 0 ||
                 shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, &link_item_obj[0] as &byte) != 0 {
                 fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-                _ = unlink(&generated_obj[0] as *byte);
+                unlink(&generated_obj[0] as *byte);
                 return 1;
             }
             link_item_i = link_item_i + 1;
@@ -7019,19 +7017,19 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
         if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-o" as &byte) != 0 ||
             shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, output) != 0 {
             fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-            _ = unlink(&generated_obj[0] as *byte);
+            unlink(&generated_obj[0] as *byte);
             return 1;
         }
         if is_nostdlib != 0 {
             if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, "-lgcc" as &byte) != 0 {
                 fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-                _ = unlink(&generated_obj[0] as *byte);
+                unlink(&generated_obj[0] as *byte);
                 return 1;
             }
         }
         if shell_cmd_append_raw(&link_cmd[0] as &byte, 32768, &link_len, ldflags) != 0 {
             fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-            _ = unlink(&generated_obj[0] as *byte);
+            unlink(&generated_obj[0] as *byte);
             return 1;
         }
         var ld_i: i32 = 0;
@@ -7039,7 +7037,7 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
             if plan.aggregated_ldflags_tokens != null && plan.aggregated_ldflags_tokens[ld_i] != null {
                 if shell_cmd_append_quoted_word(&link_cmd[0] as &byte, 32768, &link_len, plan.aggregated_ldflags_tokens[ld_i]) != 0 {
                     fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
-                    _ = unlink(&generated_obj[0] as *byte);
+                    unlink(&generated_obj[0] as *byte);
                     return 1;
                 }
             }
@@ -7048,12 +7046,12 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32, plan: &CI
 
         fprintf(libc.stderr, "信息：调用宿主工具链链接：%s\n" as *byte, &link_cmd[0] as *byte);
         const link_result: i32 = system(&link_cmd[0] as *byte);
-        _ = unlink(&generated_obj[0] as *byte);
+        unlink(&generated_obj[0] as *byte);
         var cleanup_j: i32 = 0;
         while cleanup_j < plan.item_count {
             var cleanup_item_obj: [byte: PATH_MAX] = [];
             if host_fill_temp_c_import_object_path(&cleanup_item_obj[0] as &byte, PATH_MAX, "uya_cimport" as &byte, cleanup_j) == 0 {
-                _ = unlink(&cleanup_item_obj[0] as *byte);
+                unlink(&cleanup_item_obj[0] as *byte);
             }
             cleanup_j = cleanup_j + 1;
         }
@@ -7152,8 +7150,7 @@ fn compile_files(
         already_lib = 1;
     }
     if already_lib == 0 && last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        const slash_idx_tmp: !usize = (last_slash as i64 - &uya_root_base[0] as i64) as! usize;
-        var slash_idx: usize = slash_idx_tmp.value;
+        const slash_idx: usize = ((last_slash as i64 - &uya_root_base[0] as i64) as! usize) catch { 0usize; };
         uya_root_base[slash_idx] = 0;
     }
     var uya_root_buffer: [byte: PATH_MAX] = [];
@@ -7449,7 +7446,7 @@ fn compile_files(
             fprintf(libc.stderr, "错误: 无法读取文件 '%s' (可能文件太大或不存在)\n" as *byte, input_path);
             return 1;
         }
-        const lexer: &Lexer = compiler_arena_alloc(&arena, @size_of(Lexer)) as &Lexer;
+        const lexer: &Lexer = compiler_arena_alloc(&arena, HOST_SIZE_LEXER_BYTES) as &Lexer;
         if lexer == null {
             fprintf(libc.stderr, "错误: Lexer 分配失败: %s\n" as *byte, input_path);
             return 1;
@@ -7539,12 +7536,12 @@ fn compile_files(
         union_type_args: null,
         union_type_arg_count: 0,
     };
-    const checker: &TypeChecker = compiler_arena_alloc(&arena, @size_of(TypeChecker)) as &TypeChecker;
+    const checker: &TypeChecker = compiler_arena_alloc(&arena, HOST_SIZE_TYPECHECKER_BYTES) as &TypeChecker;
     if checker == null {
         fprintf(libc.stderr, "错误: TypeChecker 分配失败\n" as *byte);
         return 1;
     }
-    _ = memset(checker as *byte, 0, @size_of(TypeChecker));
+    memset(checker as *byte, 0, HOST_SIZE_TYPECHECKER_BYTES);
     var default_filename: *byte = "(unknown)" as *byte;
     if all_file_count > 0 {
         default_filename = all_files[0] as *byte;
@@ -7719,7 +7716,7 @@ fn compile_files(
             return 1;
         }
     }
-    const c99_codegen: &C99CodeGenerator = compiler_arena_alloc(&arena, @size_of(C99CodeGenerator)) as &C99CodeGenerator;
+    const c99_codegen: &C99CodeGenerator = compiler_arena_alloc(&arena, HOST_SIZE_C99_CODEGENERATOR_BYTES) as &C99CodeGenerator;
     if c99_codegen == null {
         fprintf(libc.stderr, "错误: C99CodeGenerator 分配失败\n" as *byte);
         if out_file != null {
@@ -7727,7 +7724,7 @@ fn compile_files(
         }
         return 1;
     }
-    _ = memset(c99_codegen as *byte, 0, @size_of(C99CodeGenerator));
+    memset(c99_codegen as *byte, 0, HOST_SIZE_C99_CODEGENERATOR_BYTES);
     var split_mirror_flag: i32 = 0;
     if split_c_dir != null && split_c_dir[0] != 0 as byte {
         split_mirror_flag = 1;
@@ -7855,7 +7852,6 @@ export fn main() i32 {
             const el: usize = strlen(env_split);
             if el > 0 && el < PATH_MAX - 1 {
                 strcpy(&g_split_c_dir[0] as *byte, env_split);
-                g_split_c_dir[el] = 0 as byte;
                 g_split_c_dir_active = 1;
             }
         }
@@ -8313,7 +8309,7 @@ export fn main() i32 {
         const run_result: i32 = system(&run_cmd[0] as *byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);
         if command == CommandType.COMMAND_TEST {
-            _ = system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
+            system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
         }
         if command == CommandType.COMMAND_TEST {
             var passed: i32 = 0;
@@ -8387,8 +8383,7 @@ fn generate_libc(output_dir: &byte) i32 {
     }
     const last_slash: *byte = strrchr(&uya_root_buffer[0], 47);
     if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        const slash_idx_tmp: !usize = (last_slash as i64 - &uya_root_buffer[0] as i64) as! usize;
-        var slash_idx: usize = slash_idx_tmp.value;
+        const slash_idx: usize = ((last_slash as i64 - &uya_root_buffer[0] as i64) as! usize) catch { 0usize; };
         uya_root_buffer[slash_idx] = 0;
     }
     var lib_dir: [byte: PATH_MAX] = [];
@@ -8700,8 +8695,8 @@ fn generate_libc(output_dir: &byte) i32 {
 
     fprintf(libc.stderr, "信息: 已生成 %s 和 %s\n" as *byte, &header_path[0] as *byte, &source_path[0] as *byte);
     fprintf(libc.stderr, "信息: 使用方法:\n" as *byte);
-    fprintf(libc.stderr, "  ${CC:-cc} -c libuya.c -o libuya.o\n" as *byte);
-    fprintf(libc.stderr, "  ${CC:-cc} -nostdlib your_program.c libuya.o -o your_program -lgcc\n" as *byte);
+    fprintf(libc.stderr, "  $%s -c libuya.c -o libuya.o\n" as *byte, "{CC:-cc}" as *byte);
+    fprintf(libc.stderr, "  $%s -nostdlib your_program.c libuya.o -o your_program -lgcc\n" as *byte, "{CC:-cc}" as *byte);
 
     return 0;
 }

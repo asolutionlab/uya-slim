@@ -46,4 +46,21 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  field/pointer/global index --exec ✓"
 
+echo "验证 struct sizeof/alignof 在 --vm 下直接折叠..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_sizeof_struct.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  sizeof/alignof struct --vm ✓"
+
+echo "验证 run --exec struct sizeof/alignof 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_sizeof_struct.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ sizeof/alignof struct unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  sizeof/alignof struct --exec ✓"
+
 echo "✓ exec vm compiler regression checks passed"

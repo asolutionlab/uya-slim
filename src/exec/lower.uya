@@ -82,6 +82,326 @@ fn exec_type_is_scalar_supported(type: Type) i32 {
     return 0;
 }
 
+fn exec_lower_type_align_bytes_v2(checker: &TypeChecker, t: &Type, program_node: &ASTNode) i32 {
+    if t == null {
+        return -1;
+    }
+    if t.kind == TypeKind.TYPE_I8 || t.kind == TypeKind.TYPE_U8 || t.kind == TypeKind.TYPE_BOOL || t.kind == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    if t.kind == TypeKind.TYPE_I16 || t.kind == TypeKind.TYPE_U16 {
+        return 2;
+    }
+    if t.kind == TypeKind.TYPE_I32 || t.kind == TypeKind.TYPE_U32 || t.kind == TypeKind.TYPE_F32 {
+        return 4;
+    }
+    if t.kind == TypeKind.TYPE_ENUM {
+        return 4;
+    }
+    if t.kind == TypeKind.TYPE_I64 || t.kind == TypeKind.TYPE_U64 || t.kind == TypeKind.TYPE_F64 ||
+        t.kind == TypeKind.TYPE_USIZE || t.kind == TypeKind.TYPE_POINTER {
+        return 8;
+    }
+    if t.kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(t);
+        if inner != null {
+            return exec_lower_type_align_bytes_v2(checker, inner, program_node);
+        }
+        return -1;
+    }
+    if t.kind == TypeKind.TYPE_ARRAY && t.element_type != null {
+        return exec_lower_type_align_bytes_v2(checker, t.element_type, program_node);
+    }
+    if t.kind == TypeKind.TYPE_SLICE || t.kind == TypeKind.TYPE_INTERFACE {
+        return 8;
+    }
+    if t.kind == TypeKind.TYPE_TUPLE && t.tuple_count > 0 && t.tuple_element_types != null {
+        var max_align: i32 = 1;
+        var ti: i32 = 0;
+        while ti < t.tuple_count {
+            const elem_align: i32 = exec_lower_type_align_bytes_v2(checker, &t.tuple_element_types[ti], program_node);
+            if elem_align < 0 {
+                return -1;
+            }
+            if elem_align > max_align {
+                max_align = elem_align;
+            }
+            ti = ti + 1;
+        }
+        return max_align;
+    }
+    if t.kind == TypeKind.TYPE_ERROR_UNION {
+        const payload: &Type = type_get_error_payload(t);
+        if payload == null {
+            return 4;
+        }
+        const payload_align: i32 = exec_lower_type_align_bytes_v2(checker, payload, program_node);
+        if payload_align < 0 {
+            return -1;
+        }
+        if payload_align < 4 {
+            return 4;
+        }
+        return payload_align;
+    }
+    if t.kind == TypeKind.TYPE_STRUCT && t.struct_name != null && program_node != null {
+        const decl: &ASTNode = find_struct_decl_from_program(program_node, t.struct_name as *byte);
+        if decl == null || decl.struct_decl_fields == null || decl.struct_decl_field_count <= 0 {
+            return -1;
+        }
+        var max_field_align: i32 = 1;
+        var si: i32 = 0;
+        while si < decl.struct_decl_field_count {
+            const field: &ASTNode = decl.struct_decl_fields[si];
+            if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+                const ft: Type = type_from_ast(checker, field.var_decl_type);
+                const field_align: i32 = exec_lower_type_align_bytes_v2(checker, &ft, program_node);
+                if field_align < 0 {
+                    return -1;
+                }
+                if field_align > max_field_align {
+                    max_field_align = field_align;
+                }
+            }
+            si = si + 1;
+        }
+        return max_field_align;
+    }
+    if t.kind == TypeKind.TYPE_UNION && t.union_name != null && program_node != null {
+        const decl: &ASTNode = find_union_decl_from_program(program_node, t.union_name as *byte);
+        if decl == null || decl.union_decl_variants == null || decl.union_decl_variant_count <= 0 {
+            return -1;
+        }
+        var max_union_align: i32 = 1;
+        var ui: i32 = 0;
+        while ui < decl.union_decl_variant_count {
+            const field: &ASTNode = decl.union_decl_variants[ui];
+            if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+                const ft: Type = type_from_ast(checker, field.var_decl_type);
+                const field_align: i32 = exec_lower_type_align_bytes_v2(checker, &ft, program_node);
+                if field_align < 0 {
+                    return -1;
+                }
+                if field_align > max_union_align {
+                    max_union_align = field_align;
+                }
+            }
+            ui = ui + 1;
+        }
+        return max_union_align;
+    }
+    return -1;
+}
+
+fn exec_lower_struct_decl_align_bytes(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
+    if decl == null || decl.struct_decl_fields == null || decl.struct_decl_field_count <= 0 {
+        return -1;
+    }
+    var max_field_align: i32 = 1;
+    var si: i32 = 0;
+    while si < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[si];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const field_align: i32 = exec_lower_type_ast_align_bytes(checker, field.var_decl_type, program_node);
+            if field_align < 0 {
+                return -1;
+            }
+            if field_align > max_field_align {
+                max_field_align = field_align;
+            }
+        }
+        si = si + 1;
+    }
+    return max_field_align;
+}
+
+fn exec_lower_union_decl_align_bytes(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
+    if decl == null || decl.union_decl_variants == null || decl.union_decl_variant_count <= 0 {
+        return -1;
+    }
+    var max_field_align: i32 = 1;
+    var si: i32 = 0;
+    while si < decl.union_decl_variant_count {
+        const field: &ASTNode = decl.union_decl_variants[si];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const field_align: i32 = exec_lower_type_ast_align_bytes(checker, field.var_decl_type, program_node);
+            if field_align < 0 {
+                return -1;
+            }
+            if field_align > max_field_align {
+                max_field_align = field_align;
+            }
+        }
+        si = si + 1;
+    }
+    return max_field_align;
+}
+
+fn exec_lower_type_ast_size_bytes(checker: &TypeChecker, type_ast: &ASTNode, program_node: &ASTNode) i32 {
+    if checker == null || type_ast == null || program_node == null {
+        return -1;
+    }
+    if type_ast.type == ASTNodeType.AST_TYPE_NAMED && type_ast.type_named_name != null {
+        const named_size: i32 = exec_lower_named_decl_size_bytes(checker, type_ast.type_named_name, program_node);
+        if named_size >= 0 {
+            return named_size;
+        }
+    }
+    const resolved: Type = type_from_ast(checker, type_ast);
+    return get_type_size_bytes_v2(checker, &resolved, program_node);
+}
+
+fn exec_lower_type_ast_align_bytes(checker: &TypeChecker, type_ast: &ASTNode, program_node: &ASTNode) i32 {
+    if checker == null || type_ast == null || program_node == null {
+        return -1;
+    }
+    if type_ast.type == ASTNodeType.AST_TYPE_NAMED && type_ast.type_named_name != null {
+        const named_align: i32 = exec_lower_named_decl_align_bytes(checker, type_ast.type_named_name, program_node);
+        if named_align >= 0 {
+            return named_align;
+        }
+    }
+    const resolved: Type = type_from_ast(checker, type_ast);
+    return exec_lower_type_align_bytes_v2(checker, &resolved, program_node);
+}
+
+fn exec_lower_struct_decl_size_bytes(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
+    if decl == null || decl.struct_decl_fields == null || decl.struct_decl_field_count <= 0 {
+        return 0;
+    }
+    var total: i32 = 0;
+    var si: i32 = 0;
+    while si < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[si];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const field_size: i32 = exec_lower_type_ast_size_bytes(checker, field.var_decl_type, program_node);
+            if field_size < 0 {
+                return -1;
+            }
+            total = total + field_size;
+        }
+        si = si + 1;
+    }
+    return total;
+}
+
+fn exec_lower_union_decl_size_bytes(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
+    if decl == null || decl.union_decl_variants == null || decl.union_decl_variant_count <= 0 {
+        return 0;
+    }
+    var max_size: i32 = 0;
+    var si: i32 = 0;
+    while si < decl.union_decl_variant_count {
+        const field: &ASTNode = decl.union_decl_variants[si];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const field_size: i32 = exec_lower_type_ast_size_bytes(checker, field.var_decl_type, program_node);
+            if field_size < 0 {
+                return -1;
+            }
+            if field_size > max_size {
+                max_size = field_size;
+            }
+        }
+        si = si + 1;
+    }
+    return max_size;
+}
+
+fn exec_lower_named_decl_size_bytes(checker: &TypeChecker, name: &byte, program_node: &ASTNode) i32 {
+    if checker == null || name == null || program_node == null {
+        return -1;
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(program_node, name);
+    if struct_decl != null {
+        return exec_lower_struct_decl_size_bytes(checker, struct_decl, program_node);
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(program_node, name);
+    if union_decl != null {
+        return exec_lower_union_decl_size_bytes(checker, union_decl, program_node);
+    }
+    if find_interface_decl_from_program(program_node, name) != null {
+        return 16;
+    }
+    if find_enum_decl_from_program(program_node, name) != null {
+        return 4;
+    }
+    return -1;
+}
+
+fn exec_lower_named_decl_align_bytes(checker: &TypeChecker, name: &byte, program_node: &ASTNode) i32 {
+    if checker == null || name == null || program_node == null {
+        return -1;
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(program_node, name);
+    if struct_decl != null {
+        return exec_lower_struct_decl_align_bytes(checker, struct_decl, program_node);
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(program_node, name);
+    if union_decl != null {
+        return exec_lower_union_decl_align_bytes(checker, union_decl, program_node);
+    }
+    if find_interface_decl_from_program(program_node, name) != null {
+        return 8;
+    }
+    if find_enum_decl_from_program(program_node, name) != null {
+        return 4;
+    }
+    return -1;
+}
+
+fn exec_lower_eval_size_align_builtin(ctx: &ExecLowerContext, expr: &ASTNode) i32 {
+    if ctx == null || expr == null {
+        return -1;
+    }
+    if expr.type != ASTNodeType.AST_SIZEOF && expr.type != ASTNodeType.AST_ALIGNOF {
+        return -1;
+    }
+    var target: &ASTNode = expr.sizeof_expr_target;
+    var is_type_expr: i32 = expr.sizeof_expr_is_type;
+    if expr.type == ASTNodeType.AST_ALIGNOF {
+        target = expr.alignof_expr_target;
+        is_type_expr = expr.alignof_expr_is_type;
+    }
+    if target == null {
+        return -1;
+    }
+    if is_type_expr != 0 && target.type == ASTNodeType.AST_TYPE_FRAME {
+        if expr.type == ASTNodeType.AST_SIZEOF {
+            return get_async_frame_size_bytes(ctx.checker, target);
+        }
+        return get_async_frame_align_bytes(ctx.checker, target);
+    }
+    if target.type == ASTNodeType.AST_IDENTIFIER && target.identifier_name != null {
+        if expr.type == ASTNodeType.AST_SIZEOF {
+            const named_size: i32 = exec_lower_named_decl_size_bytes(ctx.checker, target.identifier_name, ctx.checker.program_node);
+            if named_size >= 0 {
+                return named_size;
+            }
+        } else {
+            const named_align: i32 = exec_lower_named_decl_align_bytes(ctx.checker, target.identifier_name, ctx.checker.program_node);
+            if named_align >= 0 {
+                return named_align;
+            }
+        }
+    }
+    var target_type: Type = checker_infer_type(ctx.checker, target);
+    if is_type_expr != 0 {
+        target_type = type_from_ast(ctx.checker, target);
+    } else if target.type == ASTNodeType.AST_IDENTIFIER && target.identifier_name != null {
+        if find_struct_decl_from_program(ctx.checker.program_node, target.identifier_name) != null {
+            target_type = make_named_type(TypeKind.TYPE_STRUCT, target.identifier_name);
+        } else if find_union_decl_from_program(ctx.checker.program_node, target.identifier_name) != null {
+            target_type = make_named_type(TypeKind.TYPE_UNION, target.identifier_name);
+        } else if find_interface_decl_from_program(ctx.checker.program_node, target.identifier_name) != null {
+            target_type = make_named_type(TypeKind.TYPE_INTERFACE, target.identifier_name);
+        }
+    }
+    if expr.type == ASTNodeType.AST_SIZEOF {
+        return get_type_size_bytes_v2(ctx.checker, &target_type, ctx.checker.program_node);
+    }
+    return exec_lower_type_align_bytes_v2(ctx.checker, &target_type, ctx.checker.program_node);
+}
+
 fn exec_type_is_string_pointer_supported(type: Type) i32 {
     if type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
         return 0;
@@ -1012,7 +1332,7 @@ fn exec_lower_coerce_expr(ctx: &ExecLowerContext, expr: &ASTNode, expected_type:
 fn exec_lower_struct_field_index(ctx: &ExecLowerContext, struct_type: Type, field_name: &byte) i32 {
     const struct_name: &byte = type_get_struct_name(&struct_type);
     if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
-        struct_type.kind != TypeKind.TYPE_STRUCT || struct_name == null || field_name == null {
+        struct_name == null || field_name == null {
         return -1;
     }
     const struct_decl: &ASTNode = find_struct_decl_from_program(ctx.checker.program_node, struct_name);
@@ -1149,7 +1469,7 @@ fn exec_lower_expr_list(ctx: &ExecLowerContext, exprs: & & ASTNode, count: i32) 
 
 fn exec_lower_member_base_type(ctx: &ExecLowerContext, object: &ASTNode) Type {
     var base_type: Type = exec_lower_expr_type(ctx, object);
-    if base_type.kind == TypeKind.TYPE_STRUCT && type_get_struct_name(&base_type) != null {
+    if type_get_struct_name(&base_type) != null {
         return base_type;
     }
     if base_type.kind == TypeKind.TYPE_POINTER && base_type.pointer_to != null {
@@ -2602,9 +2922,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     }
     const expr_type: Type = exec_lower_expr_type(ctx, expr);
     if expr.type == ASTNodeType.AST_SIZEOF || expr.type == ASTNodeType.AST_ALIGNOF {
-        const folded_value: i32 = checker_eval_const_expr(ctx.checker, expr);
+        const folded_value: i32 = exec_lower_eval_size_align_builtin(ctx, expr);
         if folded_value < 0 {
-            return exec_lower_fail_expr(expr, "exec: 编译期 builtin 折叠失败" as *byte);
+            const fallback_value: i32 = checker_eval_const_expr(ctx.checker, expr);
+            if fallback_value < 0 {
+                return exec_lower_fail_expr(expr, "exec: 编译期 builtin 折叠失败" as *byte);
+            }
+            return exec_lower_make_int_const_expr(ctx, expr, &expr_type, fallback_value as i64);
         }
         return exec_lower_make_int_const_expr(ctx, expr, &expr_type, folded_value as i64);
     }
@@ -3312,13 +3636,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         } else if expr.member_access_object != null &&
             expr.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
             expr.member_access_object.identifier_name != null {
-            const module_import_item: &ImportedItem = checker_import_table_lookup_local_name(ctx.checker, expr.member_access_object.identifier_name);
-            if module_import_item != null && module_import_item.item_type == (0 - 1) {
-                module_access_name = module_import_item.module_name;
-            }
-            if module_access_name == null && expr.filename != null {
-                module_access_name = exec_lower_resolve_module_alias_from_file(
-                    ctx.checker, expr.filename, expr.member_access_object.identifier_name);
+            const shadowed_local_slot: i32 = exec_lower_find_slot(ctx, expr.member_access_object.identifier_name);
+            const shadowed_global_slot: i32 = exec_lower_find_global_slot(ctx, expr.member_access_object.identifier_name);
+            if shadowed_local_slot < 0 && shadowed_global_slot < 0 {
+                const module_import_item: &ImportedItem = checker_import_table_lookup_local_name(ctx.checker, expr.member_access_object.identifier_name);
+                if module_import_item != null && module_import_item.item_type == (0 - 1) {
+                    module_access_name = module_import_item.module_name;
+                }
+                if module_access_name == null && expr.filename != null {
+                    module_access_name = exec_lower_resolve_module_alias_from_file(
+                        ctx.checker, expr.filename, expr.member_access_object.identifier_name);
+                }
             }
         }
         if module_access_name != null && expr.member_access_field_name != null {
@@ -3372,7 +3700,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             }
         }
         const base_expr: &HIRExpr = exec_lower_expr(ctx, expr.member_access_object);
-        const base_type: Type = exec_lower_member_base_type(ctx, expr.member_access_object);
+        var base_type: Type = exec_lower_member_base_type(ctx, expr.member_access_object);
         if base_expr == null {
             return null;
         }
@@ -3390,14 +3718,28 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             }
             return exec_lower_fail_expr(expr, "exec: 当前不支持 slice.ptr" as *byte);
         }
+        if base_type.kind == TypeKind.TYPE_POINTER && base_type.pointer_to != null {
+            base_type = base_type.pointer_to[0];
+        }
         var field_index: i32 = -1;
         if base_type.kind == TypeKind.TYPE_TUPLE {
             field_index = atoi(expr.member_access_field_name as *byte);
         } else {
-            field_index = exec_lower_struct_field_index(ctx, base_type, expr.member_access_field_name);
+            field_index = exec_lower_struct_field_index(ctx, copy_type(&base_type), expr.member_access_field_name);
         }
         if field_index < 0 {
-            return exec_lower_fail_expr(expr, "exec: 无法解析成员访问字段" as *byte);
+            var member_msg: [byte: 192] = [];
+            const base_kind: TypeKind = base_type.kind;
+            const base_type_copy: Type = copy_type(&base_type);
+            const base_struct_name: &byte = type_get_struct_name(&base_type_copy);
+            if base_struct_name != null {
+                _ = snprintf(&member_msg[0] as *byte, 192, "exec: 无法解析成员访问字段: %s.%s" as *byte,
+                    base_struct_name as *byte, expr.member_access_field_name as *byte);
+            } else {
+                _ = snprintf(&member_msg[0] as *byte, 192, "exec: 无法解析成员访问字段(kind=%d): %s" as *byte,
+                    base_kind as i32, expr.member_access_field_name as *byte);
+            }
+            return exec_lower_fail_expr(expr, &member_msg[0]);
         }
         const hir_field: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_FIELD, &expr_type);
         if hir_field == null {

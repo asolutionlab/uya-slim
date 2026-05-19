@@ -15,26 +15,46 @@ fn type_get_name(t: &Type) &byte {
         TypeKind.TYPE_ENUM => {
             match t.data {
                 .named(name) => { return name; },
-                else => { return null as &byte; },
+                else => {
+                    if t.enum_name != null {
+                        return t.enum_name;
+                    }
+                    return null as &byte;
+                },
             }
         },
         TypeKind.TYPE_STRUCT => {
             match t.data {
                 .named(name) => { return name; },
                 .struct_generic(sg) => { return sg.name; },
-                else => { return null as &byte; },
+                else => {
+                    if t.struct_name != null {
+                        return t.struct_name;
+                    }
+                    return null as &byte;
+                },
             }
         },
         TypeKind.TYPE_UNION => {
             match t.data {
                 .named(name) => { return name; },
-                else => { return null as &byte; },
+                else => {
+                    if t.union_name != null {
+                        return t.union_name;
+                    }
+                    return null as &byte;
+                },
             }
         },
         TypeKind.TYPE_INTERFACE => {
             match t.data {
                 .named(name) => { return name; },
-                else => { return null as &byte; },
+                else => {
+                    if t.interface_name != null {
+                        return t.interface_name;
+                    }
+                    return null as &byte;
+                },
             }
         },
         else => { return null as &byte; },
@@ -48,7 +68,12 @@ fn type_get_enum_name(t: &Type) &byte {
     }
     match t.data {
         .named(name) => { return name; },
-        else => { return null as &byte; },
+        else => {
+            if t.enum_name != null {
+                return t.enum_name;
+            }
+            return null as &byte;
+        },
     }
 }
 
@@ -60,7 +85,12 @@ fn type_get_struct_name(t: &Type) &byte {
     match t.data {
         .named(name) => { return name; },
         .struct_generic(sg) => { return sg.name; },
-        else => { return null as &byte; },
+        else => {
+            if t.struct_name != null {
+                return t.struct_name;
+            }
+            return null as &byte;
+        },
     }
 }
 
@@ -71,7 +101,12 @@ fn type_get_union_name(t: &Type) &byte {
     }
     match t.data {
         .named(name) => { return name; },
-        else => { return null as &byte; },
+        else => {
+            if t.union_name != null {
+                return t.union_name;
+            }
+            return null as &byte;
+        },
     }
 }
 
@@ -82,7 +117,12 @@ fn type_get_interface_name(t: &Type) &byte {
     }
     match t.data {
         .named(name) => { return name; },
-        else => { return null as &byte; },
+        else => {
+            if t.interface_name != null {
+                return t.interface_name;
+            }
+            return null as &byte;
+        },
     }
 }
 
