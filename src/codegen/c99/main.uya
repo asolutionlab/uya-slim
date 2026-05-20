@@ -2058,14 +2058,27 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     fputs("extern int64_t clock(void);\n" as *byte, codegen.emit_stream as *void);
                 }
             }
-            if has_decl_read != 0 && (has_impl_read == 0 || target_os_is_macos != 0) {
-                if is_bootstrap == 0 || target_os_is_macos != 0 {
+            // macOS hosted 自举单文件（src/build/uya-hosted.c / compiler_bootstrap.c）中，
+            // read/write 可能只在调用点可见，AST 预扫未必能稳定拾取声明；
+            // 若此时头部缺少 extern，clang 会在 exec/vm 的 builtin bridge 处直接报
+            // “call to undeclared function 'write'”。这里在“未生成本地实现”前提下补一个保底声明。
+            if target_os_is_macos != 0 && is_bootstrap != 0 {
+                if has_impl_read == 0 {
                     fputs("extern ssize_t read(int, void *, size_t);\n" as *byte, codegen.emit_stream as *void);
                 }
-            }
-            if has_decl_write != 0 && (has_impl_write == 0 || target_os_is_macos != 0) {
-                if is_bootstrap == 0 || target_os_is_macos != 0 {
+                if has_impl_write == 0 {
                     fputs("extern ssize_t write(int, const void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+                }
+            } else {
+                if has_decl_read != 0 && (has_impl_read == 0 || target_os_is_macos != 0) {
+                    if is_bootstrap == 0 || target_os_is_macos != 0 {
+                        fputs("extern ssize_t read(int, void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+                    }
+                }
+                if has_decl_write != 0 && (has_impl_write == 0 || target_os_is_macos != 0) {
+                    if is_bootstrap == 0 || target_os_is_macos != 0 {
+                        fputs("extern ssize_t write(int, const void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+                    }
                 }
             }
         }
