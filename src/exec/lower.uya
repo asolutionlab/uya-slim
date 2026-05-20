@@ -28,6 +28,7 @@ struct ExecLowerContext {
     active_local_count: i32,
     next_slot: i32,
     max_slot_count: i32,
+    next_scope_id: i32,
     scope_markers: [i32: EXEC_MAX_SCOPE_DEPTH],
     scope_depth: i32,
 }
@@ -750,6 +751,15 @@ fn exec_lower_append_local(ctx: &ExecLowerContext, name: &byte, type: &Type, is_
     return slot;
 }
 
+fn exec_lower_alloc_scope_id(ctx: &ExecLowerContext) i32 {
+    if ctx == null {
+        return -1;
+    }
+    const scope_id: i32 = ctx.next_scope_id;
+    ctx.next_scope_id = ctx.next_scope_id + 1;
+    return scope_id;
+}
+
 fn exec_lower_make_type_ref(type: &Type) HIRTypeRef {
     return HIRTypeRef {
         type: copy_type(type),
@@ -780,8 +790,87 @@ fn exec_lower_alloc_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, kind: HIRSt
     _ = memset(stmt as *byte, 0, @size_of(HIRStmt));
     stmt.kind = kind;
     stmt.ast_node = ast_node;
+    stmt.scope_id = -1;
     stmt.local_slot = -1;
     return stmt;
+}
+
+fn exec_lower_alloc_scope_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, kind: HIRStmtKind, scope_id: i32) &HIRStmt {
+    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, kind);
+    if stmt == null {
+        return null;
+    }
+    stmt.scope_id = scope_id;
+    return stmt;
+}
+
+fn exec_lower_alloc_scope_stmt_raw(arena: &CompilerArena, ast_node: &ASTNode, kind: HIRStmtKind, scope_id: i32) &HIRStmt {
+    const stmt: &HIRStmt = compiler_arena_alloc(arena, @size_of(HIRStmt)) as &HIRStmt;
+    if stmt == null {
+        exec_backend_set_error(ast_node, "exec: HIRStmt 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(stmt as *byte, 0, @size_of(HIRStmt));
+    stmt.kind = kind;
+    stmt.ast_node = ast_node;
+    stmt.scope_id = scope_id;
+    stmt.local_slot = -1;
+    return stmt;
+}
+
+fn exec_lower_alloc_scoped_block(ctx: &ExecLowerContext, ast_node: &ASTNode, body_stmt_count: i32) &HIRBlock {
+    if ctx == null || body_stmt_count < 0 {
+        return null;
+    }
+    const scope_id: i32 = exec_lower_alloc_scope_id(ctx);
+    if scope_id < 0 {
+        exec_backend_set_error(ast_node, "exec: scope id 分配失败" as *byte, 0);
+        return null;
+    }
+    const total_stmt_count: i32 = body_stmt_count + 2;
+    const block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+    const stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * total_stmt_count as usize) as & & HIRStmt;
+    if block == null || stmts == null {
+        exec_backend_set_error(ast_node, "exec: HIRBlock 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(block as *byte, 0, @size_of(HIRBlock));
+    block.scope_id = scope_id;
+    block.stmts = stmts;
+    block.stmt_count = total_stmt_count;
+    const enter_stmt: &HIRStmt = exec_lower_alloc_scope_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_SCOPE_ENTER, scope_id);
+    const exit_stmt: &HIRStmt = exec_lower_alloc_scope_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_SCOPE_EXIT, scope_id);
+    if enter_stmt == null || exit_stmt == null {
+        return null;
+    }
+    stmts[0] = enter_stmt;
+    stmts[total_stmt_count - 1] = exit_stmt;
+    return block;
+}
+
+fn exec_lower_alloc_scoped_block_raw(arena: &CompilerArena, ast_node: &ASTNode, scope_id: i32, body_stmt_count: i32) &HIRBlock {
+    if arena == null || body_stmt_count < 0 {
+        return null;
+    }
+    const total_stmt_count: i32 = body_stmt_count + 2;
+    const block: &HIRBlock = compiler_arena_alloc(arena, @size_of(HIRBlock)) as &HIRBlock;
+    const stmts: & & HIRStmt = compiler_arena_alloc(arena, @size_of(&HIRStmt) * total_stmt_count as usize) as & & HIRStmt;
+    if block == null || stmts == null {
+        exec_backend_set_error(ast_node, "exec: HIRBlock 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(block as *byte, 0, @size_of(HIRBlock));
+    block.scope_id = scope_id;
+    block.stmts = stmts;
+    block.stmt_count = total_stmt_count;
+    const enter_stmt: &HIRStmt = exec_lower_alloc_scope_stmt_raw(arena, ast_node, HIRStmtKind.HIR_STMT_SCOPE_ENTER, scope_id);
+    const exit_stmt: &HIRStmt = exec_lower_alloc_scope_stmt_raw(arena, ast_node, HIRStmtKind.HIR_STMT_SCOPE_EXIT, scope_id);
+    if enter_stmt == null || exit_stmt == null {
+        return null;
+    }
+    stmts[0] = enter_stmt;
+    stmts[total_stmt_count - 1] = exit_stmt;
+    return block;
 }
 
 fn exec_lower_extract_block_result_expr(ctx: &ExecLowerContext, block: &ASTNode) &HIRExpr {
@@ -1548,15 +1637,10 @@ fn exec_lower_make_dest_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
 }
 
 fn exec_lower_wrap_block_as_stmt(ctx: &ExecLowerContext, ast_node: &ASTNode, block: &HIRBlock) &HIRStmt {
-    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_IF);
+    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_BLOCK);
     if stmt == null {
         return null;
     }
-    const cond: &HIRExpr = exec_lower_make_bool_const_expr(ctx, ast_node, 1);
-    if cond == null {
-        return null;
-    }
-    stmt.expr = cond;
     stmt.then_block = block;
     return stmt;
 }
@@ -1586,17 +1670,13 @@ fn exec_lower_wrap_stmt_node_as_block(ctx: &ExecLowerContext, stmt_node: &ASTNod
 }
 
 fn exec_lower_make_break_block(ctx: &ExecLowerContext, ast_node: &ASTNode) &HIRBlock {
-    const block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
-    const stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
+    const block: &HIRBlock = exec_lower_alloc_scoped_block(ctx, ast_node, 1);
     const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, ast_node, HIRStmtKind.HIR_STMT_BREAK);
-    if block == null || stmts == null || stmt == null {
+    if block == null || stmt == null {
         exec_backend_set_error(ast_node, "exec: break block 分配失败" as *byte, 0);
         return null;
     }
-    _ = memset(block as *byte, 0, @size_of(HIRBlock));
-    stmts[0] = stmt;
-    block.stmts = stmts;
-    block.stmt_count = 1;
+    block.stmts[1] = stmt;
     return block;
 }
 
@@ -1642,28 +1722,24 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
         return null;
     }
 
-    const loop_body: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
-    const loop_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
-    if loop_body == null || loop_stmts == null {
+    const loop_body: &HIRBlock = exec_lower_alloc_scoped_block(ctx, stmt_node, 1);
+    if loop_body == null {
         exec_lower_pop_scope(ctx);
         exec_backend_set_error(stmt_node, "exec: for loop body 分配失败" as *byte, 0);
         return null;
     }
-    _ = memset(loop_body as *byte, 0, @size_of(HIRBlock));
 
     const iter_local_for_cond: &HIRExpr = exec_lower_make_local_expr(ctx, stmt_node, iter_slot, &iter_type);
     const end_local_for_cond: &HIRExpr = exec_lower_make_local_expr(ctx, stmt_node, end_slot, &iter_type);
     const cond_type: Type = make_bool_type();
     const cond_expr: &HIRExpr = exec_lower_make_binary_expr(ctx, stmt_node, TokenType.TOKEN_LESS as i32, iter_local_for_cond, end_local_for_cond, &cond_type);
-    const then_block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
-    const then_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * 2 as usize) as & & HIRStmt;
+    const then_block: &HIRBlock = exec_lower_alloc_scoped_block(ctx, stmt_node, 2);
     const break_block: &HIRBlock = exec_lower_make_break_block(ctx, stmt_node);
-    if cond_expr == null || then_block == null || then_stmts == null || break_block == null {
+    if cond_expr == null || then_block == null || break_block == null {
         exec_lower_pop_scope(ctx);
         exec_backend_set_error(stmt_node, "exec: for 条件块分配失败" as *byte, 0);
         return null;
     }
-    _ = memset(then_block as *byte, 0, @size_of(HIRBlock));
 
     const wrapped_user_body: &HIRStmt = exec_lower_wrap_block_as_stmt(ctx, stmt_node.for_stmt_body, user_body);
     const one_expr: &HIRExpr = exec_lower_alloc_expr(ctx, stmt_node, HIRExprKind.HIR_EXPR_CONST, &iter_type);
@@ -1679,10 +1755,8 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
         exec_lower_pop_scope(ctx);
         return null;
     }
-    then_stmts[0] = wrapped_user_body;
-    then_stmts[1] = inc_stmt;
-    then_block.stmts = then_stmts;
-    then_block.stmt_count = 2;
+    then_block.stmts[1] = wrapped_user_body;
+    then_block.stmts[2] = inc_stmt;
 
     const cond_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_IF);
     if cond_stmt == null {
@@ -1692,16 +1766,13 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
     cond_stmt.expr = cond_expr;
     cond_stmt.then_block = then_block;
     cond_stmt.else_block = break_block;
-    loop_stmts[0] = cond_stmt;
-    loop_body.stmts = loop_stmts;
-    loop_body.stmt_count = 1;
+    loop_body.stmts[1] = cond_stmt;
 
     const loop_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_LOOP);
-    const setup_block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
-    const setup_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * 3 as usize) as & & HIRStmt;
+    const setup_block: &HIRBlock = exec_lower_alloc_scoped_block(ctx, stmt_node, 3);
     const init_iter: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_VAR_INIT);
     const init_end: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_VAR_INIT);
-    if loop_stmt == null || setup_block == null || setup_stmts == null || init_iter == null || init_end == null {
+    if loop_stmt == null || setup_block == null || init_iter == null || init_end == null {
         exec_lower_pop_scope(ctx);
         exec_backend_set_error(stmt_node, "exec: for setup block 分配失败" as *byte, 0);
         return null;
@@ -1711,12 +1782,9 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
     init_iter.expr = start_expr;
     init_end.local_slot = end_slot;
     init_end.expr = end_expr;
-    _ = memset(setup_block as *byte, 0, @size_of(HIRBlock));
-    setup_stmts[0] = init_iter;
-    setup_stmts[1] = init_end;
-    setup_stmts[2] = loop_stmt;
-    setup_block.stmts = setup_stmts;
-    setup_block.stmt_count = 3;
+    setup_block.stmts[1] = init_iter;
+    setup_block.stmts[2] = init_end;
+    setup_block.stmts[3] = loop_stmt;
 
     const result_stmt: &HIRStmt = exec_lower_wrap_block_as_stmt(ctx, stmt_node, setup_block);
     exec_lower_pop_scope(ctx);
@@ -2728,6 +2796,7 @@ fn exec_lower_lower_global_init_exprs(arena: &CompilerArena, checker: &TypeCheck
                 active_local_count: 0,
                 next_slot: 0,
                 max_slot_count: 0,
+                next_scope_id: 0,
                 scope_markers: [],
                 scope_depth: 0,
             };
@@ -2759,14 +2828,12 @@ fn exec_lower_build_global_init_function(arena: &CompilerArena, globals: &HIRGlo
     if stmt_count == 0 {
         return null;
     }
-    const body: &HIRBlock = compiler_arena_alloc(arena, @size_of(HIRBlock)) as &HIRBlock;
-    const stmts: & & HIRStmt = compiler_arena_alloc(arena, @size_of(&HIRStmt) * stmt_count as usize) as & & HIRStmt;
+    const body: &HIRBlock = exec_lower_alloc_scoped_block_raw(arena, globals[0].decl, 0, stmt_count);
     const fn_hir: &HIRFunction = compiler_arena_alloc(arena, @size_of(HIRFunction)) as &HIRFunction;
-    if body == null || stmts == null || fn_hir == null {
+    if body == null || fn_hir == null {
         exec_backend_set_error(globals[0].decl, "exec: global init function 分配失败" as *byte, 0);
         return null;
     }
-    _ = memset(body as *byte, 0, @size_of(HIRBlock));
     _ = memset(fn_hir as *byte, 0, @size_of(HIRFunction));
     var stmt_idx: i32 = 0;
     i = 0;
@@ -2789,13 +2856,11 @@ fn exec_lower_build_global_init_function(arena: &CompilerArena, globals: &HIRGlo
             target.global_slot = globals[i].slot;
             stmt.assign_target = target;
             stmt.assign_expr = globals[i].init_expr;
-            stmts[stmt_idx] = stmt;
+            body.stmts[stmt_idx + 1] = stmt;
             stmt_idx = stmt_idx + 1;
         }
         i = i + 1;
     }
-    body.stmts = stmts;
-    body.stmt_count = stmt_count;
     const void_type: Type = make_void_type();
     fn_hir.name = "__exec_global_init" as &byte;
     fn_hir.decl = globals[0].decl;
@@ -4011,18 +4076,10 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
         exec_backend_set_error(block, "exec: block lowering 失败" as *byte, 0);
         return null;
     }
-    const hir_block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+    const hir_block: &HIRBlock = exec_lower_alloc_scoped_block(ctx, block, block.block_stmt_count);
     if hir_block == null {
-        exec_backend_set_error(block, "exec: HIRBlock 分配失败" as *byte, 0);
         return null;
     }
-    _ = memset(hir_block as *byte, 0, @size_of(HIRBlock));
-    const stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * block.block_stmt_count as usize) as & & HIRStmt;
-    if block.block_stmt_count > 0 && stmts == null {
-        exec_backend_set_error(block, "exec: HIRBlock stmt 分配失败" as *byte, 0);
-        return null;
-    }
-    hir_block.stmts = stmts;
     exec_lower_push_scope(ctx);
     var i: i32 = 0;
     while i < block.block_stmt_count {
@@ -4186,17 +4243,10 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             stmt.then_block = then_block;
             stmt.else_block = else_block;
         } else if stmt_node.type == ASTNodeType.AST_WHILE_STMT {
-            const loop_body: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
+            const loop_body: &HIRBlock = exec_lower_alloc_scoped_block(ctx, stmt_node, 1);
             if loop_body == null {
                 exec_lower_pop_scope(ctx);
                 exec_backend_set_error(stmt_node, "exec: loop body 分配失败" as *byte, 0);
-                return null;
-            }
-            _ = memset(loop_body as *byte, 0, @size_of(HIRBlock));
-            const loop_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt) * 2 as usize) as & & HIRStmt;
-            if loop_stmts == null {
-                exec_lower_pop_scope(ctx);
-                exec_backend_set_error(stmt_node, "exec: loop stmt 分配失败" as *byte, 0);
                 return null;
             }
             const cond_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_IF);
@@ -4206,24 +4256,18 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 exec_lower_pop_scope(ctx);
                 return null;
             }
-            const break_block: &HIRBlock = compiler_arena_alloc(ctx.arena, @size_of(HIRBlock)) as &HIRBlock;
-            const break_stmts: & & HIRStmt = compiler_arena_alloc(ctx.arena, @size_of(&HIRStmt)) as & & HIRStmt;
+            const break_block: &HIRBlock = exec_lower_alloc_scoped_block(ctx, stmt_node, 1);
             const break_stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_BREAK);
-            if break_block == null || break_stmts == null || break_stmt == null {
+            if break_block == null || break_stmt == null {
                 exec_lower_pop_scope(ctx);
                 exec_backend_set_error(stmt_node, "exec: while break block 分配失败" as *byte, 0);
                 return null;
             }
-            _ = memset(break_block as *byte, 0, @size_of(HIRBlock));
-            break_stmts[0] = break_stmt;
-            break_block.stmts = break_stmts;
-            break_block.stmt_count = 1;
+            break_block.stmts[1] = break_stmt;
             cond_stmt.expr = cond_expr;
             cond_stmt.then_block = body_block;
             cond_stmt.else_block = break_block;
-            loop_stmts[0] = cond_stmt;
-            loop_body.stmts = loop_stmts;
-            loop_body.stmt_count = 1;
+            loop_body.stmts[1] = cond_stmt;
             stmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_LOOP);
             if stmt == null {
                 exec_lower_pop_scope(ctx);
@@ -4296,10 +4340,9 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             exec_lower_pop_scope(ctx);
             return null;
         }
-        hir_block.stmts[i] = stmt;
+        hir_block.stmts[i + 1] = stmt;
         i = i + 1;
     }
-    hir_block.stmt_count = block.block_stmt_count;
     exec_lower_pop_scope(ctx);
     return hir_block;
 }
@@ -4354,6 +4397,7 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         active_local_count: 0,
         next_slot: 0,
         max_slot_count: 0,
+        next_scope_id: 0,
         scope_markers: [],
         scope_depth: 0,
     };

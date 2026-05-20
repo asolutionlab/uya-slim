@@ -476,7 +476,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 11：`defer` / `errdefer` / drop
 
-- [ ] 在 HIR 明确 scope enter/exit
+- [x] 在 HIR 明确 scope enter/exit
 - [x] 实现 defer 栈
 - [x] 实现 errdefer 栈
 - [x] 规范执行顺序：
@@ -503,9 +503,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - 正常返回仅执行 `defer`
   - 错误返回先执行 `errdefer`，再执行 `defer`
   - `break` / `continue` 会触发当前作用域 `defer`
+- 2026-05-20 已把作用域边界前移到 HIR：
+  - `HIR_STMT_SCOPE_ENTER` / `HIR_STMT_SCOPE_EXIT` 已进入 dump 与 builder 主路径
+  - 嵌套 block 不再通过 `if const true` 伪装作用域
+  - 新增并通过：
+    - `tests/test_exec_vm_hir_scope.uya`
+    - `bash ./tests/verify_exec_vm_hir_scope.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
 - 当前尚未完成：
   - drop 自动析构元数据前移
-  - “纯 HIR 层显式 scope enter/exit 节点”建模
   - 更完整的嵌套 `defer` 回归集
 
 ---

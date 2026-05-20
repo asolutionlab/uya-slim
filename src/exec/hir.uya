@@ -17,6 +17,9 @@ enum ExecHostCallId {
 }
 
 enum HIRStmtKind {
+    HIR_STMT_SCOPE_ENTER,
+    HIR_STMT_SCOPE_EXIT,
+    HIR_STMT_BLOCK,
     HIR_STMT_VAR_INIT,
     HIR_STMT_ASSIGN,
     HIR_STMT_EXPR,
@@ -123,6 +126,7 @@ struct HIRExpr {
 struct HIRStmt {
     kind: HIRStmtKind,
     ast_node: &ASTNode,
+    scope_id: i32,
     local_slot: i32,
     expr: &HIRExpr,
     assign_target: &HIRExpr,
@@ -134,6 +138,7 @@ struct HIRStmt {
 }
 
 struct HIRBlock {
+    scope_id: i32,
     stmts: & & HIRStmt,
     stmt_count: i32,
 }

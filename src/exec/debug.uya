@@ -243,7 +243,20 @@ fn exec_debug_dump_block(block: &HIRBlock, indent: i32) void {
             j = j + 1;
         }
         const stmt: &HIRStmt = block.stmts[i];
-        if stmt.kind == HIRStmtKind.HIR_STMT_VAR_INIT {
+        if stmt.kind == HIRStmtKind.HIR_STMT_SCOPE_ENTER {
+            fprintf(libc.stderr, "scope enter #%d\n" as *byte, stmt.scope_id);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_SCOPE_EXIT {
+            fprintf(libc.stderr, "scope exit #%d\n" as *byte, stmt.scope_id);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_BLOCK {
+            fprintf(libc.stderr, "block {\n" as *byte);
+            exec_debug_dump_block(stmt.then_block, indent + 1);
+            j = 0;
+            while j < indent {
+                fprintf(libc.stderr, "  " as *byte);
+                j = j + 1;
+            }
+            fprintf(libc.stderr, "}\n" as *byte);
+        } else if stmt.kind == HIRStmtKind.HIR_STMT_VAR_INIT {
             fprintf(libc.stderr, "var slot=%d = " as *byte, stmt.local_slot);
             exec_debug_dump_expr(stmt.expr);
             fprintf(libc.stderr, "\n" as *byte);

@@ -100,6 +100,9 @@ grep -q 'exec backend 构建完成' "$TMP_STDERR"
 tail -n 5 "$TMP_STDOUT" | diff -u <(printf 'NSIK\nOB1\nCC2\nDO7\nEDR0\n') -
 echo "  defer/errdefer exec path ✓"
 
+bash "$SCRIPT_DIR/verify_exec_vm_hir_scope.sh"
+echo "  exec HIR scope markers ✓"
+
 echo "验证 @c_import unsupported 原因..."
 if "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_c_import_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
     echo "✗ @c_import unsupported case should fail under --vm"
