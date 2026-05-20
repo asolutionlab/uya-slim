@@ -23,13 +23,18 @@ struct ExecLowerContext {
     local_types: [Type: EXEC_MAX_LOCALS],
     local_is_param: [i32: EXEC_MAX_LOCALS],
     slot_names: [&byte: EXEC_MAX_LOCALS],
+    slot_decls: [&ASTNode: EXEC_MAX_LOCALS],
     slot_types: [Type: EXEC_MAX_LOCALS],
     slot_is_param: [i32: EXEC_MAX_LOCALS],
+    slot_scope_ids: [i32: EXEC_MAX_LOCALS],
+    slot_needs_drop: [i32: EXEC_MAX_LOCALS],
+    slot_drop_decls: [&ASTNode: EXEC_MAX_LOCALS],
     active_local_count: i32,
     next_slot: i32,
     max_slot_count: i32,
     next_scope_id: i32,
     scope_markers: [i32: EXEC_MAX_SCOPE_DEPTH],
+    scope_ids: [i32: EXEC_MAX_SCOPE_DEPTH],
     scope_depth: i32,
 }
 
@@ -641,12 +646,13 @@ fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
     return inferred;
 }
 
-fn exec_lower_push_scope(ctx: &ExecLowerContext) void {
+fn exec_lower_push_scope(ctx: &ExecLowerContext, scope_id: i32) void {
     if ctx == null || ctx.scope_depth >= EXEC_MAX_SCOPE_DEPTH {
         return;
     }
     if ctx.scope_depth >= 0 && ctx.scope_depth < EXEC_MAX_SCOPE_DEPTH {
         ctx.scope_markers[ctx.scope_depth] = ctx.active_local_count;
+        ctx.scope_ids[ctx.scope_depth] = scope_id;
     }
     ctx.scope_depth = ctx.scope_depth + 1;
 }
@@ -659,7 +665,19 @@ fn exec_lower_pop_scope(ctx: &ExecLowerContext) void {
     if ctx.scope_depth >= 0 && ctx.scope_depth < EXEC_MAX_SCOPE_DEPTH {
         ctx.active_local_count = ctx.scope_markers[ctx.scope_depth];
         ctx.next_slot = ctx.active_local_count;
+        ctx.scope_ids[ctx.scope_depth] = -1;
     }
+}
+
+fn exec_lower_current_scope_id(ctx: &ExecLowerContext) i32 {
+    if ctx == null || ctx.scope_depth <= 0 {
+        return -1;
+    }
+    const scope_idx: i32 = ctx.scope_depth - 1;
+    if scope_idx < 0 || scope_idx >= EXEC_MAX_SCOPE_DEPTH {
+        return -1;
+    }
+    return ctx.scope_ids[scope_idx];
 }
 
 fn exec_lower_find_slot(ctx: &ExecLowerContext, name: &byte) i32 {
@@ -727,11 +745,77 @@ fn exec_lower_seed_globals(ctx: &ExecLowerContext, globals: &HIRGlobalSlot, glob
     ctx.global_count = i;
 }
 
-fn exec_lower_append_local(ctx: &ExecLowerContext, name: &byte, type: &Type, is_param: i32) i32 {
+fn exec_lower_find_named_drop_decl(checker: &TypeChecker, named_type: &byte) &ASTNode {
+    if checker == null || checker.program_node == null || named_type == null {
+        return null;
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, named_type);
+    if struct_decl != null && struct_decl.struct_decl_methods != null {
+        var si: i32 = 0;
+        while si < struct_decl.struct_decl_method_count {
+            const method: &ASTNode = struct_decl.struct_decl_methods[si];
+            if method != null && method.type == ASTNodeType.AST_FN_DECL &&
+                method.fn_decl_name != null &&
+                str_equals(method.fn_decl_name, "drop" as *byte) != 0 {
+                return method;
+            }
+            si = si + 1;
+        }
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, named_type);
+    if union_decl != null && union_decl.union_decl_methods != null {
+        var ui: i32 = 0;
+        while ui < union_decl.union_decl_method_count {
+            const method2: &ASTNode = union_decl.union_decl_methods[ui];
+            if method2 != null && method2.type == ASTNodeType.AST_FN_DECL &&
+                method2.fn_decl_name != null &&
+                str_equals(method2.fn_decl_name, "drop" as *byte) != 0 {
+                return method2;
+            }
+            ui = ui + 1;
+        }
+    }
+    return null;
+}
+
+fn exec_lower_find_drop_decl(checker: &TypeChecker, decl: &ASTNode, type: &Type) &ASTNode {
+    if checker == null || checker.program_node == null || type == null {
+        return null;
+    }
+    if decl != null && decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_type != null &&
+        decl.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && decl.var_decl_type.type_named_name != null {
+        const by_decl: &ASTNode = exec_lower_find_named_drop_decl(checker, decl.var_decl_type.type_named_name);
+        if by_decl != null {
+            return by_decl;
+        }
+    }
+    const struct_name: &byte = type_get_struct_name(type);
+    if struct_name != null {
+        return exec_lower_find_named_drop_decl(checker, struct_name);
+    }
+    const union_name: &byte = type_get_union_name(type);
+    if union_name != null {
+        return exec_lower_find_named_drop_decl(checker, union_name);
+    }
+    return null;
+}
+
+fn exec_lower_append_local(ctx: &ExecLowerContext, decl: &ASTNode, name: &byte, type: &Type, is_param: i32) i32 {
     if ctx == null || name == null || ctx.active_local_count >= EXEC_MAX_LOCALS || ctx.next_slot >= EXEC_MAX_LOCALS {
         return -1;
     }
     const slot: i32 = ctx.next_slot;
+    var scope_id: i32 = -1;
+    var needs_drop: i32 = 0;
+    var drop_decl: &ASTNode = null;
+    if is_param == 0 {
+        scope_id = exec_lower_current_scope_id(ctx);
+        drop_decl = exec_lower_find_drop_decl(ctx.checker, decl, type);
+        if checker_type_has_drop_method(ctx.checker, type) != 0 &&
+            (decl == null || decl.var_decl_was_moved == 0) {
+            needs_drop = 1;
+        }
+    }
     if ctx.active_local_count >= 0 && ctx.active_local_count < EXEC_MAX_LOCALS {
         ctx.local_names[ctx.active_local_count] = name;
         ctx.local_slots[ctx.active_local_count] = slot;
@@ -740,8 +824,12 @@ fn exec_lower_append_local(ctx: &ExecLowerContext, name: &byte, type: &Type, is_
     }
     if slot >= 0 && slot < EXEC_MAX_LOCALS {
         ctx.slot_names[slot] = name;
+        ctx.slot_decls[slot] = decl;
         ctx.slot_types[slot] = copy_type(type);
         ctx.slot_is_param[slot] = is_param;
+        ctx.slot_scope_ids[slot] = scope_id;
+        ctx.slot_needs_drop[slot] = needs_drop;
+        ctx.slot_drop_decls[slot] = drop_decl;
     }
     ctx.active_local_count = ctx.active_local_count + 1;
     ctx.next_slot = slot + 1;
@@ -1706,10 +1794,10 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
         return null;
     }
 
-    exec_lower_push_scope(ctx);
+    exec_lower_push_scope(ctx, -1);
     const iter_type: Type = make_i32_type();
-    const iter_slot: i32 = exec_lower_append_local(ctx, stmt_node.for_stmt_var_name, &iter_type, 0);
-    const end_slot: i32 = exec_lower_append_local(ctx, "__exec_for_end" as *byte, &iter_type, 0);
+    const iter_slot: i32 = exec_lower_append_local(ctx, null, stmt_node.for_stmt_var_name, &iter_type, 0);
+    const end_slot: i32 = exec_lower_append_local(ctx, null, "__exec_for_end" as *byte, &iter_type, 0);
     if iter_slot < 0 || end_slot < 0 {
         exec_lower_pop_scope(ctx);
         exec_backend_set_error(stmt_node, "exec: for range 槽位不足" as *byte, 0);
@@ -2768,6 +2856,34 @@ fn exec_lower_collect_called_decls_from_block(block: &HIRBlock, out_decls: & & A
     }
 }
 
+fn exec_lower_collect_cleanup_decls_from_function(checker: &TypeChecker, fn_hir: &HIRFunction, out_decls: & & ASTNode, out_count: &i32) void {
+    if checker == null || checker.program_node == null || fn_hir == null || fn_hir.locals == null || out_count == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < fn_hir.local_count {
+        const local: &HIRLocalSlot = fn_hir.locals + i;
+        var drop_decl: &ASTNode = local.drop_decl;
+        if drop_decl == null && local != null && local.decl != null &&
+            local.decl.type == ASTNodeType.AST_VAR_DECL &&
+            local.decl.var_decl_type != null &&
+            local.decl.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
+            local.decl.var_decl_type.type_named_name != null {
+            drop_decl = exec_lower_find_named_drop_decl(checker, local.decl.var_decl_type.type_named_name);
+        }
+        if local != null &&
+            drop_decl != null &&
+            drop_decl.type == ASTNodeType.AST_FN_DECL &&
+            drop_decl.fn_decl_body != null &&
+            exec_lower_decl_index(out_decls, out_count[0], drop_decl) < 0 &&
+            out_count[0] < MAX_REACHABLE_FN_DECLS {
+            out_decls[out_count[0]] = drop_decl;
+            out_count[0] = out_count[0] + 1;
+        }
+        i = i + 1;
+    }
+}
+
 fn exec_lower_lower_global_init_exprs(arena: &CompilerArena, checker: &TypeChecker, globals: &HIRGlobalSlot, global_count: i32, seed_decls: & & ASTNode, seed_count: &i32) i32 {
     if arena == null || checker == null || seed_count == null {
         return -1;
@@ -2791,13 +2907,18 @@ fn exec_lower_lower_global_init_exprs(arena: &CompilerArena, checker: &TypeCheck
                 local_types: [],
                 local_is_param: [],
                 slot_names: [],
+                slot_decls: [],
                 slot_types: [],
                 slot_is_param: [],
+                slot_scope_ids: [],
+                slot_needs_drop: [],
+                slot_drop_decls: [],
                 active_local_count: 0,
                 next_slot: 0,
                 max_slot_count: 0,
                 next_scope_id: 0,
                 scope_markers: [],
+                scope_ids: [],
                 scope_depth: 0,
             };
             exec_lower_seed_globals(&ctx, globals, global_count);
@@ -3974,14 +4095,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                     if variant_index2 < 0 {
                         return exec_lower_fail_expr_reason(expr, "exec: union match 变体无效" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
                     }
-                    exec_lower_push_scope(ctx);
+                    exec_lower_push_scope(ctx, -1);
                     if arm_union.var_name != null && str_equals(arm_union.var_name, "_" as *byte) == 0 {
                         const bind_type: Type = exec_lower_union_variant_type(ctx, subject_expr.type_ref.type, arm_union.variant_name);
                         if exec_type_is_vm_value_supported(bind_type) == 0 {
                             exec_lower_pop_scope(ctx);
                             return exec_lower_fail_expr_reason(expr, "exec: union match 绑定类型当前不可表示" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
                         }
-                        bind_slot = exec_lower_append_local(ctx, arm_union.var_name, &bind_type, 0);
+                        bind_slot = exec_lower_append_local(ctx, null, arm_union.var_name, &bind_type, 0);
                         if bind_slot < 0 {
                             exec_lower_pop_scope(ctx);
                             exec_backend_set_error(expr, "exec: union match 绑定槽位不足" as *byte, 0);
@@ -4080,7 +4201,7 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
     if hir_block == null {
         return null;
     }
-    exec_lower_push_scope(ctx);
+    exec_lower_push_scope(ctx, hir_block.scope_id);
     var i: i32 = 0;
     while i < block.block_stmt_count {
         const stmt_node: &ASTNode = block.block_stmts[i];
@@ -4103,7 +4224,7 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 }
                 return exec_lower_fail_block(stmt_node, "exec: 当前仅支持 exec VM 可表示的局部变量" as *byte);
             }
-            const slot: i32 = exec_lower_append_local(ctx, stmt_node.var_decl_name, &local_type, 0);
+            const slot: i32 = exec_lower_append_local(ctx, stmt_node, stmt_node.var_decl_name, &local_type, 0);
             if slot < 0 {
                 exec_lower_pop_scope(ctx);
                 exec_backend_set_error(stmt_node, "exec: 局部变量槽位不足" as *byte, 0);
@@ -4392,13 +4513,18 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         local_types: [],
         local_is_param: [],
         slot_names: [],
+        slot_decls: [],
         slot_types: [],
         slot_is_param: [],
+        slot_scope_ids: [],
+        slot_needs_drop: [],
+        slot_drop_decls: [],
         active_local_count: 0,
         next_slot: 0,
         max_slot_count: 0,
         next_scope_id: 0,
         scope_markers: [],
+        scope_ids: [],
         scope_depth: 0,
     };
     exec_lower_seed_globals(&ctx, globals, global_count);
@@ -4422,7 +4548,7 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
             exec_lower_set_unsupported(param, "exec: 当前仅支持标量/错误联合参数" as *byte);
             return null;
         }
-        if exec_lower_append_local(&ctx, param.var_decl_name, &param_type, 1) < 0 {
+        if exec_lower_append_local(&ctx, param, param.var_decl_name, &param_type, 1) < 0 {
             checker.current_self_type_name = saved_self_type_name;
             checker.current_self_is_union = saved_self_is_union;
             exec_backend_set_error(param, "exec: 参数槽位不足" as *byte, 0);
@@ -4458,9 +4584,13 @@ fn exec_lower_function(arena: &CompilerArena, checker: &TypeChecker, fn_decl: &A
         i = 0;
         while i < ctx.max_slot_count {
             locals[i].name = ctx.slot_names[i];
+            locals[i].decl = ctx.slot_decls[i];
             locals[i].slot = i;
+            locals[i].scope_id = ctx.slot_scope_ids[i];
             locals[i].type_ref = exec_lower_make_type_ref(&ctx.slot_types[i]);
             locals[i].is_param = ctx.slot_is_param[i];
+            locals[i].needs_drop = ctx.slot_needs_drop[i];
+            locals[i].drop_decl = ctx.slot_drop_decls[i];
             i = i + 1;
         }
         hir_fn.locals = locals;
@@ -4570,6 +4700,7 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
             if lowered.body != null {
                 exec_lower_collect_called_decls_from_block(lowered.body, &exec_reachable[0] as & & ASTNode, &exec_reachable_count);
             }
+            exec_lower_collect_cleanup_decls_from_function(checker, lowered, &exec_reachable[0] as & & ASTNode, &exec_reachable_count);
             count = count + 1;
         }
         i = i + 1;

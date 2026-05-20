@@ -30,6 +30,8 @@ struct ExecCleanupScope {
     defer_count: i32,
     errdefers: [&HIRStmt: 64],
     errdefer_count: i32,
+    drop_locals: [&HIRLocalSlot: 64],
+    drop_local_count: i32,
 }
 
 struct ExecFunctionBuildContext {
@@ -304,6 +306,97 @@ fn exec_builder_errdefer_stmt_slot_ref(scope: &ExecCleanupScope, idx: i32) &&HIR
         return &scope.errdefers[idx];
     }
     return null;
+}
+
+fn exec_builder_drop_local_ref(scope: &ExecCleanupScope, idx: i32) &HIRLocalSlot {
+    if scope == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < scope.drop_local_count && idx < 64 {
+        return scope.drop_locals[idx];
+    }
+    return null;
+}
+
+fn exec_builder_local_desc(ctx: &ExecFunctionBuildContext, slot: i32) &HIRLocalSlot {
+    if ctx == null || ctx.function == null || ctx.function.locals == null || slot < 0 || slot >= ctx.function.local_count {
+        return null;
+    }
+    const locals: &HIRLocalSlot = ctx.function.locals;
+    return &locals[slot];
+}
+
+fn exec_builder_find_named_drop_decl(ctx: &ExecFunctionBuildContext, named_type: &byte) &ASTNode {
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null || named_type == null {
+        return null;
+    }
+    const struct_decl: &ASTNode = find_struct_decl_from_program(ctx.checker.program_node, named_type);
+    if struct_decl != null && struct_decl.struct_decl_methods != null {
+        var si: i32 = 0;
+        while si < struct_decl.struct_decl_method_count {
+            const method: &ASTNode = struct_decl.struct_decl_methods[si];
+            if method != null && method.type == ASTNodeType.AST_FN_DECL &&
+                method.fn_decl_name != null &&
+                str_equals(method.fn_decl_name, "drop" as *byte) != 0 {
+                return method;
+            }
+            si = si + 1;
+        }
+    }
+    const union_decl: &ASTNode = find_union_decl_from_program(ctx.checker.program_node, named_type);
+    if union_decl != null && union_decl.union_decl_methods != null {
+        var ui: i32 = 0;
+        while ui < union_decl.union_decl_method_count {
+            const method2: &ASTNode = union_decl.union_decl_methods[ui];
+            if method2 != null && method2.type == ASTNodeType.AST_FN_DECL &&
+                method2.fn_decl_name != null &&
+                str_equals(method2.fn_decl_name, "drop" as *byte) != 0 {
+                return method2;
+            }
+            ui = ui + 1;
+        }
+    }
+    return null;
+}
+
+fn exec_builder_find_drop_decl_for_local(ctx: &ExecFunctionBuildContext, local: &HIRLocalSlot) &ASTNode {
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null || local == null {
+        return null;
+    }
+    if local.drop_decl != null {
+        return local.drop_decl;
+    }
+    if local.decl != null && local.decl.type == ASTNodeType.AST_VAR_DECL &&
+        local.decl.var_decl_type != null &&
+        local.decl.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
+        local.decl.var_decl_type.type_named_name != null {
+        const by_decl: &ASTNode = exec_builder_find_named_drop_decl(ctx, local.decl.var_decl_type.type_named_name);
+        if by_decl != null {
+            return by_decl;
+        }
+    }
+    const struct_name: &byte = type_get_struct_name(&local.type_ref.type);
+    if struct_name != null {
+        return exec_builder_find_named_drop_decl(ctx, struct_name);
+    }
+    const union_name: &byte = type_get_union_name(&local.type_ref.type);
+    if union_name != null {
+        return exec_builder_find_named_drop_decl(ctx, union_name);
+    }
+    return null;
+}
+
+fn exec_builder_stmt_drop_decl(ctx: &ExecFunctionBuildContext, stmt: &HIRStmt) &ASTNode {
+    if ctx == null || ctx.checker == null || ctx.checker.program_node == null ||
+        stmt == null || stmt.ast_node == null || stmt.ast_node.type != ASTNodeType.AST_VAR_DECL {
+        return null;
+    }
+    if stmt.ast_node.var_decl_was_moved != 0 || stmt.ast_node.var_decl_type == null ||
+        stmt.ast_node.var_decl_type.type != ASTNodeType.AST_TYPE_NAMED ||
+        stmt.ast_node.var_decl_type.type_named_name == null {
+        return null;
+    }
+    return exec_builder_find_named_drop_decl(ctx, stmt.ast_node.var_decl_type.type_named_name);
 }
 
 fn exec_builder_emit(ctx: &ExecFunctionBuildContext, instr: BCInstr) i32 {
@@ -2292,6 +2385,8 @@ fn exec_builder_push_cleanup_scope(ctx: &ExecFunctionBuildContext, ast_node: &AS
         defer_count: 0,
         errdefers: [],
         errdefer_count: 0,
+        drop_locals: [],
+        drop_local_count: 0,
     };
     ctx.cleanup_depth = ctx.cleanup_depth + 1;
     return 0;
@@ -2348,6 +2443,75 @@ fn exec_builder_register_cleanup(ctx: &ExecFunctionBuildContext, stmt: &HIRStmt,
     return 0;
 }
 
+fn exec_builder_register_drop_local(ctx: &ExecFunctionBuildContext, stmt: &HIRStmt) i32 {
+    if ctx == null || stmt == null || stmt.local_slot < 0 || ctx.cleanup_depth <= 0 {
+        return 0;
+    }
+    const local: &HIRLocalSlot = exec_builder_local_desc(ctx, stmt.local_slot);
+    const drop_decl: &ASTNode = exec_builder_stmt_drop_decl(ctx, stmt);
+    if local == null || drop_decl == null {
+        return 0;
+    }
+    local.needs_drop = 1;
+    if local.drop_decl == null {
+        local.drop_decl = drop_decl;
+    }
+    const scope: &ExecCleanupScope = exec_builder_cleanup_scope_ref(ctx, ctx.cleanup_depth - 1);
+    if scope == null {
+        exec_backend_set_error(stmt.ast_node, "exec: drop cleanup scope 读取失败" as *byte, 0);
+        return -1;
+    }
+    if local.scope_id >= 0 && scope.scope_id >= 0 && local.scope_id != scope.scope_id {
+        exec_backend_set_error(stmt.ast_node, "exec: drop local scope 不匹配" as *byte, 0);
+        return -1;
+    }
+    if scope.drop_local_count >= 64 {
+        exec_backend_set_error(stmt.ast_node, "exec: 每个作用域的 drop local 超出上限" as *byte, 0);
+        return -1;
+    }
+    scope.drop_locals[scope.drop_local_count] = local;
+    scope.drop_local_count = scope.drop_local_count + 1;
+    return 0;
+}
+
+fn exec_builder_emit_drop_local(ctx: &ExecFunctionBuildContext, local: &HIRLocalSlot) i32 {
+    if ctx == null || local == null {
+        return 0;
+    }
+    const drop_decl: &ASTNode = exec_builder_find_drop_decl_for_local(ctx, local);
+    if drop_decl == null {
+        exec_backend_set_error(local.decl, "exec: 未能解析 local drop 方法" as *byte, 0);
+        return -1;
+    }
+    const callee_index: i32 = exec_builder_find_function_index(ctx.module, drop_decl, drop_decl.fn_decl_name);
+    if callee_index < 0 {
+        exec_backend_set_error(local.decl, "exec: drop 方法未进入可执行函数集" as *byte, 0);
+        return -1;
+    }
+    var arg_sources: [i32: EXEC_MAX_CALL_ARGS] = [];
+    arg_sources[0] = local.slot;
+    const arg_base: i32 = exec_builder_pack_source_slots(ctx, local.decl, &arg_sources[0], 1);
+    if arg_base < 0 {
+        return -1;
+    }
+    const dst: i32 = exec_builder_new_temp(ctx);
+    if dst < 0 {
+        return -1;
+    }
+    if exec_builder_emit(ctx, BCInstr {
+        opcode: BCOpcode.BC_CALL,
+        a: dst,
+        b: arg_base,
+        c: 1,
+        imm: callee_index as i64,
+        text: drop_decl.fn_decl_name,
+        source: exec_builder_make_source(local.decl),
+    }) < 0 {
+        return -1;
+    }
+    return 0;
+}
+
 fn exec_builder_emit_cleanup_scope(ctx: &ExecFunctionBuildContext, scope_idx: i32, include_errdefer: i32) i32 {
     const scope: &ExecCleanupScope = exec_builder_cleanup_scope_ref(ctx, scope_idx);
     if ctx == null || scope == null {
@@ -2378,6 +2542,14 @@ fn exec_builder_emit_cleanup_scope(ctx: &ExecFunctionBuildContext, scope_idx: i3
             return -1;
         }
         di = di - 1;
+    }
+    var li: i32 = scope.drop_local_count - 1;
+    while li >= 0 {
+        const drop_local: &HIRLocalSlot = exec_builder_drop_local_ref(scope, li);
+        if exec_builder_emit_drop_local(ctx, drop_local) < 0 {
+            return -1;
+        }
+        li = li - 1;
     }
     return 0;
 }
@@ -2432,6 +2604,9 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
                 return -1;
             }
             if exec_builder_emit_store_local(ctx, stmt.ast_node, stmt.local_slot, src) < 0 {
+                return -1;
+            }
+            if exec_builder_register_drop_local(ctx, stmt) < 0 {
                 return -1;
             }
         } else if stmt.kind == HIRStmtKind.HIR_STMT_ASSIGN {

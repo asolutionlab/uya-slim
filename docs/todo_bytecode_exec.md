@@ -482,9 +482,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 规范执行顺序：
   - [x] 正常返回：`defer`
   - [x] 错误返回：`errdefer -> defer`
-- [ ] 设计 drop 元数据前移：
-  - [ ] 哪些局部需 drop
-  - [ ] 在何 scope 退出时 drop
+- [x] 设计 drop 元数据前移：
+  - [x] 哪些局部需 drop
+  - [x] 在何 scope 退出时 drop
 - [x] 测试：
   - [x] 单层 defer
   - [x] 嵌套 defer
@@ -510,8 +510,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `tests/test_exec_vm_hir_scope.uya`
     - `bash ./tests/verify_exec_vm_hir_scope.sh`
     - `bash ./tests/verify_exec_backend_progress.sh`
+- 2026-05-20 已把 local drop 清理接入 exec cleanup scope：
+  - `HIRLocalSlot` 现已携带 `decl/scope_id/needs_drop/drop_decl` 元数据
+  - bytecode builder 会在 `HIR_STMT_VAR_INIT` 后登记当前作用域的 drop local
+  - scope exit / `return` / `break` / `continue` / `try` 错误传播都会在 `defer/errdefer` 之后按逆序发出 local drop 调用
+  - drop 方法会进入 exec reachable 函数集，不再依赖手写显式调用
+  - 新增并通过：
+    - `tests/test_exec_vm_drop_local.uya`
+    - `bash ./tests/verify_exec_vm_drop_local.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
 - 当前尚未完成：
-  - drop 自动析构元数据前移
   - 更完整的嵌套 `defer` 回归集
 
 ---

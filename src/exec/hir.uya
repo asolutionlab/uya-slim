@@ -81,9 +81,13 @@ struct HIRTypeRef {
 
 struct HIRLocalSlot {
     name: &byte,
+    decl: &ASTNode,
     slot: i32,
+    scope_id: i32,
     type_ref: HIRTypeRef,
     is_param: i32,
+    needs_drop: i32,
+    drop_decl: &ASTNode,
 }
 
 struct HIRGlobalSlot {

@@ -100,6 +100,13 @@ grep -q 'exec backend 构建完成' "$TMP_STDERR"
 tail -n 5 "$TMP_STDOUT" | diff -u <(printf 'NSIK\nOB1\nCC2\nDO7\nEDR0\n') -
 echo "  defer/errdefer exec path ✓"
 
+echo "验证 local drop 清理顺序..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_drop_local.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+grep -q '^921$' "$TMP_STDOUT"
+echo "  local drop exec path ✓"
+
 bash "$SCRIPT_DIR/verify_exec_vm_hir_scope.sh"
 echo "  exec HIR scope markers ✓"
 

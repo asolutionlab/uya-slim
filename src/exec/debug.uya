@@ -370,6 +370,9 @@ fn exec_debug_dump_hir_module(module: &HIRModule) void {
                 const local: &HIRLocalSlot = fn_hir.locals + li;
                 fprintf(libc.stderr, "  // local[%d] %s: " as *byte, li, local.name as *byte);
                 exec_debug_print_type(local.type_ref);
+                if local.needs_drop != 0 {
+                    fprintf(libc.stderr, " [drop scope=%d]" as *byte, local.scope_id);
+                }
                 fprintf(libc.stderr, "\n" as *byte);
                 li = li + 1;
             }
