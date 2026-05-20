@@ -1677,8 +1677,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 检测是否在生成标准库（用于 --outlibc）
     // 通过检查输出文件名是否包含 "libuya" 来判断
     var is_std_lib: i32 = 0;
+    var target_os_is_macos: i32 = 0;
     // 检测自举编译（输出为 uya.c 或 compiler_bootstrap.c）：强制与 C 编译器一致，不添加 stdio/string/opendir
     var is_bootstrap: i32 = 0;
+    const target_os_env: &byte = getenv("TARGET_OS" as &byte);
+    if target_os_env != null && strcmp(target_os_env as *byte, "macos" as *byte) == 0 {
+        target_os_is_macos = 1;
+    }
     if output_file != null {
         // 简单检查：查找文件名中是否包含 "libuya"（检查前 C99_OUTPUT_FILENAME_BUF_SIZE 个字符）
         var i: i32 = 0;
@@ -2035,27 +2040,33 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             di = di + 1;
         }
-        if is_bootstrap == 0 && codegen.freestanding == 0 {
-            if has_decl_malloc != 0 && has_impl_malloc == 0 {
-                fputs("extern void *malloc(size_t);\n" as *byte, codegen.emit_stream as *void);
+        if codegen.freestanding == 0 {
+            if is_bootstrap == 0 {
+                if has_decl_malloc != 0 && has_impl_malloc == 0 {
+                    fputs("extern void *malloc(size_t);\n" as *byte, codegen.emit_stream as *void);
+                }
+                if has_decl_free != 0 && has_impl_free == 0 {
+                    fputs("extern void free(void *);\n" as *byte, codegen.emit_stream as *void);
+                }
+                if has_decl_realloc != 0 && has_impl_realloc == 0 {
+                    fputs("extern void *realloc(void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+                }
+                if has_decl_calloc != 0 && has_impl_calloc == 0 {
+                    fputs("extern void *calloc(size_t, size_t);\n" as *byte, codegen.emit_stream as *void);
+                }
+                if has_decl_clock != 0 && has_impl_clock == 0 {
+                    fputs("extern int64_t clock(void);\n" as *byte, codegen.emit_stream as *void);
+                }
             }
-            if has_decl_free != 0 && has_impl_free == 0 {
-                fputs("extern void free(void *);\n" as *byte, codegen.emit_stream as *void);
+            if has_decl_read != 0 && (has_impl_read == 0 || target_os_is_macos != 0) {
+                if is_bootstrap == 0 || target_os_is_macos != 0 {
+                    fputs("extern ssize_t read(int, void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+                }
             }
-            if has_decl_realloc != 0 && has_impl_realloc == 0 {
-                fputs("extern void *realloc(void *, size_t);\n" as *byte, codegen.emit_stream as *void);
-            }
-            if has_decl_calloc != 0 && has_impl_calloc == 0 {
-                fputs("extern void *calloc(size_t, size_t);\n" as *byte, codegen.emit_stream as *void);
-            }
-            if has_decl_clock != 0 && has_impl_clock == 0 {
-                fputs("extern int64_t clock(void);\n" as *byte, codegen.emit_stream as *void);
-            }
-            if has_decl_read != 0 && has_impl_read == 0 {
-                fputs("extern ssize_t read(int, void *, size_t);\n" as *byte, codegen.emit_stream as *void);
-            }
-            if has_decl_write != 0 && has_impl_write == 0 {
-                fputs("extern ssize_t write(int, const void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+            if has_decl_write != 0 && (has_impl_write == 0 || target_os_is_macos != 0) {
+                if is_bootstrap == 0 || target_os_is_macos != 0 {
+                    fputs("extern ssize_t write(int, const void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+                }
             }
         }
         if has_own_opendir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
