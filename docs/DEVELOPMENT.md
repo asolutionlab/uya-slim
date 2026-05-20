@@ -1,7 +1,7 @@
 # Uya 开发指导说明
 
 **版本**：v0.3.4+  
-**更新日期**：2026-02-15
+**更新日期**：2026-05-20
 
 本文档定义 Uya 编译器的开发流程。自 v0.3.4 起，**C 编译器（compiler-c/）已退役**，仅维护自举编译器。
 
@@ -67,6 +67,9 @@ vim src/related_module.uya
 
 # 4. 运行测试，确认通过（绿）
 make uya && make tests-uya
+
+# 4.1 若改动涉及 unknown/web target、libc/syscall bridge 或 Web 运行时，再补跑独立 smoke
+make tests-emcc  # 需要本机安装 emcc 与 node
 
 # 5. 重构代码
 # ... 改善代码结构 ...
@@ -184,6 +187,7 @@ git add -A && git commit -m "fix: 描述修复内容"
 | `make uya` | 使用 bin/uya-c 编译 src/*.uya → bin/uya.c，然后构建 bin/uya |
 | `make b` | 自举验证：编译器编译自身，验证输出一致性 |
 | `make tests-uya` | 运行自举编译器测试 |
+| `make tests-emcc` | 运行独立 emcc/unknown target smoke（需本机安装 emcc 与 node；不默认包含在 `make check` / `make release-dirty`） |
 | `make release` | 最终 release 验证：要求工作树干净，执行 clean + 自举 + 测试 + 备份 + 发布构建 |
 | `make release-dirty` | 本地调试用的完整 release 流程；会先 clean，再执行 release 步骤，但不要求工作树干净 |
 | `make release-clean` | 在 Git HEAD 干净快照中执行 `make release`，忽略未提交修改，适合作为 CI 对照 |

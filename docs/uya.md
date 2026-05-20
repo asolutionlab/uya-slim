@@ -7256,7 +7256,7 @@ bin/uya build main.uya -o main.c --c99 -e
 
 ### C.5 限制与注意
 
-- **`@syscall`（C99 后端）**：已支持生成 **Linux x86_64**、**Linux AArch64**、**Linux ARM32（EABI）**、**macOS x86_64** 与 **macOS arm64** 的 hosted 路径；Darwin 目标当前仍以 hosted bring-up 为主，不等同于 `--nostdlib` 已完成。
+- **`@syscall`（C99 后端）**：已支持生成 **Linux x86_64**、**Linux AArch64**、**Linux ARM32（EABI）**、**macOS x86_64** 与 **macOS arm64** 的 hosted 路径；Darwin 目标当前仍以 hosted bring-up 为主，不等同于 `--nostdlib` 已完成。**`unknown` / Web target** 当前不发射原生 `@syscall` 内联汇编，而是由 `libc.sys_*` 在 `std.target_os == .tos_unknown` 下通过宿主 bridge 提供受限运行时能力；当前最小闭环验证见 `tests/verify_emcc_unknown_runtime.sh`（`make tests-emcc`，需 `emcc` 与 `node`）。
 - **`--nostdlib` / 静态零依赖路径**：当前实现与测试主线以 **Linux x86_64** 为主；其他目标的 `_start`、链接与 syscall 封装可能未完备，见 [UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md) 与平台相关 todo 文档。
 - **Darwin 真机验证**：Linux 上通过 `zig cc` 交叉产出 Mach-O 二进制，说明构建链已成立；但 `getcwd`、`stat/readdir`、`pthread`、`std.async` 等行为仍需在 macOS 真机上继续 smoke 与收口。
 - **内联汇编 `@asm`**：指令与约束与目标 ISA 相关；交叉编译时需确保仅启用当前 **TARGET** 支持的指令，或使用 `@asm_target()` 等机制区分平台（见 [asm_api_reference.md](./asm_api_reference.md) 等）。

@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### Hosted Web / unknown target：libc/syscall bridge smoke（2026-05-20）
+
+- **运行时桥接**：`lib/libc/syscall.uya` 在 `std.target_os == .tos_unknown` 下补入一组受限 `libc.sys_*` 实现，通过宿主 bridge 覆盖 `read/write/open/close/mmap/gettimeofday/clock_gettime/nanosleep` 等 bring-up 所需路径，避免与仓库内同名 wrapper 递归。
+- **libc / runtime 收口**：`heap`、`unistd`、`stdlib`、`stdio`、`pthread`、`signal`、`setjmp` 与 `std.runtime.entry` 同步补入 unknown 目标分支或保护，确保 Web/Node hosted smoke 不再误走 Linux 栈限制与原生 syscall 路径。
+- **测试入口**：新增 `tests/emcc_unknown_runtime_smoke.uya`、`tests/emcc_unknown_host.c`、`tests/verify_emcc_unknown_runtime.sh` 与 `make tests-emcc`；该 smoke 需本机安装 `emcc` 与 `node`，当前不默认并入 `make check` / `make release-dirty`。
+
 ### 语言：对象方法无限制链式调用（2026-04-26）
 
 - **Parser**：统一了后缀表达式链的解析，`.` / `[]` / `()` 现在都可以在同一对象表达式后无限继续组合。

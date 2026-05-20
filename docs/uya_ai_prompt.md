@@ -76,7 +76,7 @@
   ```
 - **裸函数**：`@naked_fn` — 无标准序言/尾声，仅用于极底层场景，勿默认使用
 - **宏编译期**：`@mc_eval` `@mc_type` `@mc_ast` `@mc_code` `@mc_error` `@mc_get_env` `@mc_source`
-- **系统调用**：`@syscall(nr, arg1, …, arg6)`
+- **系统调用**：`@syscall(nr, arg1, …, arg6)`。若 `std.target_os == .tos_unknown`（如 Web / emcc hosted smoke），不要假设存在原生 Linux syscall backend；优先复用 `libc.sys_*` 与标准库现有封装
 - **指针与整数**：`@ptr_from_usize` `@usize_from_ptr`
 - **错误**：`@error_id(expr)` → `u32`；`@error_name(expr)` → `*byte`
 - **调试打印**：`@print` `@println` — 可用于整数、浮点、`bool`、双引号字面量；**`byte` / `u8` / `i8`** 的 **`[T:N]`**、**`&[T]`**、**`*byte`** 等可按 C 字符串 **`%s`** 打印时，缓冲区须以 **`\0`** 结尾。**不要**写成 **`@println("a", x)`** 等多实参 C `printf` 风格；多段内容用**字符串插值** **`@println("a ${x}")`** 等

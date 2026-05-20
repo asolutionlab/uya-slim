@@ -320,6 +320,7 @@ const long result = uya_syscall1(60, 0);  // SYS_exit(0)
 | Linux ARM64 | `svc #0` | x8=nr, x0-x5 |
 | macOS x86-64 | `syscall` | rax=nr+0x2000000 |
 | macOS ARM64 | `svc #0x80` | x16=nr, x0-x5 |
+| Unknown / Web hosted | 无原生内联 `@syscall` | 通过宿主 bridge 间接提供受限 `libc.sys_*` 能力 |
 | Windows x64 | 无直接支持 | 调用 NtXxx 函数 |
 
 ### 9.2 条件编译支持（v0.5.0+）
@@ -337,6 +338,8 @@ std.cfg(std.target_os == .tos_linux, {
 }))
 ```
 
+补充说明：`std.target_os == .tos_unknown`（例如 emcc / Web hosted smoke）当前不走原生 `@syscall` backend；此类目标应通过 `libc.sys_*` 与宿主 bridge 暴露最小运行时能力。当前仓库中的验证脚本为 `tests/verify_emcc_unknown_runtime.sh`，可通过 `make tests-emcc` 运行。
+
 ---
 
 ## 10. 参考资料
@@ -350,4 +353,3 @@ std.cfg(std.target_os == .tos_linux, {
 
 **版本历史**：
 - v1.0（2026-02-06）：初始设计文档
-

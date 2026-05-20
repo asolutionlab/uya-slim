@@ -1,7 +1,7 @@
 # Uya 回归测试说明
 
 **版本**：v0.3.4+  
-**更新日期**：2026-05-19
+**更新日期**：2026-05-20
 
 ---
 
@@ -58,6 +58,20 @@ make tests-uya
 ```bash
 ./tests/run_programs_parallel.sh
 ```
+
+### unknown / emcc 独立 smoke
+
+当改动涉及 `lib/libc/syscall.uya`、`lib/std/runtime/entry/entry.uya`、`std.target_os == .tos_unknown` 路径，或 Web/Node hosted 运行时桥接时，建议补跑：
+
+```bash
+make tests-emcc
+```
+
+说明：
+- 该目标要求本机已安装 `emcc` 与 `node`
+- 脚本入口是 `tests/verify_emcc_unknown_runtime.sh`
+- 它会生成 `TARGET_OS=unknown TARGET_ARCH=unknown` 的 C99 程序，并与 `tests/emcc_unknown_host.c` 提供的宿主 bridge 一起链接执行
+- 当前属于独立 smoke，不默认包含在 `make check` 或 `make release-dirty` 中
 
 ### Exec VM 专项回归
 
@@ -203,6 +217,8 @@ test:
     - gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm
     - make tests-uya
     - make b
+    # unknown/web 运行时改动时可追加：
+    # - make tests-emcc
 ```
 
 ---

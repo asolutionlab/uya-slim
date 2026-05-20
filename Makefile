@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-macos-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-macos-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -416,6 +416,15 @@ tests-uya:
 	fi; \
 	TS=$$?; \
 	if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi
+
+tests-emcc:
+	@echo "=========================================="
+	@echo "运行独立 emcc smoke"
+	@echo "=========================================="
+	@$(MAKE) uya >/dev/null 2>&1
+	@./tests/verify_emcc_unknown_runtime.sh
+	@echo ""
+	@echo "✓ emcc smoke 通过"
 
 microapp-check:
 	@echo "=========================================="
@@ -1080,6 +1089,7 @@ help:
 	@echo "  make tests e       - 运行所有测试，最小输出（仅失败详情，等同脚本 -e）"
 	@echo "  make tests-uya     - 快捷方式：测试自举编译器"
 	@echo "  make tests-uya e   - 同上 + 最小输出（-e）"
+	@echo "  make tests-emcc    - 运行独立 emcc/unknown target smoke（需本机安装 emcc 与 node）"
 	@echo "  make microapp-check - 运行当前 microapp 聚合回归套件"
 	@echo "  make microapp-hosted-smoke - 运行 hosted 平台可用的 microapp smoke 套件"
 	@echo "  make microapp-aarch64-runtime-check - 运行 arm64-host-gated 的 aarch64 microapp runtime 回归"

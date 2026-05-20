@@ -1837,7 +1837,16 @@ fn c99_try_emit_method_call_from_inferred_type(codegen: &C99CodeGenerator, expr:
         const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono_name);
         const safe_method: &byte = get_safe_c_identifier(codegen, method_name);
         if safe_iface != null && safe_method != null {
-            const is_ptr_iface: i32 = object_was_pointer;
+            var is_ptr_iface: i32 = object_was_pointer;
+            if is_ptr_iface == 0 && object_type_c_hint != null && strchr(object_type_c_hint as *byte, 42) != null {
+                is_ptr_iface = 1;
+            }
+            if is_ptr_iface == 0 && obj.type == ASTNodeType.AST_IDENTIFIER && obj.identifier_name != null {
+                const safe_obj_name_iface: &byte = get_safe_c_identifier(codegen, obj.identifier_name);
+                if safe_obj_name_iface != null && is_identifier_pointer_type(codegen, safe_obj_name_iface) != 0 {
+                    is_ptr_iface = 1;
+                }
+            }
             fputs("((struct uya_vtable_" as *byte, codegen.emit_stream as *void);
             fputs(safe_iface as *byte, codegen.emit_stream as *void);
             if is_ptr_iface != 0 {
@@ -1879,13 +1888,23 @@ fn c99_try_emit_method_call_from_inferred_type(codegen: &C99CodeGenerator, expr:
         const iface_start: &byte = &p[14] as &byte;
         const safe_method2: &byte = get_safe_c_identifier(codegen, method_name);
         if safe_method2 != null {
+            var is_ptr_iface2: i32 = object_was_pointer;
+            if is_ptr_iface2 == 0 && object_type_c_hint != null && strchr(object_type_c_hint as *byte, 42) != null {
+                is_ptr_iface2 = 1;
+            }
+            if is_ptr_iface2 == 0 && obj.type == ASTNodeType.AST_IDENTIFIER && obj.identifier_name != null {
+                const safe_obj_name_iface2: &byte = get_safe_c_identifier(codegen, obj.identifier_name);
+                if safe_obj_name_iface2 != null && is_identifier_pointer_type(codegen, safe_obj_name_iface2) != 0 {
+                    is_ptr_iface2 = 1;
+                }
+            }
             fputs("((struct uya_vtable_" as *byte, codegen.emit_stream as *void);
             var k: i32 = 0;
             while iface_start[k] != 0 && iface_start[k] != 32 && iface_start[k] != 42 {
                 fputc(iface_start[k], codegen.emit_stream as *void);
                 k = k + 1;
             }
-            if object_was_pointer != 0 {
+            if is_ptr_iface2 != 0 {
                 fputs(" *)(" as *byte, codegen.emit_stream as *void);
                 fputc(40, codegen.emit_stream as *void);
                 gen_expr(codegen, obj);
@@ -1896,7 +1915,7 @@ fn c99_try_emit_method_call_from_inferred_type(codegen: &C99CodeGenerator, expr:
                 fprintf(codegen.emit_stream as *void, ").vtable))->%s((" as *byte, safe_method2 as *byte);
             }
             gen_expr(codegen, obj);
-            if object_was_pointer != 0 {
+            if is_ptr_iface2 != 0 {
                 fputs(")->data" as *byte, codegen.emit_stream as *void);
             } else {
                 fputs(").data" as *byte, codegen.emit_stream as *void);
