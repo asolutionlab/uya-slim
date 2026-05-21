@@ -1,0 +1,639 @@
+# Uya 脚本标准库与运行时设计文档
+
+**状态**：design draft  
+**更新日期**：2026-05-21  
+**配套 TODO**：[`todo_std_script.md`](todo_std_script.md)
+
+---
+
+## 概述
+
+本文档定义 Uya “脚本化”能力的目标、边界与分层设计。
+
+这里的“脚本化”不是要复刻 bash/csh 语法，也不是先做一个新的交互式 shell，而是要让 Uya 能够稳定替换仓库中的 `xxx.sh` 一类自动化脚本：
+
+- 用同一份 Uya 源码在 Linux / macOS / Windows hosted 路线上执行
+- 减少 shell 字符串拼接、`grep`/`sed`/`awk`/`python` 小进程编排带来的性能损耗
+- 用结构化 API 取代脆弱的命令字符串、路径拼接和平台分支
+- 为后续 `uya script`、shebang、`--exec`/`--vm` 加速路径预留接口
+
+---
+
+## 核心目标
+
+1. **优先替换仓库现有 `.sh`**
+   - 第一阶段目标不是“通用 shell 语言”，而是把 `tests/*.sh`、部分构建/验证脚本迁移为 Uya 脚本。
+
+2. **结构化跨平台 API**
+   - 进程、环境变量、路径、文件系统、目录遍历、临时目录、重定向、管道等能力应通过标准库抽象暴露，而不是依赖宿主 shell 语法。
+
+3. **保留 Uya 的类型化风格**
+   - 错误通过 `!T` 传播。
+   - 命令执行、退出码、标准输出、工作目录等都是显式值，不做 bash 式隐式魔法。
+
+4. **以 hosted 路线为主**
+   - 脚本运行时第一目标是 hosted Linux / macOS，随后扩到 hosted Windows。
+   - `nostdlib`、microapp、kernel 路线不作为脚本运行时 MVP 目标。
+
+5. **为后续性能优化留口**
+   - 短期先跑通 C99 hosted。
+   - 中期允许 `uya script` 优先尝试 `--exec`/`--vm`，在能力不足时再回退。
+
+---
+
+## 非目标
+
+1. **不做 bash/csh 语法兼容**
+   - 不承诺支持 `$(...)`、反引号命令替换、`[[ ... ]]`、shell function、alias、job control、`trap`、`set -euo pipefail` 语法兼容。
+
+2. **不做交互式 shell**
+   - 本文档关注“脚本运行时”和“标准库”，不关注 REPL、提示符、历史记录、终端编辑。
+
+3. **不把命令字符串当主接口**
+   - `system("gcc ...")` 只能作为显式 fallback。
+   - 默认 API 必须是 argv / env / cwd / stdio 的结构化模型。
+
+4. **不在第一阶段替换 `src/compile.sh`**
+   - `compile.sh` 兼容层级高、平台语义复杂，放在后续阶段。
+
+5. **不承诺第一阶段完成 Windows 全覆盖**
+   - 设计必须从第一天面向 Windows，但 MVP 可以先在 Linux / macOS hosted 跑通。
+
+---
+
+## 当前基线
+
+仓库已经具备一部分脚本运行所需基础，但仍缺少“高层脚本 API”和“完整跨平台 hosted backend”。
+
+### 已有基础
+
+- `std.runtime` 已缓存 `argc` / `argv` / `envp`
+- `lib/osal/osal.uya` 已提供：
+  - `os_spawn`
+  - `os_exec`
+  - `os_waitpid`
+  - `os_chdir`
+  - `os_getcwd`
+  - 文件、目录、stat、dup/dup2 等基础能力
+- `lib/libc/unistd.uya` 已提供：
+  - `fork`
+  - `execve`
+  - `waitpid`
+  - `system`
+  - `chdir`
+  - `getcwd`
+  - `dup2`
+- `lib/libc/syscall.uya` 已有 `sys_pipe2`
+- `lib/std/io/file.uya` 已提供最小同步文件 I/O
+
+### 当前缺口
+
+1. **缺少高层模块边界**
+   - 现在更接近 syscall/libc/osal 能力集合，还没有 `std.process`、`std.fs`、`std.env`、`std.path`、`std.script` 这类脚本作者直接可用的高层 API。
+
+2. **环境变量写接口未完成**
+   - `setenv` / `unsetenv` / `clearenv` 仍是占位实现，不适合作为脚本运行时公开语义。
+
+3. **默认 `run` 路径仍有字符串拼接**
+   - 当前 `uya run/test` 仍有一部分逻辑靠命令字符串 + `system()` 驱动，不适合作为未来标准库 API 的方向。
+
+4. **缺少 shebang 支持**
+   - 当前 lexer 只识别 `//` 与 `/* */` 注释；是否忽略首行 `#!...` 尚未定义。
+
+5. **Windows hosted backend 未完成**
+   - 枚举、toolchain、target 宏已经具备，但脚本运行时需要的进程/环境/文件系统 Win32 bridge 还没有形成公共抽象。
+
+6. **`--exec`/`--vm` 仍在扩覆盖**
+   - 脚本运行时未来可利用 exec backend 降低启动成本，但不能把它作为当前设计前提。
+
+---
+
+## 设计原则
+
+### 1. 结构化优先于字符串
+
+脚本 API 的主路径必须显式表达：
+
+- 程序路径
+- argv
+- cwd
+- env
+- stdin/stdout/stderr
+- 退出状态
+
+不允许要求调用方自己拼命令字符串、自己做 shell quoting、自己猜测平台差异。
+
+### 2. `std.script` 只是 facade，不是大杂烩
+
+脚本作者会直接使用 `std.script`，但核心能力应拆到更稳定的基础模块：
+
+- `std.process`
+- `std.fs`
+- `std.env`
+- `std.path`
+
+`std.script` 只负责把这些能力组合成“替换 `.sh` 常用模式”的便捷层。
+
+### 3. 默认不经过 shell
+
+`run(["git", "status"])` 是一等用法。  
+`run("git status")` 不应成为默认模型。
+
+如果调用方明确要依赖宿主 shell 行为，应使用显式 API，例如：
+
+- `run_shell_sh(...)`
+- `run_shell_cmd(...)`
+
+也可以接受更中性的命名，但必须让“经过 shell”是显式选择，而不是隐式行为。
+
+### 4. 平台差异收敛在底层
+
+上层脚本作者不应感知：
+
+- POSIX `fork/execve`
+- Windows `CreateProcessW`
+- path separator
+- executable suffix
+- PATH 分隔符
+- UTF-8 / UTF-16 细节
+
+这些差异必须由 `osal` / hosted C bridge / `std.path` / `std.process` 吸收。
+
+### 5. 先替脚本，再谈新语言特性
+
+脚本化 MVP 不依赖新增语法。  
+第一阶段仍使用普通 Uya 程序入口：
+
+```text
+export fn main() !i32
+```
+
+`uya script` 与 shebang 作为后续 UX 增强，而不是第一阶段阻塞项。
+
+---
+
+## 分层模型
+
+建议采用如下结构：
+
+```text
+Uya script / tests/*.uya / tools/*.uya
+            |
+            v
+        std.script
+            |
+            v
+  std.process / std.fs / std.env / std.path
+            |
+            v
+          osal
+            |
+            v
+   syscall + hosted C bridge + runtime entry
+```
+
+分层职责：
+
+| 层级 | 职责 |
+|------|------|
+| `std.script` | 面向脚本作者的高层帮助函数、日志、断言、pipeline facade、仓库脚本惯用法 |
+| `std.process` | 结构化进程执行、重定向、输出捕获、退出码 |
+| `std.fs` | 文件与目录操作、文本/字节读写、临时目录、递归删除/创建 |
+| `std.env` | 环境变量读取、覆盖、子进程环境构造 |
+| `std.path` | 路径拼接、规范化、后缀、PATH 搜索辅助 |
+| `osal` | 平台能力统一抽象 |
+| `syscall + hosted bridge` | 各平台真实系统接口 |
+
+---
+
+## 模块设计
+
+## 1. `std.process`
+
+`std.process` 是脚本化能力的核心模块。
+
+### 1.1 语义要求
+
+- 默认按 argv 调用可执行文件
+- 不做 shell 展开
+- 支持 cwd 覆盖
+- 支持 child-only env 覆盖
+- 支持 `stdin/stdout/stderr` 重定向
+- 支持输出捕获
+- 支持等待与退出码解析
+- 支持 pipeline，但 pipeline 是“进程图”或 helper，不是 shell 文法
+
+### 1.2 建议数据模型
+
+- `Command`
+  - path
+  - argv
+  - cwd override
+  - env overlay / env remove
+  - stdio config
+- `Child`
+  - pid / 平台句柄
+  - `wait()`
+  - `kill()`
+  - `take_stdout()`
+  - `take_stderr()`
+- `ExitStatus`
+  - 是否正常退出
+  - exit code
+  - signal / platform-specific termination reason
+- `Output`
+  - `status`
+  - `stdout`
+  - `stderr`
+
+### 1.3 公开能力建议
+
+- `status`：只关心退出码
+- `output`：捕获 stdout/stderr
+- `spawn`：异步或可等待 child
+- `check`：非 0 直接返回错误
+- `pipe`：创建父子或多进程管道
+
+### 1.4 公开语义限制
+
+- 不保证暴露 `fork`
+  - `fork` 保留在 `osal`/`libc` 层，作为 POSIX 细节
+- `exec` 可以保留，但不应成为脚本作者主路径
+- `Command` 构造 PATH 搜索时应是显式策略
+  - `command("git")` 可以执行 PATH 查找
+  - `command_path("/abs/path/git")` 可显式绕过搜索
+
+---
+
+## 2. `std.env`
+
+脚本需要大量环境变量操作，但这里必须区分两种语义：
+
+1. **当前进程读取**
+2. **子进程环境构造**
+
+建议优先把“子进程环境构造”做稳，而不是把进程级 `setenv()` 作为第一优先级。
+
+### 2.1 MVP 能力
+
+- `get`
+- `has`
+- `iter`
+- `inherit_current`
+- `with`
+- `without`
+- 生成传给 `std.process.Command` 的 env block
+
+### 2.2 设计原则
+
+- 脚本 API 中，优先使用 child-local env overlay：
+  - 不要求先修改当前进程全局环境，再起子进程
+- 如果后续补齐真实 `setenv` / `unsetenv`，也应明确区分：
+  - `env_set_current(...)`
+  - `command.env_set(...)`
+
+---
+
+## 3. `std.fs`
+
+`std.fs` 负责替掉脚本里最常见的：
+
+- `mkdir -p`
+- `rm -rf`
+- `cp`
+- `mv`
+- `test -f/-d`
+- `cat`
+- `printf > file`
+- 目录遍历与查找
+
+### 3.1 MVP 能力
+
+- `exists`
+- `is_file`
+- `is_dir`
+- `mkdir`
+- `mkdir_all`
+- `remove_file`
+- `remove_dir`
+- `remove_dir_all`
+- `rename`
+- `read_text`
+- `write_text`
+- `read_bytes`
+- `write_bytes`
+- `read_dir`
+- `temp_dir`
+- `create_temp_dir`
+
+### 3.2 后续能力
+
+- `copy_file`
+- `canonicalize`
+- `walk`
+- `glob`
+- 文件时间与权限
+
+### 3.3 设计要求
+
+- 尽量不要要求脚本作者自己处理 trailing slash、平台分隔符、临时目录命名
+- 文本读写应显式区分字节与 UTF-8 文本
+
+---
+
+## 4. `std.path`
+
+`std.path` 负责收敛平台差异，而不是让每个脚本都自己写：
+
+- `"/"` 与 `"\\"`
+- `.exe`
+- `PATH` 分隔符
+- 相对/绝对路径判断
+
+### 4.1 MVP 能力
+
+- `join`
+- `dirname`
+- `basename`
+- `stem`
+- `extension`
+- `is_abs`
+- `normalize`
+- `path_list_separator`
+- `executable_suffix`
+
+### 4.2 Windows 要点
+
+- 公共 API 仍使用 UTF-8 byte string
+- Windows hosted bridge 内部负责 UTF-8 → UTF-16 转换
+- 默认不把“路径大小写等价”作为隐式规则
+  - 如有需要，单独提供 helper
+
+---
+
+## 5. `std.script`
+
+`std.script` 是“替换 `.sh`”最直接的用户层。
+
+它不应该重新包装所有底层 API，而应提供仓库脚本高频模式：
+
+- `run_checked`
+- `capture_text`
+- `assert_exit_code`
+- `require_tool`
+- `project_root`
+- `workspace_temp_dir`
+- `log_info`
+- `log_warn`
+- `fail`
+
+### 5.1 适合放进 `std.script` 的能力
+
+- 仓库自动化常见的断言和错误输出风格
+- pipeline helper
+- 命令执行 + 文本匹配 + 退出码检查组合
+- 临时工作区管理
+
+### 5.2 不适合放进 `std.script` 的能力
+
+- 裸 syscall / fd 细节
+- 通用路径算法
+- 目录项结构体定义
+- 大量 libc 兼容函数别名
+
+---
+
+## 脚本入口与运行方式
+
+## Phase 1：普通 Uya 程序入口
+
+第一阶段不新增语法，脚本文件直接写成：
+
+```text
+export fn main() !i32
+```
+
+运行方式：
+
+```text
+./bin/uya run path/to/script.uya -- ...
+```
+
+优点：
+
+- 不阻塞标准库设计
+- 复用现有 runtime entry / argv / envp
+- 迁移仓库脚本时最容易落地
+
+## Phase 2：`uya script`
+
+在标准库与迁移模式稳定后，可以新增：
+
+```text
+./bin/uya script path/to/script.uya -- ...
+```
+
+建议语义：
+
+- 对脚本模式使用更贴近自动化任务的默认值
+- 允许优先尝试 `--exec`
+- 在能力不足时回退 C99 hosted
+- 为 shebang 提供统一入口
+
+## Phase 3：shebang
+
+shebang 需要两部分支持：
+
+1. **lexer / parser 容忍首行 `#!...`**
+2. **launcher 约定**
+
+需要注意：
+
+- POSIX shebang 与 Windows 无直接对称关系
+- Windows 仍主要通过 `uya script file.uya` 或文件关联运行
+
+因此 shebang 是 UX 增强，不是跨平台脚本 MVP 的核心前提。
+
+---
+
+## 跨平台策略
+
+## 1. 公开 API 避免暴露 POSIX-only 语义
+
+对脚本作者稳定承诺的是：
+
+- `spawn`
+- `status`
+- `output`
+- `cwd`
+- `env overlay`
+- `pipe`
+
+不是：
+
+- `fork`
+- `execve`
+- `SIGCHLD`
+
+## 2. Windows hosted backend 走显式 bridge
+
+若要把脚本运行时扩到 Windows，必须补齐一批 hosted bridge：
+
+- 进程创建
+- 等待子进程
+- 目录遍历
+- cwd
+- 环境变量
+- 路径 stat / remove / rename
+- pipe / 重定向
+
+建议在生成 C 的 hosted backend 中统一桥接，而不是在上层脚本库写大量平台 `cfg` 分支。
+
+## 3. PATH 搜索必须平台敏感
+
+`which` / `Command` 路径查找要考虑：
+
+- `PATH` 分隔符
+- Windows 可执行后缀
+- 是否接受当前目录搜索
+
+这些都应收敛在 `std.path` / `std.process` 内部。
+
+## 4. shell fallback 显式区分平台
+
+如果必须执行 shell 字符串：
+
+- POSIX 走 `/bin/sh -c`
+- Windows 不能默认假设 `cmd.exe` 与 POSIX shell 语义等价
+
+因此 fallback API 需要显式选择：
+
+- `run_shell_sh`
+- `run_shell_cmd`
+
+或者等价设计，但不能把不同 shell 语义伪装成同一个接口。
+
+---
+
+## 性能策略
+
+提升性能的来源主要有三类：
+
+1. **减少 shell 层**
+   - 直接 `spawn(argv)`，而不是 `system("cmd ...")`
+
+2. **减少工具链小进程**
+   - 用 `std.fs`、`std.path`、`std.env`、`std.process` 替掉 `grep`、`dirname`、`basename`、`mkdir -p`、`rm -rf` 等琐碎命令
+
+3. **后续接入 exec backend**
+   - `uya script` 可以优先尝试 `--exec`
+   - 对纯 Uya 脚本可明显降低启动与链接成本
+
+不应把性能目标绑定在“模拟 bash 语法”上。
+
+---
+
+## 仓库迁移策略
+
+建议按复杂度分三类脚本推进：
+
+### A 类：优先迁移
+
+特征：
+
+- 主要是编译器调用、退出码断言、文件存在性检查、少量文本匹配
+- 少依赖复杂 shell 文法
+
+候选：
+
+- `tests/verify_check_cli.sh`
+- `tests/verify_exec_vm_compiler_regressions.sh`
+- `tests/verify_split_build_output.sh`
+- `tests/verify_project_root_embedded_uya_resolution.sh`
+
+### B 类：第二批迁移
+
+特征：
+
+- 有较多临时目录、文本处理、目录遍历、并行/循环逻辑
+
+候选：
+
+- `tests/verify_exec_vm_smoke.sh`
+- `tests/verify_exec_backend_progress.sh`
+- `tests/run_programs_parallel.sh`
+
+### C 类：后期迁移
+
+特征：
+
+- 平台分支重、工具链耦合深、兼容性要求高
+
+候选：
+
+- `src/compile.sh`
+- `tests/run_cross_platform_tests.sh`
+- 涉及交叉编译矩阵的脚本
+
+### 迁移原则
+
+- 初期 `.sh` 与 `.uya` 并存
+- 先让 `.uya` 脚本与旧 `.sh` 产出、退出码、关键日志对齐
+- CI 切换前保留一段“双跑比对”窗口
+
+---
+
+## 测试与验收
+
+脚本运行时需要三层验证：
+
+## 1. 单元测试
+
+- `std.process`
+- `std.fs`
+- `std.env`
+- `std.path`
+
+## 2. 集成测试
+
+- 用迁移后的 `.uya` 脚本替换或并行验证现有 `.sh`
+- 对齐：
+  - 退出码
+  - 关键 stdout/stderr
+  - 产物文件
+  - 临时目录清理行为
+
+## 3. 平台测试
+
+- Linux hosted：第一优先级
+- macOS hosted：第二优先级
+- Windows hosted：跨平台承诺成立前必须补齐
+
+---
+
+## 与现有主线的关系
+
+本设计与以下主线直接相关：
+
+- `std_refactor_design.md`
+  - 脚本库应复用 `osal` 方向，而不是新造一套系统抽象
+- `todo_cmd_subcommand_split.md`
+  - 公开调度器应继续往 argv / `execve` 方向收敛，减少 `system()` 路径
+- `todo_platform_shared_foundation.md`
+  - Windows / Darwin hosted bring-up 将直接影响脚本跨平台能力
+- `todo_bytecode_exec.md`
+  - 后续 `uya script --exec` 可作为启动性能优化方向
+
+脚本运行时不应复制已有 `osal` / `libc` 能力，也不应抢先定义与 `std.fs`、`std.process` 冲突的平行 API。
+
+---
+
+## 开放问题
+
+1. `std.script` 是否一开始就公开，还是先只做 `std.process/std.fs/std.env/std.path`？
+2. `Command` 是否需要内建 PATH 搜索，还是要求调用方显式选择？
+3. 是否要在 MVP 暴露 pipeline，还是先只做 `status/output/spawn`？
+4. Windows hosted backend 是否统一走宽字符 bridge？
+5. `uya script` 是否默认优先 `--exec`，还是默认 C99 hosted、用参数显式切换？
+
+这些问题不阻塞第一阶段文档和基础模块落地，但需要在实现期逐步收口。
