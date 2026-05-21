@@ -105,6 +105,9 @@ var g_split_c_dir: [byte: PATH_MAX] = [];
 var g_split_c_dir_active: i32 = 0;
 // 命令行 --no-split-c：强制单文件 C，忽略默认多文件、UYA_SPLIT_C_DIR 与 --split-c-dir
 var g_split_c_disabled_cli: i32 = 0;
+// split-C 共享输出目录锁：同一目录一次只允许一个编译进程写入，避免 .c/.h 生成物交错损坏
+var g_split_c_lock_dir: [byte: PATH_MAX] = [];
+var g_split_c_lock_active: i32 = 0;
 
 // --async-frame-heap=on：async frame pool 满时回退到调试 heap
 var g_async_frame_heap_fallback: i32 = 0;
@@ -166,6 +169,298 @@ fn split_c_set_default_dir() void {
         strcpy(&g_split_c_dir[0] as *byte, def);
         g_split_c_dir_active = 1;
     }
+}
+
+fn split_c_lock_reset() void {
+    g_split_c_lock_active = 0;
+    g_split_c_lock_dir[0] = 0 as byte;
+}
+
+fn split_c_copy_dir_without_trailing_sep(src: &byte, out: &byte, out_cap: usize) i32 {
+    if src == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const copied: i32 = snprintf(out as *byte, out_cap, "%s" as *byte, src as *byte);
+    if copied <= 0 || copied >= out_cap as i32 {
+        return 1;
+    }
+    var len: usize = copied as usize;
+    while len > 1usize {
+        const tail: byte = out[len - 1usize];
+        if tail != 47 as byte && tail != 92 as byte {
+            break;
+        }
+        if len == 3usize {
+            const c0: i32 = out[0] as i32;
+            if ((c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122)) && out[1] == 58 as byte {
+                break;
+            }
+        }
+        out[len - 1usize] = 0 as byte;
+        len = len - 1usize;
+    }
+    return 0;
+}
+
+fn split_c_fill_lock_dir(split_dir: &byte, out: &byte, out_cap: usize) i32 {
+    if split_dir == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    var split_dir_norm: [byte: PATH_MAX] = [];
+    if split_c_copy_dir_without_trailing_sep(split_dir, &split_dir_norm[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    const wl: i32 = snprintf(out as *byte, out_cap, "%s/.uya-lock" as *byte, &split_dir_norm[0] as *byte);
+    if wl <= 0 || wl >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn split_c_fill_lock_pid_path(lock_dir: &byte, out: &byte, out_cap: usize) i32 {
+    if lock_dir == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const wl: i32 = snprintf(out as *byte, out_cap, "%s/owner.pid" as *byte, lock_dir as *byte);
+    if wl <= 0 || wl >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn split_c_fill_lock_stage_dir(lock_dir: &byte, out: &byte, out_cap: usize) i32 {
+    if lock_dir == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const wl: i32 = snprintf(out as *byte, out_cap, "%s.stage-%d" as *byte, lock_dir as *byte, getpid());
+    if wl <= 0 || wl >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn split_c_parse_owner_pid(text: &byte) i32 {
+    if text == null {
+        return 0 - 1;
+    }
+    var i: usize = 0;
+    while text[i] == 32 as byte || text[i] == 9 as byte || text[i] == 10 as byte || text[i] == 13 as byte {
+        i = i + 1;
+    }
+    if text[i] == 0 as byte {
+        return 0 - 1;
+    }
+    var value: i32 = 0;
+    var digit_count: i32 = 0;
+    while text[i] >= '0' as byte && text[i] <= '9' as byte {
+        value = value * 10 + (text[i] as i32 - '0' as i32);
+        digit_count = digit_count + 1;
+        i = i + 1;
+    }
+    if digit_count == 0 {
+        return 0 - 1;
+    }
+    while text[i] == 32 as byte || text[i] == 9 as byte || text[i] == 10 as byte || text[i] == 13 as byte {
+        i = i + 1;
+    }
+    if text[i] != 0 as byte || value <= 0 {
+        return 0 - 1;
+    }
+    return value;
+}
+
+fn split_c_write_lock_owner_pid(lock_dir: &byte) i32 {
+    var pid_path: [byte: PATH_MAX] = [];
+    if split_c_fill_lock_pid_path(lock_dir, &pid_path[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    const file: &void = fopen(&pid_path[0] as *byte, "w" as *byte) as &void;
+    if file == null {
+        return 1;
+    }
+    fprintf(file as *void, "%d\n" as *byte, getpid());
+    fclose(file as *void);
+    return 0;
+}
+
+fn split_c_read_lock_owner_pid(lock_dir: &byte, pid_out: &i32) i32 {
+    if lock_dir == null || pid_out == null {
+        return 1;
+    }
+    var pid_path: [byte: PATH_MAX] = [];
+    if split_c_fill_lock_pid_path(lock_dir, &pid_path[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    const file: &FILE = fopen(&pid_path[0] as *byte, "r" as *byte);
+    if file == null {
+        return 1;
+    }
+    var buf: [byte: 64] = [];
+    const line: &byte = fgets(&buf[0] as &byte, 64, file);
+    fclose(file);
+    if line == null {
+        return 1;
+    }
+    const pid: i32 = split_c_parse_owner_pid(&buf[0] as &byte);
+    if pid <= 0 {
+        return 1;
+    }
+    pid_out[0] = pid;
+    return 0;
+}
+
+fn split_c_cleanup_lock_dir(lock_dir: &byte) void {
+    if lock_dir == null || lock_dir[0] == 0 as byte {
+        return;
+    }
+    var pid_path: [byte: PATH_MAX] = [];
+    if split_c_fill_lock_pid_path(lock_dir, &pid_path[0] as &byte, PATH_MAX) == 0 {
+        _ = unlink(&pid_path[0] as *byte);
+    }
+    _ = rmdir(lock_dir as *byte);
+}
+
+fn split_c_owner_pid_is_alive(pid: i32) i32 {
+    if pid <= 0 {
+        return 0;
+    }
+    const probe: !i32 = sys_kill(pid as i64, 0);
+    if probe.error_id == 0u32 {
+        return 1;
+    }
+    const eid: i32 = probe.error_id as i32;
+    if eid == EPERM {
+        return 1;
+    }
+    if eid == ESRCH {
+        return 0;
+    }
+    // 其它错误保守按「仍占锁」处理，避免误删活锁。
+    return 1;
+}
+
+fn split_c_try_reclaim_stale_lock(lock_dir: &byte) i32 {
+    if lock_dir == null || lock_dir[0] == 0 as byte {
+        return 0;
+    }
+    var owner_pid: i32 = 0;
+    if split_c_read_lock_owner_pid(lock_dir, &owner_pid) != 0 {
+        if rmdir(lock_dir as *byte) == 0 {
+            fprintf(libc.stderr, "信息：检测到 incomplete split-C 锁，已回收（锁目录：%s，缺少 owner.pid）\n" as *byte, lock_dir as *byte);
+            return 1;
+        }
+        return 0;
+    }
+    if split_c_owner_pid_is_alive(owner_pid) != 0 {
+        return 0;
+    }
+    split_c_cleanup_lock_dir(lock_dir);
+    if access(lock_dir as *byte, F_OK) != 0 {
+        fprintf(libc.stderr, "信息：检测到 stale split-C 锁，已回收（锁目录：%s，owner pid=%d）\n" as *byte, lock_dir as *byte, owner_pid);
+        return 1;
+    }
+    return 0;
+}
+
+fn split_c_lock_take_ownership(lock_dir: &byte) i32 {
+    if lock_dir == null || lock_dir[0] == 0 as byte {
+        return 1;
+    }
+    var stage_dir: [byte: PATH_MAX] = [];
+    if split_c_fill_lock_stage_dir(lock_dir, &stage_dir[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    split_c_cleanup_lock_dir(&stage_dir[0] as &byte);
+    if mkdir(&stage_dir[0] as *byte, 493) != 0 {
+        return 1;
+    }
+    if split_c_write_lock_owner_pid(&stage_dir[0] as &byte) != 0 {
+        split_c_cleanup_lock_dir(&stage_dir[0] as &byte);
+        return 1;
+    }
+    const rename_result: !i32 = sys_rename(&stage_dir[0] as &byte, lock_dir);
+    if rename_result.error_id != 0u32 {
+        split_c_cleanup_lock_dir(&stage_dir[0] as &byte);
+        return 1;
+    }
+    strcpy(&g_split_c_lock_dir[0] as *byte, lock_dir as *byte);
+    g_split_c_lock_active = 1;
+    return 0;
+}
+
+fn split_c_acquire_lock(split_dir: &byte) i32 {
+    if split_dir == null || split_dir[0] == 0 as byte {
+        return 0;
+    }
+    if g_split_c_lock_active != 0 {
+        return 0;
+    }
+    var split_dir_norm: [byte: PATH_MAX] = [];
+    if split_c_copy_dir_without_trailing_sep(split_dir, &split_dir_norm[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误：无法规范化 split-C 输出目录路径: %s\n" as *byte, split_dir as *byte);
+        return 1;
+    }
+    c99_mkdir_p_chain(&split_dir_norm[0] as &byte);
+    var lock_dir: [byte: PATH_MAX] = [];
+    if split_c_fill_lock_dir(&split_dir_norm[0] as &byte, &lock_dir[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误：无法构建 split-C 锁目录路径: %s\n" as *byte, &split_dir_norm[0] as *byte);
+        return 1;
+    }
+    if access(&lock_dir[0] as *byte, F_OK) != 0 {
+        if split_c_lock_take_ownership(&lock_dir[0] as &byte) != 0 {
+            if access(&lock_dir[0] as *byte, F_OK) == 0 {
+                if split_c_try_reclaim_stale_lock(&lock_dir[0] as &byte) != 0 {
+                    if split_c_lock_take_ownership(&lock_dir[0] as &byte) != 0 {
+                        fprintf(libc.stderr, "错误：无法写入 split-C 锁信息 '%s'\n" as *byte, &lock_dir[0] as *byte);
+                        return 1;
+                    }
+                    return 0;
+                }
+            }
+            if access(&lock_dir[0] as *byte, F_OK) == 0 {
+                var owner_pid: i32 = 0;
+                if split_c_read_lock_owner_pid(&lock_dir[0] as &byte, &owner_pid) == 0 {
+                    fprintf(libc.stderr, "错误：多文件 C 输出目录 '%s' 正在被另一编译进程使用（锁目录：%s，owner pid=%d）；请等待当前编译结束，或改用独立 --split-c-dir / worktree\n" as *byte, split_dir as *byte, &lock_dir[0] as *byte, owner_pid);
+                } else {
+                    fprintf(libc.stderr, "错误：多文件 C 输出目录 '%s' 正在被另一编译进程使用（锁目录：%s）；请等待当前编译结束，或改用独立 --split-c-dir / worktree\n" as *byte, split_dir as *byte, &lock_dir[0] as *byte);
+                }
+            } else {
+                fprintf(libc.stderr, "错误：无法写入 split-C 锁信息 '%s'\n" as *byte, &lock_dir[0] as *byte);
+            }
+            return 1;
+        }
+        return 0;
+    }
+    if split_c_try_reclaim_stale_lock(&lock_dir[0] as &byte) != 0 {
+        if split_c_lock_take_ownership(&lock_dir[0] as &byte) != 0 {
+            fprintf(libc.stderr, "错误：无法写入 split-C 锁信息 '%s'\n" as *byte, &lock_dir[0] as *byte);
+            return 1;
+        }
+        return 0;
+    }
+    if access(&lock_dir[0] as *byte, F_OK) == 0 {
+        var owner_pid: i32 = 0;
+        if split_c_read_lock_owner_pid(&lock_dir[0] as &byte, &owner_pid) == 0 {
+            fprintf(libc.stderr, "错误：多文件 C 输出目录 '%s' 正在被另一编译进程使用（锁目录：%s，owner pid=%d）；请等待当前编译结束，或改用独立 --split-c-dir / worktree\n" as *byte, split_dir as *byte, &lock_dir[0] as *byte, owner_pid);
+        } else {
+            fprintf(libc.stderr, "错误：多文件 C 输出目录 '%s' 正在被另一编译进程使用（锁目录：%s）；请等待当前编译结束，或改用独立 --split-c-dir / worktree\n" as *byte, split_dir as *byte, &lock_dir[0] as *byte);
+        }
+        return 1;
+    }
+    fprintf(libc.stderr, "错误：无法创建 split-C 锁目录 '%s'\n" as *byte, &lock_dir[0] as *byte);
+    return 1;
+}
+
+fn split_c_release_lock() void {
+    if g_split_c_lock_active == 0 {
+        return;
+    }
+    var pid_path: [byte: PATH_MAX] = [];
+    if split_c_fill_lock_pid_path(&g_split_c_lock_dir[0] as &byte, &pid_path[0] as &byte, PATH_MAX) == 0 {
+        _ = unlink(&pid_path[0] as *byte);
+    }
+    _ = rmdir(&g_split_c_lock_dir[0] as *byte);
+    split_c_lock_reset();
 }
 
 fn is_pobj_output(path: &byte) i32 {
@@ -4053,6 +4348,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --no-split-c         关闭多文件 C（单文件/临时 .c；忽略 UYA_SPLIT_C_DIR 与 --split-c-dir）\n" as *byte);
     fprintf(libc.stderr, "  C99 默认多文件输出到 .uyacache（显式 -o xxx.c 或 UYA_SPLIT_C=0|false|no|off 时为单文件）\n" as *byte);
     fprintf(libc.stderr, "  多文件布局：默认镜像分 TU（一源一 .c，便于 make -j）；UYA_SPLIT_C_MIRROR=0|false|no|off 时用 uya_part1+part2\n" as *byte);
+    fprintf(libc.stderr, "  同一 split-C 输出目录不支持并发写入；并发时会直接报 busy，避免共享 cache 损坏\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
     fprintf(libc.stderr, "  -v, --version        显示版本信息\n" as *byte);
     fprintf(libc.stderr, "\n微应用环境变量:\n" as *byte);
@@ -6821,11 +7117,46 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
         }
     }
     const jobs_env: &byte = get_env_or_default("UYA_GCC_JOBS" as *byte, "4" as *byte);
+    var zig_env_prefix: [byte: 2048] = [];
+    var zig_env_prefix_use: &byte = "" as *byte;
+    if strstr(cc_driver as *byte, "zig cc" as *byte) != null || strstr(cc_driver as *byte, "zig c++" as *byte) != null {
+        var zig_local_cache: [byte: PATH_MAX] = [];
+        var zig_global_cache: [byte: PATH_MAX] = [];
+        const zig_local_env: *byte = getenv("ZIG_LOCAL_CACHE_DIR" as *byte);
+        const zig_global_env: *byte = getenv("ZIG_GLOBAL_CACHE_DIR" as *byte);
+        var zig_local_written: i32 = 0;
+        var zig_global_written: i32 = 0;
+        if zig_local_env != null && zig_local_env[0] != 0 {
+            zig_local_written = snprintf(&zig_local_cache[0] as *byte, PATH_MAX, "%s" as *byte, zig_local_env as *byte);
+        } else {
+            zig_local_written = snprintf(&zig_local_cache[0] as *byte, PATH_MAX, "%s/.zig-cache-local" as *byte, split_dir as *byte);
+        }
+        if zig_global_env != null && zig_global_env[0] != 0 {
+            zig_global_written = snprintf(&zig_global_cache[0] as *byte, PATH_MAX, "%s" as *byte, zig_global_env as *byte);
+        } else {
+            zig_global_written = snprintf(&zig_global_cache[0] as *byte, PATH_MAX, "%s/.zig-cache-global" as *byte, split_dir as *byte);
+        }
+        if zig_local_written <= 0 || zig_local_written >= PATH_MAX || zig_global_written <= 0 || zig_global_written >= PATH_MAX {
+            fprintf(libc.stderr, "错误：构建 zig cache 目录路径失败\n" as *byte);
+            return 1;
+        }
+        c99_mkdir_p_chain(&zig_local_cache[0] as &byte);
+        c99_mkdir_p_chain(&zig_global_cache[0] as &byte);
+        const zig_env_len: i32 = snprintf(&zig_env_prefix[0] as *byte, 2048,
+            "ZIG_LOCAL_CACHE_DIR=\"%s\" ZIG_GLOBAL_CACHE_DIR=\"%s\" " as *byte,
+            &zig_local_cache[0] as *byte,
+            &zig_global_cache[0] as *byte);
+        if zig_env_len <= 0 || zig_env_len >= 2048 {
+            fprintf(libc.stderr, "错误：构建 zig cache 环境变量失败\n" as *byte);
+            return 1;
+        }
+        zig_env_prefix_use = &zig_env_prefix[0] as &byte;
+    }
     // 嵌套 make 时清除 GNU make jobserver 变量，避免在「外层 make -j」下子 make 与父 make 争用令牌而卡死
     var cmd: [byte: 8192] = [];
     const cmd_len: i32 = snprintf(&cmd[0] as *byte, 8192,
-        "env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS UYA_OUT=\"%s\" CC=\"%s\" CFLAGS=\"%s\" LDFLAGS=\"%s\" make -C \"%s\" -j%s" as *byte,
-        output_for_make as *byte, cc_make as *byte, cflags as *byte, ld_use as *byte, split_dir as *byte, jobs_env as *byte);
+        "env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS %sUYA_OUT=\"%s\" CC=\"%s\" CFLAGS=\"%s\" LDFLAGS=\"%s\" make -C \"%s\" -j%s" as *byte,
+        zig_env_prefix_use as *byte, output_for_make as *byte, cc_make as *byte, cflags as *byte, ld_use as *byte, split_dir as *byte, jobs_env as *byte);
     if cmd_len <= 0 || cmd_len >= 8192 {
         fprintf(libc.stderr, "错误：构建 make 链接命令失败\n" as *byte);
         return 1;
@@ -8060,6 +8391,21 @@ export fn main() i32 {
     var stop_after_checker: i32 = 0;
     if command == CommandType.COMMAND_CHECK {
         stop_after_checker = 1;
+    }
+    var split_c_lock_held: i32 = 0;
+    defer {
+        if split_c_lock_held != 0 {
+            split_c_release_lock();
+            split_c_lock_held = 0;
+        }
+    }
+    // split-C 锁在写任何生成物前获取，并一直持有到整个 uya 命令结束；
+    // 因此不仅覆盖 codegen，也覆盖后续的 make -C <split-dir> 链接阶段。
+    if split_c_arg != null && split_c_arg[0] != 0 as byte && stop_after_checker == 0 {
+        if split_c_acquire_lock(split_c_arg) != 0 {
+            return 1;
+        }
+        split_c_lock_held = 1;
     }
     var result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
     if result == 2 && selected_backend == BackendType.BACKEND_EXEC && exec_only == 0 {

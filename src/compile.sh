@@ -86,6 +86,13 @@ cc_driver_is_clang_like() {
     esac
 }
 
+cc_driver_uses_zig() {
+    case "$1" in
+        *"zig cc"*|*"zig c++"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 append_clang_warning_compat() {
     local base="$1"
     if ! cc_driver_is_clang_like "$CC_DRIVER"; then
@@ -158,7 +165,17 @@ run_uya_split_make_link() {
         echo "多文件 C 链接: env -u MAKEFLAGS … make -C \"$split_dir\" -j$jobs UYA_OUT=\"$out_exe\" …"
     fi
     # 避免在外层 make -j 时子 make 继承 jobserver 导致死锁（与 src/main.uya link_split_with_make 一致）
-    env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_MAKE_DRIVER" CFLAGS="$CFLAGS_EFFECTIVE" LDFLAGS="$ld_use"
+    if cc_driver_uses_zig "$CC_DRIVER"; then
+        local zig_local_cache="${ZIG_LOCAL_CACHE_DIR:-$split_dir/.zig-cache-local}"
+        local zig_global_cache="${ZIG_GLOBAL_CACHE_DIR:-$split_dir/.zig-cache-global}"
+        mkdir -p "$zig_local_cache" "$zig_global_cache"
+        env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS \
+            ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+            ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+            make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_MAKE_DRIVER" CFLAGS="$CFLAGS_EFFECTIVE" LDFLAGS="$ld_use"
+    else
+        env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_MAKE_DRIVER" CFLAGS="$CFLAGS_EFFECTIVE" LDFLAGS="$ld_use"
+    fi
 }
 
 # 多文件自举对比：主编译产物在 src/.uyacache/…，自举产物在 src/build/bootstrap_split_c/…。

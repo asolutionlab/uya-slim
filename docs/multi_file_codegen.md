@@ -15,6 +15,8 @@
 
 **两文件模式（旧）**：设置 **`UYA_SPLIT_C_MIRROR=0`**（或 **`false`** / **`no`** / **`off`**）时，仅生成 **`uya_part1.c`** + **`uya_part2.c`** 两个大翻译单元（与早期行为一致）。生成结束后会将 **`uya_part2.c` 重写**为在文件开头插入对 part1 中全部字符串符号的 **`extern`** 声明。
 
+**并发写保护**：同一个 **`--split-c-dir`**（包括默认 **`.uyacache`**）现在会在输出目录内部创建隐藏锁目录 **`<split-dir>/.uya-lock`**，并在其中写入 **`owner.pid`**。固定锁目录并不是先 `mkdir` 再补写 pid，而是先在 staging 目录准备好 `owner.pid`，再原子 `rename` 成正式锁目录；因此不会再出现“`.uya-lock` 已存在、但 `owner.pid` 还没写进去”的窗口。锁在 **写任何 split 生成物之前** 获取，并一直持有到整条 `uya` 命令结束，因此不仅覆盖 codegen，也覆盖后续的 **`make -C <split-dir>`** 链接阶段。若另一条编译链正在写该目录，新的 `uya` 进程会在代码生成前直接报 busy 并退出，避免把共享 `.c/.h/Makefile` 交错写坏。这样即使一个任务写成 `foo`、另一个写成 `foo/`，也仍会命中同一把锁；若发现 `owner.pid` 对应进程已死亡，或遇到旧版残留的空 `.uya-lock` 目录，编译器会自动回收 stale lock 并继续。
+
 **`mirror_manifest.txt`**：同一目录下写入合并 AST 中各声明的 **`filename`**（去重，一行一个）。
 
 ### 镜像模式（默认）：一源一 `.c`
@@ -106,6 +108,9 @@ export UYA_SPLIT_C_MIRROR=0
 ## 与 `make check` / 注意事项
 
 - **不要在测试阶段依赖全局多文件路径**：`make check` / `make tests` 会在调用 `tests/run_programs_parallel.sh` 时设置 **`UYA_SPLIT_C=0`** 并**清空** `UYA_SPLIT_C_DIR`。否则并行用例会拿不到 `-o` 指定的单文件 `.c`（split 模式下代码写入镜像 `.c` / `uya_part1.c` 等），且易与嵌套 `make` 行为冲突。
+- **并发共享 split 目录**：当前策略是 **fail-fast**，不是多进程共享写入。若两个 `uya` 进程指向同一 `--split-c-dir` / 默认 `.uyacache`，其中一个会明确报 busy；如需并发编译，请给每个任务分配独立 `--split-c-dir`、独立 worktree，或串行化调用。
+- **stale lock 回收边界**：当前会自动回收两类常见残留：`owner.pid` 指向已退出进程的锁目录，以及旧版实现留下的空 **`.uya-lock`** 目录。若锁目录内存在其它异常内容或权限异常，仍可能需要人工处理。
+- **`zig cc` cache 目录**：若 split 链接阶段使用 **`zig cc`** 且未显式设置 **`ZIG_LOCAL_CACHE_DIR`** / **`ZIG_GLOBAL_CACHE_DIR`**，实现会默认将它们落在 **`<split-dir>/.zig-cache-local`** 与 **`<split-dir>/.zig-cache-global`**，避免把 Zig cache 散落到工作目录或全局位置；需要自定义时仍可直接覆写这两个环境变量。
 - **自举编译不要依赖全局 split**：`make uya` / `make b` / `uya-hosted` 等调用 `compile.sh` 的目标会在子进程中设置 **`UYA_SPLIT_C=0`** 并**清空** `UYA_SPLIT_C_DIR` 与 `UYA_SPLIT_C_MIRROR`，始终生成单文件 `src/build/uya.c` 并更新 `bin/uya.c`。若文档旧版写「会继承」，以 Makefile 为准。
 - **外层 `make -j` 与嵌套 `make`**：此前在 GNU make 开启 jobserver 时，子进程中的 `make -C <split>` 若继承 `MAKEFLAGS` 可能**死锁（表现为卡死）**。实现上在嵌套 `make` 前清除 `MAKEFLAGS` / `MFLAGS` / `GNUMAKEFLAGS`（见 `link_split_with_make` 与 `compile.sh` 的 `env -u …`）。
 - **路径**：请使用**绝对路径**或确认**当前工作目录**；相对路径 `.uyacache` 会随 `cwd` 指到不同目录。拼写错误（如 `.uyacach`）会生成到意料外的目录。

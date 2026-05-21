@@ -582,6 +582,32 @@ check: uya
 		exit 1; \
 	fi; \
 	echo ""; \
+	echo "验证 split-C 共享 cache 并发锁..."; \
+	if bash ./tests/verify_split_c_cache_lock.sh > /tmp/verify_out.txt 2>&1; then \
+		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ split-C 共享 cache 并发锁验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "验证 split-C stale lock 自动回收..."; \
+	if bash ./tests/verify_split_c_cache_stale_lock.sh > /tmp/verify_out.txt 2>&1; then \
+		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ split-C stale lock 自动回收验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
 	echo "验证 check 子命令..."; \
 	if bash ./tests/verify_check_cli.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
@@ -781,6 +807,22 @@ check-hosted: b-hosted
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ nested async split-C codegen 验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 split-C 共享 cache 并发锁..."
+	@bash ./tests/verify_split_c_cache_lock.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ split-C 共享 cache 并发锁验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 split-C stale lock 自动回收..."
+	@bash ./tests/verify_split_c_cache_stale_lock.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ split-C stale lock 自动回收验证失败"; \
 		exit 1; \
 	fi
 	@echo ""
