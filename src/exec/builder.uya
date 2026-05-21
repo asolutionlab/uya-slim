@@ -318,6 +318,16 @@ fn exec_builder_drop_local_ref(scope: &ExecCleanupScope, idx: i32) &HIRLocalSlot
     return null;
 }
 
+fn exec_builder_drop_local_slot_ref(scope: &ExecCleanupScope, idx: i32) &&HIRLocalSlot {
+    if scope == null || idx < 0 || idx >= 64 {
+        return null;
+    }
+    if idx >= 0 && idx < 64 {
+        return &scope.drop_locals[idx];
+    }
+    return null;
+}
+
 fn exec_builder_local_desc(ctx: &ExecFunctionBuildContext, slot: i32) &HIRLocalSlot {
     if ctx == null || ctx.function == null || ctx.function.locals == null || slot < 0 || slot >= ctx.function.local_count {
         return null;
@@ -2465,11 +2475,16 @@ fn exec_builder_register_drop_local(ctx: &ExecFunctionBuildContext, stmt: &HIRSt
         exec_backend_set_error(stmt.ast_node, "exec: drop local scope 不匹配" as *byte, 0);
         return -1;
     }
-    if scope.drop_local_count >= 64 {
+    if scope.drop_local_count < 0 || scope.drop_local_count >= 64 {
         exec_backend_set_error(stmt.ast_node, "exec: 每个作用域的 drop local 超出上限" as *byte, 0);
         return -1;
     }
-    scope.drop_locals[scope.drop_local_count] = local;
+    const drop_local_slot: &&HIRLocalSlot = exec_builder_drop_local_slot_ref(scope, scope.drop_local_count);
+    if drop_local_slot == null {
+        exec_backend_set_error(stmt.ast_node, "exec: drop local 写入失败" as *byte, 0);
+        return -1;
+    }
+    drop_local_slot[0] = local;
     scope.drop_local_count = scope.drop_local_count + 1;
     return 0;
 }

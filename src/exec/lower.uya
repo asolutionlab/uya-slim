@@ -674,10 +674,10 @@ fn exec_lower_current_scope_id(ctx: &ExecLowerContext) i32 {
         return -1;
     }
     const scope_idx: i32 = ctx.scope_depth - 1;
-    if scope_idx < 0 || scope_idx >= EXEC_MAX_SCOPE_DEPTH {
-        return -1;
+    if scope_idx >= 0 && scope_idx < EXEC_MAX_SCOPE_DEPTH {
+        return ctx.scope_ids[scope_idx];
     }
-    return ctx.scope_ids[scope_idx];
+    return -1;
 }
 
 fn exec_lower_find_slot(ctx: &ExecLowerContext, name: &byte) i32 {
