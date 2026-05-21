@@ -1034,8 +1034,10 @@ release-build:
 	@echo "已剥离调试符号 (strip)"
 
 # 在当前工作树直接执行完整 release 流程；跳过干净树检查
+# 默认跳过外网敏感测试，避免本地调试被瞬时网络波动误判阻塞
 # 适合本地调试，不适合作为“最终验证”结论
-release-dirty: clean from-c uya b check backup-all-seed release-build
+release-dirty:
+	@ALLOW_SKIP_NETWORK=1 $(MAKE) clean from-c uya b check backup-all-seed release-build
 
 # 在干净快照里执行 release，尽量贴近 GitHub Actions 的 checkout 环境
 # 注意：只包含已提交到 HEAD 的内容；未提交修改不会进入快照

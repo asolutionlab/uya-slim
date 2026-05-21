@@ -38,6 +38,8 @@ struct ExecAggregate {
 
 struct ExecSliceData {
     aggregate: &ExecAggregate,
+    raw_ptr: &byte,
+    elem_kind_code: i32,
     start: i32,
     len: i32,
 }
@@ -538,7 +540,30 @@ fn exec_make_slice(aggregate: &ExecAggregate, start: i32, len: i32) ExecValue {
         return exec_make_void();
     }
     slice_data.aggregate = aggregate;
+    slice_data.raw_ptr = null;
+    slice_data.elem_kind_code = TypeKind.TYPE_VOID as i32;
     slice_data.start = start;
+    slice_data.len = len;
+    return ExecValue {
+        kind: ExecValueKind.EXEC_VALUE_SLICE,
+        i64_value: len as i64,
+        ptr_value: slice_data as &byte,
+        aux_kind: ExecValueKind.EXEC_VALUE_VOID,
+        aux_i64_value: 0,
+        aux_ptr_value: null,
+        error_id: 0,
+    };
+}
+
+fn exec_make_raw_slice(raw_ptr: &byte, elem_kind_code: i32, len: i32) ExecValue {
+    const slice_data: &ExecSliceData = exec_value_alloc_bytes(@size_of(ExecSliceData)) as &ExecSliceData;
+    if slice_data == null {
+        return exec_make_void();
+    }
+    slice_data.aggregate = null;
+    slice_data.raw_ptr = raw_ptr;
+    slice_data.elem_kind_code = elem_kind_code;
+    slice_data.start = 0;
     slice_data.len = len;
     return ExecValue {
         kind: ExecValueKind.EXEC_VALUE_SLICE,
@@ -569,6 +594,30 @@ fn exec_value_as_slice(value: &ExecValue) &ExecSliceData {
         return null;
     }
     return value.ptr_value as &ExecSliceData;
+}
+
+fn exec_value_is_raw_slice(value: &ExecValue) i32 {
+    const slice_data: &ExecSliceData = exec_value_as_slice(value);
+    if slice_data == null || slice_data.aggregate != null {
+        return 0;
+    }
+    return (slice_data.elem_kind_code != TypeKind.TYPE_VOID as i32) as i32;
+}
+
+fn exec_value_slice_element_kind(value: &ExecValue) i32 {
+    const slice_data: &ExecSliceData = exec_value_as_slice(value);
+    if slice_data == null {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    return slice_data.elem_kind_code;
+}
+
+fn exec_value_slice_raw_ptr(value: &ExecValue) &byte {
+    const slice_data: &ExecSliceData = exec_value_as_slice(value);
+    if slice_data == null {
+        return null;
+    }
+    return slice_data.raw_ptr;
 }
 
 fn exec_value_as_union(value: &ExecValue) &ExecUnionData {
@@ -617,6 +666,9 @@ fn exec_value_clone(value: &ExecValue) ExecValue {
         const slice_data: &ExecSliceData = exec_value_as_slice(value);
         if slice_data == null {
             return exec_make_void();
+        }
+        if slice_data.aggregate == null {
+            return exec_make_raw_slice(slice_data.raw_ptr, slice_data.elem_kind_code, slice_data.len);
         }
         return exec_make_slice(slice_data.aggregate, slice_data.start, slice_data.len);
     }
@@ -701,7 +753,26 @@ fn exec_value_get_index(value: &ExecValue, idx: i32) ExecValue {
     }
     if value.kind == ExecValueKind.EXEC_VALUE_SLICE {
         const slice_data: &ExecSliceData = exec_value_as_slice(value);
-        if slice_data == null || slice_data.aggregate == null || idx < 0 || idx >= slice_data.len {
+        if slice_data == null || idx < 0 || idx >= slice_data.len {
+            return exec_make_void();
+        }
+        if slice_data.aggregate == null {
+            if slice_data.raw_ptr == null {
+                return exec_make_void();
+            }
+            if slice_data.elem_kind_code == TypeKind.TYPE_BOOL as i32 {
+                return exec_make_bool((slice_data.raw_ptr[idx] != 0) as i32);
+            }
+            if slice_data.elem_kind_code == TypeKind.TYPE_I8 as i32 {
+                const raw_i8: &i8 = (slice_data.raw_ptr + idx) as &i8;
+                return exec_make_i8(raw_i8[0]);
+            }
+            if slice_data.elem_kind_code == TypeKind.TYPE_U8 as i32 {
+                return exec_make_u8(slice_data.raw_ptr[idx]);
+            }
+            if slice_data.elem_kind_code == TypeKind.TYPE_BYTE as i32 {
+                return exec_make_byte(slice_data.raw_ptr[idx] as i32);
+            }
             return exec_make_void();
         }
         return slice_data.aggregate.values[slice_data.start + idx];
@@ -744,8 +815,24 @@ fn exec_value_set_index(dst: &ExecValue, idx: i32, value: &ExecValue) i32 {
     }
     if dst.kind == ExecValueKind.EXEC_VALUE_SLICE {
         const slice_data: &ExecSliceData = exec_value_as_slice(dst);
-        if slice_data == null || slice_data.aggregate == null || idx < 0 || idx >= slice_data.len {
+        if slice_data == null || idx < 0 || idx >= slice_data.len {
             return -1;
+        }
+        if slice_data.aggregate == null {
+            if slice_data.raw_ptr == null {
+                return -1;
+            }
+            if slice_data.elem_kind_code == TypeKind.TYPE_BOOL as i32 {
+                slice_data.raw_ptr[idx] = (value.i64_value != 0) as byte;
+                return 0;
+            }
+            if slice_data.elem_kind_code == TypeKind.TYPE_I8 as i32 {
+                const raw_i8: &i8 = (slice_data.raw_ptr + idx) as &i8;
+                raw_i8[0] = value.i64_value as i8;
+                return 0;
+            }
+            slice_data.raw_ptr[idx] = value.i64_value as byte;
+            return 0;
         }
         slice_data.aggregate.values[slice_data.start + idx] = exec_value_clone(value);
         return 0;
@@ -854,6 +941,9 @@ fn exec_value_truthy(value: ExecValue) i32 {
 
 fn exec_value_error_id(value: ExecValue) i32 {
     if value.kind == ExecValueKind.EXEC_VALUE_ERROR {
+        return value.error_id;
+    }
+    if value.kind == ExecValueKind.EXEC_VALUE_ERROR_UNION {
         return value.error_id;
     }
     return 0;

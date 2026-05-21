@@ -27,6 +27,7 @@ fn exec_debug_opcode_name(opcode: BCOpcode) &byte {
     if opcode == BCOpcode.BC_NEG { return "BC_NEG" as &byte; }
     if opcode == BCOpcode.BC_NOT { return "BC_NOT" as &byte; }
     if opcode == BCOpcode.BC_LOAD_LEN { return "BC_LOAD_LEN" as &byte; }
+    if opcode == BCOpcode.BC_LOAD_SLICE_PTR { return "BC_LOAD_SLICE_PTR" as &byte; }
     if opcode == BCOpcode.BC_CAST { return "BC_CAST" as &byte; }
     if opcode == BCOpcode.BC_MAKE_STRUCT { return "BC_MAKE_STRUCT" as &byte; }
     if opcode == BCOpcode.BC_MAKE_ARRAY { return "BC_MAKE_ARRAY" as &byte; }
@@ -146,6 +147,14 @@ fn exec_debug_dump_expr(expr: &HIRExpr) void {
     }
     if expr.kind == HIRExprKind.HIR_EXPR_ADDR {
         fprintf(libc.stderr, "addr(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_LEN {
+        fprintf(libc.stderr, "len(...)" as *byte);
+        return;
+    }
+    if expr.kind == HIRExprKind.HIR_EXPR_SLICE_PTR {
+        fprintf(libc.stderr, "slice_ptr(...)" as *byte);
         return;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_CALL {

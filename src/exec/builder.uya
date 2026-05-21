@@ -1227,6 +1227,25 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         }
         return dst_len;
     }
+    if expr.kind == HIRExprKind.HIR_EXPR_SLICE_PTR {
+        const src_slice_ptr: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const dst_slice_ptr: i32 = exec_builder_new_temp(ctx);
+        if src_slice_ptr < 0 || dst_slice_ptr < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_LOAD_SLICE_PTR,
+            a: dst_slice_ptr,
+            b: src_slice_ptr,
+            c: exec_builder_pointer_pointee_kind_code(expr.type_ref.type),
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(expr.ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_slice_ptr;
+    }
     if expr.kind == HIRExprKind.HIR_EXPR_STRUCT_INIT ||
         expr.kind == HIRExprKind.HIR_EXPR_ARRAY_INIT ||
         expr.kind == HIRExprKind.HIR_EXPR_TUPLE_INIT {
@@ -1377,7 +1396,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         return dst_index;
     }
     if expr.kind == HIRExprKind.HIR_EXPR_SLICE {
-        const base_slot_slice: i32 = exec_builder_compile_expr(ctx, expr.left);
+        const base_slot_slice: i32 = exec_builder_compile_addressable_expr_slot(ctx, expr.left, expr.ast_node);
         const start_slot: i32 = exec_builder_compile_expr(ctx, expr.right);
         const len_slot: i32 = exec_builder_compile_expr(ctx, expr.extra);
         const dst_slice: i32 = exec_builder_new_temp(ctx);
@@ -3117,6 +3136,7 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
         } else if instr.opcode == BCOpcode.BC_NEG || instr.opcode == BCOpcode.BC_NOT ||
             instr.opcode == BCOpcode.BC_CAST ||
             instr.opcode == BCOpcode.BC_LOAD_LEN ||
+            instr.opcode == BCOpcode.BC_LOAD_SLICE_PTR ||
             instr.opcode == BCOpcode.BC_LOAD_UNION_TAG ||
             instr.opcode == BCOpcode.BC_LOAD_UNION_PAYLOAD ||
             instr.opcode == BCOpcode.BC_MAKE_OK || instr.opcode == BCOpcode.BC_MAKE_ERR ||

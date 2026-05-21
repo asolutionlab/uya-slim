@@ -313,6 +313,10 @@ fn exec_vm_make_value_ref(target: &ExecValue, pointee_kind: i32) ExecValue {
     return exec_make_pointer_with_kind(target_addr, exec_vm_encode_ref_kind(pointee_kind));
 }
 
+fn exec_vm_make_index_ref_from_addr(addr: usize, pointee_kind: i32) ExecValue {
+    return exec_make_pointer_with_kind(addr, exec_vm_encode_index_ref_kind(pointee_kind));
+}
+
 fn exec_vm_make_index_value_ref(target: &ExecValue, pointee_kind: i32) ExecValue {
     if target == null {
         return exec_make_pointer_with_kind(0 as usize, exec_vm_encode_index_ref_kind(pointee_kind));
@@ -411,6 +415,72 @@ fn exec_vm_raw_array_element_ptr(value: &ExecValue, index_value: i32) ExecValue 
     }
     const addr: usize = @usize_from_ptr(base_ptr as &void) + elem_size * (index_value as usize);
     return exec_make_pointer_with_kind(addr, elem_kind);
+}
+
+fn exec_vm_raw_array_slice_ptr(value: &ExecValue, index_value: i32) ExecValue {
+    if value == null || exec_value_is_raw_array(value) == 0 || index_value < 0 {
+        return exec_make_void();
+    }
+    const count: i32 = value.i64_value as i32;
+    const elem_kind: i32 = exec_value_raw_array_element_kind(value);
+    const elem_size: usize = exec_vm_type_kind_size(elem_kind);
+    if index_value > count || elem_size == 0 as usize {
+        return exec_make_void();
+    }
+    const base_ptr: &byte = exec_value_raw_array_ptr(value);
+    if base_ptr == null {
+        if index_value == 0 && count == 0 {
+            return exec_make_pointer_with_kind(0 as usize, elem_kind);
+        }
+        return exec_make_void();
+    }
+    const addr: usize = @usize_from_ptr(base_ptr as &void) + elem_size * (index_value as usize);
+    return exec_make_pointer_with_kind(addr, elem_kind);
+}
+
+fn exec_vm_raw_slice_element_ptr(value: &ExecValue, index_value: i32, allow_end: i32) ExecValue {
+    if value == null || exec_value_is_raw_slice(value) == 0 || index_value < 0 {
+        return exec_make_void();
+    }
+    const count: i32 = exec_value_count(value);
+    const elem_kind: i32 = exec_value_slice_element_kind(value);
+    const elem_size: usize = exec_vm_type_kind_size(elem_kind);
+    if elem_size == 0 as usize {
+        return exec_make_void();
+    }
+    if index_value > count || (allow_end == 0 && index_value >= count) {
+        return exec_make_void();
+    }
+    const base_ptr: &byte = exec_value_slice_raw_ptr(value);
+    if base_ptr == null {
+        if index_value == 0 && count == 0 {
+            return exec_make_pointer_with_kind(0 as usize, elem_kind);
+        }
+        return exec_make_void();
+    }
+    const addr: usize = @usize_from_ptr(base_ptr as &void) + elem_size * (index_value as usize);
+    return exec_make_pointer_with_kind(addr, elem_kind);
+}
+
+fn exec_vm_slice_ptr_value(value: &ExecValue, pointee_kind: i32) ExecValue {
+    if value == null || value.kind != ExecValueKind.EXEC_VALUE_SLICE {
+        return exec_make_void();
+    }
+    if exec_value_is_raw_slice(value) != 0 {
+        const raw_ptr: &byte = exec_value_slice_raw_ptr(value);
+        if raw_ptr == null {
+            return exec_make_pointer_with_kind(0 as usize, pointee_kind);
+        }
+        return exec_make_pointer_with_kind(@usize_from_ptr(raw_ptr as &void), pointee_kind);
+    }
+    const slice_data: &ExecSliceData = exec_value_as_slice(value);
+    if slice_data == null || slice_data.aggregate == null || slice_data.aggregate.values == null {
+        return exec_make_pointer_with_kind(0 as usize, pointee_kind);
+    }
+    if slice_data.start < 0 || slice_data.start >= slice_data.aggregate.count {
+        return exec_make_pointer_with_kind(0 as usize, pointee_kind);
+    }
+    return exec_vm_make_index_value_ref(&slice_data.aggregate.values[slice_data.start], pointee_kind);
 }
 
 fn exec_vm_pointer_element_ptr(function: &BCFunction, base: ExecValue, index_value: i64) ExecValue {
@@ -1348,6 +1418,14 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             }
             slot_a[0] = raw_ptr_value;
             handled_raw_addr = 1;
+        } else if exec_value_is_raw_slice(slot_b) != 0 {
+            const raw_slice_ptr_value: ExecValue = exec_vm_raw_slice_element_ptr(slot_b, slot_c.i64_value as i32, 0);
+            if raw_slice_ptr_value.kind != ExecValueKind.EXEC_VALUE_POINTER {
+                exec_backend_set_error(function.decl, "exec: ADDR_INDEX 越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = raw_slice_ptr_value;
+            handled_raw_addr = 1;
         } else if exec_vm_pointer_is_internal_ref(slot_b) != 0 {
             const base_target: &ExecValue = exec_vm_ref_target_value(slot_b);
             if exec_value_is_raw_array(base_target) != 0 {
@@ -1357,6 +1435,14 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
                     return -1;
                 }
                 slot_a[0] = raw_ptr_value2;
+                handled_raw_addr = 1;
+            } else if exec_value_is_raw_slice(base_target) != 0 {
+                const raw_slice_ptr_value2: ExecValue = exec_vm_raw_slice_element_ptr(base_target, slot_c.i64_value as i32, 0);
+                if raw_slice_ptr_value2.kind != ExecValueKind.EXEC_VALUE_POINTER {
+                    exec_backend_set_error(function.decl, "exec: ADDR_INDEX 越界" as *byte, 0);
+                    return -1;
+                }
+                slot_a[0] = raw_slice_ptr_value2;
                 handled_raw_addr = 1;
             } else if exec_value_is_pointer_like(base_target[0]) != 0 {
                 const ptr_index_value: ExecValue = exec_vm_pointer_element_ptr(function, base_target[0], slot_c.i64_value);
@@ -1548,6 +1634,16 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             return -1;
         }
         slot_a[0] = exec_make_i32(exec_value_count(slot_b));
+    } else if instr.opcode == BCOpcode.BC_LOAD_SLICE_PTR {
+        if slot_a == null || slot_b == null {
+            exec_backend_set_error(function.decl, "exec: LOAD_SLICE_PTR 槽位越界" as *byte, 0);
+            return -1;
+        }
+        if slot_b.kind != ExecValueKind.EXEC_VALUE_SLICE {
+            exec_backend_set_error(function.decl, "exec: LOAD_SLICE_PTR 目标不是 slice" as *byte, 0);
+            return -1;
+        }
+        slot_a[0] = exec_vm_slice_ptr_value(slot_b, instr.c);
     } else if instr.opcode == BCOpcode.BC_MAKE_STRUCT ||
         instr.opcode == BCOpcode.BC_MAKE_ARRAY ||
         instr.opcode == BCOpcode.BC_MAKE_ARRAY_REPEAT ||
@@ -1624,33 +1720,70 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             exec_backend_set_error(function.decl, "exec: MAKE_SLICE 长度槽位越界" as *byte, 0);
             return -1;
         }
-        const aggregate2: &ExecAggregate = exec_vm_get_aggregate_for_slice(function, slot_b[0]);
-        if aggregate2 == null {
-            return -1;
-        }
         const requested_start: i32 = slot_c.i64_value as i32;
         const slice_len: i32 = len_slot.i64_value as i32;
         if requested_start < 0 || slice_len < 0 {
             exec_backend_set_error(function.decl, "exec: slice 越界" as *byte, 0);
             return -1;
         }
-        var start_idx: i32 = requested_start;
-        if slot_b[0].kind == ExecValueKind.EXEC_VALUE_SLICE {
-            const parent_slice: &ExecSliceData = exec_value_as_slice(slot_b);
-            if parent_slice == null {
+        var slice_base: ExecValue = slot_b[0];
+        if exec_vm_pointer_is_internal_ref(slot_b) != 0 {
+            const slice_base_target: &ExecValue = exec_vm_ref_target_value(slot_b);
+            if slice_base_target == null {
                 exec_backend_set_error(function.decl, "exec: slice 基值无效" as *byte, 0);
                 return -1;
             }
-            if requested_start + slice_len > parent_slice.len {
+            slice_base = slice_base_target[0];
+        }
+        if exec_value_is_raw_array(&slice_base) != 0 {
+            const count: i32 = slice_base.i64_value as i32;
+            if requested_start + slice_len > count {
                 exec_backend_set_error(function.decl, "exec: slice 越界" as *byte, 0);
                 return -1;
             }
-            start_idx = parent_slice.start + start_idx;
-        } else if start_idx + slice_len > aggregate2.count {
-            exec_backend_set_error(function.decl, "exec: slice 越界" as *byte, 0);
-            return -1;
+            const raw_base_ptr: ExecValue = exec_vm_raw_array_slice_ptr(&slice_base, requested_start);
+            if raw_base_ptr.kind != ExecValueKind.EXEC_VALUE_POINTER {
+                exec_backend_set_error(function.decl, "exec: slice 基值无效" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_raw_slice(raw_base_ptr.ptr_value, exec_value_raw_array_element_kind(&slice_base), slice_len);
+        } else if exec_value_is_raw_slice(&slice_base) != 0 {
+            const parent_raw_len: i32 = exec_value_count(&slice_base);
+            if requested_start + slice_len > parent_raw_len {
+                exec_backend_set_error(function.decl, "exec: slice 越界" as *byte, 0);
+                return -1;
+            }
+            const raw_slice_ptr: ExecValue = exec_vm_raw_slice_element_ptr(&slice_base, requested_start, 1);
+            if raw_slice_ptr.kind != ExecValueKind.EXEC_VALUE_POINTER {
+                exec_backend_set_error(function.decl, "exec: slice 基值无效" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_raw_slice(raw_slice_ptr.ptr_value, exec_value_slice_element_kind(&slice_base), slice_len);
+        } else {
+            const slice_base_is_slice: i32 = (slice_base.kind == ExecValueKind.EXEC_VALUE_SLICE) as i32;
+            var start_idx: i32 = requested_start;
+            if slice_base_is_slice != 0 {
+                const parent_slice: &ExecSliceData = exec_value_as_slice(&slice_base);
+                if parent_slice == null {
+                    exec_backend_set_error(function.decl, "exec: slice 基值无效" as *byte, 0);
+                    return -1;
+                }
+                if requested_start + slice_len > parent_slice.len {
+                    exec_backend_set_error(function.decl, "exec: slice 越界" as *byte, 0);
+                    return -1;
+                }
+                start_idx = parent_slice.start + start_idx;
+            }
+            const aggregate2: &ExecAggregate = exec_vm_get_aggregate_for_slice(function, slice_base);
+            if aggregate2 == null {
+                return -1;
+            }
+            if slice_base_is_slice == 0 && start_idx + slice_len > aggregate2.count {
+                exec_backend_set_error(function.decl, "exec: slice 越界" as *byte, 0);
+                return -1;
+            }
+            slot_a[0] = exec_make_slice(aggregate2, start_idx, slice_len);
         }
-        slot_a[0] = exec_make_slice(aggregate2, start_idx, slice_len);
     } else if instr.opcode == BCOpcode.BC_LOAD_FIELD {
         if slot_a == null || slot_b == null {
             exec_backend_set_error(function.decl, "exec: LOAD_FIELD 槽位越界" as *byte, 0);
@@ -1699,6 +1832,15 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
                 if exec_vm_load_pointer_index(function, raw_ptr_value4, 0, slot_a) != 0 {
                     return -1;
                 }
+            } else if exec_value_is_raw_slice(base_target2) != 0 {
+                const raw_slice_ptr_value3: ExecValue = exec_vm_raw_slice_element_ptr(base_target2, index_value, 0);
+                if raw_slice_ptr_value3.kind != ExecValueKind.EXEC_VALUE_POINTER {
+                    exec_backend_set_error(function.decl, "exec: LOAD_INDEX 越界" as *byte, 0);
+                    return -1;
+                }
+                if exec_vm_load_pointer_index(function, raw_slice_ptr_value3, 0, slot_a) != 0 {
+                    return -1;
+                }
             } else if exec_value_is_pointer_like(base_target2[0]) != 0 {
                 if exec_vm_load_pointer_index(function, base_target2[0], slot_c.i64_value, slot_a) != 0 {
                     return -1;
@@ -1738,6 +1880,15 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             if exec_value_is_raw_array(base_target3) != 0 {
                 if exec_value_set_index(base_target3, index_value2, slot_c) != 0 {
                     exec_backend_set_error(function.decl, "exec: STORE_INDEX 越界" as *byte, 0);
+                    return -1;
+                }
+            } else if exec_value_is_raw_slice(base_target3) != 0 {
+                const raw_slice_ptr_value4: ExecValue = exec_vm_raw_slice_element_ptr(base_target3, index_value2, 0);
+                if raw_slice_ptr_value4.kind != ExecValueKind.EXEC_VALUE_POINTER {
+                    exec_backend_set_error(function.decl, "exec: STORE_INDEX 越界" as *byte, 0);
+                    return -1;
+                }
+                if exec_vm_store_pointer_index(function, raw_slice_ptr_value4, 0, slot_c[0]) != 0 {
                     return -1;
                 }
             } else if exec_value_is_pointer_like(base_target3[0]) != 0 {
