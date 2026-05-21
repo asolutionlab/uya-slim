@@ -1139,7 +1139,7 @@ fn exec_lower_known_len_for_expr(ctx: &ExecLowerContext, expr: &ASTNode) i32 {
             return exec_lower_known_len(&ctx.global_types[global_slot]);
         }
     }
-    const expr_type: Type = exec_lower_expr_type(ctx, expr);
+    const expr_type: Type = exec_lower_resolve_exact_type(ctx, expr);
     return exec_lower_known_len(&expr_type);
 }
 
@@ -1286,6 +1286,78 @@ fn exec_lower_struct_field_type(ctx: &ExecLowerContext, struct_type: Type, field
     return find_struct_field_type(ctx.checker, struct_decl, field_name);
 }
 
+fn exec_lower_resolve_exact_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
+    var resolved: Type = exec_lower_expr_type(ctx, expr);
+    if ctx == null || expr == null || resolved.kind != TypeKind.TYPE_VOID {
+        return resolved;
+    }
+    if expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
+        const symbol: &Symbol = symbol_table_lookup(ctx.checker, expr.identifier_name);
+        if symbol != null && symbol.type.kind != TypeKind.TYPE_VOID {
+            return symbol.type;
+        }
+        const slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
+        if slot >= 0 && slot < EXEC_MAX_LOCALS {
+            return ctx.slot_types[slot];
+        }
+        const global_slot: i32 = exec_lower_find_global_slot(ctx, expr.identifier_name);
+        if global_slot >= 0 && global_slot < EXEC_MAX_GLOBALS {
+            return ctx.global_types[global_slot];
+        }
+        return resolved;
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS &&
+        expr.member_access_object != null && expr.member_access_field_name != null {
+        var parent_type: Type = exec_lower_resolve_exact_type(ctx, expr.member_access_object);
+        if parent_type.kind == TypeKind.TYPE_POINTER && parent_type.pointer_to != null {
+            parent_type = parent_type.pointer_to[0];
+        }
+        if parent_type.kind == TypeKind.TYPE_TUPLE && parent_type.tuple_element_types != null {
+            const tuple_index: i32 = atoi(expr.member_access_field_name as *byte);
+            if tuple_index >= 0 && tuple_index < parent_type.tuple_count {
+                return parent_type.tuple_element_types[tuple_index];
+            }
+        }
+        if parent_type.kind == TypeKind.TYPE_STRUCT {
+            const field_type: Type = exec_lower_struct_field_type(ctx, copy_type(&parent_type), expr.member_access_field_name);
+            if field_type.kind != TypeKind.TYPE_VOID {
+                return field_type;
+            }
+        }
+        if parent_type.kind == TypeKind.TYPE_SLICE {
+            if str_equals(expr.member_access_field_name, "len" as *byte) != 0 {
+                return make_usize_type();
+            }
+            if str_equals(expr.member_access_field_name, "ptr" as *byte) != 0 &&
+                parent_type.slice_element_type != null {
+                return exec_lower_make_pointer_type_copy(ctx, parent_type.slice_element_type[0]);
+            }
+        }
+        if (parent_type.kind == TypeKind.TYPE_ERROR || parent_type.kind == TypeKind.TYPE_ERROR_UNION) &&
+            str_equals(expr.member_access_field_name, "error_id" as *byte) != 0 {
+            return make_u32_type();
+        }
+        return resolved;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_ACCESS && expr.array_access_array != null {
+        const array_type: Type = exec_lower_resolve_exact_type(ctx, expr.array_access_array);
+        if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
+            return array_type.element_type[0];
+        }
+        if array_type.kind == TypeKind.TYPE_SLICE && array_type.slice_element_type != null {
+            return array_type.slice_element_type[0];
+        }
+        if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
+            const pointed_type: Type = array_type.pointer_to[0];
+            if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
+                return pointed_type.element_type[0];
+            }
+            return pointed_type;
+        }
+    }
+    return resolved;
+}
+
 fn exec_lower_make_addr_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, pointee_type: &Type) &HIRExpr {
     if pointee_type == null {
         return null;
@@ -1298,7 +1370,7 @@ fn exec_lower_make_ref_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     if ctx == null || expr == null {
         return null;
     }
-    const expr_type: Type = exec_lower_expr_type(ctx, expr);
+    const expr_type: Type = exec_lower_resolve_exact_type(ctx, expr);
     if expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
         const local_slot: i32 = exec_lower_find_slot(ctx, expr.identifier_name);
         if local_slot >= 0 && local_slot < EXEC_MAX_LOCALS {
@@ -1320,9 +1392,26 @@ fn exec_lower_make_ref_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
     }
     if expr.type == ASTNodeType.AST_MEMBER_ACCESS && expr.member_access_object != null && expr.member_access_field_name != null {
-        const object_raw_type: Type = exec_lower_expr_type(ctx, expr.member_access_object);
+        const object_raw_type: Type = exec_lower_resolve_exact_type(ctx, expr.member_access_object);
         var base_type: Type = exec_lower_member_base_type(ctx, expr.member_access_object);
-        const field_type: Type = exec_lower_expr_type(ctx, expr);
+        const field_type: Type = exec_lower_resolve_exact_type(ctx, expr);
+        if base_type.kind == TypeKind.TYPE_VOID &&
+            expr.member_access_object.type == ASTNodeType.AST_ARRAY_ACCESS &&
+            expr.member_access_object.array_access_array != null {
+            const array_type: Type = exec_lower_resolve_exact_type(ctx, expr.member_access_object.array_access_array);
+            if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
+                base_type = array_type.element_type[0];
+            } else if array_type.kind == TypeKind.TYPE_SLICE && array_type.slice_element_type != null {
+                base_type = array_type.slice_element_type[0];
+            } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
+                const pointed_type: Type = array_type.pointer_to[0];
+                if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
+                    base_type = pointed_type.element_type[0];
+                } else {
+                    base_type = pointed_type;
+                }
+            }
+        }
         if base_type.kind == TypeKind.TYPE_POINTER && base_type.pointer_to != null {
             base_type = base_type.pointer_to[0];
         }
@@ -1356,7 +1445,7 @@ fn exec_lower_make_ref_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return addr_field;
     }
     if expr.type == ASTNodeType.AST_ARRAY_ACCESS && expr.array_access_array != null && expr.array_access_index != null {
-        const array_raw_type: Type = exec_lower_expr_type(ctx, expr.array_access_array);
+        const array_raw_type: Type = exec_lower_resolve_exact_type(ctx, expr.array_access_array);
         var base_expr: &HIRExpr = null;
         if array_raw_type.kind == TypeKind.TYPE_POINTER {
             base_expr = exec_lower_expr(ctx, expr.array_access_array);
@@ -1673,7 +1762,7 @@ fn exec_lower_expr_list(ctx: &ExecLowerContext, exprs: & & ASTNode, count: i32) 
 }
 
 fn exec_lower_member_base_type(ctx: &ExecLowerContext, object: &ASTNode) Type {
-    var base_type: Type = exec_lower_expr_type(ctx, object);
+    var base_type: Type = exec_lower_resolve_exact_type(ctx, object);
     if type_get_struct_name(&base_type) != null {
         return base_type;
     }
@@ -1682,7 +1771,7 @@ fn exec_lower_member_base_type(ctx: &ExecLowerContext, object: &ASTNode) Type {
     }
     if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
         const symbol: &Symbol = symbol_table_lookup(ctx.checker, object.identifier_name);
-        if symbol != null {
+        if symbol != null && symbol.type.kind != TypeKind.TYPE_VOID {
             if symbol.type.kind == TypeKind.TYPE_POINTER && symbol.type.pointer_to != null {
                 return symbol.type.pointer_to[0];
             }
@@ -2061,6 +2150,52 @@ fn exec_lower_resolve_imported_decl(checker: &TypeChecker, local_name: &byte, it
         return null;
     }
     return exec_lower_find_module_export_decl(checker, imported_item.module_name, imported_item.original_name, item_type);
+}
+
+fn exec_lower_resolve_imported_decl_from_file(checker: &TypeChecker, filename: &byte, local_name: &byte, item_type: i32) &ASTNode {
+    if checker == null || checker.program_node == null || checker.program_node.type != ASTNodeType.AST_PROGRAM ||
+        filename == null || local_name == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_USE_STMT &&
+            decl.filename != null && str_equals(decl.filename, filename) != 0 &&
+            decl.use_stmt_item_name != null &&
+            decl.use_stmt_path_segments != null && decl.use_stmt_path_segment_count > 0 {
+            var local_name_candidate: &byte = decl.use_stmt_alias;
+            if local_name_candidate == null {
+                local_name_candidate = decl.use_stmt_item_name;
+            }
+            if local_name_candidate != null && str_equals(local_name_candidate, local_name) != 0 {
+                const module_name_len: i32 = exec_lower_joined_module_name_len(decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
+                if module_name_len > 0 {
+                    const module_name: &byte = compiler_arena_alloc(checker.arena, module_name_len as usize + 1 as usize) as &byte;
+                    if module_name != null {
+                        exec_lower_write_joined_module_name(module_name, decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
+                        const export_decl: &ASTNode = exec_lower_find_module_export_decl(checker, module_name, decl.use_stmt_item_name, item_type);
+                        if export_decl != null {
+                            return export_decl;
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn exec_lower_resolve_module_self_named_global_from_file(checker: &TypeChecker, filename: &byte, local_name: &byte) &ASTNode {
+    if checker == null || filename == null || local_name == null {
+        return null;
+    }
+    const module_name: &byte = exec_lower_resolve_module_alias_from_file(checker, filename, local_name);
+    if module_name == null {
+        return null;
+    }
+    return exec_lower_find_module_export_decl(checker, module_name, local_name, 10);
 }
 
 fn exec_lower_use_stmt_module_name_equals(use_stmt: &ASTNode, module_name: &byte) i32 {
@@ -2486,8 +2621,56 @@ fn exec_lower_collect_global_slots_from_imports(checker: &TypeChecker, globals: 
                     return -1;
                 }
             }
+        } else if import_item != null && import_item.item_type == (0 - 1) &&
+            import_item.local_name != null && import_item.module_name != null {
+            const self_named_decl: &ASTNode = exec_lower_find_module_export_decl(checker, import_item.module_name, import_item.local_name, 10);
+            if self_named_decl != null &&
+                exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], self_named_decl) < 0 {
+                if exec_lower_append_global_slot(checker, self_named_decl, globals, out_count, 1) != 0 {
+                    return -1;
+                }
+            }
         }
         slot = slot + 1;
+    }
+    if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM {
+        var decl_i: i32 = 0;
+        while decl_i < checker.program_node.program_decl_count {
+            const decl2: &ASTNode = checker.program_node.program_decls[decl_i];
+            if decl2 != null && decl2.type == ASTNodeType.AST_USE_STMT &&
+                decl2.use_stmt_item_name != null {
+                var local_name_candidate2: &byte = decl2.use_stmt_alias;
+                if local_name_candidate2 == null {
+                    local_name_candidate2 = decl2.use_stmt_item_name;
+                }
+                if local_name_candidate2 != null {
+                    const resolved_decl: &ASTNode = exec_lower_resolve_imported_decl_from_file(checker, decl2.filename, local_name_candidate2, 10);
+                    if resolved_decl != null &&
+                        exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], resolved_decl) < 0 {
+                        if exec_lower_append_global_slot(checker, resolved_decl, globals, out_count, 1) != 0 {
+                            return -1;
+                        }
+                    }
+                }
+            } else if decl2 != null && decl2.type == ASTNodeType.AST_USE_STMT &&
+                decl2.use_stmt_item_name == null {
+                var local_name_candidate3: &byte = decl2.use_stmt_alias;
+                if local_name_candidate3 == null &&
+                    decl2.use_stmt_path_segments != null && decl2.use_stmt_path_segment_count > 0 {
+                    local_name_candidate3 = decl2.use_stmt_path_segments[decl2.use_stmt_path_segment_count - 1];
+                }
+                if local_name_candidate3 != null {
+                    const resolved_decl2: &ASTNode = exec_lower_resolve_module_self_named_global_from_file(checker, decl2.filename, local_name_candidate3);
+                    if resolved_decl2 != null &&
+                        exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], resolved_decl2) < 0 {
+                        if exec_lower_append_global_slot(checker, resolved_decl2, globals, out_count, 1) != 0 {
+                            return -1;
+                        }
+                    }
+                }
+            }
+            decl_i = decl_i + 1;
+        }
     }
     return 0;
 }
@@ -3291,7 +3474,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             hir_local.local_slot = slot;
             return hir_local;
         }
-        const imported_global_decl: &ASTNode = exec_lower_resolve_global_decl(ctx.checker, expr.identifier_name);
+        var imported_global_decl: &ASTNode = exec_lower_resolve_global_decl(ctx.checker, expr.identifier_name);
+        if imported_global_decl == null && expr.filename != null {
+            imported_global_decl = exec_lower_resolve_imported_decl_from_file(ctx.checker, expr.filename, expr.identifier_name, 10);
+        }
+        if imported_global_decl == null && expr.filename != null {
+            imported_global_decl = exec_lower_resolve_module_self_named_global_from_file(ctx.checker, expr.filename, expr.identifier_name);
+        }
         if imported_global_decl != null {
             const global_slot_by_decl: i32 = exec_lower_find_global_slot_by_decl(ctx, imported_global_decl);
             var resolved_global_slot_by_decl: i32 = global_slot_by_decl;
@@ -3956,6 +4145,23 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         const base_expr: &HIRExpr = exec_lower_expr(ctx, expr.member_access_object);
         var base_type: Type = exec_lower_member_base_type(ctx, expr.member_access_object);
         const base_raw_type: Type = exec_lower_expr_type(ctx, expr.member_access_object);
+        if base_type.kind == TypeKind.TYPE_VOID &&
+            expr.member_access_object.type == ASTNodeType.AST_ARRAY_ACCESS &&
+            expr.member_access_object.array_access_array != null {
+            const array_type: Type = exec_lower_resolve_exact_type(ctx, expr.member_access_object.array_access_array);
+            if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
+                base_type = array_type.element_type[0];
+            } else if array_type.kind == TypeKind.TYPE_SLICE && array_type.slice_element_type != null {
+                base_type = array_type.slice_element_type[0];
+            } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
+                const pointed_type: Type = array_type.pointer_to[0];
+                if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
+                    base_type = pointed_type.element_type[0];
+                } else {
+                    base_type = pointed_type;
+                }
+            }
+        }
         if base_expr == null {
             return null;
         }

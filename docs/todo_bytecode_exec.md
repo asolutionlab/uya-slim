@@ -1,7 +1,7 @@
 # Uya Bytecode / IR 执行后端 TODO
 
 **状态**：executable TODO, implementation in progress
-**更新日期**：2026-05-19
+**更新日期**：2026-05-21
 **配套设计**：`docs/bytecode_exec_design.md`
 
 ---
@@ -30,7 +30,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## 当前进度快照
 
-截至 `2026-05-19`，仓库里的 exec backend 已经从“最小标量闭环”继续推进到基础 `match`、`!T`，以及第一批聚合值子集：
+截至 `2026-05-21`，仓库里的 exec backend 已经从“最小标量闭环”继续推进到基础 `match`、`!T`，以及第一批聚合值子集：
 
 - 已新增 `src/exec/` 目录与首批文件：`main/hir/lower/bytecode/builder/vm/value/frame/debug`
 - 已在 `src/main.uya` 中接入 `use exec;`
@@ -160,6 +160,24 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
     - `bash ./tests/verify_exec_backend_progress.sh`
   - `./bin/uya run --vm src/main.uya` 的前沿已继续前推，当前不再卡在 `_ = ...;` 或多语句 catch block，而是前移到 `./lib/kernel/payload.uya:165:9: exec: 当前不支持 slice.ptr`
+- 2026-05-21 已继续收口：
+  - `array-of-pointer` 的 inline 成员访问/写回现已闭环，不再在 lowering 阶段把 `nodes[idx].field` 这类链路掉成 `void`
+  - file-local import / whole-module alias 的“裸标识符全局读写”现已闭环：
+    - `use libc.errno; errno = ENOENT;`
+    - `use module.submodule; submodule = ...` 这类“模块别名恰好与导出全局同名”的 self-named global 路径
+  - exec lowering 的 imported global 解析与 global slot 收集，当前已不再只依赖 `checker.import_table`：
+    - 会从当前文件 `use module.item` 恢复 direct imported global
+    - 也会从当前文件 `use module.submodule;` 恢复 whole-module alias 对同名导出全局的访问
+  - 新增并通过：
+    - `tests/test_exec_vm_compiler_array_ptr_member.uya`
+    - `tests/test_exec_vm_compiler_imported_global_ident.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - `./bin/uya run --vm src/main.uya` 的最新 exec 前沿已继续前推：
+    - 不再卡在 `programs[i].program_decl_count`
+    - 不再卡在 `errno = ENOENT`
+    - 当前最新 blocker 已前移到 `./lib/libc/stdlib.uya:1083:38: exec: 当前仅支持局部变量/参数/全局标识符`
+    - 对应真实代码形态是 `&opendir_storage[j]` 这类“数组元素取地址”路径
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -170,13 +188,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `./lib/kernel/payload.uya:165:9: exec: 当前不支持 slice.ptr`
+  - `./lib/libc/stdlib.uya:1083:38: exec: 当前仅支持局部变量/参数/全局标识符`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
     - `catch { fprintf(...); return ...; }` 这类带前缀副作用的 catch block
-    继续前移到编译器本体 / payload 路径里的 `slice.ptr`
-  - 这说明 stdio/基础 catch lowering 的当前阻塞已经继续后移，新的缺口集中在 slice 成员访问语义
+    - `slice.ptr`
+    - `programs[i].program_decl_count`
+    - `errno = ENOENT`
+    继续前移到 `&opendir_storage[j]` 这类“数组元素取地址”路径
+  - 这说明 stdio/基础 catch lowering / slice 成员访问 / imported global bare identifier 的当前阻塞都已继续后移，新的缺口集中在 indexed address-of 语义
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
@@ -185,10 +206,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
-- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment，以及“前缀副作用 + return/value”的 catch block；当前最新前沿已前推到 `slice.ptr`，说明主阻塞已从 stdio/基础 catch lowering 收敛到 slice 成员访问语义
+- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`，以及 `errno = ENOENT` 这类 imported global bare identifier 路径；当前最新前沿已前推到 `&opendir_storage[j]`，说明主阻塞已从 stdio/基础 catch lowering 收敛到 indexed address-of 语义
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
+- 缺口：补齐 `&arr[i]` / `&slice[i]` / `const slot: &T = &storage[idx]` 这类 indexed address-of 路径；当前 `src/main.uya --vm` 最新前沿已明确落在这一类语义上
 - 缺口：把 `extern` / `extern "libc"` 收敛到最终通用执行模型；对“有 Uya 函数体的 extern 实现”按普通函数 lower/执行，仅对真正无函数体或宿主专属符号保留最小 host bridge，避免继续扩编译器主路径的单函数白名单
 - 缺口：为 `fprintf/snprintf/printf` 这类 varargs 接口明确最终策略；普通 fixed-arity extern 应归入统一调用模型，varargs 需单独收敛到专用 bridge、builtin helper 或明确 fallback，不能长期依赖“碰到再报 unsupported”
 - 缺口：扩大语义覆盖面，包括 `interface / 间接调用`、更完整的 `union` 语义、更复杂标准库程序，以及面向编译器本体路径的 staged regressions
@@ -449,7 +471,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - array / struct / tuple 按值持有元素槽
   - slice 记录 `(aggregate, start, len)`，避免切片时复制整段元素
 - 当前目标是先打通 `run/test` 的基础 hosted 子集，不追求与 C99 backend 完整共享布局元数据
-- 当前 `slice.ptr`、更复杂聚合值嵌套语义、以及与 extern ABI 对齐仍未进入支持面
+- 当前 byte slice `slice.ptr`、编译器回归里真实命中的 `tail.ptr[0]` / `view.ptr` 路径，以及 `array-of-pointer` 的 inline 成员访问/写回已进入支持面；剩余聚合值缺口已继续收敛到 `&arr[i]` 这类 indexed address-of 语义，以及更复杂聚合值嵌套场景
 - 2026-05-20 已把 tuple / struct / `!T` / tagged union 的 size/align 规则收敛到“字段对齐 + 字段间 padding + 整体补齐”模型：
   - exec lowering 的 `@size_of/@align_of` 不再把嵌套 struct 误算成纯字段大小求和
   - C99 async frame 估算里的 `get_type_size_bytes_resolved(...)` / `get_type_align_bytes_resolved(...)` 也已同步成同一套 padding 规则
@@ -558,6 +580,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `bash ./tests/verify_exec_vm_globals.sh`
 - 当前已完成：
   - 跨模块 `use module.item` 导出的 global 访问基础路径
+  - file-local import / whole-module alias 的 imported global bare identifier 读写路径
   - 多模块全局初始化顺序基础回归
 - 当前尚未完成：
   - 更复杂全局类型（当前仍以 exec VM 可表示子集为准）
@@ -731,11 +754,6 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - VM 新增内部引用地址与 `CALL_INDIRECT`，interface 值运行时保存“方法表函数索引 + data 引用”
   - `self.field` / `self.field = ...` 已可透过 `&Self` receiver 在 VM 中读写
   - `tests/test_exec_vm_interface_dispatch.uya` 与 `tests/test_exec_vm_interface_stateful.uya` 已在 `--vm/--exec` 下通过，并纳入 `tests/verify_exec_vm_smoke.sh`
-- 2026-05-18 当前 `src/main.uya --vm` 的 staged smoke 已从：
-  - `u16` 顶层全局常量不可表示
-  - `fprintf/2` varargs ABI unsupported
-  继续前移到：
-  - `libc.stdout` 这类 `module_alias.exported_global` 成员式访问尚未完全被 exec lowering 识别为 global load
 - 2026-05-18 继续把编译器本体 hosted 子集往前推了一段：
   - exec VM 现已补上 `i8/i16` 值表示、算术/比较、聚合值与全局路径，新增回归 `tests/test_exec_vm_scalar_pointer.uya`
   - enum 常量/全局值现已可进入 exec lowering / const pool / VM，新增 `tests/test_exec_vm_enum_value.uya`
@@ -744,7 +762,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有两个明确残留：
   - `tests/test_exec_vm_union_dispatch.uya` 运行路径已打通，但 checker 仍会打印一条历史诊断 `match 所有分支的返回类型必须一致`
-  - `./bin/uya run --vm src/main.uya` 当前已能通过 parse / check / opt，并越过“全局类型 / enum / @max/@min / call-args 上限 / whole-module globals / struct 缺失字段补零 / stdio 常量位运算”等旧阻塞；最新观测点已前推到 `src/main.uya:7920:9`，卡在 `fprintf/2` 这类真正带格式化实参的 varargs `extern ABI`，下一步应按本阶段计划把 `fprintf/snprintf/printf` 收敛到专用 bridge、builtin helper 或明确 fallback
+  - `./bin/uya run --vm src/main.uya` 当前已能继续越过“whole-module globals / struct 缺失字段补零 / stdio 常量位运算 / slice.ptr / array-of-pointer member / imported global bare identifier”等旧阻塞；最新观测点已前推到 `./lib/libc/stdlib.uya:1083:38`，卡在 `&opendir_storage[j]` 这类 indexed address-of 语义，下一步应优先补齐 `&arr[i]` / `&slice[i]` 路径
 
 ---
 

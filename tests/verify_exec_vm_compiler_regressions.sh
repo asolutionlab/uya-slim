@@ -46,6 +46,23 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  field/pointer/global index --exec ✓"
 
+echo "验证数组指针元素成员读取/写回路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_array_ptr_member.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  array ptr member --vm ✓"
+
+echo "验证 run --exec 下数组指针元素成员路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_array_ptr_member.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ array ptr member unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  array ptr member --exec ✓"
+
 echo "验证 byte slice.ptr 读写与宿主桥接路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_slice_ptr.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
@@ -102,6 +119,23 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     exit 1
 fi
 echo "  error union .error_id --exec ✓"
+
+echo "验证 imported global 裸标识符读写路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_imported_global_ident.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  imported global ident --vm ✓"
+
+echo "验证 run --exec 下 imported global 裸标识符路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_imported_global_ident.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ imported global ident unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  imported global ident --exec ✓"
 
 echo "验证 _ = expr; 丢弃赋值路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_discard_assign.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
