@@ -151,6 +151,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `tests/test_exec_vm_layout_consistency.uya`
     - `bash ./tests/verify_exec_backend_progress.sh`
     - `./bin/uya test tests/test_async_fn_local_fixed_array.uya`
+- 2026-05-21 已继续收口：
+  - `_ = expr;` 这类 discard assignment 已在 exec lowering 中直接降成“保留 RHS 副作用、丢弃结果”的表达式语句，不再误走 lvalue assign 路径
+  - `catch { side_effects...; value; }` 与 `catch { side_effects...; return ...; }` 这类“前缀副作用 + 最终值/return”块现已在 catch lowering + builder 两侧闭环
+  - 新增并通过：
+    - `tests/test_exec_vm_discard_assign.uya`
+    - `tests/test_exec_vm_catch_block_prefix.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - `./bin/uya run --vm src/main.uya` 的前沿已继续前推，当前不再卡在 `_ = ...;` 或多语句 catch block，而是前移到 `./lib/kernel/payload.uya:165:9: exec: 当前不支持 slice.ptr`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -161,13 +170,13 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `src/main.uya:7920:9: exec: 当前不支持 extern ABI: fprintf/2`
+  - `./lib/kernel/payload.uya:165:9: exec: 当前不支持 slice.ptr`
   - 当前观测点已从：
-    - whole-module import 成员式全局访问识别
-    - `FILE{...}` 缺失字段零值补齐
-    - `stdio` 常量旗标里的位运算
-    继续前移到编译器本体里的 `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern` 路径
-  - 当前 fixed/no-varargs `fprintf(file, "literal")` 已不再是前沿阻塞；真正剩余的是带格式化实参的 varargs 收敛
+    - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
+    - `_ = expr;` discard assignment
+    - `catch { fprintf(...); return ...; }` 这类带前缀副作用的 catch block
+    继续前移到编译器本体 / payload 路径里的 `slice.ptr`
+  - 这说明 stdio/基础 catch lowering 的当前阻塞已经继续后移，新的缺口集中在 slice 成员访问语义
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
@@ -176,7 +185,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
-- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零，以及 `stdio` 常量旗标中的位运算；当前最新前沿重新回到 `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern` 路径，说明主阻塞已收敛到“标准库/编译器本体格式化输出桥接”
+- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment，以及“前缀副作用 + return/value”的 catch block；当前最新前沿已前推到 `slice.ptr`，说明主阻塞已从 stdio/基础 catch lowering 收敛到 slice 成员访问语义
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问

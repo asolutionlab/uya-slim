@@ -972,6 +972,42 @@ fn exec_lower_extract_block_result_expr(ctx: &ExecLowerContext, block: &ASTNode)
     return exec_lower_expr(ctx, only_stmt);
 }
 
+fn exec_lower_block_last_stmt(block: &ASTNode) &ASTNode {
+    if block == null || block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null || block.block_stmt_count <= 0 {
+        return null;
+    }
+    return block.block_stmts[block.block_stmt_count - 1];
+}
+
+fn exec_lower_make_block_prefix(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
+    if ctx == null || block == null || block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null {
+        return null;
+    }
+    if block.block_stmt_count <= 1 {
+        return null;
+    }
+    const prefix_count: i32 = block.block_stmt_count - 1;
+    const synthetic_block: &ASTNode = compiler_arena_alloc(ctx.arena, @size_of(ASTNode)) as &ASTNode;
+    const synthetic_stmts: & & ASTNode = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * prefix_count as usize) as & & ASTNode;
+    if synthetic_block == null || synthetic_stmts == null {
+        exec_backend_set_error(block, "exec: catch 前缀 block 分配失败" as *byte, 0);
+        return null;
+    }
+    _ = memset(synthetic_block as *byte, 0, @size_of(ASTNode));
+    synthetic_block.type = ASTNodeType.AST_BLOCK;
+    synthetic_block.line = block.line;
+    synthetic_block.column = block.column;
+    synthetic_block.filename = block.filename;
+    synthetic_block.block_stmts = synthetic_stmts;
+    synthetic_block.block_stmt_count = prefix_count;
+    var i: i32 = 0;
+    while i < prefix_count {
+        synthetic_stmts[i] = block.block_stmts[i];
+        i = i + 1;
+    }
+    return exec_lower_block(ctx, synthetic_block);
+}
+
 fn exec_lower_make_bool_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, value: i32) &HIRExpr {
     const bool_type: Type = make_bool_type();
     const expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_CONST, &bool_type);
@@ -2801,6 +2837,9 @@ fn exec_lower_collect_called_decls_from_expr(expr: &HIRExpr, out_decls: & & ASTN
     if expr.extra != null {
         exec_lower_collect_called_decls_from_expr(expr.extra, out_decls, out_count);
     }
+    if expr.block != null {
+        exec_lower_collect_called_decls_from_block(expr.block, out_decls, out_count);
+    }
     var i: i32 = 0;
     while i < expr.call_arg_count {
         exec_lower_collect_called_decls_from_expr(expr.call_args[i], out_decls, out_count);
@@ -3071,13 +3110,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return null;
         }
         hir_catch_early.left = operand_catch_early;
-        if expr.catch_expr_catch_block != null &&
-            expr.catch_expr_catch_block.type == ASTNodeType.AST_BLOCK &&
-            expr.catch_expr_catch_block.block_stmt_count == 1 &&
-            expr.catch_expr_catch_block.block_stmts != null &&
-            expr.catch_expr_catch_block.block_stmts[0] != null &&
-            expr.catch_expr_catch_block.block_stmts[0].type == ASTNodeType.AST_RETURN_STMT {
-            const return_stmt_early: &ASTNode = expr.catch_expr_catch_block.block_stmts[0];
+        const catch_block_early: &ASTNode = expr.catch_expr_catch_block;
+        const catch_last_stmt_early: &ASTNode = exec_lower_block_last_stmt(catch_block_early);
+        if catch_last_stmt_early == null {
+            return exec_lower_fail_expr_reason(expr, "exec: catch 分支块为空" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        }
+        hir_catch_early.block = exec_lower_make_block_prefix(ctx, catch_block_early);
+        if catch_last_stmt_early.type == ASTNodeType.AST_RETURN_STMT {
+            const return_stmt_early: &ASTNode = catch_last_stmt_early;
             if return_stmt_early.return_stmt_expr != null {
                 if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
                     const catch_return_type_early: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
@@ -3091,7 +3131,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             }
             return hir_catch_early;
         }
-        const fallback_expr_early: &HIRExpr = exec_lower_extract_block_result_expr(ctx, expr.catch_expr_catch_block);
+        const fallback_expr_early: &HIRExpr = exec_lower_expr(ctx, catch_last_stmt_early);
         if fallback_expr_early == null {
             return null;
         }
@@ -4038,13 +4078,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             return null;
         }
         hir_catch.left = operand2;
-        if expr.catch_expr_catch_block != null &&
-            expr.catch_expr_catch_block.type == ASTNodeType.AST_BLOCK &&
-            expr.catch_expr_catch_block.block_stmt_count == 1 &&
-            expr.catch_expr_catch_block.block_stmts != null &&
-            expr.catch_expr_catch_block.block_stmts[0] != null &&
-            expr.catch_expr_catch_block.block_stmts[0].type == ASTNodeType.AST_RETURN_STMT {
-            const return_stmt: &ASTNode = expr.catch_expr_catch_block.block_stmts[0];
+        const catch_block: &ASTNode = expr.catch_expr_catch_block;
+        const catch_last_stmt: &ASTNode = exec_lower_block_last_stmt(catch_block);
+        if catch_last_stmt == null {
+            return exec_lower_fail_expr_reason(expr, "exec: catch 分支块为空" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+        }
+        hir_catch.block = exec_lower_make_block_prefix(ctx, catch_block);
+        if catch_last_stmt.type == ASTNodeType.AST_RETURN_STMT {
+            const return_stmt: &ASTNode = catch_last_stmt;
             if return_stmt.return_stmt_expr != null {
                 if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
                     const catch_return_type: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
@@ -4058,7 +4099,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             }
             return hir_catch;
         }
-        const fallback_expr: &HIRExpr = exec_lower_extract_block_result_expr(ctx, expr.catch_expr_catch_block);
+        const fallback_expr: &HIRExpr = exec_lower_expr(ctx, catch_last_stmt);
         if fallback_expr == null {
             return null;
         }
@@ -4243,26 +4284,41 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             stmt.local_slot = slot;
             stmt.expr = init_expr;
         } else if stmt_node.type == ASTNodeType.AST_ASSIGN {
-            const assign_target: &HIRExpr = exec_lower_make_dest_expr(ctx, stmt_node.assign_dest);
-            if assign_target == null {
-                exec_lower_pop_scope(ctx);
-                return null;
+            if stmt_node.assign_dest != null && stmt_node.assign_dest.type == ASTNodeType.AST_UNDERSCORE {
+                // `_ = expr;` keeps RHS side effects and explicitly discards the value.
+                const discard_expr: &HIRExpr = exec_lower_expr(ctx, stmt_node.assign_src);
+                if discard_expr == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                stmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_EXPR);
+                if stmt == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                stmt.expr = discard_expr;
+            } else {
+                const assign_target: &HIRExpr = exec_lower_make_dest_expr(ctx, stmt_node.assign_dest);
+                if assign_target == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                const value_expr: &HIRExpr = exec_lower_coerce_expr(ctx, stmt_node.assign_src, &assign_target.type_ref.type);
+                if value_expr == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                stmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_ASSIGN);
+                if stmt == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                if assign_target.kind == HIRExprKind.HIR_EXPR_LOCAL {
+                    stmt.local_slot = assign_target.local_slot;
+                }
+                stmt.assign_target = assign_target;
+                stmt.assign_expr = value_expr;
             }
-            const value_expr: &HIRExpr = exec_lower_coerce_expr(ctx, stmt_node.assign_src, &assign_target.type_ref.type);
-            if value_expr == null {
-                exec_lower_pop_scope(ctx);
-                return null;
-            }
-            stmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_ASSIGN);
-            if stmt == null {
-                exec_lower_pop_scope(ctx);
-                return null;
-            }
-            if assign_target.kind == HIRExprKind.HIR_EXPR_LOCAL {
-                stmt.local_slot = assign_target.local_slot;
-            }
-            stmt.assign_target = assign_target;
-            stmt.assign_expr = value_expr;
         } else if stmt_node.type == ASTNodeType.AST_CALL_EXPR ||
             stmt_node.type == ASTNodeType.AST_PRINT ||
             stmt_node.type == ASTNodeType.AST_PRINTLN ||

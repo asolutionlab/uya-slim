@@ -46,6 +46,42 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  field/pointer/global index --exec ✓"
 
+echo "验证 _ = expr; 丢弃赋值路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_discard_assign.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+grep -q 'discard assign' "$TMP_STDOUT"
+echo "  discard assign --vm ✓"
+
+echo "验证 run --exec 下 _ = expr; 丢弃赋值路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_discard_assign.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ discard assign unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  discard assign --exec ✓"
+
+echo "验证 catch 前缀副作用 block 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_catch_block_prefix.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+grep -q 'catch prefix return' "$TMP_STDOUT"
+echo "  catch prefix block --vm ✓"
+
+echo "验证 run --exec 下 catch 前缀副作用 block 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_catch_block_prefix.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ catch prefix block unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  catch prefix block --exec ✓"
+
 echo "验证 struct sizeof/alignof 在 --vm 下直接折叠..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_sizeof_struct.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"

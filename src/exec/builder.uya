@@ -1514,6 +1514,11 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                 return -1;
             }
         }
+        if expr.block != null {
+            if exec_builder_compile_block(ctx, expr.block) < 0 {
+                return -1;
+            }
+        }
         if expr.extra != null {
             const return_slot_catch: i32 = exec_builder_compile_expr(ctx, expr.extra);
             if return_slot_catch < 0 {

@@ -122,6 +122,7 @@ struct HIRExpr {
     dispatch_decl_count: i32,
     items: & & HIRExpr,
     item_count: i32,
+    block: &HIRBlock,
     extra: &HIRExpr,
     match_arms: &HIRMatchArm,
     match_arm_count: i32,
