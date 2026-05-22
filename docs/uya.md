@@ -80,7 +80,7 @@
 
 - **标准库 `std.sql`**：新增 `lib/std/sql/`。首版提供参考 Go `database/sql` 的数据库通用抽象：`Value`、`NamedArg`、`ColumnInfo`、`Driver`、`Conn`、`Stmt`、`Rows`、`Tx`、`Result`、高层 `DB` / `Row` 包装与 `db_open`。为兼容当前 C99 backend，接口方法优先采用普通返回值与 `out` 参数的稳定组合。
 - **测试**：新增 `tests/test_std_sql.uya`，覆盖 fake driver 的 open / ping / prepare / exec / query / query_row / tx 主链路。
-- **标准库 `std.crypto`**：新增 `lib/std/crypto/blake2b.uya` 与 `lib/std/crypto/blake2s.uya`。接口分别为 `blake2b_digest(data, digest_out)` 与 `blake2s_digest(data, digest_out)`；均为纯 Uya 一次性摘要实现，分别输出 64 / 32 字节。
+- **标准库 `std.crypto`**：新增 `lib/std/crypto/blake2b.uya`、`lib/std/crypto/blake2s.uya` 与 `lib/std/crypto/blake3.uya`。接口分别为 `blake2b_digest(data, digest_out)`、`blake2s_digest(data, digest_out)` 与 `blake3_digest(data, digest_out)`；均为纯 Uya 一次性摘要实现，分别输出 64 / 32 / 32 字节。
 - **标准库 `std.crypto`**：新增 `lib/std/crypto/md5.uya` 与 `lib/std/crypto/crc32.uya`。接口分别为 `md5_digest(data, digest_out)` 与 `crc32_compute(data)`；MD5 为 RFC 1321 一次性摘要实现，CRC-32 使用 IEEE/ZIP 反射多项式 `0xEDB88320`。
 - **内核复用**：`lib/kernel/update.uya` 的元数据 CRC32 计算改为直接复用 `std.crypto.crc32`，避免同一算法在标准库和内核层重复维护。
 - **测试**：新增 `tests/test_crypto_md5.uya` 与 `tests/test_crypto_crc32.uya`，并保留 `tests/test_kernel_update.uya` 对 CRC32 集成路径的回归覆盖。
@@ -4681,6 +4681,7 @@ fn caller() void {
 | `std.sql` | `types` / `driver` / `db` | 数据库通用抽象；面向 SQLite / MySQL 等驱动适配 |
 | `std.crypto.blake2b` | `blake2b_digest(data, digest_out)` | BLAKE2b 一次性摘要，输出 64 字节 |
 | `std.crypto.blake2s` | `blake2s_digest(data, digest_out)` | BLAKE2s 一次性摘要，输出 32 字节 |
+| `std.crypto.blake3` | `blake3_digest(data, digest_out)` | BLAKE3 一次性摘要，输出 32 字节 |
 | `std.crypto.sha256` | `sha256_digest(data, digest_out)` | SHA-256 一次性摘要，输出 32 字节 |
 | `std.crypto.hmac_sha256` | `hmac_sha256(key, msg, mac_out)` | HMAC-SHA256，一次性 MAC，输出 32 字节 |
 | `std.crypto.md5` | `md5_digest(data, digest_out)` | MD5 一次性摘要，输出 16 字节 |

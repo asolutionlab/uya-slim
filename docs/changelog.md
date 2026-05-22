@@ -74,6 +74,12 @@
 - **测试**：新增 **`tests/test_std_sql.uya`**，使用 fake driver 覆盖 `db_open`、`ping`、`prepare`、`exec`、`query`、`query_row`、`begin`、`commit`、`rollback` 以及 `ErrNoRows` / `ErrDBClosed` / `ErrTxDone`。
 - **文档**：新增 **`docs/std_sql.md`**，说明模块分层、驱动接入方式，以及 SQLite / MySQL 的推荐对接路线。
 
+### 标准库：`std.crypto.blake3`（2026-05-22）
+
+- **标准库**：新增 **`lib/std/crypto/blake3.uya`**。接口为 **`blake3_digest(data, digest_out)`**；实现为纯 Uya 的一次性摘要，默认输出 **32** 字节。
+- **测试**：新增 **`tests/test_crypto_blake3.uya`**，对齐 BLAKE3 官方 reference vectors，覆盖空输入、块边界、chunk 边界与短输出缓冲区保护。
+- **工具链集成**：`uyabuild` bootstrap seed 已切换到 **`std.crypto.blake3`** 作为 snapshot、CAS 与 action key 的统一摘要后端。
+
 ### 标准库：`std.crypto.blake2b` / `std.crypto.blake2s`（2026-04-21）
 
 - **标准库**：新增 **`lib/std/crypto/blake2b.uya`** 与 **`lib/std/crypto/blake2s.uya`**。接口分别为 **`blake2b_digest(data, digest_out)`** 与 **`blake2s_digest(data, digest_out)`**；均为纯 Uya 的一次性摘要实现，分别输出 **64** / **32** 字节。

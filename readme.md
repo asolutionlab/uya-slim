@@ -167,6 +167,7 @@ fn main() i32 {
 
 - `use std.crypto.blake2b.blake2b_digest;`
 - `use std.crypto.blake2s.blake2s_digest;`
+- `use std.crypto.blake3.blake3_digest;`
 - `use std.crypto.sha256.sha256_digest;`
 - `use std.crypto.hmac_sha256.hmac_sha256;`
 - `use std.crypto.md5.md5_digest;`
