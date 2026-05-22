@@ -1,7 +1,7 @@
 # Uya Bytecode / IR 执行后端 TODO
 
 **状态**：executable TODO, implementation in progress
-**更新日期**：2026-05-21
+**更新日期**：2026-05-23
 **配套设计**：`docs/bytecode_exec_design.md`
 
 ---
@@ -178,6 +178,22 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - 不再卡在 `errno = ENOENT`
     - 当前最新 blocker 已前移到 `./lib/libc/stdlib.uya:1083:38: exec: 当前仅支持局部变量/参数/全局标识符`
     - 对应真实代码形态是 `&opendir_storage[j]` 这类“数组元素取地址”路径
+- 2026-05-23 已继续收口：
+  - 语句级 `match` 不再被通用 expr-stmt 分支提前吞掉；“arm block 里直接 `return ...;`”现已优先走 returning-match lowering
+  - `catch/match` 单语句块提取现已识别 `return expr;` 这一最小形态，不再把它误当成“不支持的表达式节点”
+  - 这使得 union payload 绑定后的 struct 字段返回路径已闭环，例如：
+    - `.payload(payload) => { return payload.name; }`
+    - `.struct_generic(sg) => { return sg.name; }`
+  - 新增并通过：
+    - `tests/test_exec_vm_compiler_match_return_struct_field.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - `./bin/uya run --vm src/main.uya --no-safety-proof` 的最新 exec 前沿已继续前推：
+    - 不再卡在 `src/checker/type_accessors.uya:86:27: exec: 尚未支持的表达式节点`
+    - 当前最新 blocker 已前移到 `src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
+    - 对应真实代码形态是 returning `match` 的 `else` arm 内含多语句块：
+      - `if t.struct_name != null { return t.struct_name; }`
+      - `return null as &byte;`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -188,7 +204,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `./lib/libc/stdlib.uya:1083:38: exec: 当前仅支持局部变量/参数/全局标识符`
+  - `src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
@@ -196,8 +212,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `slice.ptr`
     - `programs[i].program_decl_count`
     - `errno = ENOENT`
-    继续前移到 `&opendir_storage[j]` 这类“数组元素取地址”路径
-  - 这说明 stdio/基础 catch lowering / slice 成员访问 / imported global bare identifier 的当前阻塞都已继续后移，新的缺口集中在 indexed address-of 语义
+    - `&opendir_storage[j]` 这类“数组元素取地址”路径
+    - `src/checker/type_accessors.uya:86:27` 的 returning match arm `payload.name`
+    继续前移到 returning `match` 的多语句 arm block
+  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`，以及 union payload struct-field returning match 的当前阻塞都已继续后移；新的缺口集中在“多语句 returning match arm block”收口
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---

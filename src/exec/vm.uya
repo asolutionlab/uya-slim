@@ -1171,6 +1171,48 @@ fn exec_vm_host_call_site_ref(program: &BCProgram, idx: i32) &BCHostCallSite {
     return &program.host_calls[idx];
 }
 
+fn exec_vm_pointer_load_value(function: &BCFunction, ptr_value: &ExecValue, out_value: &ExecValue) i32 {
+    if function == null || ptr_value == null || out_value == null {
+        exec_backend_set_error(null, "exec: pointer load helper 输入无效" as *byte, 0);
+        return -1;
+    }
+    if exec_vm_pointer_is_internal_ref(ptr_value) != 0 {
+        const target: &ExecValue = exec_vm_ref_target_value(ptr_value);
+        if target == null {
+            exec_backend_set_error(function.decl, "exec: pointer load helper 目标为空" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_value_clone(target);
+        return 0;
+    }
+    if exec_value_is_pointer_like(ptr_value[0]) != 0 {
+        return exec_vm_load_pointer_index(function, ptr_value[0], 0, out_value);
+    }
+    exec_backend_set_error(function.decl, "exec: pointer load helper 目标不是指针" as *byte, 0);
+    return -1;
+}
+
+fn exec_vm_pointer_store_value(function: &BCFunction, ptr_value: &ExecValue, src_value: ExecValue) i32 {
+    if function == null || ptr_value == null {
+        exec_backend_set_error(null, "exec: pointer store helper 输入无效" as *byte, 0);
+        return -1;
+    }
+    if exec_vm_pointer_is_internal_ref(ptr_value) != 0 {
+        const target: &ExecValue = exec_vm_ref_target_value(ptr_value);
+        if target == null {
+            exec_backend_set_error(function.decl, "exec: pointer store helper 目标为空" as *byte, 0);
+            return -1;
+        }
+        exec_vm_store_slot(target, src_value);
+        return 0;
+    }
+    if exec_value_is_pointer_like(ptr_value[0]) != 0 {
+        return exec_vm_store_pointer_index(function, ptr_value[0], 0, src_value);
+    }
+    exec_backend_set_error(function.decl, "exec: pointer store helper 目标不是指针" as *byte, 0);
+    return -1;
+}
+
 fn exec_vm_call_host(function: &BCFunction, site: &BCHostCallSite, frame: &ExecFrame, arg_base: i32, arg_count: i32, out_value: &ExecValue) i32 {
     if function == null || site == null || frame == null || out_value == null {
         exec_backend_set_error(null, "exec: hostcall 输入无效" as *byte, 0);
@@ -1257,6 +1299,41 @@ fn exec_vm_call_host(function: &BCFunction, site: &BCHostCallSite, frame: &ExecF
             return -1;
         }
         out_value[0] = exec_make_i64(llabs(arg0.i64_value));
+        return 0;
+    }
+    if site.id == ExecHostCallId.EXEC_HOST_CALL_ATOMIC_COMPARE_EXCHANGE {
+        if arg_count != 6 {
+            exec_backend_set_error(function.decl, "exec: atomic compare_exchange 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        const ptr_arg: &ExecValue = exec_vm_slot_ref(frame, arg_base);
+        const expected_arg: &ExecValue = exec_vm_slot_ref(frame, arg_base + 1);
+        const desired_arg: &ExecValue = exec_vm_slot_ref(frame, arg_base + 2);
+        if ptr_arg == null || expected_arg == null || desired_arg == null {
+            exec_backend_set_error(function.decl, "exec: atomic compare_exchange 参数槽位非法" as *byte, 0);
+            return -1;
+        }
+        var current_value: ExecValue = exec_make_void();
+        var expected_value: ExecValue = exec_make_void();
+        if exec_vm_pointer_load_value(function, ptr_arg, &current_value) != 0 {
+            return -1;
+        }
+        if exec_vm_pointer_load_value(function, expected_arg, &expected_value) != 0 {
+            return -1;
+        }
+        if exec_vm_compare_values(current_value, expected_value) == 0 {
+            const pointee_kind: i32 = exec_value_pointer_pointee_kind(&ptr_arg[0]);
+            const cast_desired: ExecValue = exec_vm_cast_value(desired_arg[0], pointee_kind, 0);
+            if exec_vm_pointer_store_value(function, ptr_arg, cast_desired) != 0 {
+                return -1;
+            }
+            out_value[0] = exec_make_i32(1);
+            return 0;
+        }
+        if exec_vm_pointer_store_value(function, expected_arg, current_value) != 0 {
+            return -1;
+        }
+        out_value[0] = exec_make_i32(0);
         return 0;
     }
     if site.id == ExecHostCallId.EXEC_HOST_CALL_FPRINTF_FIXED {

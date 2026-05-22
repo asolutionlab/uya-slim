@@ -461,7 +461,26 @@ fn exec_builder_pointer_pointee_kind_code(type: Type) i32 {
     if type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
         return TypeKind.TYPE_VOID as i32;
     }
+    if type.pointer_to[0].kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(&type.pointer_to[0]);
+        if inner != null {
+            return inner[0].kind as i32;
+        }
+    }
     return type.pointer_to[0].kind as i32;
+}
+
+fn exec_builder_effective_kind_code(type: &Type) i32 {
+    if type == null {
+        return TypeKind.TYPE_VOID as i32;
+    }
+    if type.kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(type);
+        if inner != null {
+            return exec_builder_effective_kind_code(inner);
+        }
+    }
+    return type.kind as i32;
 }
 
 fn exec_builder_emit_loaded_const_value(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, value: ExecValue) i32 {
@@ -498,12 +517,18 @@ fn exec_builder_array_element_kind_code(type: Type) i32 {
     if type.kind != TypeKind.TYPE_ARRAY || type.element_type == null {
         return TypeKind.TYPE_VOID as i32;
     }
-    return type.element_type[0].kind as i32;
+    return exec_builder_effective_kind_code(&type.element_type[0]);
 }
 
 fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &ASTNode, ty: &Type) i32 {
     if ctx == null || ty == null {
         return -1;
+    }
+    if ty.kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(ty);
+        if inner != null {
+            return exec_builder_compile_zero_value(ctx, ast_node, inner);
+        }
     }
     if ty.kind == TypeKind.TYPE_I8 {
         return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_i8(0));
@@ -682,39 +707,40 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
 
 fn exec_builder_emit_const(ctx: &ExecFunctionBuildContext, dst: i32, expr: &HIRExpr) i32 {
     var const_value: ExecValue = exec_make_void();
+    const kind_code: i32 = exec_builder_effective_kind_code(&expr.type_ref.type);
     if expr.string_value != null {
         const_value = exec_make_string(expr.string_value);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_F32 {
+    } else if kind_code == TypeKind.TYPE_F32 as i32 {
         const_value = exec_make_f32(expr.float_value as f32);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_F64 {
+    } else if kind_code == TypeKind.TYPE_F64 as i32 {
         const_value = exec_make_f64(expr.float_value);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_ERROR {
+    } else if kind_code == TypeKind.TYPE_ERROR as i32 {
         const_value = exec_make_error(expr.int_value as i32);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_I8 {
+    } else if kind_code == TypeKind.TYPE_I8 as i32 {
         const_value = exec_make_i8(expr.int_value as i8);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_I16 {
+    } else if kind_code == TypeKind.TYPE_I16 as i32 {
         const_value = exec_make_i16(expr.int_value as i16);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_BOOL {
+    } else if kind_code == TypeKind.TYPE_BOOL as i32 {
         const_value = exec_make_bool(expr.bool_value);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_BYTE {
+    } else if kind_code == TypeKind.TYPE_BYTE as i32 {
         const_value = exec_make_byte(expr.int_value as i32);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_U8 {
+    } else if kind_code == TypeKind.TYPE_U8 as i32 {
         const_value = exec_make_u8(expr.int_value as u8);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_U16 {
+    } else if kind_code == TypeKind.TYPE_U16 as i32 {
         const_value = exec_make_u16(expr.int_value as u16);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_U32 {
+    } else if kind_code == TypeKind.TYPE_U32 as i32 {
         const_value = exec_make_u32(expr.int_value as u32);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_ENUM {
+    } else if kind_code == TypeKind.TYPE_ENUM as i32 {
         const_value = exec_make_i32(expr.int_value as i32);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_I64 {
+    } else if kind_code == TypeKind.TYPE_I64 as i32 {
         const_value = exec_make_i64(expr.int_value);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_U64 {
+    } else if kind_code == TypeKind.TYPE_U64 as i32 {
         const_value = exec_make_u64(expr.int_value as u64);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_USIZE {
+    } else if kind_code == TypeKind.TYPE_USIZE as i32 {
         const_value = exec_make_usize(expr.int_value as usize);
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_POINTER {
+    } else if kind_code == TypeKind.TYPE_POINTER as i32 {
         const_value = exec_make_pointer_with_kind(expr.int_value as usize, exec_builder_pointer_pointee_kind_code(expr.type_ref.type));
-    } else if expr.type_ref.type.kind == TypeKind.TYPE_I32 {
+    } else if kind_code == TypeKind.TYPE_I32 as i32 {
         const_value = exec_make_i32(expr.int_value as i32);
     }
     const const_idx: i32 = exec_builder_intern_const(ctx, const_value);
@@ -786,6 +812,20 @@ fn exec_builder_compile_short_circuit(ctx: &ExecFunctionBuildContext, expr: &HIR
     }
     exec_builder_patch_jump(ctx, skip_right_jump, ctx.instr_count);
     return dst;
+}
+
+fn exec_builder_match_uses_union_patterns(expr: &HIRExpr) i32 {
+    if expr == null || expr.match_arms == null || expr.match_arm_count <= 0 {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < expr.match_arm_count {
+        if expr.match_arms[i].kind == MatchPatternKind.MATCH_PAT_UNION {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
 }
 
 fn exec_builder_compile_item_pack(ctx: &ExecFunctionBuildContext, items: & & HIRExpr, item_count: i32) i32 {
@@ -927,7 +967,7 @@ fn exec_builder_compile_addressable_expr_slot(ctx: &ExecFunctionBuildContext, ex
     if ctx == null || expr == null {
         return -1;
     }
-    const pointee_kind: i32 = expr.type_ref.type.kind as i32;
+    const pointee_kind: i32 = exec_builder_effective_kind_code(&expr.type_ref.type);
     if expr.kind == HIRExprKind.HIR_EXPR_LOCAL {
         const dst_local_addr: i32 = exec_builder_new_temp(ctx);
         if dst_local_addr < 0 {
@@ -1252,6 +1292,35 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         const dst_init: i32 = exec_builder_new_temp(ctx);
         if dst_init < 0 {
             return -1;
+        }
+        if expr.kind == HIRExprKind.HIR_EXPR_ARRAY_INIT &&
+            expr.ast_node != null &&
+            expr.ast_node.type == ASTNodeType.AST_ARRAY_LITERAL &&
+            expr.ast_node.array_literal_repeat_count_expr != null {
+            if expr.items == null || expr.item_count != 1 {
+                exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: repeat array literal item 数量异常" as *byte);
+                return -1;
+            }
+            const repeat_src_slot: i32 = exec_builder_compile_expr(ctx, expr.items[0]);
+            if repeat_src_slot < 0 {
+                return -1;
+            }
+            if expr.int_value < 0 || expr.int_value > 2147483647 {
+                exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: repeat array literal 次数超出范围" as *byte);
+                return -1;
+            }
+            if exec_builder_emit(ctx, BCInstr {
+                opcode: BCOpcode.BC_MAKE_ARRAY_REPEAT,
+                a: dst_init,
+                b: repeat_src_slot,
+                c: expr.int_value as i32,
+                imm: exec_builder_array_element_kind_code(expr.type_ref.type),
+                text: null,
+                source: exec_builder_make_source(expr.ast_node),
+            }) < 0 {
+                return -1;
+            }
+            return dst_init;
         }
         const item_base: i32 = exec_builder_compile_item_pack(ctx, expr.items, expr.item_count);
         var op_init: BCOpcode = BCOpcode.BC_MAKE_STRUCT;
@@ -1671,7 +1740,7 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         if match_dst < 0 {
             return -1;
         }
-        if expr.left != null && expr.left.type_ref.type.kind == TypeKind.TYPE_UNION {
+        if exec_builder_match_uses_union_patterns(expr) != 0 {
             const tag_slot: i32 = exec_builder_new_temp(ctx);
             if tag_slot < 0 {
                 return -1;

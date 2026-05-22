@@ -120,6 +120,57 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  error union .error_id --exec ✓"
 
+echo "验证 error union .value 成员读取路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_error_union_value.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  error union .value --vm ✓"
+
+echo "验证 run --exec 下 error union .value 成员路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_error_union_value.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ error union .value unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  error union .value --exec ✓"
+
+echo "验证 union struct-field match 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_union_field_match.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  union field match --vm ✓"
+
+echo "验证 run --exec 下 union struct-field match 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_union_field_match.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ union field match unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  union field match --exec ✓"
+
+echo "验证 match return block 中 union 结构体字段读取路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_match_return_struct_field.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  match return struct field --vm ✓"
+
+echo "验证 run --exec 下 match return block union 结构体字段路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_match_return_struct_field.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ match return struct field unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  match return struct field --exec ✓"
+
 echo "验证 imported global 裸标识符读写路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_imported_global_ident.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
@@ -136,6 +187,91 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     exit 1
 fi
 echo "  imported global ident --exec ✓"
+
+echo "验证全局数组元素取地址路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_global_index_addr.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  global index addr --vm ✓"
+
+echo "验证 run --exec 下全局数组元素取地址路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_global_index_addr.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ global index addr unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  global index addr --exec ✓"
+
+echo "验证 runtime atomic global 直接读写与取址读取路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_atomic_global.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  atomic global --vm ✓"
+
+echo "验证 run --exec 下 runtime atomic global 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_atomic_global.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ atomic global unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  atomic global --exec ✓"
+
+echo "验证 repeat array literal 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_repeat_array_literal.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  repeat array literal --vm ✓"
+
+echo "验证 run --exec 下 repeat array literal 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_repeat_array_literal.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ repeat array literal unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  repeat array literal --exec ✓"
+
+echo "验证空 struct init 零填充路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_empty_struct_init.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  empty struct init --vm ✓"
+
+echo "验证 run --exec 下空 struct init 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_empty_struct_init.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ empty struct init unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  empty struct init --exec ✓"
+
+echo "验证 @asm_target() as! i32 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_asm_target.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  asm_target --vm ✓"
+
+echo "验证 run --exec 下 @asm_target() 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_asm_target.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ asm_target unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  asm_target --exec ✓"
 
 echo "验证 _ = expr; 丢弃赋值路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_discard_assign.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"

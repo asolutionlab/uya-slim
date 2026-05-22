@@ -68,7 +68,95 @@ fn exec_lower_fail_block_reason(node: &ASTNode, reason: &byte, code: ExecUnsuppo
     return null;
 }
 
+fn exec_lower_get_env_byte(name: &byte) &byte {
+    if name == null {
+        return null;
+    }
+    const raw: *byte = getenv(name as *byte);
+    if raw == null || raw[0] == 0 {
+        return null;
+    }
+    return raw as &byte;
+}
+
+fn exec_lower_detect_host_os_token() &byte {
+    const host_os: &byte = exec_lower_get_env_byte("HOST_OS" as *byte);
+    if host_os != null {
+        return host_os;
+    }
+    const os_type: &byte = exec_lower_get_env_byte("OSTYPE" as *byte);
+    if os_type != null {
+        return os_type;
+    }
+    const mach_type: &byte = exec_lower_get_env_byte("MACHTYPE" as *byte);
+    if mach_type != null {
+        return mach_type;
+    }
+    return "linux" as &byte;
+}
+
+fn exec_lower_detect_host_arch_token() &byte {
+    const host_arch: &byte = exec_lower_get_env_byte("HOST_ARCH" as *byte);
+    if host_arch != null {
+        return host_arch;
+    }
+    const host_type: &byte = exec_lower_get_env_byte("HOSTTYPE" as *byte);
+    if host_type != null {
+        return host_type;
+    }
+    const mach_type: &byte = exec_lower_get_env_byte("MACHTYPE" as *byte);
+    if mach_type != null {
+        return mach_type;
+    }
+    return "x86_64" as &byte;
+}
+
+fn exec_lower_host_asm_target_value() i32 {
+    const os_token: &byte = exec_lower_detect_host_os_token();
+    const arch_token: &byte = exec_lower_detect_host_arch_token();
+    const is_linux: i32 = (strstr(os_token as *byte, "linux" as *byte) != null) as i32;
+    const is_macos: i32 =
+        ((strstr(os_token as *byte, "darwin" as *byte) != null) as i32) |
+        ((strstr(os_token as *byte, "macos" as *byte) != null) as i32);
+    const is_windows: i32 =
+        ((strstr(os_token as *byte, "win" as *byte) != null) as i32) |
+        ((strstr(os_token as *byte, "mingw" as *byte) != null) as i32) |
+        ((strstr(os_token as *byte, "msys" as *byte) != null) as i32) |
+        ((strstr(os_token as *byte, "cygwin" as *byte) != null) as i32);
+    const is_x86_64: i32 =
+        ((strstr(arch_token as *byte, "x86_64" as *byte) != null) as i32) |
+        ((strstr(arch_token as *byte, "amd64" as *byte) != null) as i32);
+    const is_arm64: i32 =
+        ((strstr(arch_token as *byte, "aarch64" as *byte) != null) as i32) |
+        ((strstr(arch_token as *byte, "arm64" as *byte) != null) as i32);
+    const is_riscv64: i32 = (strstr(arch_token as *byte, "riscv64" as *byte) != null) as i32;
+    if is_x86_64 != 0 {
+        if is_macos != 0 { return 1; }
+        if is_windows != 0 { return 2; }
+        return 0;
+    }
+    if is_arm64 != 0 {
+        if is_macos != 0 { return 4; }
+        if is_windows != 0 { return 5; }
+        return 3;
+    }
+    if is_riscv64 != 0 {
+        return 6;
+    }
+    if is_linux != 0 {
+        return 0;
+    }
+    return 0;
+}
+
 fn exec_type_is_scalar_supported(type: Type) i32 {
+    if type.kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(&type);
+        if inner != null {
+            return exec_type_is_scalar_supported(inner[0]);
+        }
+        return 0;
+    }
     if type.kind == TypeKind.TYPE_I8 ||
         type.kind == TypeKind.TYPE_I16 ||
         type.kind == TypeKind.TYPE_I32 ||
@@ -464,6 +552,10 @@ fn exec_lower_match_host_call(fn_decl: &ASTNode, call_arg_count: i32) ExecHostCa
         if str_equals(fn_decl.fn_decl_name, "llabs" as &byte) != 0 &&
             fn_decl.fn_decl_param_count == 1 && call_arg_count == 1 {
             return ExecHostCallId.EXEC_HOST_CALL_LLABS;
+        }
+        if str_equals(fn_decl.fn_decl_name, "__atomic_compare_exchange_n" as &byte) != 0 &&
+            fn_decl.fn_decl_param_count == 6 && call_arg_count == 6 {
+            return ExecHostCallId.EXEC_HOST_CALL_ATOMIC_COMPARE_EXCHANGE;
         }
         return ExecHostCallId.EXEC_HOST_CALL_NONE;
     }
@@ -969,6 +1061,9 @@ fn exec_lower_extract_block_result_expr(ctx: &ExecLowerContext, block: &ASTNode)
     if only_stmt == null {
         return exec_lower_fail_expr(block, "exec: catch/match 分支块为空" as *byte);
     }
+    if only_stmt.type == ASTNodeType.AST_RETURN_STMT && only_stmt.return_stmt_expr != null {
+        return exec_lower_expr(ctx, only_stmt.return_stmt_expr);
+    }
     return exec_lower_expr(ctx, only_stmt);
 }
 
@@ -977,6 +1072,86 @@ fn exec_lower_block_last_stmt(block: &ASTNode) &ASTNode {
         return null;
     }
     return block.block_stmts[block.block_stmt_count - 1];
+}
+
+fn exec_lower_match_arm_return_expr(arm: &ASTMatchArm) &ASTNode {
+    if arm == null || arm.result_expr == null {
+        return null;
+    }
+    if arm.result_is_block == 0 {
+        return arm.result_expr;
+    }
+    const block: &ASTNode = arm.result_expr;
+    if block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null || block.block_stmt_count != 1 {
+        return null;
+    }
+    const only_stmt: &ASTNode = block.block_stmts[0];
+    if only_stmt == null || only_stmt.type != ASTNodeType.AST_RETURN_STMT || only_stmt.return_stmt_expr == null {
+        return null;
+    }
+    return only_stmt.return_stmt_expr;
+}
+
+fn exec_lower_make_returning_match_expr(ctx: &ExecLowerContext, expr: &ASTNode) &ASTNode {
+    if ctx == null || expr == null || expr.type != ASTNodeType.AST_MATCH_EXPR ||
+        expr.match_expr_arms == null || expr.match_expr_arm_count <= 0 {
+        return null;
+    }
+    const synthetic_expr: &ASTNode = compiler_arena_alloc(ctx.arena, @size_of(ASTNode)) as &ASTNode;
+    const synthetic_arms: &ASTMatchArm = compiler_arena_alloc(ctx.arena, @size_of(ASTMatchArm) * expr.match_expr_arm_count as usize) as &ASTMatchArm;
+    if synthetic_expr == null || synthetic_arms == null {
+        exec_backend_set_error(expr, "exec: returning match synthetic node 分配失败" as *byte, 0);
+        return null;
+    }
+    synthetic_expr[0] = expr[0];
+    synthetic_expr.match_expr_arms = synthetic_arms;
+    var i: i32 = 0;
+    while i < expr.match_expr_arm_count {
+        synthetic_arms[i] = expr.match_expr_arms[i];
+        const arm_expr: &ASTNode = exec_lower_match_arm_return_expr(expr.match_expr_arms + i);
+        if arm_expr == null {
+            return null;
+        }
+        synthetic_arms[i].result_expr = arm_expr;
+        synthetic_arms[i].result_is_block = 0;
+        i = i + 1;
+    }
+    return synthetic_expr;
+}
+
+fn exec_lower_try_make_returning_match_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &HIRStmt {
+    if ctx == null || stmt_node == null || stmt_node.type != ASTNodeType.AST_MATCH_EXPR {
+        return null;
+    }
+    const synthetic_expr: &ASTNode = exec_lower_make_returning_match_expr(ctx, stmt_node);
+    if synthetic_expr == null {
+        return null;
+    }
+    const stmt: &HIRStmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_RETURN);
+    if stmt == null {
+        return null;
+    }
+    if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
+        const return_type: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+        stmt.expr = exec_lower_expr(ctx, synthetic_expr);
+        if stmt.expr != null &&
+            return_type.kind != TypeKind.TYPE_ERROR_UNION &&
+            type_equals(stmt.expr.type_ref.type, return_type) == 0 &&
+            exec_type_is_vm_value_supported(return_type) != 0 {
+            const cast_return: &HIRExpr = exec_lower_alloc_expr(ctx, stmt_node, HIRExprKind.HIR_EXPR_CAST, &return_type);
+            if cast_return == null {
+                return null;
+            }
+            cast_return.left = stmt.expr;
+            stmt.expr = cast_return;
+        }
+    } else {
+        stmt.expr = exec_lower_expr(ctx, synthetic_expr);
+    }
+    if stmt.expr == null {
+        return null;
+    }
+    return stmt;
 }
 
 fn exec_lower_make_block_prefix(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
@@ -1040,6 +1215,12 @@ fn exec_lower_pointer_pointee_kind(type: &Type) i32 {
     if type == null || type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
         return TypeKind.TYPE_VOID as i32;
     }
+    if type.pointer_to[0].kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(&type.pointer_to[0]);
+        if inner != null {
+            return inner[0].kind as i32;
+        }
+    }
     return type.pointer_to[0].kind as i32;
 }
 
@@ -1087,6 +1268,45 @@ fn exec_lower_make_string_const_expr(ctx: &ExecLowerContext, ast_node: &ASTNode,
 
 fn exec_lower_make_zero_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &Type) &HIRExpr {
     return exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_ZERO, type);
+}
+
+fn exec_lower_make_repeat_array_init_expr(ctx: &ExecLowerContext, expr: &ASTNode, array_type: &Type) &HIRExpr {
+    if ctx == null || expr == null || array_type == null {
+        return null;
+    }
+    if expr.type != ASTNodeType.AST_ARRAY_LITERAL ||
+        expr.array_literal_repeat_count_expr == null ||
+        expr.array_literal_element_count <= 0 ||
+        expr.array_literal_elements == null ||
+        array_type.kind != TypeKind.TYPE_ARRAY ||
+        array_type.element_type == null {
+        return exec_lower_fail_expr(expr, "exec: repeat array literal 目标类型无效" as *byte);
+    }
+    var repeat_count: i32 = array_type.array_size;
+    if repeat_count <= 0 {
+        repeat_count = checker_eval_const_expr(ctx.checker, expr.array_literal_repeat_count_expr);
+    }
+    if repeat_count < 0 {
+        return exec_lower_fail_expr(expr, "exec: repeat array literal 次数必须为常量非负值" as *byte);
+    }
+    const repeated_item: &HIRExpr = exec_lower_coerce_expr(ctx, expr.array_literal_elements[0], array_type.element_type);
+    if repeated_item == null {
+        return null;
+    }
+    const repeat_items: & & HIRExpr = compiler_arena_alloc(ctx.arena, @size_of(&HIRExpr)) as & & HIRExpr;
+    if repeat_items == null {
+        exec_backend_set_error(expr, "exec: repeat array literal items 分配失败" as *byte, 0);
+        return null;
+    }
+    repeat_items[0] = repeated_item;
+    const hir_repeat_array: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_ARRAY_INIT, array_type);
+    if hir_repeat_array == null {
+        return null;
+    }
+    hir_repeat_array.items = repeat_items;
+    hir_repeat_array.item_count = 1;
+    hir_repeat_array.int_value = repeat_count as i64;
+    return hir_repeat_array;
 }
 
 fn exec_lower_basename(path: &byte) &byte {
@@ -1336,6 +1556,11 @@ fn exec_lower_resolve_exact_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
         if (parent_type.kind == TypeKind.TYPE_ERROR || parent_type.kind == TypeKind.TYPE_ERROR_UNION) &&
             str_equals(expr.member_access_field_name, "error_id" as *byte) != 0 {
             return make_u32_type();
+        }
+        if parent_type.kind == TypeKind.TYPE_ERROR_UNION &&
+            str_equals(expr.member_access_field_name, "value" as *byte) != 0 &&
+            parent_type.error_union_payload_type != null {
+            return parent_type.error_union_payload_type[0];
         }
         return resolved;
     }
@@ -1596,6 +1821,12 @@ fn exec_lower_coerce_expr(ctx: &ExecLowerContext, expr: &ASTNode, expected_type:
     }
     if expected_type != null &&
         expr.type == ASTNodeType.AST_ARRAY_LITERAL &&
+        expr.array_literal_repeat_count_expr != null &&
+        expected_type.kind == TypeKind.TYPE_ARRAY {
+        return exec_lower_make_repeat_array_init_expr(ctx, expr, expected_type);
+    }
+    if expected_type != null &&
+        expr.type == ASTNodeType.AST_ARRAY_LITERAL &&
         expr.array_literal_repeat_count_expr == null &&
         expr.array_literal_element_count == 0 &&
         (expected_type.kind == TypeKind.TYPE_ARRAY || expected_type.kind == TypeKind.TYPE_SLICE) {
@@ -1844,6 +2075,11 @@ fn exec_lower_make_dest_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         return exec_lower_expr(ctx, expr);
     }
     if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        return exec_lower_expr(ctx, expr);
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR &&
+        expr.unary_expr_operand != null &&
+        (expr.unary_expr_op as TokenType) == TokenType.TOKEN_ASTERISK {
         return exec_lower_expr(ctx, expr);
     }
     return exec_lower_fail_expr(expr, "exec: 当前仅支持局部变量/字段/下标赋值" as *byte);
@@ -2976,6 +3212,297 @@ fn exec_lower_collect_global_slots_from_use_stmts(checker: &TypeChecker, globals
     return 0;
 }
 
+fn exec_lower_collect_reachable_runtime_globals_expr(checker: &TypeChecker, expr: &ASTNode, owner_filename: &byte, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || expr == null || owner_filename == null || globals == null || out_count == null {
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
+        const decl: &ASTNode = exec_lower_resolve_global_decl(checker, expr.identifier_name);
+        if decl != null &&
+            decl.filename != null &&
+            exec_lower_global_is_runtime_decl(decl) != 0 &&
+            exec_lower_decl_is_uya_root_runtime(checker, decl) != 0 &&
+            str_equals(decl.filename, owner_filename) != 0 &&
+            exec_lower_find_global_slot_by_decl_in_globals(globals, out_count[0], decl) < 0 {
+            if exec_lower_append_global_slot(checker, decl, globals, out_count, 1) != 0 {
+                return -1;
+            }
+        }
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.member_access_object, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_CALL_EXPR {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.call_expr_callee, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        if expr.call_expr_args != null {
+            var i: i32 = 0;
+            while i < expr.call_expr_arg_count {
+                if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.call_expr_args[i], owner_filename, globals, out_count) != 0 {
+                    return -1;
+                }
+                i = i + 1;
+            }
+        }
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.array_access_array, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.array_access_index, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.binary_expr_left, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.binary_expr_right, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.unary_expr_operand, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.cast_expr_expr, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.slice_expr_base, owner_filename, globals, out_count) != 0 ||
+            exec_lower_collect_reachable_runtime_globals_expr(checker, expr.slice_expr_start_expr, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.slice_expr_len_expr, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_TRY_EXPR {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.try_expr_operand, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.catch_expr_operand, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_node(checker, expr.catch_expr_catch_block, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.match_expr_expr, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        if expr.match_expr_arms != null {
+            var mi: i32 = 0;
+            while mi < expr.match_expr_arm_count {
+                if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.match_expr_arms[mi].result_expr, owner_filename, globals, out_count) != 0 {
+                    return -1;
+                }
+                mi = mi + 1;
+            }
+        }
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_field_values != null {
+        var si: i32 = 0;
+        while si < expr.struct_init_field_count {
+            if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.struct_init_field_values[si], owner_filename, globals, out_count) != 0 {
+                return -1;
+            }
+            si = si + 1;
+        }
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_LITERAL && expr.array_literal_elements != null {
+        var ai: i32 = 0;
+        while ai < expr.array_literal_element_count {
+            if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.array_literal_elements[ai], owner_filename, globals, out_count) != 0 {
+                return -1;
+            }
+            ai = ai + 1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.array_literal_repeat_count_expr, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_TUPLE_LITERAL && expr.tuple_literal_elements != null {
+        var ti: i32 = 0;
+        while ti < expr.tuple_literal_element_count {
+            if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.tuple_literal_elements[ti], owner_filename, globals, out_count) != 0 {
+                return -1;
+            }
+            ti = ti + 1;
+        }
+        return 0;
+    }
+    if expr.type == ASTNodeType.AST_LEN {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.len_expr_array, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.ptr_from_usize_value, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.usize_from_ptr_ptr, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.print_expr, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_ERROR_ID {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.error_id_operand, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_ERROR_NAME {
+        return exec_lower_collect_reachable_runtime_globals_expr(checker, expr.error_name_operand, owner_filename, globals, out_count);
+    }
+    if expr.type == ASTNodeType.AST_SYSCALL {
+        if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.syscall_number, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        if expr.syscall_args != null {
+            var si2: i32 = 0;
+            while si2 < expr.syscall_arg_count {
+                if exec_lower_collect_reachable_runtime_globals_expr(checker, expr.syscall_args[si2], owner_filename, globals, out_count) != 0 {
+                    return -1;
+                }
+                si2 = si2 + 1;
+            }
+        }
+        return 0;
+    }
+    return 0;
+}
+
+fn exec_lower_collect_reachable_runtime_globals_node(checker: &TypeChecker, node: &ASTNode, owner_filename: &byte, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || node == null || owner_filename == null || globals == null || out_count == null {
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            if exec_lower_collect_reachable_runtime_globals_node(checker, node.block_stmts[bi], owner_filename, globals, out_count) != 0 {
+                return -1;
+            }
+            bi = bi + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if exec_lower_collect_reachable_runtime_globals_node(checker, node.if_stmt_condition, owner_filename, globals, out_count) != 0 ||
+            exec_lower_collect_reachable_runtime_globals_node(checker, node.if_stmt_then_branch, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.if_stmt_else_branch, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        if exec_lower_collect_reachable_runtime_globals_node(checker, node.while_stmt_condition, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.while_stmt_body, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        if exec_lower_collect_reachable_runtime_globals_node(checker, node.for_stmt_range_start, owner_filename, globals, out_count) != 0 ||
+            exec_lower_collect_reachable_runtime_globals_node(checker, node.for_stmt_range_end, owner_filename, globals, out_count) != 0 ||
+            exec_lower_collect_reachable_runtime_globals_node(checker, node.for_stmt_array, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.for_stmt_body, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.var_decl_init, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.extern_var_decl_init_expr, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.return_stmt_expr, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if exec_lower_collect_reachable_runtime_globals_node(checker, node.assign_dest, owner_filename, globals, out_count) != 0 {
+            return -1;
+        }
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.assign_src, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_DEFER_STMT {
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.defer_stmt_body, owner_filename, globals, out_count);
+    }
+    if node.type == ASTNodeType.AST_ERRDEFER_STMT {
+        return exec_lower_collect_reachable_runtime_globals_node(checker, node.errdefer_stmt_body, owner_filename, globals, out_count);
+    }
+    return exec_lower_collect_reachable_runtime_globals_expr(checker, node, owner_filename, globals, out_count);
+}
+
+fn exec_lower_collect_runtime_fn_decl_index(decls: & & ASTNode, decl_count: i32, target: &ASTNode) i32 {
+    if decls == null || target == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < decl_count {
+        if decls[i] == target {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn exec_lower_collect_exec_reachable_fn_decls(checker: &TypeChecker, out_decls: & & ASTNode, out_count: &i32) i32 {
+    if checker == null || out_decls == null || out_count == null {
+        return -1;
+    }
+    out_count[0] = 0;
+    const entry_decl: &ASTNode = exec_lower_find_entry_decl(checker);
+    if entry_decl == null {
+        return 0;
+    }
+    var queue: [&ASTNode: MAX_REACHABLE_FN_DECLS] = [];
+    var head: i32 = 0;
+    var tail: i32 = 0;
+    out_decls[0] = entry_decl;
+    out_count[0] = 1;
+    queue[0] = entry_decl;
+    tail = 1;
+    while head < tail {
+        const from_decl: &ASTNode = queue[head];
+        head = head + 1;
+        var i: i32 = 0;
+        while i < checker.fn_call_edge_count {
+            if checker.fn_call_edge_from[i] == from_decl {
+                const to_decl: &ASTNode = checker.fn_call_edge_to[i];
+                if to_decl != null &&
+                    exec_lower_collect_runtime_fn_decl_index(out_decls, out_count[0], to_decl) < 0 {
+                    if out_count[0] >= MAX_REACHABLE_FN_DECLS || tail >= MAX_REACHABLE_FN_DECLS {
+                        exec_backend_set_error(to_decl, "exec: runtime reachable 函数集合超出上限" as *byte, 0);
+                        return -1;
+                    }
+                    out_decls[out_count[0]] = to_decl;
+                    out_count[0] = out_count[0] + 1;
+                    queue[tail] = to_decl;
+                    tail = tail + 1;
+                }
+            }
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+fn exec_lower_collect_global_slots_from_reachable_runtime_functions(checker: &TypeChecker, globals: &HIRGlobalSlot, out_count: &i32) i32 {
+    if checker == null || globals == null || out_count == null {
+        return -1;
+    }
+    var fn_decls: [&ASTNode: MAX_REACHABLE_FN_DECLS] = [];
+    var fn_decl_count: i32 = 0;
+    if exec_lower_collect_exec_reachable_fn_decls(checker, &fn_decls[0] as & & ASTNode, &fn_decl_count) != 0 {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < fn_decl_count {
+        const fn_decl: &ASTNode = fn_decls[i];
+        if fn_decl != null &&
+            fn_decl.type == ASTNodeType.AST_FN_DECL &&
+            fn_decl.fn_decl_body != null &&
+            fn_decl.filename != null &&
+            exec_lower_decl_is_uya_root_runtime(checker, fn_decl) != 0 {
+            if exec_lower_collect_reachable_runtime_globals_node(checker, fn_decl.fn_decl_body, fn_decl.filename, globals, out_count) != 0 {
+                return -1;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 fn exec_lower_find_global_slot_by_decl_in_globals(globals: &HIRGlobalSlot, global_count: i32, decl: &ASTNode) i32 {
     if globals == null || decl == null {
         return -1;
@@ -3019,6 +3546,9 @@ fn exec_lower_collect_global_slots(arena: &CompilerArena, checker: &TypeChecker,
         return null;
     }
     if exec_lower_collect_global_slots_from_use_stmts(checker, globals, &count) != 0 {
+        return null;
+    }
+    if exec_lower_collect_global_slots_from_reachable_runtime_functions(checker, globals, &count) != 0 {
         return null;
     }
     if out_count != null {
@@ -3399,6 +3929,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         }
         return exec_lower_make_string_const_expr(ctx, expr, &expr_type, func_name);
     }
+    if expr.type == ASTNodeType.AST_ASM_TARGET {
+        return exec_lower_make_int_const_expr(ctx, expr, &expr_type, exec_lower_host_asm_target_value() as i64);
+    }
     if expr.type == ASTNodeType.AST_INT_LIMIT {
         var int_limit_ok: i32 = 0;
         const int_limit_value: i64 = exec_lower_eval_int_limit(expr, expr_type.kind, &int_limit_ok);
@@ -3641,6 +4174,21 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     if expr.type == ASTNodeType.AST_UNARY_EXPR {
         if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
             return exec_lower_make_ref_expr(ctx, expr.unary_expr_operand);
+        }
+        if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_ASTERISK {
+            const base_expr: &HIRExpr = exec_lower_expr(ctx, expr.unary_expr_operand);
+            const zero_index_type: Type = make_i32_type();
+            const zero_index_expr: &HIRExpr = exec_lower_make_int_const_expr(ctx, expr, &zero_index_type, 0);
+            if base_expr == null || zero_index_expr == null {
+                return null;
+            }
+            const deref_expr: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_INDEX, &expr_type);
+            if deref_expr == null {
+                return null;
+            }
+            deref_expr.left = base_expr;
+            deref_expr.right = zero_index_expr;
+            return deref_expr;
         }
         if exec_type_is_scalar_supported(expr_type) == 0 {
             if exec_type_uses_simd(expr_type) != 0 {
@@ -3932,7 +4480,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             va_list_type.struct_name = null;
             return exec_lower_make_zero_expr(ctx, expr, &va_list_type);
         }
-        if expr.struct_init_struct_name == null || expr.struct_init_field_values == null {
+        if expr.struct_init_struct_name == null {
             return exec_lower_fail_expr(expr, "exec: 结构体字面量不完整" as *byte);
         }
         const struct_decl: &ASTNode = find_struct_decl_from_program(ctx.checker.program_node, expr.struct_init_struct_name);
@@ -3996,7 +4544,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
     }
     if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
         if expr.array_literal_repeat_count_expr != null {
-            return exec_lower_fail_expr(expr, "exec: 当前不支持 repeat array literal" as *byte);
+            return exec_lower_make_repeat_array_init_expr(ctx, expr, &expr_type);
         }
         if expr.array_literal_element_count == 0 {
             return exec_lower_make_zero_expr(ctx, expr, &expr_type);
@@ -4177,6 +4725,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             }
             hir_error_id_field.left = base_expr;
             return hir_error_id_field;
+        }
+        if base_raw_type.kind != TypeKind.TYPE_POINTER &&
+            base_type.kind == TypeKind.TYPE_ERROR_UNION &&
+            str_equals(expr.member_access_field_name, "value" as *byte) != 0 &&
+            base_type.error_union_payload_type != null {
+            const hir_error_value_field: &HIRExpr = exec_lower_alloc_expr(ctx, expr, HIRExprKind.HIR_EXPR_TRY, &expr_type);
+            if hir_error_value_field == null {
+                return null;
+            }
+            hir_error_value_field.left = base_expr;
+            return hir_error_value_field;
         }
         if base_type.kind == TypeKind.TYPE_SLICE {
             if expr.member_access_field_name != null && str_equals(expr.member_access_field_name, "len" as *byte) != 0 {
@@ -4380,7 +4939,11 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if subject_expr == null {
             return null;
         }
-        if subject_expr.type_ref.type.kind == TypeKind.TYPE_UNION {
+        var subject_type: Type = exec_lower_resolve_exact_type(ctx, expr.match_expr_expr);
+        if subject_type.kind == TypeKind.TYPE_VOID {
+            subject_type = subject_expr.type_ref.type;
+        }
+        if subject_type.kind == TypeKind.TYPE_UNION {
             const arms_union: &HIRMatchArm = compiler_arena_alloc(ctx.arena, @size_of(HIRMatchArm) * expr.match_expr_arm_count as usize) as &HIRMatchArm;
             if arms_union == null {
                 exec_backend_set_error(expr, "exec: union match arms 分配失败" as *byte, 0);
@@ -4398,13 +4961,13 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 var arm_result_expr2: &HIRExpr = null;
                 var variant_index2: i32 = -1;
                 if arm_union.kind == MatchPatternKind.MATCH_PAT_UNION {
-                    variant_index2 = exec_lower_union_variant_index(ctx, subject_expr.type_ref.type, arm_union.variant_name);
+                    variant_index2 = exec_lower_union_variant_index(ctx, copy_type(&subject_type), arm_union.variant_name);
                     if variant_index2 < 0 {
                         return exec_lower_fail_expr_reason(expr, "exec: union match 变体无效" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
                     }
                     exec_lower_push_scope(ctx, -1);
                     if arm_union.var_name != null && str_equals(arm_union.var_name, "_" as *byte) == 0 {
-                        const bind_type: Type = exec_lower_union_variant_type(ctx, subject_expr.type_ref.type, arm_union.variant_name);
+                        const bind_type: Type = exec_lower_union_variant_type(ctx, copy_type(&subject_type), arm_union.variant_name);
                         if exec_type_is_vm_value_supported(bind_type) == 0 {
                             exec_lower_pop_scope(ctx);
                             return exec_lower_fail_expr_reason(expr, "exec: union match 绑定类型当前不可表示" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
@@ -4450,7 +5013,7 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             hir_union_match.match_arm_count = expr.match_expr_arm_count;
             return hir_union_match;
         }
-        if exec_type_is_scalar_supported(subject_expr.type_ref.type) == 0 {
+        if exec_type_is_scalar_supported(subject_type) == 0 {
             return exec_lower_fail_expr_reason(expr, "exec: 当前仅支持标量 match" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
         }
         const arms: &HIRMatchArm = compiler_arena_alloc(ctx.arena, @size_of(HIRMatchArm) * expr.match_expr_arm_count as usize) as &HIRMatchArm;
@@ -4611,7 +5174,6 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
             stmt_node.type == ASTNodeType.AST_FUNC_NAME ||
             stmt_node.type == ASTNodeType.AST_ERROR_ID ||
             stmt_node.type == ASTNodeType.AST_ERROR_NAME ||
-            stmt_node.type == ASTNodeType.AST_MATCH_EXPR ||
             stmt_node.type == ASTNodeType.AST_TRY_EXPR ||
             stmt_node.type == ASTNodeType.AST_CATCH_EXPR {
             const expr_stmt: &HIRExpr = exec_lower_expr(ctx, stmt_node);
@@ -4772,6 +5334,21 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                 return null;
             }
             stmt = nested_stmt;
+        } else if stmt_node.type == ASTNodeType.AST_MATCH_EXPR {
+            stmt = exec_lower_try_make_returning_match_stmt(ctx, stmt_node);
+            if stmt == null {
+                const expr_stmt: &HIRExpr = exec_lower_expr(ctx, stmt_node);
+                if expr_stmt == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                stmt = exec_lower_alloc_stmt(ctx, stmt_node, HIRStmtKind.HIR_STMT_EXPR);
+                if stmt == null {
+                    exec_lower_pop_scope(ctx);
+                    return null;
+                }
+                stmt.expr = expr_stmt;
+            }
         } else {
             exec_lower_pop_scope(ctx);
             if stmt_node.type == ASTNodeType.AST_TEST_STMT {
