@@ -67,7 +67,7 @@ struct CompileArtifacts {
 const HOST_SIZE_PTR_BYTES: usize = 8usize;
 const HOST_SIZE_LEXER_BYTES: usize = 1052744usize;
 const HOST_SIZE_TYPECHECKER_BYTES: usize = 6975976usize;
-const HOST_SIZE_C99_CODEGENERATOR_BYTES: usize = 1126776usize;
+const HOST_SIZE_C99_CODEGENERATOR_BYTES: usize = 1143160usize;
 const HOST_SIZE_CIMPORT_ITEM_BYTES: usize = 48usize;
 
 // 后端类型

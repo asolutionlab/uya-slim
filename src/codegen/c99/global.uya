@@ -480,6 +480,19 @@ fn c99_local_var_type_node_at(codegen: &C99CodeGenerator, idx: i32) &ASTNode {
     return codegen.local_variables[idx].type_node;
 }
 
+fn c99_local_var_owner_fn_at(codegen: &C99CodeGenerator, idx: i32) &ASTNode {
+    if codegen == null {
+        return null;
+    }
+    if idx < 0 {
+        return null;
+    }
+    if idx >= C99_MAX_LOCAL_VARS {
+        return null;
+    }
+    return codegen.local_variables[idx].owner_fn;
+}
+
 fn c99_push_local_variable(codegen: &C99CodeGenerator, name: &byte, type_c: &byte, type_node: &ASTNode, depth: i32) i32 {
     if codegen == null || name == null || type_c == null {
         return 0;
@@ -490,6 +503,7 @@ fn c99_push_local_variable(codegen: &C99CodeGenerator, name: &byte, type_c: &byt
         codegen.local_variables[local_idx].type_c = type_c;
         codegen.local_variables[local_idx].type_node = type_node;
         codegen.local_variables[local_idx].depth = depth;
+        codegen.local_variables[local_idx].owner_fn = codegen.current_function_decl;
         codegen.local_variables[local_idx].is_error_value = 0;
         codegen.local_variable_count = local_idx + 1;
         return 1;
@@ -505,6 +519,10 @@ fn c99_mark_local_variable_error_value(codegen: &C99CodeGenerator, name: &byte) 
     var i: i32 = codegen.local_variable_count - 1;
     while i >= 0 {
         if i < C99_MAX_LOCAL_VARS && codegen.local_variables[i].name != null {
+            if codegen.local_variables[i].owner_fn != codegen.current_function_decl {
+                i = i - 1;
+                continue;
+            }
             if strcmp(codegen.local_variables[i].name as *byte, name as *byte) == 0 ||
                 (safe_name != null && strcmp(codegen.local_variables[i].name as *byte, safe_name as *byte) == 0) {
                 codegen.local_variables[i].is_error_value = 1;
@@ -524,6 +542,10 @@ fn c99_identifier_is_error_value(codegen: &C99CodeGenerator, name: &byte) i32 {
     var i: i32 = codegen.local_variable_count - 1;
     while i >= 0 {
         if i < C99_MAX_LOCAL_VARS && codegen.local_variables[i].name != null {
+            if codegen.local_variables[i].owner_fn != codegen.current_function_decl {
+                i = i - 1;
+                continue;
+            }
             if strcmp(codegen.local_variables[i].name as *byte, name as *byte) == 0 ||
                 (safe_name != null && strcmp(codegen.local_variables[i].name as *byte, safe_name as *byte) == 0) {
                 return codegen.local_variables[i].is_error_value;

@@ -121,6 +121,7 @@ struct LocalVariable {
     type_c: &byte,  // C 类型字符串
     type_node: &ASTNode,  // 原始 AST 类型节点（用于 codegen 侧类型判定）
     depth: i32,  // 嵌套深度
+    owner_fn: &ASTNode,  // 所属函数，用于避免不同函数/预收集阶段的 stale local 污染查找
     is_error_value: i32  // catch |err| 绑定的错误值，不是普通 u32 payload
 }
 

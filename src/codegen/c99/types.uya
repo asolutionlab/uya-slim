@@ -7977,6 +7977,12 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
         }
         const local_name3: &byte = c99_local_var_name_at(codegen, i);
         const local_type_c3: &byte = c99_local_var_type_c_at(codegen, i);
+        if local_name3 != null {
+            if c99_local_var_owner_fn_at(codegen, i) != codegen.current_function_decl {
+                i = i - 1;
+                continue;
+            }
+        }
         if local_name3 != null && strcmp(local_name3 as *byte, name as *byte) == 0 {
             if use_ident_cache != 0 && local_type_c3 != null {
                 g_c99_identifier_type_keys[slot] = name;
@@ -8031,6 +8037,12 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
             }
             const local_safe_name: &byte = c99_local_var_name_at(codegen, i);
             const local_safe_type_c: &byte = c99_local_var_type_c_at(codegen, i);
+            if local_safe_name != null {
+                if c99_local_var_owner_fn_at(codegen, i) != codegen.current_function_decl {
+                    i = i - 1;
+                    continue;
+                }
+            }
             if local_safe_name != null && strcmp(local_safe_name as *byte, safe_name as *byte) == 0 {
                 if use_ident_cache != 0 && local_safe_type_c != null {
                     g_c99_identifier_type_keys[slot] = name;

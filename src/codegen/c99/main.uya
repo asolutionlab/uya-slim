@@ -1584,9 +1584,31 @@ fn gen_test_function(codegen: &C99CodeGenerator, test_stmt: &ASTNode) void {
     
     // 保存之前的返回类型
     const saved_return_type: &ASTNode = codegen.current_function_return_type;
+    const saved_function_decl: &ASTNode = codegen.current_function_decl;
+    const saved_local_variable_count: i32 = codegen.local_variable_count;
+    const saved_current_depth: i32 = codegen.current_depth;
+    var saved_checker_return_type: Type = make_void_type();
+    var saved_checker_in_function: i32 = 0;
+    var saved_checker_function_decl: &ASTNode = null;
     
     // 设置当前函数的返回类型为 !void
     codegen.current_function_return_type = err_union_type;
+    codegen.current_function_decl = test_stmt;
+    codegen.local_variable_count = 0;
+    codegen.current_depth = 0;
+    if codegen.checker != null {
+        saved_checker_return_type = copy_type(&codegen.checker.current_return_type);
+        saved_checker_in_function = codegen.checker.in_function;
+        saved_checker_function_decl = codegen.checker.current_function_decl;
+        codegen.checker.current_function_decl = test_stmt;
+        codegen.checker.in_function = 1;
+        if err_union_type != null {
+            const inferred_test_return: Type = type_from_ast(codegen.checker, err_union_type);
+            codegen.checker.current_return_type = copy_type(&inferred_test_return);
+        } else {
+            codegen.checker.current_return_type = make_void_type();
+        }
+    }
     
     // 生成函数定义：返回 struct err_union_void
     emit_line_directive(codegen, test_stmt.line, test_stmt.filename);
@@ -1600,6 +1622,14 @@ fn gen_test_function(codegen: &C99CodeGenerator, test_stmt: &ASTNode) void {
     
     // 恢复之前的返回类型
     codegen.current_function_return_type = saved_return_type;
+    codegen.current_function_decl = saved_function_decl;
+    codegen.local_variable_count = saved_local_variable_count;
+    codegen.current_depth = saved_current_depth;
+    if codegen.checker != null {
+        codegen.checker.current_return_type = saved_checker_return_type;
+        codegen.checker.in_function = saved_checker_in_function;
+        codegen.checker.current_function_decl = saved_checker_function_decl;
+    }
     
     c99_emit_close_brace_newline(codegen);
 }
