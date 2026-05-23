@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-05-23（新增“method 调用私有顶层 helper 时 C99 backend 漏发射 helper 定义/原型”编译器 bug；此前 2026-04-16 补充复合表达式 `try @await` lowering 修复记录）
+**最后更新：** 2026-05-23（新增“`@size_of(u64)` 生成 `sizeof(u64)`”与“`catch |err|` 回绑 `!T` 生成非法初始化”两个 C99 backend 编译器 bug；此前已记录 “method 调用私有顶层 helper 时 C99 backend 漏发射 helper 定义/原型”）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -71,6 +71,30 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [x] **P1 / 高：`@size_of(u64)` 在 C99 backend 被错误发成 `sizeof(u64)`**
+  - 状态：已修复
+  - 验证状态：`make release-dirty` 通过；`./bin/uya build tests/repros/c99_sizeof_u64_codegen_bug.uya -o /tmp/c99_sizeof_u64_codegen_bug` 通过
+  - 归属：`src/codegen/c99/**`
+  - 现象：
+    1. Uya 前端类型检查与常量折叠都通过
+    2. 生成的 C 把 `@size_of(u64)` 发成 `sizeof(u64)`
+    3. 随后 C 编译报 `error: ‘u64’ undeclared`
+  - 期望行为：应发成后端真实类型的 `sizeof(...)`，或直接折叠成整数字面量
+  - 最小复现：`tests/repros/c99_sizeof_u64_codegen_bug.uya`
+  - 相关文档：`docs/compiler_bug_report_2026-05-23_c99_sizeof_err_union.md`
+
+- [x] **P1 / 高：`catch |err|` 内把错误回绑到 `!T` 时生成非法 C 初始化**
+  - 状态：已修复
+  - 验证状态：`make release-dirty` 通过；`./bin/uya build tests/repros/c99_err_union_from_catch_codegen_bug.uya -o /tmp/c99_err_union_from_catch_codegen_bug` 通过
+  - 归属：`src/codegen/c99/expr.uya` / `src/codegen/c99/stmt.uya`
+  - 现象：
+    1. 类型检查允许 `const y: !i32 = err;`
+    2. C99 backend 把它错误发成 `struct err_union_int32_t y = err;`
+    3. 随后 C 编译报 `error: invalid initializer`
+  - 影响：手写 `Future<!T>` / 状态机 / `catch |err|` 中回传错误联合的代码
+  - 最小复现：`tests/repros/c99_err_union_from_catch_codegen_bug.uya`
+  - 相关文档：`docs/compiler_bug_report_2026-05-23_c99_sizeof_err_union.md`
 
 - [x] **P0 / 严重：`@async_fn` 中 `while true` 含嵌套 await 时生成空终态，导致 keep-alive 连接死锁**
   - 状态：已修复
