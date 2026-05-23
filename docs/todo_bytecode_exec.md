@@ -476,7 +476,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - [x] slice 第一版视图表示与 `@len`
   - [x] tuple
 - [x] 统一布局来源，避免和 C99 backend 漂移
-- [ ] 若需要，提取共享布局模块
+- [x] 若需要，提取共享布局模块
 - [x] 测试：
   - [x] struct 字段读写
   - [x] slice 长度与切片
@@ -609,7 +609,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 ## Phase 13：builtin bridge
 
 - [x] 编译期可折叠 builtin 前移，不进入 VM
-- [ ] VM 内支持：
+- [x] VM 内支持：
   - [x] `@print`
   - [x] `@println`
   - [x] `@len`
@@ -712,30 +712,44 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 ## Phase 17：性能与缓存
 
-- [ ] 增加 exec backend 子计时：
+- [x] 增加 exec backend 子计时：
   - [x] lowering
   - [x] bytecode build
   - [x] VM run
-- [ ] 对比 C99 run/test 的 wall time
+- [x] 对比 C99 run/test 的 wall time
 - [x] 记录最小 wall time 对比样本（当前先补 smoke 级样本）
-- [ ] 查找热点：
-  - [ ] Value 拷贝
-  - [ ] 聚合值构造
-  - [ ] 调用分发
-  - [ ] 指令 dispatch
-- [ ] 评估 bytecode cache：
-  - [ ] 文件 hash
-  - [ ] 模块依赖 hash
-  - [ ] checker 输出版本号
+- [x] 查找热点：
+  - [x] Value 拷贝
+  - [x] 聚合值构造
+  - [x] 调用分发
+  - [x] 指令 dispatch
+- [x] 评估 bytecode cache：
+  - [x] 文件 hash
+  - [x] 模块依赖 hash
+  - [x] checker 输出版本号
 
 备注：
 
 - 2026-05-18 已补一条最小 wall time 对比样本：
   - `./bin/uya run tests/test_exec_vm_multi_fn.uya`：约 `0.08s`
   - `./bin/uya run --vm tests/test_exec_vm_multi_fn.uya`：约 `0.01s`
+- 2026-05-23 已补 `tests/test_exec_vm_if_else.uya` 的 `run/test` 本地 wall time 对比（新生成编译器二进制，warm-cache，3 次采样中位数）：
+  - `run`（C99）：约 `0.082s`
+  - `run --vm`：约 `0.025s`
+  - `test`（C99）：约 `0.088s`
+  - `test --vm`：约 `0.025s`
 - 同一用例的编译统计中：
   - C99 路径 `总耗时` 约 `9 ms`，随后仍需宿主工具链链接
   - exec 路径 `总耗时` 约 `8 ms`，`exec lowering` 约 `1 ms`，`VM run` 约 `0 ms`
+- 2026-05-23 已做第一轮静态热点盘点（未接入采样 profiler，以下为当前实现的代码路径结论）：
+  - `Value` 拷贝：`exec_vm_store_slot()` 几乎覆盖所有 local/global/field/index/call-result 写回；其内部统一走 `exec_value_clone()`，而后者会递归深拷贝 `struct/array/tuple/error-union` payload
+  - 聚合值构造：`BC_MAKE_STRUCT/ARRAY/TUPLE` 与 `BC_MAKE_ARRAY_REPEAT` 都是“先分配 aggregate，再逐元素 `exec_value_set_index(...)`”，每个元素写入又会再次 clone
+  - 调用分发：`BC_CALL` / `BC_CALL_INDIRECT` 会先把实参 clone 到临时 `call_args`，随后 `exec_vm_call_function()` 每次调用都清空整帧 `4096` 个 slots 与 `32` 个 vararg 槽
+  - 指令 dispatch：`vm_step()` 当前仍是约 `69` 个 `instr.opcode == ...` 分支串行匹配，并在多数 opcode 分支里重复做 slot lookup / bounds check / clone
+- 2026-05-23 已做第一轮 bytecode cache 评估（仅设计评估，未实现）：
+  - 文件 hash：可直接基于最终 `file_list[]` 输入文件集合的文件内容做 hash；当前主流程已经在 `collect_module_dependencies(...)` 后拿到稳定输入列表
+  - 模块依赖 hash：`collect_module_dependencies(...)` 已递归展开 `project_root/UYA_ROOT` 下的传递依赖，适合作为模块图层级的 cache key 输入，而不必再从 checker 结果反推
+  - checker 输出版本号：当前仓库只有 `main.uya` 里的编译器版本字符串 `v0.9.7`，还没有独立的 checker/exec IR schema version；若后续落缓存，应新增显式 `cache schema version`，不要只复用 `--version`
 - 这组数据只说明“跳过宿主工具链”方向正确，不代表已经完成系统化性能评估；后续仍需扩大样本并拆解 `Value` 拷贝、聚合值构造与 dispatch 热点
 
 ---
