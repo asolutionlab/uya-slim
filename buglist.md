@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-16（补充复合表达式 `try @await` lowering 修复记录；此前 2026-04-14 新增 `@async_fn` while true 空终态死锁 bug 修复记录与 benchmark 架构限制说明）
+**最后更新：** 2026-05-23（新增“method 调用私有顶层 helper 时 C99 backend 漏发射 helper 定义/原型”编译器 bug；此前 2026-04-16 补充复合表达式 `try @await` lowering 修复记录）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 

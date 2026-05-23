@@ -617,10 +617,12 @@ fn checker_record_reachable_call(checker: &TypeChecker, callee: &ASTNode) void {
         if checker.current_function_decl.type == ASTNodeType.AST_TEST_STMT {
             _ = checker_add_function_root_decl(checker, reachable_callee);
         } else if checker.current_function_decl.type == ASTNodeType.AST_FN_DECL {
+            _ = checker_add_function_edge(checker, checker.current_function_decl, reachable_callee);
             if checker_fn_decl_is_owned_method(checker, checker.current_function_decl) != 0 {
+                // Methods are emitted eagerly by the C99 backend today. Keeping their
+                // direct callees as roots avoids dropping helper prototypes/definitions
+                // even before the backend becomes fully edge-driven for method bodies.
                 _ = checker_add_function_root_decl(checker, reachable_callee);
-            } else {
-                _ = checker_add_function_edge(checker, checker.current_function_decl, reachable_callee);
             }
         }
     }
