@@ -37,6 +37,8 @@ examples/*.uapp
 tests/data/json/*.json
 build/
 .codex
+__pycache__/
+*.py[cod]
 a.out
 *.dSYM/
 # make install BINDIR=out 等本地安装前缀
