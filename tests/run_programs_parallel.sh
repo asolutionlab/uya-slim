@@ -614,6 +614,9 @@ run_multifile_test() {
         fi
         run_case "error_use_private_macro" true \
             "$test_dir/test_macro_export/error_use_private_macro.uya"
+        run_case "use_item_exec_regression" false \
+            "$test_dir/use_item_exec_regression/main.uya" \
+            "$test_dir/use_item_exec_regression/dep/dep.uya"
     else
         local uya_files=()
         while IFS= read -r -d '' file; do

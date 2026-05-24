@@ -2208,14 +2208,17 @@ fn exec_lower_resolve_imported_decl_from_file(checker: &TypeChecker, filename: &
                 local_name_candidate = decl.use_stmt_item_name;
             }
             if local_name_candidate != null && str_equals(local_name_candidate, local_name) != 0 {
-                const module_name_len: i32 = exec_lower_joined_module_name_len(decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
-                if module_name_len > 0 {
-                    const module_name: &byte = compiler_arena_alloc(checker.arena, module_name_len as usize + 1 as usize) as &byte;
-                    if module_name != null {
-                        exec_lower_write_joined_module_name(module_name, decl.use_stmt_path_segments, decl.use_stmt_path_segment_count);
-                        const export_decl: &ASTNode = exec_lower_find_module_export_decl(checker, module_name, decl.use_stmt_item_name, item_type);
-                        if export_decl != null {
-                            return export_decl;
+                const module_segment_count: i32 = decl.use_stmt_path_segment_count - 1;
+                if module_segment_count > 0 {
+                    const module_name_len: i32 = exec_lower_joined_module_name_len(decl.use_stmt_path_segments, module_segment_count);
+                    if module_name_len > 0 {
+                        const module_name: &byte = compiler_arena_alloc(checker.arena, module_name_len as usize + 1 as usize) as &byte;
+                        if module_name != null {
+                            exec_lower_write_joined_module_name(module_name, decl.use_stmt_path_segments, module_segment_count);
+                            const export_decl: &ASTNode = exec_lower_find_module_export_decl(checker, module_name, decl.use_stmt_item_name, item_type);
+                            if export_decl != null {
+                                return export_decl;
+                            }
                         }
                     }
                 }
