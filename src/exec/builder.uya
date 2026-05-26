@@ -460,6 +460,15 @@ fn exec_builder_new_temp(ctx: &ExecFunctionBuildContext) i32 {
     return slot;
 }
 
+fn exec_builder_restore_temp_watermark(ctx: &ExecFunctionBuildContext, watermark: i32) void {
+    if ctx == null {
+        return;
+    }
+    if watermark >= 0 && watermark <= ctx.next_temp_slot {
+        ctx.next_temp_slot = watermark;
+    }
+}
+
 fn exec_builder_pointer_pointee_kind_code(type: Type) i32 {
     if type.kind != TypeKind.TYPE_POINTER || type.pointer_to == null {
         return TypeKind.TYPE_VOID as i32;
@@ -834,13 +843,17 @@ fn exec_builder_match_uses_union_patterns(expr: &HIRExpr) i32 {
 fn exec_builder_compile_item_pack(ctx: &ExecFunctionBuildContext, items: & & HIRExpr, item_count: i32) i32 {
     var src_slots: [i32: 256] = [];
     var item_base: i32 = -1;
+    if item_count < 0 || item_count > 256 {
+        exec_backend_set_error(null, "exec: 聚合值元素超出上限" as *byte, 0);
+        return -1;
+    }
     var i: i32 = 0;
     while i < item_count {
         const src_slot: i32 = exec_builder_compile_expr(ctx, items[i]);
         if src_slot < 0 {
             return -1;
         }
-        if i >= 0 && i < EXEC_MAX_CALL_ARGS {
+        if i >= 0 && i < 256 {
             src_slots[i] = src_slot;
         }
         i = i + 1;
@@ -2054,8 +2067,10 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         var opcode: BCOpcode = BCOpcode.BC_NEG;
         if expr.unary_op == TokenType.TOKEN_EXCLAMATION as i32 {
             opcode = BCOpcode.BC_NOT;
+        } else if expr.unary_op == TokenType.TOKEN_TILDE as i32 {
+            opcode = BCOpcode.BC_NOT;
         } else if expr.unary_op != TokenType.TOKEN_MINUS as i32 {
-            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 当前仅支持 ! 与 - unary" as *byte);
+            exec_backend_set_generic_unsupported_error(expr.ast_node, "exec: 当前仅支持 ! / - / ~ unary" as *byte);
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -2706,6 +2721,7 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
     const start_cleanup_depth: i32 = ctx.cleanup_depth;
     var i: i32 = 0;
     while i < block.stmt_count {
+        const stmt_temp_base: i32 = ctx.next_temp_slot;
         const stmt: &HIRStmt = block.stmts[i];
         if stmt.kind == HIRStmtKind.HIR_STMT_SCOPE_ENTER {
             if exec_builder_push_cleanup_scope(ctx, stmt.ast_node, stmt.scope_id) < 0 {
@@ -2852,6 +2868,7 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
                 }) < 0 {
                     return -1;
                 }
+                exec_builder_restore_temp_watermark(ctx, stmt_temp_base);
                 i = i + 1;
                 continue;
             }
@@ -3042,6 +3059,7 @@ fn exec_builder_compile_block(ctx: &ExecFunctionBuildContext, block: &HIRBlock) 
             exec_backend_set_generic_unsupported_error(stmt.ast_node, "exec: builder 不支持该语句" as *byte);
             return -1;
         }
+        exec_builder_restore_temp_watermark(ctx, stmt_temp_base);
         i = i + 1;
     }
     if ctx.cleanup_depth != start_cleanup_depth {

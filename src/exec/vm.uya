@@ -1723,11 +1723,18 @@ fn vm_step(program: &BCProgram, frame: &ExecFrame, trace_vm: i32, out_value: &Ex
             exec_backend_set_error(function.decl, "exec: NOT 槽位越界" as *byte, 0);
             return -1;
         }
-        var not_value: i32 = 0;
-        if exec_value_truthy(slot_b[0]) == 0 {
-            not_value = 1;
+        const not_kind: ExecValueKind = exec_vm_value_kind_from_type_code(instr.imm as i32, slot_b.kind);
+        if not_kind == ExecValueKind.EXEC_VALUE_BOOL {
+            var not_value: i32 = 0;
+            if exec_value_truthy(slot_b[0]) == 0 {
+                not_value = 1;
+            }
+            slot_a[0] = exec_make_bool(not_value);
+        } else if exec_vm_value_kind_is_unsigned(not_kind) != 0 {
+            slot_a[0] = exec_vm_make_integer_by_kind(not_kind, 0, ~(slot_b.i64_value as u64));
+        } else {
+            slot_a[0] = exec_vm_make_integer_by_kind(not_kind, ~slot_b.i64_value, 0);
         }
-        slot_a[0] = exec_make_bool(not_value);
     } else if instr.opcode == BCOpcode.BC_CAST {
         if slot_a == null || slot_b == null {
             exec_backend_set_error(function.decl, "exec: CAST 槽位越界" as *byte, 0);

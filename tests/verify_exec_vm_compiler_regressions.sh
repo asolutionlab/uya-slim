@@ -262,6 +262,40 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  else-if local read --exec ✓"
 
+echo "验证 unary bitwise not 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_unary_bit_not.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  unary bitwise not --vm ✓"
+
+echo "验证 run --exec 下 unary bitwise not 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_unary_bit_not.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ unary bitwise not unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  unary bitwise not --exec ✓"
+
+echo "验证超过 32 项的 array literal 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_array_literal_many_items.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  array literal >32 items --vm ✓"
+
+echo "验证 run --exec 下超过 32 项的 array literal 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_array_literal_many_items.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ array literal >32 items unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  array literal >32 items --exec ✓"
+
 echo "验证同模块 file-local extern 声明命中另一文件真实函数体路径..."
 "$COMPILER" run --vm \
     "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/main.uya" \

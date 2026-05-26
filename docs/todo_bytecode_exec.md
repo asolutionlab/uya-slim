@@ -232,6 +232,37 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - 中间曾短暂前移到 `src/codegen/c99/main.uya:1670:1: exec: const pool 超出上限`
     - 在把 `EXEC_MAX_CONST_POOL_VALUES` 扩到 `8192` 后，当前最新 blocker 已进一步前移到：
       - `src/codegen/c99/main.uya:1670:1: exec: frame slot 超出上限`
+- 2026-05-26 已继续收口 `src/main.uya --vm` staged smoke：
+  - bytecode builder 当前会在语句边界回收临时槽位水位，不再让长函数因为顺序语句数过多而线性抬高 `frame slot`
+  - 新增并通过：
+    - `tests/verify_exec_vm_compiler_stage_smoke.sh`
+    - `UYA_COMPILER=/tmp/uya_exec_postpatch_bin bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后：
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_postpatch_bin run --vm src/main.uya`
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_postpatch_bin run --vm src/main.uya --no-safety-proof`
+  - 两条路线当前都已不再卡在 `src/codegen/c99/main.uya:1670:1: exec: frame slot 超出上限`
+  - 最新共同前沿已进一步前移到：
+    - `src/microapp/main.uya:490:37: exec: 当前仅支持 ! 与 - unary`
+- 2026-05-26 已继续收口 `src/main.uya --vm` staged smoke：
+  - exec builder / VM 当前已补上整数 `~` unary：
+    - builder 不再把 `TOKEN_TILDE` 直接判成 unsupported
+    - `BC_NOT` 当前会按结果类型区分“逻辑非 bool”与“整数按位取反”
+  - 已新增并通过：
+    - `tests/test_exec_vm_compiler_unary_bit_not.uya`
+    - `UYA_COMPILER=/tmp/uya_exec_unary_bin bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya` 与 `./bin/uya run --vm src/main.uya --no-safety-proof` 的共同前沿已越过：
+    - `src/microapp/main.uya:490:37: exec: 当前仅支持 ! 与 - unary`
+  - 但最新 blocker 仍未脱离聚合值构造校验：
+    - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
+- 2026-05-26 已继续收口聚合值打包路径：
+  - `exec_builder_compile_item_pack(...)` 当前不再错误地把聚合字面量源槽位上限绑到 `EXEC_MAX_CALL_ARGS=32`
+  - 已新增并通过：
+    - `tests/test_exec_vm_compiler_array_literal_many_items.uya`
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_pack_bin run --vm tests/test_exec_vm_compiler_array_literal_many_items.uya`
+    - `UYA_COMPILER=/tmp/uya_exec_pack_bin bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 这使得“超过 32 项的 array literal”不再在 exec bytecode 校验阶段误报未初始化槽位
+  - 但基于当前源码重编的新编译器二进制继续验证后，`src/main.uya --vm` / `--no-safety-proof` 的最新前沿仍停在：
+    - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -242,7 +273,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `src/codegen/c99/main.uya:1670:1: exec: frame slot 超出上限`
+  - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
@@ -258,6 +289,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `src/exec/vm.uya:1002:34` 的 `catch |err| { ... }` 错误绑定
     - `src/codegen/c99/expr.uya:4289:19` 的局部标识符读取路径
     - `src/codegen/c99/main.uya:1670:1` 的 `const pool` 容量上限
+    - `src/codegen/c99/main.uya:1670:1` 的 `frame slot` 容量上限
+    - `src/microapp/main.uya:490:37` 的整数 `~ unary`
     继续前移到 `src/codegen/c99/main.uya:1670:1` 的 `frame slot` 容量上限
   - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、`catch |err|` 错误绑定、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口已从深 `else if` 局部读取语义转向编译器本体 C99 backend 路径上的更大 bytecode frame 容量
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
@@ -898,7 +931,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `EXEC_MAX_GLOBALS` 已扩到 `1024`，`EXEC_MAX_CALL_ARGS` 已扩到 `32`，避免编译器本体在全局槽位和 `parse_args(...)` 这类大签名调用上过早卡死
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有一个明确残留：
-  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya` 或 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya --no-safety-proof`，最新观测点都已继续前推到 `./src/codegen/c99/main.uya:1670:1`；在补上深 `else if` 链里的局部读取、并把 `EXEC_MAX_CONST_POOL_VALUES` 扩到 `8192` 之后，当前最新 blocker 已收敛到 `exec: frame slot 超出上限`。这说明此前的 `src/codegen/c99/expr.uya:4289:19` 局部读取缺口已不再是当前最前 blocker，下一步应转向更大 frame/临时槽位占用的收口
+  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_postpatch_bin run --vm src/main.uya` 或 `env UYA_ROOT=./lib/ /tmp/uya_exec_postpatch_bin run --vm src/main.uya --no-safety-proof`，最新观测点都已继续前推到 `./src/microapp/main.uya:490:37`；在 bytecode builder 增加“按语句回收临时槽位水位”之后，`exec: frame slot 超出上限` 已不再是当前最前 blocker。当前最新 blocker 已收敛到 `exec: 当前仅支持 ! 与 - unary`，下一步应转向补齐更完整的一元表达式 lowering / builder / VM 语义
 
 ---
 
