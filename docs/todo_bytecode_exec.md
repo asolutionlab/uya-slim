@@ -759,7 +759,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 通用指针值表示：`&T/*T`、`&void/*void`，而不只 `&byte`
 - [x] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
 - [x] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
-- [ ] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
+- [x] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
 - [x] interface / 间接调用
 - [ ] union 更完整语义
 - [ ] 更复杂标准库程序
@@ -775,8 +775,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-26 已继续收口：
   - `use libc.puts;` / `use libc.atoll;` / `use libc.llabs;` 这类“命中库内有函数体实现”的调用，当前已默认走普通 lowering/VM 路径，不再强制退回 hostcall
   - 当用户程序显式声明同名无函数体 `extern "libc"` stub 时，仍保持最小 host bridge，不会误把标准库实现体硬拉进 reachable 队列
-- 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；但 `fprintf/snprintf/printf` 的完整 varargs 收敛仍未完成，当前不应误解为“varargs extern 已普遍支持”。
-- 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`
+- 2026-05-26 已把 stdio varargs 策略收口为稳定规则：
+  - `use libc.printf;` / `use libc.fprintf;` / `use libc.snprintf;` / `use libc.sprintf;` 这类命中库内 Uya 函数体实现的 varargs 调用，当前已直接走普通 lowering/VM；`--dump-bytecode` 回归中不再出现 `BC_HOSTCALL`
+  - 仅“显式声明、无函数体”的 varargs `extern` 继续保留为 `extern_abi` unsupported：`--vm` 下直接失败，`--exec` 下保持既有 fallback 语义
+  - 已补强并通过：
+    - `bash ./tests/verify_exec_vm_stdio_varargs.sh`
+    - `bash ./tests/verify_exec_vm_extern_bridge.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+- 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；该桥接当前主要保留给“显式 no-body stub / 宿主边界”场景，stdio 主线路径以上述 body-first 规则为准。
+- 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`，这同样属于 body-first 之外保留的最小宿主桥接补位。
 - 2026-05-18 已新增第一版 tagged union 子集：
   - `union` 值现在可进入 exec VM 表示
   - `UnionName.variant(payload)` 构造已接通 lowering / bytecode / VM

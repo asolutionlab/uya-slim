@@ -2423,6 +2423,31 @@ fn exec_lower_resolve_function_decl(checker: &TypeChecker, callee_name: &byte) &
     return null;
 }
 
+fn exec_lower_prefer_bodyful_function_decl(checker: &TypeChecker, fn_decl: &ASTNode, fn_name: &byte) &ASTNode {
+    if checker == null {
+        return fn_decl;
+    }
+    var lookup_name: &byte = fn_name;
+    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_name != null {
+        lookup_name = fn_decl.fn_decl_name;
+        if fn_decl.fn_decl_body != null {
+            return checker_canonicalize_fn_decl(checker, fn_decl);
+        }
+    }
+    if lookup_name == null {
+        return fn_decl;
+    }
+    const reachable_decl: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, lookup_name);
+    if reachable_decl != null && reachable_decl.type == ASTNodeType.AST_FN_DECL && reachable_decl.fn_decl_body != null {
+        return reachable_decl;
+    }
+    const program_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, lookup_name);
+    if program_decl != null && program_decl.type == ASTNodeType.AST_FN_DECL && program_decl.fn_decl_body != null {
+        return checker_canonicalize_fn_decl(checker, program_decl);
+    }
+    return fn_decl;
+}
+
 fn exec_lower_find_function_decl_in_file(checker: &TypeChecker, filename: &byte, callee_name: &byte) &ASTNode {
     if checker == null || checker.program_node == null || checker.program_node.type != ASTNodeType.AST_PROGRAM ||
         filename == null || callee_name == null {
@@ -2452,7 +2477,8 @@ fn exec_lower_resolve_function_decl_from_file(checker: &TypeChecker, filename: &
         }
         var imported_decl: &ASTNode = exec_lower_resolve_imported_decl_from_file(checker, filename, callee_name, 1);
         if imported_decl != null && imported_decl.type == ASTNodeType.AST_FN_DECL {
-            return checker_canonicalize_fn_decl(checker, imported_decl);
+            imported_decl = checker_canonicalize_fn_decl(checker, imported_decl);
+            return exec_lower_prefer_bodyful_function_decl(checker, imported_decl, callee_name);
         }
     }
     return exec_lower_resolve_function_decl(checker, callee_name);
