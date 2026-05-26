@@ -164,6 +164,18 @@ if grep -q 'BC_HOSTCALL' "$TMP_STDERR"; then
 fi
 echo "  extern impl lowered as normal call ✓"
 
+echo "验证 libc 有函数体 extern 默认走 body-first，而不是 hostcall..."
+"$COMPILER" run --vm --dump-bytecode "$SCRIPT_DIR/test_exec_vm_extern_impl_body_first.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+grep -q 'test_exec_vm_extern_impl_body_first.uya' "$TMP_STDOUT"
+if grep -q 'BC_HOSTCALL' "$TMP_STDERR"; then
+    echo "✗ extern impl body-first test unexpectedly used HOSTCALL bridge"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  extern impl body-first ✓"
+
 echo "验证 test --vm/test --exec 的 extern fallback 行为..."
 if "$COMPILER" test --vm "$SCRIPT_DIR/test_exec_vm_extern_decl_varargs_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"; then
     echo "✗ extern unsupported test should fail under test --vm"

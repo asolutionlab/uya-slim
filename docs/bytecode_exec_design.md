@@ -874,7 +874,7 @@ obj.method(a, b) -> Type_method(obj, a, b)
 当前已知需要保留 hostcall 的场景：
 
 - fixed/no-varargs 的 `printf` / `fprintf` / `sprintf` / `snprintf`
-- 少量虽然有 Uya body、但 body 仍会命中 exec lowering 未覆盖语义的 libc 入口，例如 `puts` / `atoll` / `llabs`
+- 当前仅对“无函数体 extern stub”或宿主专属符号保留最小 host bridge；`puts` / `atoll` / `llabs` 这类库内已有 Uya body 的 libc 入口已回收到普通 lowering/VM 路径
 
 这一层的长期目标不是扩大函数名白名单，而是随着 lowering/VM 覆盖面提高，持续把可执行的 extern body 收回统一 `CALL` 路径，只把真正的宿主边界留给 `HOSTCALL`。
 

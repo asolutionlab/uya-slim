@@ -697,10 +697,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - lowering 默认优先走 extern 自带函数体；只有函数体当前不可执行、或命中少量 hostcall override 时，才落到 hostcall
   - builder 会在编译期把 hostcall site intern 到 `BCProgram.host_calls`
   - VM 热路径按数值 `host_call_id` 分发，不再按函数名线性扫描，也不再为调用额外克隆参数数组
-- 当前 hostcall 仍覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名，其中 `puts` / `atoll` / `llabs` 还被标记为 `prefer hostcall`：
-  - `puts` 的 Uya body 会进入当前 exec lowering 尚未完整覆盖的 `catch` 路径
-  - `atoll` / `llabs` 会触发 `errno` 等宿主状态写入路径
-  - 因此它们暂时保留宿主快路径，等 lowering/VM 语义补齐后再收回
+- 当前 hostcall 仍覆盖 `puts` / `atoi` / `atoll` / `isqrt` / `strcmp` / `llabs` 这批稳定签名；其中：
+  - `atoi` / `isqrt` / `strcmp` 已可在“有函数体”的路径上走普通 lowering/VM
+  - 当用户程序显式声明同名无函数体 `extern` stub 时，仍会优先走最小 hostcall bridge
 - 2026-05-18 已把 `i64/u64` 数字字面量放通到 exec lowering / const pool / VM value，保证宽整数 extern 参数与返回值不会在 lowering 阶段被误判 unsupported。
 - 2026-05-18 已新增第一版“固定参数、无额外 varargs 实参”的 stdio hostcall 过渡路径：
   - 当前已覆盖 `printf(format_only)` 与 `fprintf/sprintf/snprintf` 的 fixed/no-varargs 形式
@@ -759,7 +758,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] 编译器本体所需基础值类型：`u8/u16/usize/isize`
 - [x] 通用指针值表示：`&T/*T`、`&void/*void`，而不只 `&byte`
 - [x] 地址型 builtin：`@usize_from_ptr` / `@ptr_from_usize`
-- [ ] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
+- [x] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
 - [ ] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
 - [x] interface / 间接调用
 - [ ] union 更完整语义
@@ -773,7 +772,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-18 已把 `u8/u16/usize/isize` 放通到 exec lowering / const pool / VM 算术与比较路径；其中 `isize` 继续遵循当前 checker 的既有实现，内部沿用 `TYPE_I64` 映射，而不是额外引入一套平行类型枚举。
 - 2026-05-18 已新增通用 pointer value kind，并支持 pointer/null 比较、pointer cast、`ptr[idx]` 的 byte/整数 pointee 读写，以及 `@ptr_from_usize` / `@usize_from_ptr` 的运行期执行。
 - 2026-05-18 已让一批“带函数体且非 varargs”的 `extern "libc"` 走普通 lowering/VM 路径，当前已用回归覆盖 `atoi` / `isqrt` / `strcmp`；并且当程序显式声明同名无函数体 `extern` stub 时，exec 现在会优先按 stub 走最小 host bridge，而不是误把 stdlib 里的实现体也拉进 reachable 队列。
-- `puts` / `atoll` / `llabs` 当前建议继续通过 stub bridge 走宿主边界。
+- 2026-05-26 已继续收口：
+  - `use libc.puts;` / `use libc.atoll;` / `use libc.llabs;` 这类“命中库内有函数体实现”的调用，当前已默认走普通 lowering/VM 路径，不再强制退回 hostcall
+  - 当用户程序显式声明同名无函数体 `extern "libc"` stub 时，仍保持最小 host bridge，不会误把标准库实现体硬拉进 reachable 队列
 - 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；但 `fprintf/snprintf/printf` 的完整 varargs 收敛仍未完成，当前不应误解为“varargs extern 已普遍支持”。
 - 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`
 - 2026-05-18 已新增第一版 tagged union 子集：
