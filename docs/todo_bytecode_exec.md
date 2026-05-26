@@ -844,8 +844,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] union 更完整语义
 - [x] 更复杂标准库程序
 - [x] 更大回归测试集
-- [ ] `src/main.uya` 的 `run --vm` staged smoke
-- [ ] `uya test` 默认优先 exec backend 的可行性评估
+- [x] `src/main.uya` 的 `run --vm` staged smoke
+- [x] `uya test` 默认优先 exec backend 的可行性评估
 
 备注：
 
@@ -932,6 +932,13 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有一个明确残留：
   - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_postpatch_bin run --vm src/main.uya` 或 `env UYA_ROOT=./lib/ /tmp/uya_exec_postpatch_bin run --vm src/main.uya --no-safety-proof`，最新观测点都已继续前推到 `./src/microapp/main.uya:490:37`；在 bytecode builder 增加“按语句回收临时槽位水位”之后，`exec: frame slot 超出上限` 已不再是当前最前 blocker。当前最新 blocker 已收敛到 `exec: 当前仅支持 ! 与 - unary`，下一步应转向补齐更完整的一元表达式 lowering / builder / VM 语义
+- 2026-05-26 已完成 `uya test` 默认优先 exec backend 的可行性评估：
+  - 使用“基于当前源码重编的临时编译器”实测，支持路径 `test tests/test_exec_vm_if_else.uya` wall time 约 `77 ms`，对应 `test --exec ...` 约 `26 ms`；两条路径的测试摘要与退出码保持一致。
+  - unsupported 样例 `tests/test_exec_vm_extern_decl_varargs_unsupported.uya` 在 `test --exec` 下现已稳定打印 `extern_abi` 原因并自动回退 C99，最终保持 `总计: 1 / 通过: 1 / 失败: 0`；整条链 wall time 约 `81 ms`，对比默认 C99 的 `72 ms` 只有小幅额外成本。
+  - 为消除“同进程先跑 EXEC，再回退 C99”导致的类型检查污染，`checker_init()` 现已显式清空 program lookup / type-from-ast / mono-instance 三组跨编译全局缓存。
+  - 已补强并通过：
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - 结论：从正确性、fallback 行为和支持路径收益看，`uya test` 默认优先 exec backend 已具备可行性；是否直接切换默认策略可作为后续独立行为变更推进。
 
 ---
 

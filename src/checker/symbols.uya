@@ -24,6 +24,12 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     if checker == null || arena == null {
         return -1;
     }
+
+    // `uya` 可能在同一进程里连续做两次完整编译（例如 exec unsupported 后回退 C99）。
+    // 这些全局缓存若不清空，会因 arena 地址复用把上一轮 AST/Type 结果错误复用到下一轮。
+    reset_program_lookup_caches();
+    type_from_ast_reset_cache();
+    mono_instance_index_reset();
     
     checker.arena = arena;
     

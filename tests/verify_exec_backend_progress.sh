@@ -222,6 +222,17 @@ if "$COMPILER" test --vm "$SCRIPT_DIR/test_exec_vm_extern_decl_varargs_unsupport
 fi
 grep -q 'exec unsupported 原因码: extern_abi' "$TMP_STDERR"
 grep -q 'exec: 当前不支持 extern ABI' "$TMP_STDERR"
+echo "验证 test --exec 的 extern unsupported 路径会自动回退到 C99 并保持测试通过..."
+"$COMPILER" test --exec "$SCRIPT_DIR/test_exec_vm_extern_decl_varargs_unsupported.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '信息: exec backend 不支持，回退 C99 (原因码: extern_abi)' "$TMP_STDERR"
+grep -q '后端类型: C99' "$TMP_STDERR"
+grep -q '总计: 1 个测试' "$TMP_STDERR"
+grep -q '通过: 1' "$TMP_STDERR"
+if grep -q '错误: 类型检查失败' "$TMP_STDERR"; then
+    echo "✗ test --exec fallback polluted the follow-up C99 compile"
+    cat "$TMP_STDERR"
+    exit 1
+fi
 echo "  test extern unsupported ✓"
 
 echo "✓ exec backend progress checks passed"
