@@ -137,10 +137,42 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  error union .value --exec ✓"
 
+echo "验证 union match 基础路径不再打印返回类型误诊断..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_union_dispatch.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
+    echo "✗ union dispatch printed stale match type diagnostic"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  union dispatch --vm ✓"
+
+echo "验证 run --exec 下 union match 基础路径不发生 fallback，且不再打印误诊断..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_union_dispatch.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ union dispatch unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
+    echo "✗ union dispatch printed stale match type diagnostic under --exec"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  union dispatch --exec ✓"
+
 echo "验证 union struct-field match 路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_union_field_match.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
+    echo "✗ union field match printed stale match type diagnostic"
+    cat "$TMP_STDERR"
+    exit 1
+fi
 echo "  union field match --vm ✓"
 
 echo "验证 run --exec 下 union struct-field match 路径不发生 fallback..."
@@ -152,12 +184,22 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     cat "$TMP_STDERR"
     exit 1
 fi
+if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
+    echo "✗ union field match printed stale match type diagnostic under --exec"
+    cat "$TMP_STDERR"
+    exit 1
+fi
 echo "  union field match --exec ✓"
 
 echo "验证 match return block 中 union 结构体字段读取路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_match_return_struct_field.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
+    echo "✗ match return struct field printed stale match type diagnostic"
+    cat "$TMP_STDERR"
+    exit 1
+fi
 echo "  match return struct field --vm ✓"
 
 echo "验证 run --exec 下 match return block union 结构体字段路径不发生 fallback..."
@@ -166,6 +208,11 @@ grep -q '后端类型: EXEC' "$TMP_STDERR"
 grep -q 'exec backend 构建完成' "$TMP_STDERR"
 if grep -q '回退 C99' "$TMP_STDERR"; then
     echo "✗ match return struct field unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
+    echo "✗ match return struct field printed stale match type diagnostic under --exec"
     cat "$TMP_STDERR"
     exit 1
 fi
@@ -308,6 +355,23 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     exit 1
 fi
 echo "  catch prefix block --exec ✓"
+
+echo "验证 !void catch 的 void 尾语句路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_catch_void_tail.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  catch void tail --vm ✓"
+
+echo "验证 run --exec 下 !void catch 的 void 尾语句路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_catch_void_tail.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ catch void tail unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  catch void tail --exec ✓"
 
 echo "验证 struct sizeof/alignof 在 --vm 下直接折叠..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_sizeof_struct.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"

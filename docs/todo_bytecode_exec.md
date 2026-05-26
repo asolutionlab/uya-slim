@@ -1,7 +1,7 @@
 # Uya Bytecode / IR 执行后端 TODO
 
 **状态**：executable TODO, implementation in progress
-**更新日期**：2026-05-23
+**更新日期**：2026-05-26
 **配套设计**：`docs/bytecode_exec_design.md`
 
 ---
@@ -160,6 +160,13 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
     - `bash ./tests/verify_exec_backend_progress.sh`
   - `./bin/uya run --vm src/main.uya` 的前沿已继续前推，当前不再卡在 `_ = ...;` 或多语句 catch block，而是前移到 `./lib/kernel/payload.uya:165:9: exec: 当前不支持 slice.ptr`
+- 2026-05-26 已继续收口 `!void` catch / return 路径：
+  - `!void` 函数中的裸 `return;` 现已在 exec lowering 中正确视为“返回 `ok(void)`”，不再在 builder 阶段误报 `exec: 非 void 函数缺少返回值`
+  - `fail() catch { side_effects...; assign_stmt; }` 这类“`!void` catch + void 尾语句”现已闭环；error 分支会执行整块副作用，再产出稳定的 void 值
+  - 新增并通过：
+    - `tests/test_exec_vm_catch_void_tail.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
 - 2026-05-21 已继续收口：
   - `array-of-pointer` 的 inline 成员访问/写回现已闭环，不再在 lowering 阶段把 `nodes[idx].field` 这类链路掉成 `void`
   - file-local import / whole-module alias 的“裸标识符全局读写”现已闭环：
@@ -224,7 +231,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
-- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`，以及 `errno = ENOENT` 这类 imported global bare identifier 路径；当前最新前沿已前推到 `&opendir_storage[j]`，说明主阻塞已从 stdio/基础 catch lowering 收敛到 indexed address-of 语义
+- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`、`errno = ENOENT` 这类 imported global bare identifier 路径，以及 `&opendir_storage[j]` 这类 indexed address-of 语义；基于当前源码重编的新编译器二进制继续验证后，最新前沿已前推到 `./src/codegen/c99/utils.uya:552:21: exec: 当前不支持 extern ABI: mkdir/2`
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
@@ -789,6 +796,15 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `UnionName.variant(payload)` 构造已接通 lowering / bytecode / VM
   - `match union_value { .Variant(x) => ..., else => ... }` 基础路径已可执行
   - 新增 `tests/test_exec_vm_union_dispatch.uya`
+- 2026-05-26 已继续收口 union `match` 路径：
+  - exec lowering 现已在补做表达式类型推断时临时回灌当前活跃局部绑定，并为 `AST_MATCH_EXPR` 走一条基于 lowering 作用域的结果类型合一逻辑，不再依赖“离开函数检查现场后”的裸 `checker_infer_type(...)`
+  - `tests/test_exec_vm_union_dispatch.uya`
+  - `tests/test_exec_vm_compiler_union_field_match.uya`
+  - `tests/test_exec_vm_compiler_match_return_struct_field.uya`
+  - 上述三条 union 路径在 `run --vm` / `run --exec` 下都已不再打印历史误诊断 `match 所有分支的返回类型必须一致`
+  - 已补强并通过：
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
 - 2026-05-18 已打通第一版 interface / 间接调用：
   - 结构体实例方法 `obj.method(...)` 现在会在 lowering 阶段改写为带 receiver 引用的普通调用
   - VM 新增内部引用地址与 `CALL_INDIRECT`，interface 值运行时保存“方法表函数索引 + data 引用”
@@ -800,9 +816,8 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `@max/@min` (`AST_INT_LIMIT`) 已接通到 exec lowering 的常量折叠与全局初始化，新增 `tests/test_exec_vm_int_limit.uya`
   - `EXEC_MAX_GLOBALS` 已扩到 `1024`，`EXEC_MAX_CALL_ARGS` 已扩到 `32`，避免编译器本体在全局槽位和 `parse_args(...)` 这类大签名调用上过早卡死
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
-- 当前仍有两个明确残留：
-  - `tests/test_exec_vm_union_dispatch.uya` 运行路径已打通，但 checker 仍会打印一条历史诊断 `match 所有分支的返回类型必须一致`
-  - `./bin/uya run --vm src/main.uya` 当前已能继续越过“whole-module globals / struct 缺失字段补零 / stdio 常量位运算 / slice.ptr / array-of-pointer member / imported global bare identifier”等旧阻塞；最新观测点已前推到 `./lib/libc/stdlib.uya:1083:38`，卡在 `&opendir_storage[j]` 这类 indexed address-of 语义，下一步应优先补齐 `&arr[i]` / `&slice[i]` 路径
+- 当前仍有一个明确残留：
+  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_union_fix_bin run --vm src/main.uya --no-safety-proof`，最新观测点已继续前推到 `./src/codegen/c99/utils.uya:552:21`，当前卡在 `mkdir(&buf[0] as *byte, 493)` 这类无函数体 `extern "libc"` ABI 路径；这说明 `&opendir_storage[j]` / `&arr[i]` / `&slice[i]` 这一批 indexed address-of 语义已不再是当前最前 blocker，下一步应转向 `mkdir/2` 这类宿主桥接/extern ABI 收口
 
 ---
 

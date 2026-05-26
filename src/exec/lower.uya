@@ -516,6 +516,13 @@ fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
     if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
         return make_i32_type();
     }
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        const lowered_match_type: Type = exec_lower_infer_match_expr_type(ctx, expr);
+        if lowered_match_type.kind != TypeKind.TYPE_VOID {
+            return lowered_match_type;
+        }
+    }
+    const saved_scope_level: i32 = ctx.checker.scope_level;
     const prev_in_function: i32 = ctx.checker.in_function;
     const prev_function_decl: &ASTNode = ctx.checker.current_function_decl;
     const prev_return_type: Type = copy_type(&ctx.checker.current_return_type);
@@ -526,7 +533,63 @@ fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
             ctx.checker.current_return_type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
         }
     }
+    if ctx.active_local_count > 0 {
+        checker_enter_scope(ctx.checker);
+        var local_i: i32 = 0;
+        while local_i < ctx.active_local_count {
+            const local_name: &byte = ctx.local_names[local_i];
+            if local_name != null {
+                var shadowed: i32 = 0;
+                var local_j: i32 = local_i + 1;
+                while local_j < ctx.active_local_count {
+                    if ctx.local_names[local_j] != null &&
+                        str_equals(ctx.local_names[local_j], local_name) != 0 {
+                        shadowed = 1;
+                        break;
+                    }
+                    local_j = local_j + 1;
+                }
+                if shadowed == 0 {
+                    const temp_symbol: &Symbol = compiler_arena_alloc(ctx.checker.arena, @size_of(Symbol)) as &Symbol;
+                    if temp_symbol != null {
+                        const local_slot: i32 = ctx.local_slots[local_i];
+                        var local_type: Type = copy_type(&ctx.local_types[local_i]);
+                        var local_line: i32 = expr.line;
+                        var local_column: i32 = expr.column;
+                        var local_is_const: i32 = ctx.local_is_param[local_i];
+                        if local_slot >= 0 && local_slot < EXEC_MAX_LOCALS {
+                            local_type = copy_type(&ctx.slot_types[local_slot]);
+                            const local_decl: &ASTNode = ctx.slot_decls[local_slot];
+                            if local_decl != null {
+                                local_line = local_decl.line;
+                                local_column = local_decl.column;
+                                if local_decl.type == ASTNodeType.AST_VAR_DECL {
+                                    local_is_const = local_decl.var_decl_is_const;
+                                }
+                            }
+                        }
+                        temp_symbol.name = local_name;
+                        temp_symbol.type = copy_type(&local_type);
+                        temp_symbol.is_const = local_is_const;
+                        temp_symbol.is_initialized = 1;
+                        temp_symbol.scope_level = ctx.checker.scope_level;
+                        temp_symbol.line = local_line;
+                        temp_symbol.column = local_column;
+                        temp_symbol.pointee_of = null;
+                        temp_symbol.pointer_known_length = -1;
+                        temp_symbol.pointer_length_param = null;
+                        temp_symbol.next_in_scope = null;
+                        _ = symbol_table_insert(ctx.checker, temp_symbol);
+                    }
+                }
+            }
+            local_i = local_i + 1;
+        }
+    }
     const inferred: Type = checker_infer_type(ctx.checker, expr);
+    while ctx.checker.scope_level > saved_scope_level {
+        checker_exit_scope(ctx.checker);
+    }
     ctx.checker.in_function = prev_in_function;
     ctx.checker.current_function_decl = prev_function_decl;
     ctx.checker.current_return_type = prev_return_type;
@@ -885,6 +948,84 @@ fn exec_lower_match_arm_return_expr(arm: &ASTMatchArm) &ASTNode {
         return null;
     }
     return only_stmt.return_stmt_expr;
+}
+
+fn exec_lower_match_arm_result_node(arm: &ASTMatchArm) &ASTNode {
+    if arm == null || arm.result_expr == null {
+        return null;
+    }
+    if arm.result_is_block == 0 {
+        return arm.result_expr;
+    }
+    const block: &ASTNode = arm.result_expr;
+    if block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null || block.block_stmt_count != 1 {
+        return null;
+    }
+    const only_stmt: &ASTNode = block.block_stmts[0];
+    if only_stmt == null {
+        return null;
+    }
+    if only_stmt.type == ASTNodeType.AST_RETURN_STMT {
+        if only_stmt.return_stmt_expr == null {
+            return null;
+        }
+        return only_stmt.return_stmt_expr;
+    }
+    return only_stmt;
+}
+
+fn exec_lower_infer_match_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
+    if ctx == null || expr == null || expr.type != ASTNodeType.AST_MATCH_EXPR ||
+        expr.match_expr_arms == null || expr.match_expr_arm_count <= 0 {
+        return make_void_type();
+    }
+    const subject_type: Type = exec_lower_resolve_exact_type(ctx, expr.match_expr_expr);
+    var unified: Type = make_void_type();
+    var first: i32 = 1;
+    var i: i32 = 0;
+    while i < expr.match_expr_arm_count {
+        const arm: ASTMatchArm = expr.match_expr_arms[i];
+        const arm_expr: &ASTNode = exec_lower_match_arm_result_node(expr.match_expr_arms + i);
+        if arm_expr == null {
+            return make_void_type();
+        }
+        var arm_type: Type = make_void_type();
+        if arm.kind == MatchPatternKind.MATCH_PAT_UNION &&
+            arm.variant_name != null &&
+            subject_type.kind == TypeKind.TYPE_UNION {
+            exec_lower_push_scope(ctx, -1);
+            if arm.var_name != null && str_equals(arm.var_name, "_" as *byte) == 0 {
+                const bind_type: Type = exec_lower_union_variant_type(ctx, copy_type(&subject_type), arm.variant_name);
+                if bind_type.kind == TypeKind.TYPE_VOID {
+                    exec_lower_pop_scope(ctx);
+                    return make_void_type();
+                }
+                if exec_lower_append_local(ctx, null, arm.var_name, &bind_type, 0) < 0 {
+                    exec_lower_pop_scope(ctx);
+                    return make_void_type();
+                }
+            }
+            arm_type = exec_lower_resolve_exact_type(ctx, arm_expr);
+            exec_lower_pop_scope(ctx);
+        } else {
+            arm_type = exec_lower_resolve_exact_type(ctx, arm_expr);
+        }
+        if first != 0 {
+            unified = copy_type(&arm_type);
+            first = 0;
+        } else {
+            if unified.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(arm_type.kind) != 0 {
+                unified = copy_type(&arm_type);
+            } else if arm_type.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(unified.kind) != 0 {
+                arm_type = copy_type(&unified);
+            }
+            if type_equals(unified, copy_type(&arm_type)) == 0 {
+                return make_void_type();
+            }
+        }
+        i = i + 1;
+    }
+    return unified;
 }
 
 fn exec_lower_make_returning_match_expr(ctx: &ExecLowerContext, expr: &ASTNode) &ASTNode {
@@ -1373,6 +1514,14 @@ fn exec_lower_resolve_exact_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
                 return pointed_type.element_type[0];
             }
             return pointed_type;
+        }
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR &&
+        expr.unary_expr_operand != null &&
+        (expr.unary_expr_op as TokenType) == TokenType.TOKEN_ASTERISK {
+        const operand_type: Type = exec_lower_resolve_exact_type(ctx, expr.unary_expr_operand);
+        if operand_type.kind == TypeKind.TYPE_POINTER && operand_type.pointer_to != null {
+            return operand_type.pointer_to[0];
         }
     }
     return resolved;
@@ -3736,6 +3885,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if catch_last_stmt_early == null {
             return exec_lower_fail_expr_reason(expr, "exec: catch 分支块为空" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
         }
+        if catch_payload_type.kind == TypeKind.TYPE_VOID && catch_last_stmt_early.type != ASTNodeType.AST_RETURN_STMT {
+            hir_catch_early.block = exec_lower_block(ctx, catch_block_early);
+            if hir_catch_early.block == null {
+                return null;
+            }
+            hir_catch_early.right = exec_lower_make_zero_expr(ctx, catch_block_early, &catch_payload_type);
+            if hir_catch_early.right == null {
+                return null;
+            }
+            return hir_catch_early;
+        }
         hir_catch_early.block = exec_lower_make_block_prefix(ctx, catch_block_early);
         if catch_last_stmt_early.type == ASTNodeType.AST_RETURN_STMT {
             const return_stmt_early: &ASTNode = catch_last_stmt_early;
@@ -4773,6 +4933,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         if catch_last_stmt == null {
             return exec_lower_fail_expr_reason(expr, "exec: catch 分支块为空" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
         }
+        if expr_type.kind == TypeKind.TYPE_VOID && catch_last_stmt.type != ASTNodeType.AST_RETURN_STMT {
+            hir_catch.block = exec_lower_block(ctx, catch_block);
+            if hir_catch.block == null {
+                return null;
+            }
+            hir_catch.right = exec_lower_make_zero_expr(ctx, catch_block, &expr_type);
+            if hir_catch.right == null {
+                return null;
+            }
+            return hir_catch;
+        }
         hir_catch.block = exec_lower_make_block_prefix(ctx, catch_block);
         if catch_last_stmt.type == ASTNodeType.AST_RETURN_STMT {
             const return_stmt: &ASTNode = catch_last_stmt;
@@ -5181,6 +5352,17 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
                     }
                 } else {
                     stmt.expr = exec_lower_expr(ctx, stmt_node.return_stmt_expr);
+                    if stmt.expr == null {
+                        exec_lower_pop_scope(ctx);
+                        return null;
+                    }
+                }
+            } else if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
+                const bare_return_type: Type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+                if bare_return_type.kind == TypeKind.TYPE_ERROR_UNION &&
+                    bare_return_type.error_union_payload_type != null &&
+                    bare_return_type.error_union_payload_type[0].kind == TypeKind.TYPE_VOID {
+                    stmt.expr = exec_lower_make_zero_expr(ctx, stmt_node, &bare_return_type.error_union_payload_type[0]);
                     if stmt.expr == null {
                         exec_lower_pop_scope(ctx);
                         return null;
