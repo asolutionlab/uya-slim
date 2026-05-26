@@ -3,8 +3,11 @@
 use libc;
 
 const EXEC_MAX_BYTECODE_INSTRS: i32 = 16384;
-const EXEC_MAX_CONST_POOL_VALUES: i32 = 1024;
+// 编译器本体 staged smoke 会带入大量字符串/整数常量，1024 容量过早撞限。
+const EXEC_MAX_CONST_POOL_VALUES: i32 = 8192;
 const EXEC_MAX_HOST_CALL_SITES: i32 = 64;
+// 保持与 lowering 侧一致，避免深 `else if` 链在 cleanup scope 栈上过早撞限。
+const EXEC_MAX_CLEANUP_SCOPE_DEPTH: i32 = 512;
 
 struct ExecConstPoolBuilder {
     values: [ExecValue: EXEC_MAX_CONST_POOL_VALUES],
@@ -47,7 +50,7 @@ struct ExecFunctionBuildContext {
     max_slot_count: i32,
     loop_stack: [ExecLoopPatch: 32],
     loop_depth: i32,
-    cleanup_scopes: [ExecCleanupScope: 64],
+    cleanup_scopes: [ExecCleanupScope: EXEC_MAX_CLEANUP_SCOPE_DEPTH],
     cleanup_depth: i32,
 }
 
@@ -259,10 +262,10 @@ fn exec_builder_continue_jump_ref(loop_patch: &ExecLoopPatch, idx: i32) &i32 {
 }
 
 fn exec_builder_cleanup_scope_ref(ctx: &ExecFunctionBuildContext, idx: i32) &ExecCleanupScope {
-    if ctx == null || idx < 0 || idx >= 64 {
+    if ctx == null || idx < 0 || idx >= EXEC_MAX_CLEANUP_SCOPE_DEPTH {
         return null;
     }
-    if idx >= 0 && idx < 64 {
+    if idx >= 0 && idx < EXEC_MAX_CLEANUP_SCOPE_DEPTH {
         return &ctx.cleanup_scopes[idx];
     }
     return null;
@@ -2493,7 +2496,7 @@ fn exec_builder_push_cleanup_scope(ctx: &ExecFunctionBuildContext, ast_node: &AS
     if ctx == null {
         return -1;
     }
-    if ctx.cleanup_depth >= 64 {
+    if ctx.cleanup_depth >= EXEC_MAX_CLEANUP_SCOPE_DEPTH {
         exec_backend_set_error(ast_node, "exec: cleanup scope 嵌套过深" as *byte, 0);
         return -1;
     }

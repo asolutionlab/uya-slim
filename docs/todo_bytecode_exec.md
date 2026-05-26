@@ -220,6 +220,18 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `const wm8e: i32 = lanes - lane_off;`
     - `else if wm8e >= 8 { ... }`
     这类“同一作用域内局部标识符在 `else if` 条件中的读取”路径
+- 2026-05-26 已继续收口 `src/main.uya --vm` staged smoke：
+  - 深 `else if` 链里的同作用域局部读取当前已闭环：
+    - exec lowering scope depth 上限已扩到 `512`
+    - builder cleanup scope depth 也已同步扩到 `512`
+  - 新增并通过：
+    - `tests/test_exec_vm_compiler_else_if_local.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya` 与 `./bin/uya run --vm src/main.uya --no-safety-proof` 的最新前沿已继续共同前推：
+    - 不再卡在 `src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
+    - 中间曾短暂前移到 `src/codegen/c99/main.uya:1670:1: exec: const pool 超出上限`
+    - 在把 `EXEC_MAX_CONST_POOL_VALUES` 扩到 `8192` 后，当前最新 blocker 已进一步前移到：
+      - `src/codegen/c99/main.uya:1670:1: exec: frame slot 超出上限`
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -230,7 +242,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
+  - `src/codegen/c99/main.uya:1670:1: exec: frame slot 超出上限`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
@@ -244,8 +256,10 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `src/codegen/c99/utils.uya:552:21` 的 direct `extern` `mkdir/2`
     - `src/parser/main.uya:54:28` 的 file-local direct `extern` `lexer_next_token/2`
     - `src/exec/vm.uya:1002:34` 的 `catch |err| { ... }` 错误绑定
-    继续前移到 `src/codegen/c99/expr.uya:4289:19` 的局部标识符读取路径
-  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、`catch |err|` 错误绑定、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口重新集中在更深层的局部标识符读取路径收口
+    - `src/codegen/c99/expr.uya:4289:19` 的局部标识符读取路径
+    - `src/codegen/c99/main.uya:1670:1` 的 `const pool` 容量上限
+    继续前移到 `src/codegen/c99/main.uya:1670:1` 的 `frame slot` 容量上限
+  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、`catch |err|` 错误绑定、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口已从深 `else if` 局部读取语义转向编译器本体 C99 backend 路径上的更大 bytecode frame 容量
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
@@ -844,6 +858,18 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
     - `bash ./tests/verify_exec_backend_progress.sh`
   - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya` 与 `./bin/uya run --vm src/main.uya --no-safety-proof` 的最新前沿已共同从 `src/checker/type_accessors.uya:88:17` / `src/exec/vm.uya:1002:34` 推进到 `src/codegen/c99/expr.uya:4289:19`
+- 2026-05-26 已继续收口面向编译器本体的 staged smoke：
+  - 深 `else if` 链里的同作用域局部读取当前已补上
+  - 已新增并通过：
+    - `tests/test_exec_vm_compiler_else_if_local.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后：
+    - `./bin/uya run --vm src/main.uya`
+    - `./bin/uya run --vm src/main.uya --no-safety-proof`
+    已共同从 `src/codegen/c99/expr.uya:4289:19` 继续推进到 `src/codegen/c99/main.uya:1670:1`
+  - 中间前沿变化：
+    - 先命中 `exec: const pool 超出上限`
+    - 在把 `EXEC_MAX_CONST_POOL_VALUES` 扩到 `8192` 后，当前继续卡在 `exec: frame slot 超出上限`
 - 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；该桥接当前主要保留给“显式 no-body stub / 宿主边界”场景，stdio 主线路径以上述 body-first 规则为准。
 - 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`，这同样属于 body-first 之外保留的最小宿主桥接补位。
 - 2026-05-18 已新增第一版 tagged union 子集：
@@ -872,7 +898,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `EXEC_MAX_GLOBALS` 已扩到 `1024`，`EXEC_MAX_CALL_ARGS` 已扩到 `32`，避免编译器本体在全局槽位和 `parse_args(...)` 这类大签名调用上过早卡死
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有一个明确残留：
-  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya` 或 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya --no-safety-proof`，最新观测点都已继续前推到 `./src/codegen/c99/expr.uya:4289:19`，当前卡在 `const wm8e: i32 = lanes - lane_off; if wm8e >= 16 { ... } else if wm8e >= 8 { ... }` 这类“同一作用域内局部标识符在 `else if` 条件中的读取”路径；这说明 `type_accessors` 的 returning `match` 多语句 arm block 与 `exec_vm_wrap_syscall_result(...)` 的 `catch |err|` 错误绑定都已不再是当前最前 blocker，下一步应转向这类局部标识符读取路径收口
+  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya` 或 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya --no-safety-proof`，最新观测点都已继续前推到 `./src/codegen/c99/main.uya:1670:1`；在补上深 `else if` 链里的局部读取、并把 `EXEC_MAX_CONST_POOL_VALUES` 扩到 `8192` 之后，当前最新 blocker 已收敛到 `exec: frame slot 超出上限`。这说明此前的 `src/codegen/c99/expr.uya:4289:19` 局部读取缺口已不再是当前最前 blocker，下一步应转向更大 frame/临时槽位占用的收口
 
 ---
 

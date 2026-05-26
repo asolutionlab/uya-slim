@@ -1,6 +1,7 @@
 // exec/frame.uya - Exec VM frame definitions
 
-const EXEC_MAX_FRAME_SLOTS: i32 = 4096;
+// 编译器本体 staged smoke 当前已越过 4096 个临时/局部槽位。
+const EXEC_MAX_FRAME_SLOTS: i32 = 8192;
 
 struct ExecFrame {
     function: &BCFunction,

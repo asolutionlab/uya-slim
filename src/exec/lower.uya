@@ -5,7 +5,8 @@ use libc;
 const EXEC_MAX_LOCALS: i32 = 256;
 // 保持平铺数组查找的热路径简单，同时给编译器本体 staged smoke 留足全局槽位。
 const EXEC_MAX_GLOBALS: i32 = 1024;
-const EXEC_MAX_SCOPE_DEPTH: i32 = 64;
+// `else if` 会在 AST 中嵌套成深链；编译器本体的 SIMD codegen 路径会明显超过 64 层。
+const EXEC_MAX_SCOPE_DEPTH: i32 = 512;
 const EXEC_MAX_INTERFACE_METHODS: i32 = 64;
 const EXEC_MAX_MODULE_GLOBAL_REQUESTS: i32 = 256;
 
@@ -621,15 +622,20 @@ fn exec_lower_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type {
     return inferred;
 }
 
-fn exec_lower_push_scope(ctx: &ExecLowerContext, scope_id: i32) void {
-    if ctx == null || ctx.scope_depth >= EXEC_MAX_SCOPE_DEPTH {
-        return;
+fn exec_lower_push_scope(ctx: &ExecLowerContext, scope_owner: &ASTNode, scope_id: i32) i32 {
+    if ctx == null {
+        return 0;
+    }
+    if ctx.scope_depth >= EXEC_MAX_SCOPE_DEPTH {
+        exec_backend_set_generic_unsupported_error(scope_owner, "exec: lowering scope depth 超过上限" as *byte);
+        return 0;
     }
     if ctx.scope_depth >= 0 && ctx.scope_depth < EXEC_MAX_SCOPE_DEPTH {
         ctx.scope_markers[ctx.scope_depth] = ctx.active_local_count;
         ctx.scope_ids[ctx.scope_depth] = scope_id;
     }
     ctx.scope_depth = ctx.scope_depth + 1;
+    return 1;
 }
 
 fn exec_lower_pop_scope(ctx: &ExecLowerContext) void {
@@ -1027,7 +1033,9 @@ fn exec_lower_infer_match_expr_type(ctx: &ExecLowerContext, expr: &ASTNode) Type
         if arm.kind == MatchPatternKind.MATCH_PAT_UNION &&
             arm.variant_name != null &&
             subject_type.kind == TypeKind.TYPE_UNION {
-            exec_lower_push_scope(ctx, -1);
+            if exec_lower_push_scope(ctx, arm_expr, -1) == 0 {
+                return make_void_type();
+            }
             if arm.var_name != null && str_equals(arm.var_name, "_" as *byte) == 0 {
                 const bind_type: Type = exec_lower_union_variant_type(ctx, copy_type(&subject_type), arm.variant_name);
                 if bind_type.kind == TypeKind.TYPE_VOID {
@@ -2135,7 +2143,9 @@ fn exec_lower_make_for_range_stmt(ctx: &ExecLowerContext, stmt_node: &ASTNode) &
         return null;
     }
 
-    exec_lower_push_scope(ctx, -1);
+    if exec_lower_push_scope(ctx, stmt_node, -1) == 0 {
+        return null;
+    }
     const iter_type: Type = make_i32_type();
     const iter_slot: i32 = exec_lower_append_local(ctx, null, stmt_node.for_stmt_var_name, &iter_type, 0);
     const end_slot: i32 = exec_lower_append_local(ctx, null, "__exec_for_end" as *byte, &iter_type, 0);
@@ -3902,7 +3912,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             str_equals(expr.catch_expr_err_name, "_" as *byte) == 0 {
             var catch_err_type_early: Type = make_void_type();
             catch_err_type_early.kind = TypeKind.TYPE_ERROR;
-            exec_lower_push_scope(ctx, -1);
+            if exec_lower_push_scope(ctx, expr, -1) == 0 {
+                return null;
+            }
             catch_bind_scope_early = 1;
             catch_bind_slot_early = exec_lower_append_local(ctx, null, expr.catch_expr_err_name, &catch_err_type_early, 0);
             if catch_bind_slot_early < 0 {
@@ -4998,7 +5010,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
             str_equals(expr.catch_expr_err_name, "_" as *byte) == 0 {
             var catch_err_type: Type = make_void_type();
             catch_err_type.kind = TypeKind.TYPE_ERROR;
-            exec_lower_push_scope(ctx, -1);
+            if exec_lower_push_scope(ctx, expr, -1) == 0 {
+                return null;
+            }
             catch_bind_scope = 1;
             catch_bind_slot = exec_lower_append_local(ctx, null, expr.catch_expr_err_name, &catch_err_type, 0);
             if catch_bind_slot < 0 {
@@ -5127,7 +5141,9 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                     if variant_index2 < 0 {
                         return exec_lower_fail_expr_reason(expr, "exec: union match 变体无效" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MATCH_EXPR);
                     }
-                    exec_lower_push_scope(ctx, -1);
+                    if exec_lower_push_scope(ctx, arm_union.result_expr, -1) == 0 {
+                        return null;
+                    }
                     if arm_union.var_name != null && str_equals(arm_union.var_name, "_" as *byte) == 0 {
                         const bind_type: Type = exec_lower_union_variant_type(ctx, copy_type(&subject_type), arm_union.variant_name);
                         if exec_type_is_vm_value_supported(bind_type) == 0 {
@@ -5236,7 +5252,9 @@ fn exec_lower_block(ctx: &ExecLowerContext, block: &ASTNode) &HIRBlock {
     if hir_block == null {
         return null;
     }
-    exec_lower_push_scope(ctx, hir_block.scope_id);
+    if exec_lower_push_scope(ctx, block, hir_block.scope_id) == 0 {
+        return null;
+    }
     var i: i32 = 0;
     while i < block.block_stmt_count {
         const stmt_node: &ASTNode = block.block_stmts[i];

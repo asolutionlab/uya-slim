@@ -245,6 +245,23 @@ if grep -q '当前仅支持单表达式 catch/match 分支块' "$TMP_STDERR"; th
 fi
 echo "  multi-stmt returning match arm --exec ✓"
 
+echo "验证同作用域局部在 else-if 条件中的读取路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_else_if_local.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  else-if local read --vm ✓"
+
+echo "验证 run --exec 下同作用域局部的 else-if 条件路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_else_if_local.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ else-if local read unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  else-if local read --exec ✓"
+
 echo "验证同模块 file-local extern 声明命中另一文件真实函数体路径..."
 "$COMPILER" run --vm \
     "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/main.uya" \
