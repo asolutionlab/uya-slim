@@ -76,6 +76,7 @@ struct HIRMatchArm {
     int_value: i64,
     bool_value: i32,
     bind_local_slot: i32,
+    result_block: &HIRBlock,
     result_expr: &HIRExpr,
 }
 

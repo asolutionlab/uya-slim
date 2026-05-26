@@ -206,6 +206,20 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - 对应真实代码形态是 returning `match` 的 `else` arm 内含多语句块：
       - `if t.struct_name != null { return t.struct_name; }`
       - `return null as &byte;`
+- 2026-05-26 已继续收口 `src/main.uya --vm` staged smoke：
+  - returning `match` 的多语句 arm block 现已闭环，不再卡在 `src/checker/type_accessors.uya:88:17`
+  - `catch |err| { ... }` 错误绑定现已闭环，不再卡在 `src/exec/vm.uya:1002:34`
+  - 新增并通过：
+    - `tests/test_exec_vm_compiler_match_return_block_multi_stmt.uya`
+    - `tests/test_exec_vm_catch_error_bind.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya` 与 `./bin/uya run --vm src/main.uya --no-safety-proof` 当前最新前沿已共同前移到：
+    - `src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
+  - 对应真实代码形态是：
+    - `const wm8e: i32 = lanes - lane_off;`
+    - `else if wm8e >= 8 { ... }`
+    这类“同一作用域内局部标识符在 `else if` 条件中的读取”路径
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -216,7 +230,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新 blocker：
-  - `src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
+  - `src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
@@ -229,8 +243,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block
     - `src/codegen/c99/utils.uya:552:21` 的 direct `extern` `mkdir/2`
     - `src/parser/main.uya:54:28` 的 file-local direct `extern` `lexer_next_token/2`
-    继续前移到 `src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block
-  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口重新集中在更深层的 returning `match` 多语句 arm block 收口
+    - `src/exec/vm.uya:1002:34` 的 `catch |err| { ... }` 错误绑定
+    继续前移到 `src/codegen/c99/expr.uya:4289:19` 的局部标识符读取路径
+  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、`catch |err|` 错误绑定、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口重新集中在更深层的局部标识符读取路径收口
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
@@ -240,8 +255,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
 - 当前观测：
-  - `./bin/uya run --vm src/main.uya` 在默认 `--safety-proof` 配置下，当前已不再刷出大量 proof 噪音；最新前沿同样已收敛到 `./src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
-  - `./bin/uya run --vm src/main.uya --no-safety-proof` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`、`errno = ENOENT` 这类 imported global bare identifier 路径，以及 `&opendir_storage[j]` 这类 indexed address-of 语义；基于当前源码重编的新编译器二进制继续验证后，最新前沿已前推到 `./src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
+  - `./bin/uya run --vm src/main.uya` 在默认 `--safety-proof` 配置下，当前已不再刷出大量 proof 噪音；在继续补上 returning `match` 多语句 arm block 与 `catch |err|` 绑定之后，最新前沿已与 `--no-safety-proof` 收敛到同一个新 blocker：
+    - `./src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
+  - `./bin/uya run --vm src/main.uya --no-safety-proof` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`、`errno = ENOENT` 这类 imported global bare identifier 路径、`&opendir_storage[j]` 这类 indexed address-of 语义、`src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block，以及 `src/exec/vm.uya:1002:34` 的 `catch |err|` 错误绑定；基于当前源码重编的新编译器二进制继续验证后，最新前沿已前推到 `./src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
@@ -820,6 +836,14 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `tests/exec_vm_compiler_file_local_extern/helper.uya`
     - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
   - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya --no-safety-proof` 的最新前沿已从 `src/parser/main.uya:54:28` 的 `lexer_next_token/2` 推进到 `src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block
+- 2026-05-26 已继续收口面向编译器本体的 staged smoke：
+  - returning `match` 多语句 arm block 与 `catch |err|` 错误绑定当前都已补上
+  - 已新增并通过：
+    - `tests/test_exec_vm_compiler_match_return_block_multi_stmt.uya`
+    - `tests/test_exec_vm_catch_error_bind.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya` 与 `./bin/uya run --vm src/main.uya --no-safety-proof` 的最新前沿已共同从 `src/checker/type_accessors.uya:88:17` / `src/exec/vm.uya:1002:34` 推进到 `src/codegen/c99/expr.uya:4289:19`
 - 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；该桥接当前主要保留给“显式 no-body stub / 宿主边界”场景，stdio 主线路径以上述 body-first 规则为准。
 - 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`，这同样属于 body-first 之外保留的最小宿主桥接补位。
 - 2026-05-18 已新增第一版 tagged union 子集：
@@ -848,7 +872,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `EXEC_MAX_GLOBALS` 已扩到 `1024`，`EXEC_MAX_CALL_ARGS` 已扩到 `32`，避免编译器本体在全局槽位和 `parse_args(...)` 这类大签名调用上过早卡死
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有一个明确残留：
-  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya --no-safety-proof`，最新观测点已继续前推到 `./src/checker/type_accessors.uya:88:17`，当前卡在 `match t.data { ... else => { if t.struct_name != null { return t.struct_name; } return null as &byte; } }` 这类 returning `match` 多语句 arm block；这说明 `mkdir/rmdir` direct extern 宿主桥、`libc.unistd` 更复杂程序路径，以及 parser/lexer 的 file-local direct `extern` 调用都已不再是当前最前 blocker，下一步应转向这类多语句 `match` 分支块收口
+  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya` 或 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya --no-safety-proof`，最新观测点都已继续前推到 `./src/codegen/c99/expr.uya:4289:19`，当前卡在 `const wm8e: i32 = lanes - lane_off; if wm8e >= 16 { ... } else if wm8e >= 8 { ... }` 这类“同一作用域内局部标识符在 `else if` 条件中的读取”路径；这说明 `type_accessors` 的 returning `match` 多语句 arm block 与 `exec_vm_wrap_syscall_result(...)` 的 `catch |err|` 错误绑定都已不再是当前最前 blocker，下一步应转向这类局部标识符读取路径收口
 
 ---
 

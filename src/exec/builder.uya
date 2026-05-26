@@ -1762,6 +1762,11 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             while umi < expr.match_arm_count {
                 const union_arm: &HIRMatchArm = expr.match_arms + umi;
                 if union_arm.kind == MatchPatternKind.MATCH_PAT_ELSE || union_arm.kind == MatchPatternKind.MATCH_PAT_WILDCARD {
+                    if union_arm.result_block != null {
+                        if exec_builder_compile_block(ctx, union_arm.result_block) < 0 {
+                            return -1;
+                        }
+                    }
                     const else_slot: i32 = exec_builder_compile_expr(ctx, union_arm.result_expr);
                     if else_slot < 0 {
                         return -1;
@@ -1851,6 +1856,11 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                             return -1;
                         }
                     }
+                    if union_arm.result_block != null {
+                        if exec_builder_compile_block(ctx, union_arm.result_block) < 0 {
+                            return -1;
+                        }
+                    }
                     const matched_slot2: i32 = exec_builder_compile_expr(ctx, union_arm.result_expr);
                     if matched_slot2 < 0 {
                         return -1;
@@ -1898,6 +1908,11 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
         while mi < expr.match_arm_count {
             const arm: &HIRMatchArm = expr.match_arms + mi;
             if arm.kind == MatchPatternKind.MATCH_PAT_ELSE || arm.kind == MatchPatternKind.MATCH_PAT_WILDCARD {
+                if arm.result_block != null {
+                    if exec_builder_compile_block(ctx, arm.result_block) < 0 {
+                        return -1;
+                    }
+                }
                 const arm_slot: i32 = exec_builder_compile_expr(ctx, arm.result_expr);
                 if arm_slot < 0 {
                     return -1;
@@ -1977,6 +1992,11 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
                 });
                 if next_arm_jump < 0 {
                     return -1;
+                }
+                if arm.result_block != null {
+                    if exec_builder_compile_block(ctx, arm.result_block) < 0 {
+                        return -1;
+                    }
                 }
                 const matched_slot: i32 = exec_builder_compile_expr(ctx, arm.result_expr);
                 if matched_slot < 0 {

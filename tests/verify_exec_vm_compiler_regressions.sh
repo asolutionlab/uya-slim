@@ -218,6 +218,33 @@ if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
 fi
 echo "  match return struct field --exec ✓"
 
+echo "验证多语句 returning match arm block 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_match_return_block_multi_stmt.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '当前仅支持单表达式 catch/match 分支块' "$TMP_STDERR"; then
+    echo "✗ multi-stmt returning match arm still hit single-expr blocker"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  multi-stmt returning match arm --vm ✓"
+
+echo "验证 run --exec 下多语句 returning match arm block 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_match_return_block_multi_stmt.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ multi-stmt returning match arm unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+if grep -q '当前仅支持单表达式 catch/match 分支块' "$TMP_STDERR"; then
+    echo "✗ multi-stmt returning match arm still hit single-expr blocker under --exec"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  multi-stmt returning match arm --exec ✓"
+
 echo "验证同模块 file-local extern 声明命中另一文件真实函数体路径..."
 "$COMPILER" run --vm \
     "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/main.uya" \
@@ -393,6 +420,33 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
     exit 1
 fi
 echo "  catch void tail --exec ✓"
+
+echo "验证 catch 错误绑定路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_catch_error_bind.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '当前不支持带错误绑定的 catch' "$TMP_STDERR"; then
+    echo "✗ catch error binding still unsupported"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  catch error binding --vm ✓"
+
+echo "验证 run --exec 下 catch 错误绑定路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_catch_error_bind.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ catch error binding unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+if grep -q '当前不支持带错误绑定的 catch' "$TMP_STDERR"; then
+    echo "✗ catch error binding still unsupported under --exec"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  catch error binding --exec ✓"
 
 echo "验证 struct sizeof/alignof 在 --vm 下直接折叠..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_sizeof_struct.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
