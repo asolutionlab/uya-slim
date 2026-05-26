@@ -218,6 +218,27 @@ if grep -q 'match 所有分支的返回类型必须一致' "$TMP_STDERR"; then
 fi
 echo "  match return struct field --exec ✓"
 
+echo "验证同模块 file-local extern 声明命中另一文件真实函数体路径..."
+"$COMPILER" run --vm \
+    "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/main.uya" \
+    "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/helper.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  file-local extern bodyful target --vm ✓"
+
+echo "验证 run --exec 下同模块 file-local extern 声明路径不发生 fallback..."
+"$COMPILER" run --exec \
+    "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/main.uya" \
+    "$SCRIPT_DIR/exec_vm_compiler_file_local_extern/helper.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ file-local extern bodyful target unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  file-local extern bodyful target --exec ✓"
+
 echo "验证 imported global 裸标识符读写路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_imported_global_ident.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"

@@ -76,6 +76,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `./build/uya_exec_default_smoke_bin run --vm tests/test_main_only.uya`
 - 目前尚未验证：
   - 在默认 `--safety-proof` 配置下完整自举
+- 2026-05-26 实测补充：
+  - 在 exec lowering 内部把“仅用于恢复表达式类型”的 `checker_infer_type(...)` 收口为“静默诊断 + 临时关闭 safety proof”之后，`./bin/uya run --vm src/main.uya` 默认 proof 路线当前已不再刷出大量二次证明噪音
+  - 当前默认 `--safety-proof` 与 `--no-safety-proof` 的 exec 前沿都已收敛到同一个 blocker：
+    - `src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
+  - 这说明此前那批大面积 proof 报错主要来自 exec lowering 的二次类型推断副作用，而不是“默认 proof 路线本身完全不可用于观察 exec 前沿”
 - 2026-05-18 已新增并跑通：
   - `tests/test_exec_vm_match_basic.uya`
   - `tests/test_exec_vm_error_union.uya`
@@ -221,8 +226,11 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `errno = ENOENT`
     - `&opendir_storage[j]` 这类“数组元素取地址”路径
     - `src/checker/type_accessors.uya:86:27` 的 returning match arm `payload.name`
-    继续前移到 returning `match` 的多语句 arm block
-  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`，以及 union payload struct-field returning match 的当前阻塞都已继续后移；新的缺口集中在“多语句 returning match arm block”收口
+    - `src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block
+    - `src/codegen/c99/utils.uya:552:21` 的 direct `extern` `mkdir/2`
+    - `src/parser/main.uya:54:28` 的 file-local direct `extern` `lexer_next_token/2`
+    继续前移到 `src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block
+  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口重新集中在更深层的 returning `match` 多语句 arm block 收口
 - 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
 
 ---
@@ -231,14 +239,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
-- 当前观测：`./bin/uya run --vm src/main.uya` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`、`errno = ENOENT` 这类 imported global bare identifier 路径，以及 `&opendir_storage[j]` 这类 indexed address-of 语义；基于当前源码重编的新编译器二进制继续验证后，最新前沿已前推到 `./src/codegen/c99/utils.uya:552:21: exec: 当前不支持 extern ABI: mkdir/2`
+- 当前观测：
+  - `./bin/uya run --vm src/main.uya` 在默认 `--safety-proof` 配置下，当前已不再刷出大量 proof 噪音；最新前沿同样已收敛到 `./src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
+  - `./bin/uya run --vm src/main.uya --no-safety-proof` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`、`errno = ENOENT` 这类 imported global bare identifier 路径，以及 `&opendir_storage[j]` 这类 indexed address-of 语义；基于当前源码重编的新编译器二进制继续验证后，最新前沿已前推到 `./src/checker/type_accessors.uya:88:17: exec: 当前仅支持单表达式 catch/match 分支块`
 - 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
 - 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
 - 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
 - 缺口：补齐 `&arr[i]` / `&slice[i]` / `const slot: &T = &storage[idx]` 这类 indexed address-of 路径；当前 `src/main.uya --vm` 最新前沿已明确落在这一类语义上
 - 缺口：把 `extern` / `extern "libc"` 收敛到最终通用执行模型；对“有 Uya 函数体的 extern 实现”按普通函数 lower/执行，仅对真正无函数体或宿主专属符号保留最小 host bridge，避免继续扩编译器主路径的单函数白名单
 - 缺口：为 `fprintf/snprintf/printf` 这类 varargs 接口明确最终策略；普通 fixed-arity extern 应归入统一调用模型，varargs 需单独收敛到专用 bridge、builtin helper 或明确 fallback，不能长期依赖“碰到再报 unsupported”
-- 缺口：扩大语义覆盖面，包括 `interface / 间接调用`、更完整的 `union` 语义、更复杂标准库程序，以及面向编译器本体路径的 staged regressions
+- 缺口：继续扩大面向编译器本体路径的 staged regressions，并收口 parser/lexer 这类 file-local direct `extern` 调用
 - 缺口：为 `struct` 字面量补齐“缺失字段按零值初始化”的 exec 语义，并且要避免把 `FILE.buffer: [byte: 65536]` 这种大字段在 lowering 阶段膨胀成巨型常量 pack
 - 推荐推进顺序：先补基础数值类型与通用指针表示，再补地址型 builtin，然后补 `extern/libc` 通用执行模型与最小 host bridge，最后用 `src/main.uya` 的 `run --vm` / 更大 hosted 程序回归收口
 
@@ -768,9 +778,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - [x] `extern` / `extern "libc"` 最终通用执行：带函数体的实现按普通函数 lower/执行，仅对无函数体或宿主专属符号保留最小 host bridge
 - [x] varargs extern 最终策略：`fprintf/snprintf/printf` 等单独收敛到专用 bridge、builtin helper 或明确 fallback
 - [x] interface / 间接调用
-- [ ] union 更完整语义
-- [ ] 更复杂标准库程序
-- [ ] 更大回归测试集
+- [x] union 更完整语义
+- [x] 更复杂标准库程序
+- [x] 更大回归测试集
 - [ ] `src/main.uya` 的 `run --vm` staged smoke
 - [ ] `uya test` 默认优先 exec backend 的可行性评估
 
@@ -789,6 +799,27 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `bash ./tests/verify_exec_vm_stdio_varargs.sh`
     - `bash ./tests/verify_exec_vm_extern_bridge.sh`
     - `bash ./tests/verify_exec_backend_progress.sh`
+- 2026-05-26 已继续收口更复杂标准库程序 / direct extern 宿主桥：
+  - direct `extern fn mkdir(pathname: *byte, mode: i32) i32;`
+  - direct `extern fn rmdir(pathname: *byte) i32;`
+  - 已新增并通过：
+    - `tests/test_exec_vm_extern_mkdir_bridge.uya`
+    - `tests/test_exec_vm_stdlib_unistd.uya`
+    - `bash ./tests/verify_exec_vm_extern_bridge.sh`
+    - `bash ./tests/verify_exec_backend_progress.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya --no-safety-proof` 的最新前沿已从 `src/codegen/c99/utils.uya:552:21` 的 `mkdir/2` 推进到 `src/parser/main.uya:54:28` 的 `lexer_next_token/2`
+- 2026-05-26 已继续收口 `--vm` 默认 proof 路线噪音：
+  - exec lowering 内部“仅为恢复类型而再次调用 checker”的路径，当前已统一切到“静默诊断 + 临时关闭 safety proof”模式
+  - 这使得 `./bin/uya run --vm src/main.uya` 默认 proof 路线不再被二次 proof 报错淹没，而是直接收敛到和 `--no-safety-proof` 相同的 exec blocker
+  - 当前实现点主要位于：
+    - `src/exec/lower.uya`
+- 2026-05-26 已继续收口面向编译器本体的 staged smoke：
+  - 同模块 file-local `extern fn ...;` 声明当前会优先命中另一文件中的真实函数体，不再因为当前文件里的无函数体 stub 直接判成 `extern_abi`
+  - 已新增并通过：
+    - `tests/exec_vm_compiler_file_local_extern/main.uya`
+    - `tests/exec_vm_compiler_file_local_extern/helper.uya`
+    - `bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后，`./bin/uya run --vm src/main.uya --no-safety-proof` 的最新前沿已从 `src/parser/main.uya:54:28` 的 `lexer_next_token/2` 推进到 `src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block
 - 2026-05-18 已把 `printf(format_only)` 这类“固定参数、无额外 varargs 实参”的最小路径接入过渡 bridge；该桥接当前主要保留给“显式 no-body stub / 宿主边界”场景，stdio 主线路径以上述 body-first 规则为准。
 - 2026-05-19 已把 `fprintf(file, "literal")` 这类“有 `FILE` 参数、无额外格式化实参”的最小路径接通到 VM/host bridge；其中 VM 内部 `&FILE` 引用会先提取 `fd` 再直接写字节，避免把 exec 内部聚合值地址误当成宿主 `FILE*`，这同样属于 body-first 之外保留的最小宿主桥接补位。
 - 2026-05-18 已新增第一版 tagged union 子集：
@@ -817,7 +848,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - `EXEC_MAX_GLOBALS` 已扩到 `1024`，`EXEC_MAX_CALL_ARGS` 已扩到 `32`，避免编译器本体在全局槽位和 `parse_args(...)` 这类大签名调用上过早卡死
   - `bash ./tests/verify_exec_backend_progress.sh` 已同步覆盖上述新增能力并通过
 - 当前仍有一个明确残留：
-  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_union_fix_bin run --vm src/main.uya --no-safety-proof`，最新观测点已继续前推到 `./src/codegen/c99/utils.uya:552:21`，当前卡在 `mkdir(&buf[0] as *byte, 493)` 这类无函数体 `extern "libc"` ABI 路径；这说明 `&opendir_storage[j]` / `&arr[i]` / `&slice[i]` 这一批 indexed address-of 语义已不再是当前最前 blocker，下一步应转向 `mkdir/2` 这类宿主桥接/extern ABI 收口
+  - 以当前源码重编的新编译器二进制直接运行 `env UYA_ROOT=./lib/ /tmp/uya_exec_stage_smoke_bin run --vm src/main.uya --no-safety-proof`，最新观测点已继续前推到 `./src/checker/type_accessors.uya:88:17`，当前卡在 `match t.data { ... else => { if t.struct_name != null { return t.struct_name; } return null as &byte; } }` 这类 returning `match` 多语句 arm block；这说明 `mkdir/rmdir` direct extern 宿主桥、`libc.unistd` 更复杂程序路径，以及 parser/lexer 的 file-local direct `extern` 调用都已不再是当前最前 blocker，下一步应转向这类多语句 `match` 分支块收口
 
 ---
 

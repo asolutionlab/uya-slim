@@ -7,6 +7,8 @@ use libc.atoll;
 use libc.isqrt;
 use libc.strcmp;
 use libc.llabs;
+use libc.mkdir;
+use libc.rmdir;
 use libc.fprintf;
 use libc.printf;
 use libc.sprintf;
@@ -1299,6 +1301,33 @@ fn exec_vm_call_host(function: &BCFunction, site: &BCHostCallSite, frame: &ExecF
             return -1;
         }
         out_value[0] = exec_make_i64(llabs(arg0.i64_value));
+        return 0;
+    }
+    if site.id == ExecHostCallId.EXEC_HOST_CALL_MKDIR {
+        if arg_count != 2 {
+            exec_backend_set_error(function.decl, "exec: mkdir 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        const arg0: &ExecValue = exec_vm_slot_ref(frame, arg_base);
+        const arg1: &ExecValue = exec_vm_slot_ref(frame, arg_base + 1);
+        if arg0 == null || arg1 == null {
+            exec_backend_set_error(function.decl, "exec: mkdir 参数槽位非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i32(mkdir(arg0.ptr_value as &const byte, arg1.i64_value as i32));
+        return 0;
+    }
+    if site.id == ExecHostCallId.EXEC_HOST_CALL_RMDIR {
+        if arg_count != 1 {
+            exec_backend_set_error(function.decl, "exec: rmdir 参数数量非法" as *byte, 0);
+            return -1;
+        }
+        const arg0: &ExecValue = exec_vm_slot_ref(frame, arg_base);
+        if arg0 == null {
+            exec_backend_set_error(function.decl, "exec: rmdir 参数槽位非法" as *byte, 0);
+            return -1;
+        }
+        out_value[0] = exec_make_i32(rmdir(arg0.ptr_value as &const byte));
         return 0;
     }
     if site.id == ExecHostCallId.EXEC_HOST_CALL_ATOMIC_COMPARE_EXCHANGE {

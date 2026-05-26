@@ -75,6 +75,23 @@ echo "验证编译器修复回归路径..."
 bash "$SCRIPT_DIR/verify_exec_vm_compiler_regressions.sh"
 echo "  compiler regression path ✓"
 
+echo "验证更复杂 libc.unistd 程序路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_stdlib_unistd.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  stdlib unistd --vm ✓"
+
+echo "验证 run --exec 下更复杂 libc.unistd 程序路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_stdlib_unistd.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ stdlib unistd unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  stdlib unistd --exec ✓"
+
 echo "验证 u8/u16/usize/isize 与通用指针 builtin 路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_scalar_pointer.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"
