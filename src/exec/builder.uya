@@ -594,6 +594,46 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
     if ty.kind == TypeKind.TYPE_SLICE {
         return exec_builder_emit_loaded_const_value(ctx, ast_node, exec_make_slice(null, 0, 0));
     }
+    if ty.kind == TypeKind.TYPE_UNION && type_get_union_name(ty) != null {
+        if ctx.checker == null || ctx.checker.program_node == null {
+            exec_backend_set_error(ast_node, "exec: zero union 缺少 checker 上下文" as *byte, 0);
+            return -1;
+        }
+        const union_decl: &ASTNode = find_union_decl_from_program(ctx.checker.program_node, type_get_union_name(ty));
+        if union_decl == null || union_decl.union_decl_variants == null || union_decl.union_decl_variant_count <= 0 {
+            exec_backend_set_error(ast_node, "exec: zero union 无法解析联合体声明" as *byte, 0);
+            return -1;
+        }
+        const first_variant: &ASTNode = union_decl.union_decl_variants[0];
+        if first_variant == null || first_variant.type != ASTNodeType.AST_VAR_DECL {
+            exec_backend_set_error(ast_node, "exec: zero union 首个变体声明异常" as *byte, 0);
+            return -1;
+        }
+        var payload_slot_zero_union: i32 = -1;
+        if first_variant.var_decl_type != null {
+            const first_variant_type: Type = type_from_ast(ctx.checker, first_variant.var_decl_type);
+            payload_slot_zero_union = exec_builder_compile_zero_value(ctx, first_variant, &first_variant_type);
+            if payload_slot_zero_union < 0 {
+                return -1;
+            }
+        }
+        const dst_zero_union: i32 = exec_builder_new_temp(ctx);
+        if dst_zero_union < 0 {
+            return -1;
+        }
+        if exec_builder_emit(ctx, BCInstr {
+            opcode: BCOpcode.BC_MAKE_UNION,
+            a: dst_zero_union,
+            b: payload_slot_zero_union,
+            c: 0,
+            imm: 0,
+            text: null,
+            source: exec_builder_make_source(ast_node),
+        }) < 0 {
+            return -1;
+        }
+        return dst_zero_union;
+    }
     if ty.kind == TypeKind.TYPE_ERROR_UNION && ty.error_union_payload_type != null {
         const payload_slot: i32 = exec_builder_compile_zero_value(ctx, ast_node, &ty.error_union_payload_type[0]);
         const dst_error_union: i32 = exec_builder_new_temp(ctx);
@@ -649,7 +689,7 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
         }
         const tuple_item_base: i32 = exec_builder_pack_source_slots(ctx, ast_node, &tuple_slots[0], ty.tuple_count);
         const dst_tuple: i32 = exec_builder_new_temp(ctx);
-        if dst_tuple < 0 {
+        if tuple_item_base < 0 || dst_tuple < 0 {
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -697,7 +737,7 @@ fn exec_builder_compile_zero_value(ctx: &ExecFunctionBuildContext, ast_node: &AS
         }
         const struct_item_base: i32 = exec_builder_pack_source_slots(ctx, ast_node, &struct_slots[0], struct_decl.struct_decl_field_count);
         const dst_struct: i32 = exec_builder_new_temp(ctx);
-        if dst_struct < 0 {
+        if struct_item_base < 0 || dst_struct < 0 {
             return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
@@ -1344,6 +1384,9 @@ fn exec_builder_compile_expr(ctx: &ExecFunctionBuildContext, expr: &HIRExpr) i32
             op_init = BCOpcode.BC_MAKE_ARRAY;
         } else if expr.kind == HIRExprKind.HIR_EXPR_TUPLE_INIT {
             op_init = BCOpcode.BC_MAKE_TUPLE;
+        }
+        if item_base < 0 {
+            return -1;
         }
         if exec_builder_emit(ctx, BCInstr {
             opcode: op_init,
@@ -3081,6 +3124,37 @@ fn exec_builder_validate_slot_read(fn_hir: &HIRFunction, slot: i32, slot_count: 
     return 0;
 }
 
+fn exec_builder_validate_slot_read_with_source(fn_hir: &HIRFunction, slot: i32, slot_count: i32, slot_written: &i32, message: &byte, source: BCSourceMap) i32 {
+    if fn_hir == null {
+        return -1;
+    }
+    if slot < 0 || slot >= slot_count {
+        var detail: [byte: 384] = [];
+        if source.filename != null {
+            _ = snprintf(&detail[0] as *byte, 384, "%s @ %s:%d:%d (slot=%d, slot_count=%d)" as *byte,
+                message as *byte, source.filename as *byte, source.line, source.column, slot, slot_count);
+        } else {
+            _ = snprintf(&detail[0] as *byte, 384, "%s @ <unknown> (slot=%d, slot_count=%d)" as *byte,
+                message as *byte, slot, slot_count);
+        }
+        exec_backend_set_error(fn_hir.decl, &detail[0] as &byte, 0);
+        return -1;
+    }
+    if slot_written != null && slot_written[slot] == 0 {
+        var detail2: [byte: 384] = [];
+        if source.filename != null {
+            _ = snprintf(&detail2[0] as *byte, 384, "%s @ %s:%d:%d (slot=%d 未初始化)" as *byte,
+                message as *byte, source.filename as *byte, source.line, source.column, slot);
+        } else {
+            _ = snprintf(&detail2[0] as *byte, 384, "%s @ <unknown> (slot=%d 未初始化)" as *byte,
+                message as *byte, slot);
+        }
+        exec_backend_set_error(fn_hir.decl, &detail2[0] as &byte, 0);
+        return -1;
+    }
+    return 0;
+}
+
 fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_fn: &BCFunction) i32 {
     if module == null || fn_hir == null || out_fn == null {
         return -1;
@@ -3269,13 +3343,13 @@ fn exec_builder_validate_function(module: &HIRModule, fn_hir: &HIRFunction, out_
             instr.opcode == BCOpcode.BC_MAKE_ARRAY_REPEAT ||
             instr.opcode == BCOpcode.BC_MAKE_TUPLE {
             if instr.opcode == BCOpcode.BC_MAKE_ARRAY_REPEAT {
-                if exec_builder_validate_slot_read(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MAKE_ARRAY_REPEAT 源槽位非法" as *byte) != 0 {
+                if exec_builder_validate_slot_read_with_source(fn_hir, instr.b, out_fn.slot_count, &slot_written[0], "exec: MAKE_ARRAY_REPEAT 源槽位非法" as *byte, instr.source) != 0 {
                     return -1;
                 }
             } else {
                 var si: i32 = 0;
                 while si < instr.c {
-                    if exec_builder_validate_slot_read(fn_hir, instr.b + si, out_fn.slot_count, &slot_written[0], "exec: MAKE_* 源槽位非法" as *byte) != 0 {
+                    if exec_builder_validate_slot_read_with_source(fn_hir, instr.b + si, out_fn.slot_count, &slot_written[0], "exec: MAKE_* 源槽位非法" as *byte, instr.source) != 0 {
                         return -1;
                     }
                     si = si + 1;

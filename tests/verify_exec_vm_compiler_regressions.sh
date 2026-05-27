@@ -402,6 +402,74 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  empty struct init --exec ✓"
 
+echo "验证全局 partial struct 大字段零填充路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_global_partial_struct_zero_fill.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  global partial struct zero-fill --vm ✓"
+
+echo "验证 run --exec 下全局 partial struct 大字段零填充路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_global_partial_struct_zero_fill.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ global partial struct zero-fill unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  global partial struct zero-fill --exec ✓"
+
+echo "验证全局 zero array-of-struct 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_zero_struct_array_global.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  global zero array-of-struct --vm ✓"
+
+echo "验证 run --exec 下全局 zero array-of-struct 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_zero_struct_array_global.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ global zero array-of-struct unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  global zero array-of-struct --exec ✓"
+
+echo "验证全局聚合初始化组合路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_global_aggregate_combo.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  global aggregate combo --vm ✓"
+
+echo "验证 run --exec 下全局聚合初始化组合路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_compiler_global_aggregate_combo.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ global aggregate combo unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  global aggregate combo --exec ✓"
+
+echo "验证 union 字段零值初始化路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/exec_vm_cases/compiler_zero_union_field.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  zero union field --vm ✓"
+
+echo "验证 run --exec 下 union 字段零值初始化路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/exec_vm_cases/compiler_zero_union_field.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ zero union field unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  zero union field --exec ✓"
+
 echo "验证 @asm_target() as! i32 路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_compiler_asm_target.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"

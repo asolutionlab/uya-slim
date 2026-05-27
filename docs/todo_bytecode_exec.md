@@ -1,7 +1,7 @@
 # Uya Bytecode / IR 执行后端 TODO
 
 **状态**：executable TODO, implementation in progress
-**更新日期**：2026-05-26
+**更新日期**：2026-05-27
 **配套设计**：`docs/bytecode_exec_design.md`
 
 ---
@@ -263,6 +263,25 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - 这使得“超过 32 项的 array literal”不再在 exec bytecode 校验阶段误报未初始化槽位
   - 但基于当前源码重编的新编译器二进制继续验证后，`src/main.uya --vm` / `--no-safety-proof` 的最新前沿仍停在：
     - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
+- 2026-05-27 已继续收口 global/init 零值路径：
+  - builder 当前会在发出 `BC_MAKE_STRUCT/BC_MAKE_ARRAY/BC_MAKE_TUPLE` 前正确传播 `exec_builder_compile_item_pack(...)` / `exec_builder_pack_source_slots(...)` 的失败，不再把内层 pack/zero-init 失败伪装成 `exec: MAKE_* 源槽位非法`
+  - exec builder 当前已补上 `TYPE_UNION` 零值构造：
+    - 默认按“第一个 variant + 其 payload 递归零值”生成 `BC_MAKE_UNION`
+    - `TypeData` 这类内部 union 字段、`ExecLowerContext` 的 `[Type: N]` 零初始化，以及 `struct` 零值里的 union 字段当前都已能进入 exec build
+  - 已新增并通过：
+    - `tests/test_exec_vm_compiler_global_partial_struct_zero_fill.uya`
+    - `tests/test_exec_vm_compiler_zero_struct_array_global.uya`
+    - `tests/test_exec_vm_compiler_global_aggregate_combo.uya`
+    - `tests/exec_vm_cases/compiler_zero_union_field.uya`
+    - `bash ./tests/verify_exec_vm_compiler_stage_smoke.sh`
+    - `UYA_COMPILER=/tmp/uya_exec_fix2_bin bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - 基于当前源码重编的新编译器二进制继续验证后：
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya`
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya --no-safety-proof`
+  - 两条路线当前都已不再停在：
+    - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
+    - `src/checker/types.uya:160:5: exec: 当前不支持该类型的零值初始化`
+  - 最新观测已前推到“exec build 成功并进入 VM 运行”；在未额外传 CLI 参数时，编译器本体当前返回码为 `1`，更接近 `argc < 2` 的 usage / driver 路径，而不是新的 exec 构建期 unsupported
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -272,8 +291,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-18 已直接验证：
   - `./bin/uya run --vm src/main.uya`
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
-- 当前已知最新 blocker：
-  - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
+- 当前已知最新观测：
+  - 旧的 `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法` 已于 `2026-05-27` 收口；其根因是“聚合值 pack 失败未正确上浮”与 `TYPE_UNION` 零值初始化缺口叠加
+  - 基于当前源码重编的新编译器二进制，`env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya` 与 `... --no-safety-proof` 当前都已能完成 exec build 并进入 VM 运行；在无附加 CLI 参数时当前返回码为 `1`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
@@ -291,9 +311,9 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `src/codegen/c99/main.uya:1670:1` 的 `const pool` 容量上限
     - `src/codegen/c99/main.uya:1670:1` 的 `frame slot` 容量上限
     - `src/microapp/main.uya:490:37` 的整数 `~ unary`
-    继续前移到 `src/codegen/c99/main.uya:1670:1` 的 `frame slot` 容量上限
-  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、`catch |err|` 错误绑定、direct `extern` `mkdir/rmdir` 宿主桥，以及 parser/lexer 的 file-local direct `extern` 调用这批阻塞都已继续后移；新的缺口已从深 `else if` 局部读取语义转向编译器本体 C99 backend 路径上的更大 bytecode frame 容量
-- 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”基础语义也已收口，但更复杂全局类型、变参 `extern` 与更大覆盖面回归仍待继续扩大
+    继续前移到“当前源码可完成 exec build 并进入 `src/main.uya` 的 VM 运行阶段”
+  - 这说明 indexed address-of、atomic global、repeat array literal、`@asm_target()`、error union `.value`、union payload struct-field returning match、`catch |err|` 错误绑定、direct `extern` `mkdir/rmdir` 宿主桥、parser/lexer 的 file-local direct `extern` 调用，以及 `TypeData` / `ExecLowerContext` 这类内部 union zero-init 缺口都已继续后移；当前前沿已从“构建期 unsupported / bytecode 校验失败”推进到“编译器本体运行期行为观察”
+- 当前 global 路径已打通单文件 hosted、多模块 `use module.item` 导出的 exec-VM-可表示 global 基础子集，以及 `use libc; libc.stdout` 这类 whole-module import 成员式访问的识别/解析链；`struct init` 的“缺失字段按零值补齐”、大字段 partial struct zero-fill、array-of-struct 零值全局，以及内部 union 字段 zero-init 这批 global/init 相关路径当前都已补上基础回归
 
 ---
 
@@ -302,18 +322,16 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 第一阶段交付目标：`uya run/test --exec` 能稳定覆盖一批 hosted 基础程序，并在支持路径上真正跳过 `codegen/c99 + gcc/clang`
 - 拉伸目标：`uya run --vm src/main.uya` 能直接执行编译器本体 hosted 路线；这更适合作为“第二阶段覆盖率扩大”的收口目标，而不是当前最小交付门槛
 - 当前观测：
-  - `./bin/uya run --vm src/main.uya` 在默认 `--safety-proof` 配置下，当前已不再刷出大量 proof 噪音；在继续补上 returning `match` 多语句 arm block 与 `catch |err|` 绑定之后，最新前沿已与 `--no-safety-proof` 收敛到同一个新 blocker：
-    - `./src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
-  - `./bin/uya run --vm src/main.uya --no-safety-proof` 已能通过 parse / check / opt，并且已越过最早的 `u16` 全局常量缺口、`libc.stdout` 这类模块别名导出全局访问识别问题、`FILE{...}` 缺失字段补零、`stdio` 常量旗标中的位运算、`_ = expr;` discard assignment、“前缀副作用 + return/value”的 catch block、`slice.ptr`、`programs[i].program_decl_count`、`errno = ENOENT` 这类 imported global bare identifier 路径、`&opendir_storage[j]` 这类 indexed address-of 语义、`src/checker/type_accessors.uya:88:17` 的 returning `match` 多语句 arm block，以及 `src/exec/vm.uya:1002:34` 的 `catch |err|` 错误绑定；基于当前源码重编的新编译器二进制继续验证后，最新前沿已前推到 `./src/codegen/c99/expr.uya:4289:19: exec: 当前仅支持局部变量/参数/全局标识符`
-- 缺口：扩 exec VM 可表示的基础值类型，至少补齐 `u8/u16/usize/isize` 这一批编译器本体会立即命中的类型，并同步放通 global / local / param / return 的统一类型 gate
-- 缺口：扩通用指针值表示；当前只把 `&byte` / `&const byte` 当作字符串指针支持，距离编译器本体实际需要的 `&T/*T`、`&void/*void`、arena / AST / FILE / parser 等普通指针仍有明显差距
-- 缺口：接通 `@usize_from_ptr` / `@ptr_from_usize` 这类地址型 builtin 的 exec 路径；编译器运行时和 hosted 标准库广泛依赖它们做指针换算与 buffer 访问
-- 缺口：补齐 `&arr[i]` / `&slice[i]` / `const slot: &T = &storage[idx]` 这类 indexed address-of 路径；当前 `src/main.uya --vm` 最新前沿已明确落在这一类语义上
-- 缺口：把 `extern` / `extern "libc"` 收敛到最终通用执行模型；对“有 Uya 函数体的 extern 实现”按普通函数 lower/执行，仅对真正无函数体或宿主专属符号保留最小 host bridge，避免继续扩编译器主路径的单函数白名单
-- 缺口：为 `fprintf/snprintf/printf` 这类 varargs 接口明确最终策略；普通 fixed-arity extern 应归入统一调用模型，varargs 需单独收敛到专用 bridge、builtin helper 或明确 fallback，不能长期依赖“碰到再报 unsupported”
-- 缺口：继续扩大面向编译器本体路径的 staged regressions，并收口 parser/lexer 这类 file-local direct `extern` 调用
-- 缺口：为 `struct` 字面量补齐“缺失字段按零值初始化”的 exec 语义，并且要避免把 `FILE.buffer: [byte: 65536]` 这种大字段在 lowering 阶段膨胀成巨型常量 pack
-- 推荐推进顺序：先补基础数值类型与通用指针表示，再补地址型 builtin，然后补 `extern/libc` 通用执行模型与最小 host bridge，最后用 `src/main.uya` 的 `run --vm` / 更大 hosted 程序回归收口
+  - 仓库内现成的 `./bin/uya run --vm src/main.uya` 仍会停在更早的历史前沿；要观察当前源码的真实 exec 前沿，需要先用当前源码重编临时编译器
+  - 基于当前源码重编的新编译器二进制继续验证后：
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya`
+    - `env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya --no-safety-proof`
+    - 两条路线当前都已不再停在 `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法` 或 `src/checker/types.uya:160:5: exec: 当前不支持该类型的零值初始化`
+    - 当前已能完成 exec build 并进入 VM 运行；在未额外传 CLI 参数时，观测到返回码为 `1`
+- 缺口：继续确认 `src/main.uya --vm` 运行期返回码与现有 C99/hosted 路线在“无参数 usage 路径”上的行为是否一致；若不一致，需要把差异收口到最小 staged regression
+- 缺口：继续用真实子命令与输入把编译器本体 hosted 路径从“能进入运行期”推进到“能稳定穿过更多 driver / parser / checker / codegen 实际工作负载”
+- 缺口：继续扩大面向编译器本体路径的 staged regressions，优先覆盖这轮刚打通的 global/init 聚合零值、内部 union 字段 zero-init，以及后续运行期路径
+- 推荐推进顺序：先确认 `src/main.uya --vm` 的运行期返回码与 usage 路径，再补带真实参数的 staged smoke，最后继续扩更深的编译器本体 hosted 负载回归
 
 ---
 
