@@ -72,6 +72,19 @@
 
 ## 编译器 bug
 
+- [x] **P1 / 高：泛型 wrapper 转发 `std.thread.async_compute<T>` 时 C99 backend 漏发射单态化符号**
+  - 状态：已修复
+  - 验证状态：`./bin/uya build src/main.uya -o /tmp/uya_codegen_fix` 通过；`UYA_ROOT=./lib /tmp/uya_codegen_fix build tests/repros/c99_generic_async_compute_wrapper_codegen_bug.uya -o /tmp/c99_generic_async_compute_wrapper_codegen_bug` 通过；`UYA_ROOT=./lib /tmp/uya_codegen_fix test tests/test_async_compute_generic_wrapper.uya` 通过
+  - 归属：`src/codegen/c99/**` 或泛型单态化发射路径
+  - 现象：
+    1. Uya 前端解析、类型检查和 C 代码生成都通过
+    2. 宿主 C 编译阶段出现 `implicit declaration of function 'std_async_compute_i32'`
+    3. 随后同一行报 `error: invalid initializer`
+  - 影响：项目本地无法安全封装 `std.thread.async_compute<T>` 这类标准库泛型 API
+  - 最小复现：`tests/repros/c99_generic_async_compute_wrapper_codegen_bug.uya`
+  - 回归测试：`tests/test_async_compute_generic_wrapper.uya`
+  - 相关文档：`docs/compiler_bug_report_2026-05-28_generic_async_compute_wrapper.md`
+
 - [x] **P1 / 高：`@size_of(u64)` 在 C99 backend 被错误发成 `sizeof(u64)`**
   - 状态：已修复
   - 验证状态：`make release-dirty` 通过；`./bin/uya build tests/repros/c99_sizeof_u64_codegen_bug.uya -o /tmp/c99_sizeof_u64_codegen_bug` 通过
