@@ -319,8 +319,20 @@ std.cfg(std.host_os == .hos_linux, {
 ```
 
 - `std.cfg(cond, then, else)` 在语法分析阶段裁剪未命中分支；未选中分支不会进入依赖收集、符号收集或链接路径。
+- `else` 分支现在可省略，等价于“未命中时展开为空声明/空语句块”，因此也可以写成多条并列的 `std.cfg(cond, then)` 来替代 `else -> std.cfg(...)` 的嵌套链。
+- `then` / `else` 分支在只包含单个顶层声明或单个语句时可以不写 `{}`。
 - 当前支持的编译期平台选择器为：`std.host_os`、`std.host_arch`、`std.target_os`、`std.target_arch`。
 - `HostOS`、`HostArch`、`TargetOS`、`TargetArch` 枚举定义位于 `lib/std/platform.uya`（变体名带前缀如 `hos_linux`、`ta_x86_64`，避免合并进同一 C 翻译单元时枚举常量重名）；`std.host_os` / `std.target_arch` 等可在普通表达式中作为对应枚举值使用。
+
+例如，可以把多平台分支写成并列形式：
+
+```uya
+use std;
+
+std.cfg(std.host_os == .hos_linux, const HOST_TAG: i32 = 1;)
+std.cfg(std.host_os == .hos_macos, const HOST_TAG: i32 = 2;)
+std.cfg(std.host_os == .hos_windows, const HOST_TAG: i32 = 3;)
+```
 
 ### 必须区分的维度
 

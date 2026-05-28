@@ -318,6 +318,26 @@ fn parser_get_filename(parser: &Parser) &byte {
     return null;
 }
 
+fn parser_make_empty_cfg_decl_result(parser: &Parser) &ASTNode {
+    var line: i32 = 0;
+    var column: i32 = 0;
+    if parser != null && parser.current_token != null {
+        line = parser.current_token.line;
+        column = parser.current_token.column;
+    }
+    return ast_new_node(ASTNodeType.AST_PROGRAM, line, column, parser.arena, parser_get_filename(parser));
+}
+
+fn parser_make_empty_cfg_stmt_result(parser: &Parser) &ASTNode {
+    var line: i32 = 0;
+    var column: i32 = 0;
+    if parser != null && parser.current_token != null {
+        line = parser.current_token.line;
+        column = parser.current_token.column;
+    }
+    return ast_new_node(ASTNodeType.AST_BLOCK, line, column, parser.arena, parser_get_filename(parser));
+}
+
 fn parser_note_use_std_import(parser: &Parser, node: &ASTNode) void {
     if parser == null || node == null || node.type != ASTNodeType.AST_USE_STMT {
         return;
@@ -568,15 +588,15 @@ fn parser_parse_std_cfg_decl(parser: &Parser) &ASTNode {
         if result == null {
             return null;
         }
-        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
-            return null;
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+            const saved_use_std: i32 = parser.saw_use_std;
+            const discarded: &ASTNode = parser_parse_std_cfg_decl_arg(parser);
+            if discarded == null {
+                return null;
+            }
+            parser.saw_use_std = saved_use_std;
         }
-        const saved_use_std: i32 = parser.saw_use_std;
-        const discarded: &ASTNode = parser_parse_std_cfg_decl_arg(parser);
-        if discarded == null {
-            return null;
-        }
-        parser.saw_use_std = saved_use_std;
     } else {
         const saved_use_std: i32 = parser.saw_use_std;
         const discarded: &ASTNode = parser_parse_std_cfg_decl_arg(parser);
@@ -584,12 +604,17 @@ fn parser_parse_std_cfg_decl(parser: &Parser) &ASTNode {
             return null;
         }
         parser.saw_use_std = saved_use_std;
-        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
-            return null;
-        }
-        result = parser_parse_std_cfg_decl_arg(parser);
-        if result == null {
-            return null;
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+            result = parser_parse_std_cfg_decl_arg(parser);
+            if result == null {
+                return null;
+            }
+        } else {
+            result = parser_make_empty_cfg_decl_result(parser);
+            if result == null {
+                return null;
+            }
         }
     }
 
@@ -643,15 +668,15 @@ fn parser_parse_std_cfg_stmt(parser: &Parser) &ASTNode {
         if result == null {
             return null;
         }
-        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
-            return null;
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+            const saved_use_std: i32 = parser.saw_use_std;
+            const discarded: &ASTNode = parser_parse_std_cfg_stmt_arg(parser);
+            if discarded == null {
+                return null;
+            }
+            parser.saw_use_std = saved_use_std;
         }
-        const saved_use_std: i32 = parser.saw_use_std;
-        const discarded: &ASTNode = parser_parse_std_cfg_stmt_arg(parser);
-        if discarded == null {
-            return null;
-        }
-        parser.saw_use_std = saved_use_std;
     } else {
         const saved_use_std: i32 = parser.saw_use_std;
         const discarded: &ASTNode = parser_parse_std_cfg_stmt_arg(parser);
@@ -659,12 +684,17 @@ fn parser_parse_std_cfg_stmt(parser: &Parser) &ASTNode {
             return null;
         }
         parser.saw_use_std = saved_use_std;
-        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
-            return null;
-        }
-        result = parser_parse_std_cfg_stmt_arg(parser);
-        if result == null {
-            return null;
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+            result = parser_parse_std_cfg_stmt_arg(parser);
+            if result == null {
+                return null;
+            }
+        } else {
+            result = parser_make_empty_cfg_stmt_result(parser);
+            if result == null {
+                return null;
+            }
         }
     }
 
