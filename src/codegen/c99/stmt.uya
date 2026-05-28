@@ -1648,10 +1648,15 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
         ret_c != null && strstr(ret_c as *byte, "err_union_" as *byte) != null {
         expr_is_error_union = 1;
     }
-    
     if expr_is_error_union != 0 {
         gen_return_error_union_expr(codegen, expr, payload_node, ret_c, payload_void);
     } else if payload_void != 0 {
+        if expr != null {
+            c99_emit_indent(codegen);
+            c99_emit(codegen, "(void)(" as *byte);
+            gen_expr(codegen, expr);
+            c99_emit(codegen, ");\n" as *byte);
+        }
         c99_emit_indent(codegen);
         fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
     } else {
