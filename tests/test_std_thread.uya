@@ -5,10 +5,18 @@ use std.async;
 use std.async_event;
 use std.async_scheduler;
 use std.testing.assert_eq_i32;
+use std.testing.expect;
+use libc.free;
+use libc.malloc;
 use libc.syscall;
 
 const THREAD_TEST_TIMEOUT_MS: i32 = 1000;
 const THREAD_TEST_WAIT_RETRIES: i32 = 2000;
+
+struct PointerResult {
+    doubled: usize,
+    marker: i32
+}
 
 fn double_i32(v: i32) i32 {
     return v * 2;
@@ -47,6 +55,16 @@ fn double_u32(v: u32) u32 {
 fn delayed_add_five_usize(v: usize) usize {
     sleep_briefly();
     return v + (5 as usize);
+}
+
+fn make_pointer_result(v: usize) usize {
+    const result: &PointerResult = malloc(@size_of(PointerResult) as usize) as &PointerResult;
+    if result == null {
+        return 0 as usize;
+    }
+    result.doubled = v * (2 as usize);
+    result.marker = 77;
+    return @usize_from_ptr(result as &void);
 }
 
 fn thread_test_epoll() !LinuxEpoll {
@@ -226,7 +244,7 @@ test "async_compute_i32_reports_pending_before_ready" {
     try assert_eq_i32(got, 42);
 }
 
-test "thread_pool_lazily_starts_and_reuses_worker_process" {
+test "thread_pool_lazily_starts_and_reuses_worker_thread" {
     var pool: ThreadPool = thread_pool_new(2);
     defer {
         thread_pool_shutdown(&pool);
@@ -460,6 +478,23 @@ test "async_compute_usize_runs_with_thread_pool" {
 
     const result: usize = try thread_test_run_usize(&pool, &double_usize as &void, 21 as usize);
     try assert_eq_i32(result as i32, 42);
+    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+}
+
+test "async_compute_usize_can_roundtrip_heap_pointer_with_thread_pool" {
+    var pool: ThreadPool = thread_pool_new(2);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    const result_bits: usize = try thread_test_run_usize(&pool, &make_pointer_result as &void, 21 as usize);
+    try expect(result_bits != 0 as usize);
+
+    const result: &PointerResult = @ptr_from_usize(result_bits) as &PointerResult;
+    try expect(result != null);
+    try assert_eq_i32(result.doubled as i32, 42);
+    try assert_eq_i32(result.marker, 77);
+    free(result as &void);
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
 }
 

@@ -100,7 +100,7 @@ fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
     var r: usize = 0;
     std.cfg(std.target_arch == .ta_x86_64, {
         @asm {
-            "subq $8, %%rsp\n\tmovq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\taddq $8, %%rsp\n\tmovq %%rax, %0"
+            "movq %%rsp, %%r10\n\tandq $-16, %%rsp\n\tsubq $16, %%rsp\n\tmovq %%r10, (%%rsp)\n\tmovq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\tmovq (%%rsp), %%rsp\n\tmovq %%rax, %0"
             (start_fn, start_arg, -> r);
         } clobbers = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory"];
     }, {

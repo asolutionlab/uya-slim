@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-05-23（新增“`@size_of(u64)` 生成 `sizeof(u64)`”与“`catch |err|` 回绑 `!T` 生成非法初始化”两个 C99 backend 编译器 bug；此前已记录 “method 调用私有顶层 helper 时 C99 backend 漏发射 helper 定义/原型”）
+**最后更新：** 2026-05-28（新增“`std.thread.async_compute<usize>` 并行 worker 返回结构体结果时运行时崩溃”编译器/运行时交界 bug；此前已记录 “泛型 wrapper 转发 `std.thread.async_compute<T>` 时 C99 backend 漏发射单态化符号”）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -71,6 +71,24 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [x] **P1 / 高：`std.thread.async_compute<usize>` 承载“worker 返回结构体结果指针”场景时，生成程序运行期 SIGSEGV**
+  - 状态：已修复
+  - 验证状态：`./bin/uya test tests/test_pthread_api_create_join.uya` 通过；`./bin/uya test tests/test_std_thread.uya` 20/20 通过；`./bin/uya build tests/repros/async_compute_parallel_struct_result_bug.uya -o /tmp/async_compute_parallel_struct_result_bug` 通过且运行返回 `exit 0`
+  - 归属：`lib/std/thread.uya` worker 模型 + `lib/libc/pthread.uya` x86_64 线程启动 trampoline
+  - 现象：
+    1. 前端解析、类型检查、C99 代码生成和宿主 C 链接全部通过
+    2. worker 通过 `async_compute<usize>` 接收任务指针，返回堆分配结果指针（同样以 `usize` 传回）
+    3. 结果结构体里包含 `&PairHash`，而 `PairHash` 内又嵌套两个 `[byte:32]` 的 `Hash32`
+    4. worker 内部还会走 `Arena + blake3_digest` 风格的哈希计算
+    5. 最终程序运行时直接 SIGSEGV，而不是返回业务错误码
+  - 修复内容：
+    1. ThreadPool 常驻 worker 从 `fork` 子进程切换为 `pthread` 线程，使堆对象指针可在调用方与 worker 间共享地址空间
+    2. 修正 `libc.pthread` 的 x86_64 `_pthread_call_start` 栈对齐，消除线程入口后续调用链中的 `movaps` 对齐崩溃
+    3. 新增 `tests/test_std_thread.uya` 指针往返回归，覆盖“worker 返回堆对象指针，经 `usize` 往返后主线程解引用”的场景
+  - 影响：会阻塞把“并行 worker 计算结果 -> 主线程汇总”的模式安全用于真实项目；HyperGit 那边把大文件 chunk/hash 并行化时就命中过同类崩溃
+  - 最小复现：`tests/repros/async_compute_parallel_struct_result_bug.uya`
+  - 相关文档：`docs/compiler_bug_report_2026-05-28_async_compute_parallel_struct_result.md`
 
 - [x] **P1 / 高：泛型 wrapper 转发 `std.thread.async_compute<T>` 时 C99 backend 漏发射单态化符号**
   - 状态：已修复
