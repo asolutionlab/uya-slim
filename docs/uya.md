@@ -668,7 +668,10 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
 
 - 文件编码 UTF-8，Unix 换行 `\n`。
 - **模块系统**：每个目录自动成为一个模块，详见[第 1.5 章](#15-模块系统)。
-  - 项目根目录（包含 `main` 函数的目录）是 `main` 模块
+  - legacy mode：编译器自动推导 `module root`，该目录是 `main` 模块
+  - package mode：`package root` 由当前 Uya 源文件目录向上找到的第一个 `uya.toml` 所在目录决定
+  - `source root = package root + source-dir`
+  - `module root = source root`
   - 子目录路径映射到模块路径（如 `std/io/` → `std.io`）
   - 目录下的所有 `.uya` 文件都属于同一个模块
 - 关键字保留：
@@ -766,24 +769,34 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
 - **路径式导入**：使用 `use` 关键字和路径语法导入模块
 - **编译期解析**：所有模块解析在编译期完成
 
+### 1.5.1.1 Root 术语
+
+- **package root**：从当前 Uya 源文件所在目录向上找到的第一个 `uya.toml` 所在目录
+- **source root**：`package root + [package].source-dir`，默认 `source-dir = "."`
+- **module root**：编译器真正用于 `use ...;` 模块查找的根目录
+  - package mode 下等于 `source root`
+  - legacy mode 下由编译器自动推导
+- **project root**：旧文档/兼容 CLI 名称；若无额外说明，应理解为 `module root`，不要与 `package root` 混用
+
 ### 1.5.2 模块定义
 
 - 每个目录自动成为一个模块
 - 每个 `.uya` 文件也自动拥有一个包含文件名的模块别名
 - 模块名默认为目录名；文件模块名为目录模块名加文件名（去掉 `.uya`）
-- **模块路径基准**：模块路径相对于 **项目根目录**（包含 `main` 函数的目录）计算
-- 项目根目录是模块系统的根
-- 所有模块路径都相对于项目根目录解析
-- **根目录模块**：项目根目录本身是一个特殊模块，模块名为 `main`
-  - 项目根目录是包含 `main` 函数的目录
-  - 项目根目录下的所有 `.uya` 文件都属于 `main` 模块
+- **模块路径基准**：
+  - legacy mode 下，模块路径相对于编译器自动推导出的模块根计算
+  - package mode 下，模块路径相对于 package 的 `source root` 计算
+- **根目录模块**：当前 module root 本身是一个特殊模块，模块名为 `main`
+  - legacy mode 下，module root 通常等于输入文件所在目录，或输入目录本身
+  - package mode 下，module root 等于 `package root + source-dir`
+  - module root 下的所有 `.uya` 文件都属于 `main` 模块
   - 使用：`use main.some_function;` 或 `use main;`
-- **子目录模块**：目录路径（相对于项目根目录）直接映射到模块路径
-  - 项目根目录下的 `std/io/` → 模块路径 `std.io`
-  - 项目根目录下的 `math/utils/` → 模块路径 `math.utils`
+- **子目录模块**：目录路径（相对于当前 module root）直接映射到模块路径
+  - module root 下的 `std/io/` → 模块路径 `std.io`
+  - module root 下的 `math/utils/` → 模块路径 `math.utils`
   - 目录下的所有 `.uya` 文件都属于同一个模块
 - **单文件模块别名**：文件路径也可映射为模块路径
-  - 项目根目录下的 `std/io/file.uya` → 兼容模块路径 `std.io.file`
+  - module root 下的 `std/io/file.uya` → 兼容模块路径 `std.io.file`
   - `use std.io.read_file;` 与 `use std.io.file.read_file;` 都可导入 `file.uya` 中导出的 `read_file`
   - 目录模块和文件模块同时存在时，整体模块导入优先按目录模块解析；避免同时创建同名目录和同名 `.uya` 文件
 - **限制**：不支持 `mod` 关键字（块级模块），模块由目录与 `.uya` 文件路径自动推导，符合零新关键字哲学
@@ -847,14 +860,15 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
 
 ### 1.5.5 模块路径
 
-- **路径基准**：所有模块路径相对于 **项目根目录**（包含 `main` 函数的目录）计算
+- **路径基准**：
+  - legacy mode：所有模块路径相对于编译器自动推导出的 module root 计算
+  - package mode：所有模块路径相对于 package 的 `source root` 计算
 - **根目录**：特殊模块名 `main`
-  - 项目根目录是包含 `main` 函数的目录
-  - 项目根目录下的文件 → `main` 模块
+  - 当前 module root 下的文件 → `main` 模块
   - 示例：`use main.helper;` 或 `use main;`
-- **子目录**：目录路径（相对于项目根目录）直接映射到模块路径（目录分隔符 `/` 转换为 `.`）
-  - 项目根目录下的 `std/io/` → 模块路径 `std.io`
-  - 项目根目录下的 `math/utils/` → 模块路径 `math.utils`
+- **子目录**：目录路径（相对于当前 module root）直接映射到模块路径（目录分隔符 `/` 转换为 `.`）
+  - module root 下的 `std/io/` → 模块路径 `std.io`
+  - module root 下的 `math/utils/` → 模块路径 `math.utils`
   - 使用：`use std.io;` 或 `use std.io.read_file;`
 - **同目录文件合并规则**：
   - **同一目录下的所有 `.uya` 文件都属于同一个目录模块**
@@ -869,31 +883,37 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
   - 推荐新代码按实际文件边界使用文件模块路径；旧代码可继续使用目录模块路径
 - 使用 `.` 分隔路径段
 - **路径解析规则**：
-  - 编译器在项目根目录中查找模块
-  - 模块路径 `std.io` 对应项目根目录下的 `std/io/` 目录，也可对应 `std/io.uya` 文件
+  - 编译器先在当前 module root 中查找模块
+  - package mode 下，依赖 alias 由包管理器映射到已解析依赖的 source root
+  - 模块路径 `std.io` 对应 module root 下的 `std/io/` 目录，也可对应 `std/io.uya` 文件
   - 当查找模块时，编译器会：
     1. 对整体模块导入优先检查是否存在同名目录（策略1：目录模块）
     2. 若目录不存在，再检查是否存在同名 `.uya` 文件（策略2：单文件模块）
     3. 对 `use a.b.c.item;`，若 `a/b/c.uya` 或 `a/b/c/` 存在，则 `a.b.c` 是模块；否则退回为从模块 `a.b` 导入导出项 `c`
-  - 所有模块引用都相对于项目根目录解析
+  - 所有模块引用都相对于当前 module root 解析
 
-### 1.5.6 项目根目录说明
+### 1.5.6 根目录术语说明
 
-- **项目根目录识别**：模块系统的根目录是包含 `fn main() i32` 函数的目录
-- **自动识别逻辑**：
-  - 编译器扫描所有源文件，找到包含 `fn main() i32` 的文件
-  - 该文件所在的最顶层目录即为项目根目录
-  - 示例：如果 `project/src/main.uya` 包含 `fn main() i32`，则 `project/src/` 是项目根目录
-- **限制**：不支持显式指定项目根目录（如通过 `-root` 编译选项），未来可能支持
-- 所有模块路径都相对于项目根目录计算
-- 编译器在项目根目录中查找和解析模块
-- 项目根目录本身是 `main` 模块
+- **legacy mode**：
+  - 当编译器没有发现 `uya.toml` 时，继续沿用当前自动推导模块根的方式
+  - 对单文件输入，通常使用该文件所在目录
+  - 对目录输入，通常使用该目录本身
+- **package mode**：
+  - 当编译器发现 `uya.toml` 时，包管理规则接管根语义
+  - `package root`：从当前 Uya 源文件所在目录向上找到的第一个 `uya.toml` 所在目录
+  - `source root`：`[package].source-dir` 指向的源码根，默认 `"."`
+  - `module root`：真正参与模块查找的目录，等于 `package root + source-dir`
+- **兼容术语说明**：
+  - 旧文档里的“项目根目录”若讨论模块解析，默认应读作 `module root`
+  - `--project-root` 这个兼容 CLI 名称覆盖的也是 `module root`
+  - `package root` 只用于 manifest 发现与依赖安装语义，不等同于 `module root`
+- 项目结构与包管理的完整规则见 [package_management.md](./package_management.md)
 - **路径解析**：
-  - `use std.io;` 在项目根目录下查找 `std/io/` 目录
-  - `use main.helper;` 在项目根目录下查找 `helper.uya` 文件
-  - 所有模块引用都相对于项目根目录解析（绝对相对于项目根目录）
+  - `use std.io;` 在当前 module root 下查找 `std/io/` 目录
+  - `use main.helper;` 在当前 module root 下查找 `helper.uya` 文件
+  - 所有模块引用都相对于当前 module root 解析
 - **多入口项目说明**：
-  - 如果项目中有多个 `fn main() i32`，编译器会报错，要求明确项目根目录
+  - legacy mode 下，如果目录输入中有多个 `main`，编译器会报错
   - 测试/工具等应作为独立的子目录模块，不包含 `main` 函数
 - **项目结构示例**：
 [examples/example_008.txt](./examples/example_008.txt)
@@ -920,7 +940,7 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
   - 所有模块路径在编译期解析
   - 模块依赖关系在编译期构建，用于循环依赖检测
 - 与现有特性的兼容性
-- 模块路径必须相对于项目根目录（包含 main 函数的目录）
+- 模块路径必须相对于当前 `module root`
 
 ### 1.5.8 完整示例
 
@@ -2457,12 +2477,12 @@ Uya 联合体设计完全符合「坚如磐石」哲学：
       - `lib/std/mem/mem.uya`、`lib/std/mem/allocator.uya`、`lib/std/mem/arena.uya` 等同目录文件均属于 **`std.mem`** 模块 → 模块前缀 **`std_mem`**
       - `lib/std/mem/mem.uya` 中的 `export fn mem_copy(...)` → `std_mem_mem_copy(...)`
       - `lib/std/mem/allocator.uya` 中的 `export fn get_allocator(...)` → `std_mem_get_allocator(...)`（示例）
-      - 主模块（项目根目录）→ 模块前缀 `main`
+      - 主模块（当前 module root）→ 模块前缀 `main`
       - 主模块 `main.uya` 中的 `export fn my_func(...)` → `main_my_func(...)`
       - **模块前缀提取规则**：
         - 标准库路径 `lib/std/xxx/yyy.uya` → 模块 `std.xxx` → 模块前缀 `std_xxx`
         - 标准库路径 `lib/libc/xxx/yyy.uya` → 模块 `libc.xxx` → 模块前缀 `libc_xxx`
-        - 主模块（项目根目录）→ 模块 `main` → 模块前缀 `main`
+        - 主模块（当前 module root）→ 模块 `main` → 模块前缀 `main`
         - 模块路径中的 `.` 替换为 `_` 作为 C 函数名前缀
         - **注意**：函数名包含模块名（如 `mem_copy`）会导致生成的 C 函数名重复（如 `std_mem_mem_copy`），建议避免这种命名方式
   - **`extern fn`**：外部 C 函数声明，生成的 C 代码为 `extern void foo(void);`
@@ -6826,10 +6846,23 @@ mc hash_string(s) expr {
 
 ## 29 扩展特性
 
-### 29.1 核心特性（计划中）
-- **官方包管理器**：`uyapm`
-  - 依赖管理和包分发系统
-  - 支持版本管理和依赖解析
+### 29.1 包管理（v1 draft / MVP in progress）
+- **canonical public UX**：`uya upm <subcommand>`
+- **仓库内真实入口**：`cmd/upm` / `bin/cmd/upm`
+- **repo-local 验证入口**：`bin/uya-upm-stage2`（在主编译器入口完全并入前，用于验证 `build` / `upm` 工作流）
+- **v1 目标**：
+  - `uya.toml`
+  - `uya.lock`
+  - `path` / `git` 依赖
+  - 包感知的模块查找
+- **当前兼容要求**：
+  - 无 manifest 的 `uya build file.uya` / `uya build dir/` 工作流继续可用
+- **非目标**：
+  - registry
+  - semver range 求解
+  - 多版本并存
+  - workspace
+- 完整规范见 [package_management.md](./package_management.md)
 
 ### 29.2 drop 机制增强
 - **drop 标记**：`#[no_drop]` 用于无需清理的类型

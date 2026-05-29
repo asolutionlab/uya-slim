@@ -5,29 +5,29 @@
 // 例如：
 //   "path/to/module_a/file.uya" -> "module_a"
 //   "path/to/std/io/file.uya" -> "std.io"
-//   "path/to/main.uya" -> "main" (项目根目录)
+//   "path/to/main.uya" -> "main" (模块根目录)
 // 注意：当前实现支持多级路径，提取从第一个目录到最后一个目录的所有目录名，用 '.' 连接
-// 如果项目根目录已设置，文件在项目根目录下时返回 "main"
+// 如果模块根目录已设置，文件在模块根目录下时返回 "main"
 fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
     if checker == null || filename == null {
         return null;
     }
     
-    // 如果文件本身位于 UYA_ROOT，下方的 std/tls/UYA_ROOT 规则应优先于 project_root。
-    var skip_project_root: i32 = 0;
+    // 如果文件本身位于 UYA_ROOT，下方的 std/tls/UYA_ROOT 规则应优先于 module_root。
+    var skip_module_root: i32 = 0;
     if checker.uya_root_dir != null {
         const uya_root_len_skip: usize = strlen(checker.uya_root_dir as *byte);
         if uya_root_len_skip > 0 && strncmp(filename as *byte, checker.uya_root_dir as *byte, uya_root_len_skip) == 0 {
-            skip_project_root = 1;
+            skip_module_root = 1;
         }
     }
 
-    // 如果项目根目录已设置，检查文件是否在项目根目录下
-    if checker.project_root_dir != null && skip_project_root == 0 {
-        const root_len: usize = strlen(checker.project_root_dir as *byte);
+    // 如果模块根目录已设置，检查文件是否在模块根目录下
+    if checker.module_root_dir != null && skip_module_root == 0 {
+        const root_len: usize = strlen(checker.module_root_dir as *byte);
         // root_len==0 时 strncmp 恒为相等，会把任意路径误判为「在项目根下」
-        if root_len > 0 && strncmp(filename as *byte, checker.project_root_dir as *byte, root_len) == 0 {
-            // 文件在项目根目录下，检查是否在根目录的直接子目录中
+        if root_len > 0 && strncmp(filename as *byte, checker.module_root_dir as *byte, root_len) == 0 {
+            // 文件在模块根目录下，检查是否在根目录的直接子目录中
             const relative_path: &byte = (filename as *byte + root_len) as &byte;
             var first_slash: *byte = strchr(relative_path as *byte, 47);  // '/'
             if first_slash == null {
@@ -35,14 +35,14 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
             }
             
             if first_slash == null {
-                // 文件直接在项目根目录下，返回 "main"
+                // 文件直接在模块根目录下，返回 "main"
                 const main_str: &byte = "main" as *byte;
                 const module_name: &byte = checker_arena_strdup(checker.arena, main_str);
                 return module_name;
             }
             
-            // 文件在项目根目录的子目录中，提取相对路径作为模块路径
-            // 例如：project_root_dir = "path/to/multifile/test_use_main/"
+            // 文件在模块根目录的子目录中，提取相对路径作为模块路径
+            // 例如：module_root_dir = "path/to/multifile/test_use_main/"
             //      filename = "path/to/multifile/test_use_main/submodule/file.uya"
             //      relative_path = "submodule/file.uya"
             //      模块路径 = "submodule"
@@ -465,7 +465,7 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
         }
     }
     
-    // 如果项目根目录未设置，使用旧逻辑（向后兼容）
+    // 如果模块根目录未设置，使用旧逻辑（向后兼容）
     // 找到最后一个 '/' 或 '\'（文件所在目录）
     var last_slash: *byte = strrchr(filename as *byte, 47);  // '/'
     if last_slash == null {
@@ -674,12 +674,12 @@ fn append_export_to_module_name(
 // 为项目内 `dir/file.uya` 生成兼容别名 `dir.file`。
 // 这样既兼容目录模块（dir.*），也支持文件模式导入（dir.file.*）。
 fn build_project_file_module_alias(checker: &TypeChecker, filename: &byte, dir_module_name: &byte) &byte {
-    if checker == null || filename == null || dir_module_name == null || checker.project_root_dir == null {
+    if checker == null || filename == null || dir_module_name == null || checker.module_root_dir == null {
         return null;
     }
 
-    const root_len: usize = strlen(checker.project_root_dir as *byte);
-    if root_len == 0 || strncmp(filename as *byte, checker.project_root_dir as *byte, root_len) != 0 {
+    const root_len: usize = strlen(checker.module_root_dir as *byte);
+    if root_len == 0 || strncmp(filename as *byte, checker.module_root_dir as *byte, root_len) != 0 {
         return null;
     }
 
@@ -946,8 +946,8 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             var first_seg_dir_path: [byte: PATH_MAX] = [];
             const first_seg_len: usize = strlen(first_seg as *byte);
             
-            // 从 node.filename 提取项目根目录
-            var project_root_for_check: &byte = null;
+            // 从 node.filename 提取模块根目录
+            var module_root_for_check: &byte = null;
             if node.filename != null {
                 var last_slash_check: &byte = strrchr(node.filename as *byte, 47 as byte);  // '/'
                 if last_slash_check == null {
@@ -956,20 +956,20 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 if last_slash_check != null {
                     const dir_len_check: usize = ptr_diff(last_slash_check, node.filename as *byte) as usize + 1;
                     if dir_len_check < PATH_MAX {
-                        project_root_for_check = compiler_arena_alloc(checker.arena, dir_len_check + 1) as &byte;
-                        if project_root_for_check != null {
-                            memcpy(project_root_for_check as *void, node.filename as *void, dir_len_check);
-                            project_root_for_check[dir_len_check] = 0;
+                        module_root_for_check = compiler_arena_alloc(checker.arena, dir_len_check + 1) as &byte;
+                        if module_root_for_check != null {
+                            memcpy(module_root_for_check as *void, node.filename as *void, dir_len_check);
+                            module_root_for_check[dir_len_check] = 0;
                         }
                     }
                 }
             }
             
-            // 尝试在项目根目录中查找
-            if project_root_for_check != null {
-                const root_len_check: usize = strlen(project_root_for_check as *byte);
+            // 尝试在模块根目录中查找
+            if module_root_for_check != null {
+                const root_len_check: usize = strlen(module_root_for_check as *byte);
                 if root_len_check + first_seg_len < PATH_MAX {
-                    strcpy(&first_seg_dir_path[0], project_root_for_check as *byte);
+                    strcpy(&first_seg_dir_path[0], module_root_for_check as *byte);
                     strcat(&first_seg_dir_path[0] as *byte, first_seg as *byte);
                     var st_check: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
                     if stat(&first_seg_dir_path[0] as *byte, &st_check as &Stat) == 0 {
@@ -980,11 +980,11 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 }
             }
             
-            // 尝试在 checker.project_root_dir 中查找
-            if first_seg_dir_found == 0 && checker.project_root_dir != null {
-                const root_len_check2: usize = strlen(checker.project_root_dir as *byte);
+            // 尝试在 checker.module_root_dir 中查找
+            if first_seg_dir_found == 0 && checker.module_root_dir != null {
+                const root_len_check2: usize = strlen(checker.module_root_dir as *byte);
                 if root_len_check2 + first_seg_len < PATH_MAX {
-                    strcpy(&first_seg_dir_path[0], checker.project_root_dir as *byte);
+                    strcpy(&first_seg_dir_path[0], checker.module_root_dir as *byte);
                     strcat(&first_seg_dir_path[0] as *byte, first_seg as *byte);
                     var st_check2: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
                     if stat(&first_seg_dir_path[0] as *byte, &st_check2 as &Stat) == 0 {
@@ -1095,9 +1095,9 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 }
                 
                 // 检查目录是否存在（使用 stat 检查）
-                // 首先从 node.filename 提取项目根目录
+                // 首先从 node.filename 提取模块根目录
                 var found_dir: i32 = 0;
-                var project_root_from_file: &byte = null;
+                var module_root_from_file: &byte = null;
                 if node.filename != null {
                     var last_slash: &byte = strrchr(node.filename as *byte, 47 as byte);  // '/'
                     if last_slash == null {
@@ -1106,22 +1106,22 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     if last_slash != null {
                         const dir_len: usize = ptr_diff(last_slash, node.filename as *byte) as usize + 1;
                         if dir_len < PATH_MAX {
-                            project_root_from_file = compiler_arena_alloc(checker.arena, dir_len + 1) as &byte;
-                            if project_root_from_file != null {
-                                memcpy(project_root_from_file as *void, node.filename as *void, dir_len);
-                                project_root_from_file[dir_len] = 0;
+                            module_root_from_file = compiler_arena_alloc(checker.arena, dir_len + 1) as &byte;
+                            if module_root_from_file != null {
+                                memcpy(module_root_from_file as *void, node.filename as *void, dir_len);
+                                module_root_from_file[dir_len] = 0;
                             }
                         }
                     }
                 }
                 
-                // 尝试在项目根目录中查找
-                if project_root_from_file != null {
+                // 尝试在模块根目录中查找
+                if module_root_from_file != null {
                     var dir_path: [byte: PATH_MAX] = [];
-                    const root_len: usize = strlen(project_root_from_file as *byte);
+                    const root_len: usize = strlen(module_root_from_file as *byte);
                     const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
                     if root_len + file_path_len < PATH_MAX {
-                        strcpy(&dir_path[0], project_root_from_file as *byte);
+                        strcpy(&dir_path[0], module_root_from_file as *byte);
                         strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
                         // 使用 stat 检查目录
                         var st: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
@@ -1132,13 +1132,13 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                         }
                     }
                 }
-                // 如果项目根目录未设置或未找到，尝试 checker.project_root_dir
-                if found_dir == 0 && checker.project_root_dir != null {
+                // 如果模块根目录未设置或未找到，尝试 checker.module_root_dir
+                if found_dir == 0 && checker.module_root_dir != null {
                     var dir_path: [byte: PATH_MAX] = [];
-                    const root_len: usize = strlen(checker.project_root_dir as *byte);
+                    const root_len: usize = strlen(checker.module_root_dir as *byte);
                     const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
                     if root_len + file_path_len < PATH_MAX {
-                        strcpy(&dir_path[0], checker.project_root_dir as *byte);
+                        strcpy(&dir_path[0], checker.module_root_dir as *byte);
                         strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
                         // 使用 stat 检查目录
                         var st: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };

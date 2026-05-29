@@ -308,7 +308,7 @@ struct TypeChecker {
     error_name_count: i32,
     moved_names: [&byte: 128],
     moved_count: i32,
-    project_root_dir: &byte,
+    module_root_dir: &byte,
     uya_root_dir: &byte,
     current_type_params: &TypeParam,
     current_type_param_count: i32,

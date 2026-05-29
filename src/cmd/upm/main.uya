@@ -1,0 +1,8 @@
+use upm_lib.upm_cli_main;
+
+/// `cmd/upm` 独立可执行入口。
+/// 参数说明：无。
+/// 返回值说明：返回 `upm` CLI 的退出码。
+export fn main() i32 {
+    return upm_cli_main(1);
+}

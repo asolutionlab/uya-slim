@@ -22,6 +22,10 @@ use std.runtime.entry.set_process_stack_limit_bytes;
 use libc;
 use libc.stdlib;  // clock, CLOCKS_PER_SEC
 use libc.unistd;  // system
+use cmd.upm.upm_lib.UPMPackageBuildPlan;
+use cmd.upm.upm_lib.upm_build_plan_cleanup;
+use cmd.upm.upm_lib.upm_build_plan_init;
+use cmd.upm.upm_lib.upm_prepare_build_plan;
 use fmt;
 
 // ===== 计时函数 =====
@@ -122,6 +126,12 @@ var g_app_mode_microapp: i32 = 0;
 var g_microapp_softvm_mode: i32 = 0;
 var g_microapp_target_profile_override: [byte: 128] = [];
 var g_microapp_target_profile_override_active: i32 = 0;
+
+// package mode / command split 预留：允许显式覆盖模块根与 manifest。
+var g_module_root_override: [byte: PATH_MAX] = [];
+var g_module_root_override_active: i32 = 0;
+var g_manifest_path_override: [byte: PATH_MAX] = [];
+var g_manifest_path_override_active: i32 = 0;
 
 const MICROAPP_REQUIRED_CAP_IO_UART: u32 = 1u32 << 0;
 const MICROAPP_REQUIRED_CAP_IO_GPIO: u32 = 1u32 << 1;
@@ -665,6 +675,104 @@ fn exit_code_from_system_status(wstatus: i32) i32 {
         return 1;
     }
     return 128 + sig;
+}
+
+fn shell_quote_append(cmd: &byte, cap: i32, len: &i32, text: &byte) i32 {
+    if cmd == null || len == null || text == null {
+        return 1;
+    }
+    var i: usize = 0;
+    if len[0] > 0 {
+        if len[0] + 1 >= cap {
+            return 1;
+        }
+        cmd[len[0] as usize] = 32 as byte;
+        len[0] = len[0] + 1;
+    }
+    if len[0] + 2 >= cap {
+        return 1;
+    }
+    cmd[len[0] as usize] = 39 as byte;
+    len[0] = len[0] + 1;
+    while text[i] != 0 as byte {
+        if text[i] == 39 as byte {
+            if len[0] + 4 >= cap {
+                return 1;
+            }
+            cmd[len[0] as usize] = 39 as byte;
+            cmd[(len[0] + 1) as usize] = 92 as byte;
+            cmd[(len[0] + 2) as usize] = 39 as byte;
+            cmd[(len[0] + 3) as usize] = 39 as byte;
+            len[0] = len[0] + 4;
+        } else {
+            if len[0] + 1 >= cap {
+                return 1;
+            }
+            cmd[len[0] as usize] = text[i];
+            len[0] = len[0] + 1;
+        }
+        i = i + 1;
+    }
+    if len[0] + 2 >= cap {
+        return 1;
+    }
+    cmd[len[0] as usize] = 39 as byte;
+    len[0] = len[0] + 1;
+    cmd[len[0] as usize] = 0 as byte;
+    return 0;
+}
+
+fn build_external_upm_path(out: &byte, out_cap: usize) i32 {
+    if out == null || out_cap == 0usize {
+        return 1;
+    }
+    const argv0: *byte = get_argv(0);
+    if argv0 == null {
+        return 1;
+    }
+    var compiler_dir: [byte: PATH_MAX] = [];
+    if get_compiler_dir(argv0 as &byte, &compiler_dir[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    const written: i32 = snprintf(out as *byte, out_cap, "%scmd/upm" as *byte, &compiler_dir[0] as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn dispatch_external_upm(strip_subcommand: i32) i32 {
+    var cmd_path: [byte: PATH_MAX] = [];
+    if build_external_upm_path(&cmd_path[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: 无法构造 cmd/upm 路径\n" as *byte);
+        return 1;
+    }
+    if access(&cmd_path[0] as *byte, X_OK) != 0 {
+        fprintf(libc.stderr, "错误: 缺少可执行子命令 %s；请先运行 make cmds\n" as *byte, &cmd_path[0] as *byte);
+        return 1;
+    }
+    var cmd: [byte: 16384] = [];
+    var cmd_len: i32 = 0;
+    if shell_quote_append(&cmd[0] as &byte, 16384, &cmd_len, &cmd_path[0] as &byte) != 0 {
+        fprintf(libc.stderr, "错误: 无法构造 upm 调度命令\n" as *byte);
+        return 1;
+    }
+    var arg_index: i32 = 1;
+    if strip_subcommand != 0 {
+        arg_index = 2;
+    }
+    while arg_index < get_argc() {
+        const arg: *byte = get_argv(arg_index);
+        if arg != null {
+            if shell_quote_append(&cmd[0] as &byte, 16384, &cmd_len, arg as &byte) != 0 {
+                fprintf(libc.stderr, "错误: upm 参数过长\n" as *byte);
+                return 1;
+            }
+        }
+        arg_index = arg_index + 1;
+    }
+    const status: i32 = system(&cmd[0] as *byte);
+    return exit_code_from_system_status(status);
 }
 
 // 常量定义
@@ -1591,6 +1699,10 @@ fn parse_args(
     g_app_mode_microapp = 0;
     g_microapp_target_profile_override_active = 0;
     g_microapp_target_profile_override[0] = 0 as byte;
+    g_module_root_override_active = 0;
+    g_module_root_override[0] = 0 as byte;
+    g_manifest_path_override_active = 0;
+    g_manifest_path_override[0] = 0 as byte;
     async_frame_heap_fallback[0] = 0;
     exec_requested[0] = 0;
     exec_only[0] = 0;
@@ -1684,6 +1796,42 @@ fn parse_args(
             opt_level[0] = 3;
         } else if strcmp(arg, "--nostdlib" as *byte) == 0 {
             is_nostdlib[0] = 1;
+        } else if strcmp(arg, "--project-root" as *byte) == 0 {
+            if i + 1 >= argc {
+                fprintf(libc.stderr, "错误: --project-root 需要指定目录\n" as *byte);
+                return -1;
+            }
+            i = i + 1;
+            const root_arg: *byte = get_argv(i);
+            if root_arg == null || root_arg[0] == 0 as byte {
+                fprintf(libc.stderr, "错误: --project-root 不能为空\n" as *byte);
+                return -1;
+            }
+            const root_len: usize = strlen(root_arg);
+            if root_len >= PATH_MAX {
+                fprintf(libc.stderr, "错误: --project-root 路径过长\n" as *byte);
+                return -1;
+            }
+            strcpy(&g_module_root_override[0] as *byte, root_arg);
+            g_module_root_override_active = 1;
+        } else if strcmp(arg, "--manifest-path" as *byte) == 0 {
+            if i + 1 >= argc {
+                fprintf(libc.stderr, "错误: --manifest-path 需要指定路径\n" as *byte);
+                return -1;
+            }
+            i = i + 1;
+            const manifest_arg: *byte = get_argv(i);
+            if manifest_arg == null || manifest_arg[0] == 0 as byte {
+                fprintf(libc.stderr, "错误: --manifest-path 不能为空\n" as *byte);
+                return -1;
+            }
+            const manifest_len: usize = strlen(manifest_arg);
+            if manifest_len >= PATH_MAX {
+                fprintf(libc.stderr, "错误: --manifest-path 路径过长\n" as *byte);
+                return -1;
+            }
+            strcpy(&g_manifest_path_override[0] as *byte, manifest_arg);
+            g_manifest_path_override_active = 1;
         } else if strcmp(arg, "--exec" as *byte) == 0 {
             exec_requested[0] = 1;
         } else if strcmp(arg, "--vm" as *byte) == 0 {
@@ -1894,6 +2042,8 @@ fn is_c_output(output_path: &byte) i32 {
 fn compile_files(
     input_file_indices: &i32,
     input_file_count: i32,
+    input_paths_override: &(&byte),
+    input_paths_override_count: i32,
     output_file_index: i32,
     backend: BackendType,
     emit_line_directives: i32,
@@ -1965,15 +2115,38 @@ fn compile_files(
     // 使用全局变量避免栈溢出
     var resolved_files: [&byte: MAX_INPUT_FILES] = resolved_files_global;
     var resolved_count: i32 = 0;
-    var project_root_buffer: [byte: PATH_MAX] = [];
-    var project_root: &byte = null;
+    var module_root_buffer: [byte: PATH_MAX] = [];
+    var module_root: &byte = null;
+    if g_module_root_override_active != 0 {
+        if strlen(&g_module_root_override[0] as *byte) >= PATH_MAX - 2usize {
+            fprintf(libc.stderr, "错误: --project-root 路径过长\n" as *byte);
+            return 1;
+        }
+        strcpy(&module_root_buffer[0] as *byte, &g_module_root_override[0] as *byte);
+        if module_root_buffer[0] == 32 as byte || module_root_buffer[0] == 9 as byte ||
+            module_root_buffer[0] == 10 as byte || module_root_buffer[0] == 13 as byte {
+            fprintf(libc.stderr, "错误: --project-root 不能为空白\n" as *byte);
+            return 1;
+        }
+        if module_root_buffer[strlen(&module_root_buffer[0] as *byte) - 1usize] != 47 as byte {
+            strcat(&module_root_buffer[0] as *byte, "/" as *byte);
+        }
+        module_root = &module_root_buffer[0] as &byte;
+    }
     // 使用全局变量避免栈溢出（262KB 太大），直接使用全局数组
     // var main_file_paths: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 
     var i: i32 = 0;
     while i < input_file_count {
         const idx_i: i32 = input_file_indices[i];
-        const input_path: *byte = get_argv(idx_i);
+        var input_path: *byte = null;
+        if input_paths_override != null && i < input_paths_override_count {
+            if input_paths_override[i] != null {
+                input_path = input_paths_override[i] as *byte;
+            }
+        } else {
+            input_path = get_argv(idx_i);
+        }
         if input_path == null {
             fprintf(libc.stderr, "错误: 无法获取输入文件路径（索引 %d）\n" as *byte, idx_i);
             return 1;
@@ -2004,18 +2177,18 @@ fn compile_files(
             }
             resolved_files[resolved_count] = main_files[0];
             resolved_count = resolved_count + 1;
-            // 设置项目根目录
-            if project_root == null {
+            // 设置模块根目录
+            if module_root == null {
                 const input_len: usize = strlen(input_path);
                 if input_len > 0 && input_len < PATH_MAX - 1 {
-                    strcpy(&project_root_buffer[0], input_path);
-                    if project_root_buffer[input_len - 1] != 47 {
-                        project_root_buffer[input_len] = 47 as byte;
-                        project_root_buffer[input_len + 1] = 0 as byte;
+                    strcpy(&module_root_buffer[0], input_path);
+                    if module_root_buffer[input_len - 1] != 47 {
+                        module_root_buffer[input_len] = 47 as byte;
+                        module_root_buffer[input_len + 1] = 0 as byte;
                     }
-                    project_root = &project_root_buffer[0] as &byte;
+                    module_root = &module_root_buffer[0] as &byte;
                 } else {
-                    project_root = input;
+                    module_root = input;
                 }
             }
         } else if is_file(input) != 0 {
@@ -2038,22 +2211,22 @@ fn compile_files(
             if stop_after_checker != 0 || detect_main_function(input) != 0 {
                 resolved_files[resolved_count] = input;
                 resolved_count = resolved_count + 1;
-                // 设置项目根目录（文件所在目录）
-                if project_root == null {
+                // 设置模块根目录（文件所在目录）
+                if module_root == null {
                     const input_last_slash: *byte = strrchr(input_path, 47);
                     if input_last_slash != null {
                         const dir_len: usize = ptr_diff(input_last_slash, input) + 1;
                         if dir_len < PATH_MAX {
-                            memcpy(&project_root_buffer[0], input_path, dir_len);
-                            project_root_buffer[dir_len] = 0 as byte;
-                            project_root = &project_root_buffer[0] as &byte;
+                            memcpy(&module_root_buffer[0], input_path, dir_len);
+                            module_root_buffer[dir_len] = 0 as byte;
+                            module_root = &module_root_buffer[0] as &byte;
                         } else {
-                            strcpy(&project_root_buffer[0], "./" as *byte);
-                            project_root = &project_root_buffer[0] as &byte;
+                            strcpy(&module_root_buffer[0], "./" as *byte);
+                            module_root = &module_root_buffer[0] as &byte;
                         }
                     } else {
-                        strcpy(&project_root_buffer[0], "./" as *byte);
-                        project_root = &project_root_buffer[0] as &byte;
+                        strcpy(&module_root_buffer[0], "./" as *byte);
+                        module_root = &module_root_buffer[0] as &byte;
                     }
                 }
             } else {
@@ -2166,7 +2339,7 @@ fn compile_files(
             &processed_files[0],
             &processed_count,
             MAX_INPUT_FILES,
-            project_root,
+            module_root,
             &uya_root_buffer[0] as &byte,
             &temp_arena
         );
@@ -2201,8 +2374,8 @@ fn compile_files(
     } else {
         fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
     }
-    if project_root != null {
-        fprintf(libc.stderr, "项目根目录: %s\n" as *byte, project_root as *byte);
+    if module_root != null {
+        fprintf(libc.stderr, "模块根目录: %s\n" as *byte, module_root as *byte);
     }
     fprintf(libc.stderr, "UYA_ROOT: %s\n" as *byte, &uya_root_buffer[0]);
     var module_name: *byte = "(unknown)" as *byte;
@@ -2350,24 +2523,24 @@ fn compile_files(
     checker.uya_root_dir = &uya_root_buffer[0] as &byte;
     // 用 CLI 推导的项目根（与依赖收集一致）初始化 module 路径前缀，避免仅靠「首个 main 文件名」
     // 得到空字符串或标准库 entry 目录，进而误判 extract_module_path / use 导出解析。
-    if project_root != null {
-        const pr_len: usize = strlen(project_root as *byte);
+    if module_root != null {
+        const pr_len: usize = strlen(module_root as *byte);
         if pr_len > 0 {
             var need_slash: i32 = 0;
-            if project_root[pr_len - 1] != 47 as byte && project_root[pr_len - 1] != 92 as byte {
+            if module_root[pr_len - 1] != 47 as byte && module_root[pr_len - 1] != 92 as byte {
                 need_slash = 1;
             }
             const alloc_len: usize = pr_len + (need_slash as usize) + 1 as usize;
             const pr_copy: &u8 = compiler_arena_alloc(&arena, alloc_len) as &u8;
             if pr_copy != null {
-                memcpy(pr_copy as *void, project_root as *void, pr_len);
+                memcpy(pr_copy as *void, module_root as *void, pr_len);
                 if need_slash != 0 {
                     pr_copy[pr_len] = 47 as u8;
                     pr_copy[pr_len + 1] = 0 as u8;
                 } else {
                     pr_copy[pr_len] = 0 as u8;
                 }
-                checker.project_root_dir = pr_copy as &byte;
+                checker.module_root_dir = pr_copy as &byte;
             }
         }
     }
@@ -2600,8 +2773,14 @@ fn compile_files(
     return 0;
 }
 
-// 程序入口（export fn main 编译为 main_main，由 std.runtime.entry 的 C main 调用）
+/// 编译器主程序入口。
+/// 参数说明：无。
+/// 返回值说明：返回整个 `uya` 命令的进程退出码。
 export fn main() i32 {
+    const first_arg_direct: *byte = get_argv(1);
+    if first_arg_direct != null && strcmp(first_arg_direct, "upm" as *byte) == 0 {
+        return dispatch_external_upm(1);
+    }
 
     var input_file_indices: [i32: 64] = [];
     var input_file_count: i32 = 0;
@@ -2872,7 +3051,43 @@ export fn main() i32 {
         }
         split_c_lock_held = 1;
     }
-    var result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
+    var package_build_plan: UPMPackageBuildPlan = upm_build_plan_init();
+    var package_build_plan_needs_cleanup: i32 = 0;
+    defer {
+        if package_build_plan_needs_cleanup != 0 {
+            _ = upm_build_plan_cleanup(&package_build_plan);
+            package_build_plan_needs_cleanup = 0;
+        }
+    }
+    var input_paths_override: [&byte: MAX_INPUT_FILES] = [null: MAX_INPUT_FILES];
+    var input_paths_override_count: i32 = 0;
+    if (command == CommandType.COMMAND_BUILD || command == CommandType.COMMAND_CHECK ||
+        command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) &&
+        input_file_count == 1 {
+        const input0: *byte = get_argv(input_file_indices[0]);
+        if input0 != null {
+            var manifest_override_ptr: &byte = null;
+            if g_manifest_path_override_active != 0 {
+                manifest_override_ptr = &g_manifest_path_override[0] as &byte;
+            }
+            const prepare_result: i32 = upm_prepare_build_plan(input0 as &byte, manifest_override_ptr, &package_build_plan);
+            if prepare_result != 0 {
+                return 1;
+            }
+            if package_build_plan.active != 0 {
+                input_paths_override[0] = &package_build_plan.compile_input[0] as &byte;
+                input_paths_override_count = 1;
+                strcpy(&g_module_root_override[0] as *byte, &package_build_plan.module_root[0] as *byte);
+                g_module_root_override_active = 1;
+                package_build_plan_needs_cleanup = 1;
+            }
+        }
+    }
+    var input_paths_override_ptr: &(&byte) = null;
+    if input_paths_override_count > 0 {
+        input_paths_override_ptr = &input_paths_override[0] as &(&byte);
+    }
+    var result: i32 = compile_files(&input_file_indices[0], input_file_count, input_paths_override_ptr, input_paths_override_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
     if result == 2 && selected_backend == BackendType.BACKEND_EXEC && exec_only == 0 {
         if exec_backend_should_fallback() == 0 {
             fprintf(libc.stderr, "错误: exec backend 命中未登记的 fallback 原因码: %s\n" as *byte, exec_backend_get_last_unsupported_reason_name() as *byte);
@@ -2888,7 +3103,7 @@ export fn main() i32 {
                 exec_backend_get_last_unsupported_reason_name() as *byte);
         }
         selected_backend = BackendType.BACKEND_C99;
-        result = compile_files(&input_file_indices[0], input_file_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
+        result = compile_files(&input_file_indices[0], input_file_count, input_paths_override_ptr, input_paths_override_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
     }
     if result != 0 {
         return 1;

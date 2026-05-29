@@ -1983,8 +1983,8 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
 }
 
 // 类型检查主函数
-fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNode) void {
-    if checker == null || decl == null || checker.project_root_dir != null ||
+fn checker_update_module_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNode) void {
+    if checker == null || decl == null || checker.module_root_dir != null ||
         decl.type != ASTNodeType.AST_FN_DECL || decl.fn_decl_name == null ||
         str_equals(decl.fn_decl_name, "main" as *byte) == 0 || decl.filename == null {
         return;
@@ -2006,13 +2006,13 @@ fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNod
         }
         memcpy(root_dir as *void, filename as *void, dir_len);
         root_dir[dir_len] = 0;
-        checker.project_root_dir = root_dir as &byte;
+        checker.module_root_dir = root_dir as &byte;
         return;
     }
     const root_dir: &byte = compiler_arena_alloc(checker.arena, 1) as &byte;
     if root_dir != null {
         root_dir[0] = 0;
-        checker.project_root_dir = root_dir;
+        checker.module_root_dir = root_dir;
     }
 }
 
@@ -2028,7 +2028,7 @@ fn checker_prepass_top_level_decls(checker: &TypeChecker, ast: &ASTNode) i32 {
                 if checker_register_fn_decl(checker, decl) == 0 {
                     return 0;
                 }
-                checker_update_project_root_from_fn_decl(checker, decl);
+                checker_update_module_root_from_fn_decl(checker, decl);
             } else if decl.type == ASTNodeType.AST_VAR_DECL {
                 checker_register_var_decl(checker, decl);
             }

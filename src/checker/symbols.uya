@@ -135,7 +135,7 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     }
     
     checker.moved_count = 0;
-    checker.project_root_dir = null;
+    checker.module_root_dir = null;
     checker.uya_root_dir = null;
     
     // 初始化泛型相关字段

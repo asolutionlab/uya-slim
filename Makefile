@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-macos-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help
+.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-macos-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-build release-dirty release-preflight release-clean install help cmds cmd-upm uya-upm-stage2 upm-check
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -31,6 +31,9 @@ LDFLAGS ?=
 
 # 并行程序测试 worker 数（默认 CPU 核数；可覆盖：make tests UYA_TEST_JOBS=4）
 UYA_TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+UYA_CMD_NAMES := upm
+UYA_CMD_BINS := $(patsubst %,bin/cmd/%,$(UYA_CMD_NAMES))
+UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/uya
 
 # 安装路径（install 目标）
 # 用法: make install
@@ -376,11 +379,16 @@ tests:
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 	else \
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
-	fi; \
-	TS=$$?; \
-	echo ""; \
-	if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi; \
-	echo "✓ 测试完成"
+		fi; \
+		TS=$$?; \
+		echo ""; \
+		if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi; \
+		if [ -z "$$OTHER_ARGS" ]; then \
+			$(MAKE) upm-check; \
+		else \
+			echo "跳过 UPM 验证套件（定向 tests 参数）"; \
+		fi; \
+		echo "✓ 测试完成"
 
 # hosted 主测试集：为 Darwin/Windows 预留的普通链接测试主线
 tests-hosted:
@@ -413,9 +421,11 @@ tests-uya:
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 -e; \
 	else \
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99; \
-	fi; \
-	TS=$$?; \
-	if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi
+		fi; \
+		TS=$$?; \
+		if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi; \
+		echo ""; \
+		$(MAKE) upm-check
 
 tests-emcc:
 	@echo "=========================================="
@@ -524,9 +534,39 @@ clean:
 	@echo "清理构建产物..."
 	@rm -rf bin
 	@rm -rf src/build
+	@rm -rf src/build/cmd
 	@rm -rf tests/programs/build
 	@rm -rf lib/build
 	@echo "✓ 清理完成"
+
+cmds: $(UYA_CMD_BINS) bin/uya-upm-stage2
+
+cmd-upm: bin/cmd/upm bin/uya-upm-stage2
+
+uya-upm-stage2: bin/uya-upm-stage2
+
+bin/uya-upm-stage2: scripts/uya-upm-stage2.sh
+	@mkdir -p bin
+	@cp scripts/uya-upm-stage2.sh $@
+	@chmod +x $@
+
+bin/cmd/upm: src/cmd/upm/main.uya $(UYA_CMD_BOOTSTRAP_COMPILER)
+	@mkdir -p bin/cmd
+	@echo "构建 cmd/upm ..."
+	@$(UYA_CMD_BOOTSTRAP_COMPILER) build $< -o $@ --no-split-c --project-root src/cmd/upm/
+
+bin/cmd/%: src/cmd/%/main.uya $(UYA_CMD_BOOTSTRAP_COMPILER)
+	@mkdir -p bin/cmd
+	@echo "构建 cmd/$* ..."
+	@$(UYA_CMD_BOOTSTRAP_COMPILER) build $< -o $@ --no-split-c --project-root src/
+
+upm-check: uya cmd-upm
+	@echo "=========================================="
+	@echo "运行 UPM 验证套件"
+	@echo "=========================================="
+	@bash ./tests/verify_upm_suite.sh
+	@echo ""
+	@echo "✓ UPM 验证套件通过"
 
 # 备份 bin/uya.c（依赖自举验证和测试通过）
 check: uya
@@ -616,13 +656,26 @@ check: uya
 		cat /tmp/verify_out.txt; \
 		VERIFY_EXIT=1; \
 	fi; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ check 子命令验证失败"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "验证 exec vm 专项回归..."; \
-	VERIFY_EXIT=0; \
+		if [ $$VERIFY_EXIT -ne 0 ]; then \
+			echo "✗ check 子命令验证失败"; \
+			exit 1; \
+		fi; \
+		echo ""; \
+		echo "验证 UPM 套件..."; \
+		if $(MAKE) upm-check > /tmp/verify_out.txt 2>&1; then \
+			grep -E "verify_upm_.*: ok$$|test_cmd_dispatch: ok$$|verify_upm_suite: ok$$|✓" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=0; \
+		else \
+			cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=1; \
+		fi; \
+		if [ $$VERIFY_EXIT -ne 0 ]; then \
+			echo "✗ UPM 套件验证失败"; \
+			exit 1; \
+		fi; \
+		echo ""; \
+		echo "验证 exec vm 专项回归..."; \
+		VERIFY_EXIT=0; \
 	for script in \
 		./tests/verify_exec_vm_smoke.sh \
 		./tests/verify_exec_vm_globals.sh \
@@ -1069,9 +1122,14 @@ install:
 		echo "bin/uya 不存在，先执行 from-c ..."; \
 		$(MAKE) from-c; \
 	fi
+	@$(MAKE) cmds
 	@echo "安装 uya -> $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya"
 	@install -d "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)"
 	@install -m 755 bin/uya "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya"
+	@install -d "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/cmd"
+	@for cmd_bin in $(UYA_CMD_BINS); do \
+		install -m 755 "$$cmd_bin" "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/cmd/$$(basename "$$cmd_bin")"; \
+	done
 	@echo "安装标准库 -> $(INSTALL_DEST_ROOT)$(LIBDIR)/"
 	@install -d "$(INSTALL_DEST_ROOT)$(LIBDIR)"
 	@for entry in lib/*; do \
@@ -1155,6 +1213,8 @@ help:
 	@echo "  make tests-uya     - 快捷方式：测试自举编译器"
 	@echo "  make tests-uya e   - 同上 + 最小输出（-e）"
 	@echo "  make tests-emcc    - 运行独立 emcc/unknown target smoke（需本机安装 emcc 与 node）"
+	@echo "  make cmds          - 构建外置子命令（当前包含 cmd/upm）"
+	@echo "  make upm-check     - 运行 UPM/包管理专项回归套件"
 	@echo "  make microapp-check - 运行当前 microapp 聚合回归套件"
 	@echo "  make microapp-hosted-smoke - 运行 hosted 平台可用的 microapp smoke 套件"
 	@echo "  make microapp-aarch64-runtime-check - 运行 arm64-host-gated 的 aarch64 microapp runtime 回归"

@@ -43,7 +43,7 @@ fn find_main_files_in_dir(
 // 根据模块路径查找文件
 fn find_module_file(
     module_path: &byte,
-    project_root: &byte,
+    module_root: &byte,
     uya_root: &byte,
     buffer: &byte,
     buffer_size: usize
@@ -91,7 +91,7 @@ fn find_module_file(
     var ri: i32 = 0;
     while ri < 2 {
         var root: &byte = null;
-        if ri == 0 { root = project_root; }
+        if ri == 0 { root = module_root; }
         if ri == 1 { root = uya_root; }
         ri = ri + 1;
         if root == null { continue; }
@@ -169,7 +169,7 @@ fn module_path_to_file_path(module_path: &byte, out: &byte, out_cap: usize) i32 
 
 fn find_direct_module_file(
     module_path: &byte,
-    project_root: &byte,
+    module_root: &byte,
     uya_root: &byte,
     buffer: &byte,
     buffer_size: usize
@@ -185,7 +185,7 @@ fn find_direct_module_file(
     var ri: i32 = 0;
     while ri < 2 {
         var root: &byte = null;
-        if ri == 0 { root = project_root; }
+        if ri == 0 { root = module_root; }
         if ri == 1 { root = uya_root; }
         ri = ri + 1;
         if root == null || root[0] == 0 { continue; }
@@ -206,7 +206,7 @@ fn find_direct_module_file(
     return -1;
 }
 
-fn module_dir_exists(module_path: &byte, project_root: &byte, uya_root: &byte, out_dir: &byte, out_cap: usize) i32 {
+fn module_dir_exists(module_path: &byte, module_root: &byte, uya_root: &byte, out_dir: &byte, out_cap: usize) i32 {
     if module_path == null {
         return 0;
     }
@@ -218,7 +218,7 @@ fn module_dir_exists(module_path: &byte, project_root: &byte, uya_root: &byte, o
     var ri: i32 = 0;
     while ri < 2 {
         var root: &byte = null;
-        if ri == 0 { root = project_root; }
+        if ri == 0 { root = module_root; }
         if ri == 1 { root = uya_root; }
         ri = ri + 1;
         if root == null || root[0] == 0 { continue; }
@@ -270,7 +270,7 @@ fn extract_use_modules(
     modules: &(&byte),
     max_modules: i32,
     module_count: &i32,
-    project_root: &byte,
+    module_root: &byte,
     uya_root: &byte,
     arena: &CompilerArena
 ) i32 {
@@ -297,8 +297,8 @@ fn extract_use_modules(
                     if full_path != null {
                         var module_file: [byte: PATH_MAX] = [];
                         var module_dir: [byte: PATH_MAX] = [];
-                        if find_direct_module_file(full_path, project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 ||
-                            module_dir_exists(full_path, project_root, uya_root, &module_dir[0] as &byte, PATH_MAX) != 0 {
+                        if find_direct_module_file(full_path, module_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 ||
+                            module_dir_exists(full_path, module_root, uya_root, &module_dir[0] as &byte, PATH_MAX) != 0 {
                             module_name = full_path;
                         } else {
                             module_name = join_segments_alloc(decl.use_stmt_path_segments, seg_count - 1, arena);
@@ -358,7 +358,7 @@ fn collect_module_dependencies(
     processed_files: &(&byte),
     processed_count: &i32,
     max_processed: i32,
-    project_root: &byte,
+    module_root: &byte,
     uya_root: &byte,
     arena: &CompilerArena
 ) i32 {
@@ -429,7 +429,7 @@ fn collect_module_dependencies(
     // 提取 use 语句中的模块路径
     var modules: [&byte: MAX_INPUT_FILES] = [];
     var module_count: i32 = 0;
-    if extract_use_modules(ast, &modules[0], MAX_INPUT_FILES, &module_count, project_root, uya_root, arena) != 0 {
+    if extract_use_modules(ast, &modules[0], MAX_INPUT_FILES, &module_count, module_root, uya_root, arena) != 0 {
         compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
@@ -462,7 +462,7 @@ fn collect_module_dependencies(
         // 精确 `use std;` 只提供 std.cfg / 平台选择器，稳定映射到 lib/std/platform.uya。
         if strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 && uya_root != null && uya_root[0] != 0 {
             var std_platform_file: [byte: PATH_MAX] = [];
-            if find_module_file("std" as *byte, project_root, uya_root, &std_platform_file[0], PATH_MAX) == 0 {
+            if find_module_file("std" as *byte, module_root, uya_root, &std_platform_file[0], PATH_MAX) == 0 {
                 var in_list: i32 = 0;
                 var j: i32 = 0;
                 while j < current_size {
@@ -478,7 +478,7 @@ fn collect_module_dependencies(
                         strcpy(path_copy as *byte, &std_platform_file[0]);
                         file_list[current_size] = path_copy;
                         current_size = current_size + 1;
-                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                         if current_size < 0 { return -1; }
                     }
                 }
@@ -490,7 +490,7 @@ fn collect_module_dependencies(
         // std 子模块：目录模块收集目录下所有 .uya；单文件模块优先走精确文件。
         if strncmp(&module_names_stack[i][0] as *byte, "std." as *byte, 4) == 0 && uya_root != null && uya_root[0] != 0 {
             var std_dir_exact: [byte: PATH_MAX] = [];
-            const std_has_dir: i32 = module_dir_exists(&module_names_stack[i][0] as *byte, project_root, uya_root, &std_dir_exact[0] as &byte, PATH_MAX);
+            const std_has_dir: i32 = module_dir_exists(&module_names_stack[i][0] as *byte, module_root, uya_root, &std_dir_exact[0] as &byte, PATH_MAX);
             // 约定目录内的 file.uya 代表该目录模块本身，例如 std.io -> lib/std/io/file.uya。
             // 只有没有 file.uya 聚合文件时，才把 std.xxx 当成目录模块展开。
             if std_has_dir != 0 {
@@ -512,7 +512,7 @@ fn collect_module_dependencies(
                             strcpy(file_copy as *byte, &std_file_module[0]);
                             file_list[current_size] = file_copy;
                             current_size = current_size + 1;
-                            current_size = collect_module_dependencies(file_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            current_size = collect_module_dependencies(file_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                         }
                     }
@@ -543,7 +543,7 @@ fn collect_module_dependencies(
                             strcpy(named_copy as *byte, &std_named_module[0]);
                             file_list[current_size] = named_copy;
                             current_size = current_size + 1;
-                            current_size = collect_module_dependencies(named_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            current_size = collect_module_dependencies(named_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                         }
                     }
@@ -553,7 +553,7 @@ fn collect_module_dependencies(
             }
             // 只有精确单文件模块优先走单文件；若存在同名目录，必须收集目录内全部 .uya。
             var single_file: [byte: PATH_MAX] = [];
-            if std_has_dir == 0 && find_direct_module_file(&module_names_stack[i][0] as *byte, project_root, uya_root, &single_file[0], PATH_MAX) == 0 {
+            if std_has_dir == 0 && find_direct_module_file(&module_names_stack[i][0] as *byte, module_root, uya_root, &single_file[0], PATH_MAX) == 0 {
                 var in_list: i32 = 0;
                 var j: i32 = 0;
                 while j < current_size {
@@ -569,7 +569,7 @@ fn collect_module_dependencies(
                         strcpy(path_copy as *byte, &single_file[0]);
                         file_list[current_size] = path_copy;
                         current_size = current_size + 1;
-                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                         if current_size < 0 { return -1; }
                     }
                 }
@@ -687,7 +687,7 @@ fn collect_module_dependencies(
                         var idx: i32 = 0;
                         while idx < added_count {
                             const pc: &byte = pending[idx];
-                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
                         }
@@ -773,7 +773,7 @@ fn collect_module_dependencies(
                         var idx: i32 = 0;
                         while idx < added_count {
                             const pc: &byte = pending[idx];
-                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
                         }
@@ -845,7 +845,7 @@ fn collect_module_dependencies(
                         var idx: i32 = 0;
                         while idx < added_count {
                             const pc: &byte = pending[idx];
-                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
                         }
@@ -859,9 +859,9 @@ fn collect_module_dependencies(
         if strcmp(&module_names_stack[i][0] as *byte, "main" as *byte) == 0 {
             var main_dir: [byte: PATH_MAX] = [];
             var dir_src: &byte = null;
-            // 优先 project_root（主文件所在目录，一般为 src/），避免双输入时 processed_files[0] 为 entry 路径而误扫子目录
-            if project_root != null && strlen(project_root) > 0 {
-                dir_src = project_root;
+            // 优先 module_root（主文件所在目录，一般为 src/），避免双输入时 processed_files[0] 为 entry 路径而误扫子目录
+            if module_root != null && strlen(module_root) > 0 {
+                dir_src = module_root;
             } else if processed_count[0] > 0 && processed_files[0] != null {
                 const entry_file: &byte = processed_files[0];
                 const slash: *byte = strrchr(entry_file as *byte, 47);
@@ -939,7 +939,7 @@ fn collect_module_dependencies(
                         var idx: i32 = 0;
                         while idx < added_count {
                             const pc: &byte = pending[idx];
-                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
                         }
@@ -967,7 +967,7 @@ fn collect_module_dependencies(
         var ri: i32 = 0;
         while ri < 2 {
             var root: &byte = null;
-            if ri == 0 { root = project_root; }
+            if ri == 0 { root = module_root; }
             if ri == 1 { root = uya_root; }
             ri = ri + 1;
             if root == null { continue; }
@@ -1035,7 +1035,7 @@ fn collect_module_dependencies(
                         const path_copy: &byte = pending[idx];
                         file_list[current_size] = path_copy;
                         current_size = current_size + 1;
-                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                         if current_size < 0 { return -1; }
                         idx = idx + 1;
                     }
@@ -1046,7 +1046,7 @@ fn collect_module_dependencies(
         }
         // 单文件模块：find_module_file
         var module_file: [byte: PATH_MAX] = [];
-        if find_module_file(&module_names_stack[i][0] as &byte, project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 {
+        if find_module_file(&module_names_stack[i][0] as &byte, module_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 {
             var already_added: i32 = 0;
             var j: i32 = 0;
             while j < current_size {
@@ -1062,7 +1062,7 @@ fn collect_module_dependencies(
                     strcpy(path_copy as *byte, &module_file[0]);
                     file_list[current_size] = path_copy;
                     current_size = current_size + 1;
-                    current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                    current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, module_root, uya_root, arena);
                     if current_size < 0 { return -1; }
                 }
             }
