@@ -6,8 +6,9 @@ COMPILER="${UYA_COMPILER:-$ROOT_DIR/bin/uya-upm-stage2}"
 CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
 TMP_DIR="$(mktemp -d /tmp/uya_upm_git_dep.XXXXXX)"
 APP_TEMPLATE="$ROOT_DIR/tests/fixtures/upm/git_dep/app"
-SEED_TEMPLATE="$ROOT_DIR/tests/fixtures/upm/git_dep/repo_seed"
-REPO_DIR="$TMP_DIR/repo"
+REPO_TEMPLATE="$ROOT_DIR/tests/fixtures/upm/git_dep/repo_fixture.git"
+REPO_DIR="$TMP_DIR/repo.git"
+REPO_WORK_DIR="$TMP_DIR/repo-work"
 APP_DIR="$TMP_DIR/app"
 OUT_BIN="$TMP_DIR/out"
 RUN_LOG="$TMP_DIR/run.log"
@@ -20,14 +21,11 @@ trap cleanup EXIT
 
 UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
 
-cp -R "$SEED_TEMPLATE" "$REPO_DIR"
-git -C "$REPO_DIR" init -b stable >/dev/null
-git -C "$REPO_DIR" config user.email codex@example.com
-git -C "$REPO_DIR" config user.name Codex
-git -C "$REPO_DIR" add .
-git -C "$REPO_DIR" commit -m "git v1" >/dev/null
-COMMIT_V1="$(git -C "$REPO_DIR" rev-parse HEAD)"
-git -C "$REPO_DIR" tag v1.0.0
+cp -R "$REPO_TEMPLATE" "$REPO_DIR"
+git clone "$REPO_DIR" "$REPO_WORK_DIR" >/dev/null
+git -C "$REPO_WORK_DIR" config user.email codex@example.com
+git -C "$REPO_WORK_DIR" config user.name Codex
+COMMIT_V1="$(git -C "$REPO_WORK_DIR" rev-parse HEAD)"
 
 cp -R "$APP_TEMPLATE" "$APP_DIR"
 python3 - "$APP_DIR/uya.toml.in" "$APP_DIR/uya.toml" "$REPO_DIR" <<'PY'
@@ -45,15 +43,16 @@ PY
 grep -q "git-v1" "$RUN_LOG"
 grep -q "$COMMIT_V1" "$LOCK_FILE"
 
-python3 - "$REPO_DIR/src/file.uya" <<'PY'
+python3 - "$REPO_WORK_DIR/src/file.uya" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 path.write_text('export fn message_text() &byte {\n    return "git-v2" as &byte;\n}\n', encoding='utf-8')
 PY
-git -C "$REPO_DIR" add src/file.uya
-git -C "$REPO_DIR" commit -m "git v2" >/dev/null
-COMMIT_V2="$(git -C "$REPO_DIR" rev-parse HEAD)"
+git -C "$REPO_WORK_DIR" add src/file.uya
+git -C "$REPO_WORK_DIR" commit -m "git v2" >/dev/null
+git -C "$REPO_WORK_DIR" push origin stable >/dev/null
+COMMIT_V2="$(git -C "$REPO_WORK_DIR" rev-parse HEAD)"
 
 rm -rf "$APP_DIR/.uya/deps"
 "$COMPILER" build "$APP_DIR" -o "$OUT_BIN" --no-split-c >/dev/null 2>&1

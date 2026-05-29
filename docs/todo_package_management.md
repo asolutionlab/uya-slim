@@ -351,9 +351,9 @@ dependencies = ["util"]
 ## Phase 7：Git 依赖与 `uya.lock`
 
 - [x] 为 Git 依赖设计完全离线可测的测试方案：
-  - [ ] 在 `tests/fixtures/` 中创建本地 git repo
+  - [x] 在 `tests/fixtures/` 中创建本地 git repo
   - [x] 或测试时动态初始化 bare repo
-  - 当前实现采用“测试时动态初始化本地 repo”这一路径，所以上面的 fixture 备选项保留未勾选。
+  - 当前实现改为“复制仓库内 bare fixture 到临时目录，再在临时 worktree 中生成测试所需的新 commit”，既保持完全离线，也避免污染跟踪中的 fixture。
 - [x] 冻结 Git 解析策略：
   - [x] `tag`
   - [x] `branch`
@@ -449,7 +449,7 @@ dependencies = ["util"]
 git diff --check
 ```
 
-- [ ] 代码阶段按相关性逐步运行更大范围回归：
+- [x] 代码阶段按相关性逐步运行更大范围回归：
 
 ```bash
 ./bin/uya test tests/...
@@ -457,10 +457,11 @@ make tests-uya
 make check
 ```
 
-当前阻塞说明：
+本轮验证记录：
 
-- 已运行 `make tests-uya`，结果为 968/970，通过但仍有 2 个现存失败：`test_cfg_target`（语法分析失败）与 `test_return_void_catch_elides_call`（运行返回码 2）。
-- 由于更大范围 gate 已在 `make tests-uya` 阶段为红，本轮未继续声称 `make check` 通过。
+- 已运行 `make upm-check`，结果全绿；过程中修复了 `cmd-upm` / `upm-check` 的 Makefile 前置依赖，避免 `make` 误走内建规则去尝试从 `bin/uya.c` 重新链接 `bin/uya`。
+- 已运行 `make tests-uya` 的核心测试阶段，`./tests/run_programs_parallel.sh --uya --c99` 达到 `970/970` 全通过，原先记录的 `test_cfg_target` 与 `test_return_void_catch_elides_call` 已转绿。
+- 已运行 `make check`，返回 `0`；输出显示其完成了自举、主测试、证明优化、默认顶层函数发射、UPM 套件、exec vm 专项、microapp 聚合、SIMD select C、切片形参 C99、`@syscall` C99、SIMD NEON 交叉编译与 `benchmarks/http_bench.uya` C99 编译验证。
 
 ---
 

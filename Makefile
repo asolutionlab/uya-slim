@@ -550,12 +550,12 @@ bin/uya-upm-stage2: scripts/uya-upm-stage2.sh
 	@cp scripts/uya-upm-stage2.sh $@
 	@chmod +x $@
 
-bin/cmd/upm: src/cmd/upm/main.uya $(UYA_CMD_BOOTSTRAP_COMPILER)
+bin/cmd/upm: src/cmd/upm/main.uya uya
 	@mkdir -p bin/cmd
 	@echo "构建 cmd/upm ..."
 	@$(UYA_CMD_BOOTSTRAP_COMPILER) build $< -o $@ --no-split-c --project-root src/cmd/upm/
 
-bin/cmd/%: src/cmd/%/main.uya $(UYA_CMD_BOOTSTRAP_COMPILER)
+bin/cmd/%: src/cmd/%/main.uya uya
 	@mkdir -p bin/cmd
 	@echo "构建 cmd/$* ..."
 	@$(UYA_CMD_BOOTSTRAP_COMPILER) build $< -o $@ --no-split-c --project-root src/
