@@ -6,7 +6,7 @@ COMPILER="${UYA_COMPILER:-$ROOT_DIR/bin/uya-upm-stage2}"
 CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
 TMP_DIR="$(mktemp -d /tmp/uya_upm_git_ref_conflict.XXXXXX)"
 APP_TEMPLATE="$ROOT_DIR/tests/fixtures/upm/git_ref_conflict/app"
-REPO_TEMPLATE="$ROOT_DIR/tests/fixtures/upm/git_dep/repo_fixture.git"
+REPO_SEED="$ROOT_DIR/tests/fixtures/upm/git_dep/repo_seed"
 REPO_DIR="$TMP_DIR/repo.git"
 REPO_WORK_DIR="$TMP_DIR/repo-work"
 APP_DIR="$TMP_DIR/app"
@@ -18,12 +18,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+init_git_repo_fixture() {
+    git init --bare "$REPO_DIR" >/dev/null
+    git clone "$REPO_DIR" "$REPO_WORK_DIR" >/dev/null
+    git -C "$REPO_WORK_DIR" config user.email codex@example.com
+    git -C "$REPO_WORK_DIR" config user.name Codex
+    cp -R "$REPO_SEED/." "$REPO_WORK_DIR/"
+    git -C "$REPO_WORK_DIR" add uya.toml src/file.uya
+    git -C "$REPO_WORK_DIR" commit -m "git v1" >/dev/null
+    git -C "$REPO_WORK_DIR" branch -M stable
+    git -C "$REPO_WORK_DIR" tag v1.0.0
+    git -C "$REPO_WORK_DIR" push origin stable --tags >/dev/null
+    git --git-dir="$REPO_DIR" symbolic-ref HEAD refs/heads/stable
+}
+
 UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
 
-cp -R "$REPO_TEMPLATE" "$REPO_DIR"
-git clone "$REPO_DIR" "$REPO_WORK_DIR" >/dev/null
-git -C "$REPO_WORK_DIR" config user.email codex@example.com
-git -C "$REPO_WORK_DIR" config user.name Codex
+init_git_repo_fixture
 
 python3 - "$REPO_WORK_DIR/src/file.uya" <<'PY'
 from pathlib import Path
