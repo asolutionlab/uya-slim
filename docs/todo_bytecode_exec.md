@@ -846,7 +846,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 2026-05-23 已做第一轮 bytecode cache 评估（仅设计评估，未实现）：
   - 文件 hash：可直接基于最终 `file_list[]` 输入文件集合的文件内容做 hash；当前主流程已经在 `collect_module_dependencies(...)` 后拿到稳定输入列表
   - 模块依赖 hash：`collect_module_dependencies(...)` 已递归展开 `project_root/UYA_ROOT` 下的传递依赖，适合作为模块图层级的 cache key 输入，而不必再从 checker 结果反推
-  - checker 输出版本号：当前仓库只有 `main.uya` 里的编译器版本字符串 `v0.9.7`，还没有独立的 checker/exec IR schema version；若后续落缓存，应新增显式 `cache schema version`，不要只复用 `--version`
+  - checker 输出版本号：当前仓库只有 `main.uya` 里的编译器版本字符串 `v0.9.8`，还没有独立的 checker/exec IR schema version；若后续落缓存，应新增显式 `cache schema version`，不要只复用 `--version`
 - 这组数据只说明“跳过宿主工具链”方向正确，不代表已经完成系统化性能评估；后续仍需扩大样本并拆解 `Value` 拷贝、聚合值构造与 dispatch 热点
 
 ---

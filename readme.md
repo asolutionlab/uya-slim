@@ -323,14 +323,14 @@ fn increment(counter: *Counter) void {
 }
 ```
 
-## 当前状态（v0.9.7）
+## 当前状态（v0.9.8）
 
 - **自举编译器**：已完成自举，所有测试通过。编译器能编译自身，输出 C99 代码（默认多文件至 `.uyacache`，可用 `--no-split-c` 单文件）。
 - **开发模式**：仅维护 `src/` 目录的自举编译器。
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：在 **v0.9.5 microapp hosted 多平台真执行闭环** 基础上，当前为 **v0.9.7**：修复 interface + error-union lowering 的回归，补齐 `drop` 为“仅编译器自动插入”的语义，并让 union 自定义 `drop` 在用户体前自动清理当前活跃变体；同时同步 `src/README.md` 等文档口径，收掉过期的“代码生成阶段进行中”历史残留。
+- **最新特性**：在 **v0.9.7** 稳定主线基础上，当前 **v0.9.8** 已把 package mode / `uya upm`、`uya check` 与第一阶段 exec VM、`std.http.websocket`、`std.crypto.blake3`、unknown hosted runtime smoke、`@error_name` 与 microapp `required_caps` 自动推断一起收入口径，并同步加固 release/bootstrap、seed、C99 codegen 与线程路径。
 
 ## 文档
 
@@ -361,6 +361,6 @@ fn increment(counter: *Counter) void {
 
 ---
 
-**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.7**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.7.md](./docs/releases/RELEASE_v0.9.7.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
+**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.8**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.8.md](./docs/releases/RELEASE_v0.9.8.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目

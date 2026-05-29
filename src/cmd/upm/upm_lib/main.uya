@@ -1408,7 +1408,7 @@ fn upm_print_usage() void {
 }
 
 fn upm_print_version() void {
-    fprintf(libc.stdout, "upm draft (uya v0.9.7)\n" as *byte);
+    fprintf(libc.stdout, "upm draft (uya v0.9.8)\n" as *byte);
 }
 
 fn upm_guess_package_name_from_dir(dir_path: &byte, out: &byte, cap: usize) i32 {
