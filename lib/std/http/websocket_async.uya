@@ -153,7 +153,7 @@ fn websocket_fd_write_all_sync(fd: i32, data: &const byte, count: usize) !usize 
 /// 基于 fd 的 WebSocket transport。
 /// 参数说明：`fd` 为底层套接字；`owned != 0` 时 drop/close 会关闭该 fd。
 /// 返回值说明：无。
-export struct WebSocketFdTransport : AsyncReader, AsyncWriter {
+export struct WebSocketFdTransport : AsyncReader, AsyncWriter, WebSocketTransport {
     fd: i32,
     owned: i32,
     closed: i32 = 0,
@@ -202,6 +202,10 @@ export struct WebSocketFdTransport : AsyncReader, AsyncWriter {
         self.fd = -1;
     }
 
+    fn is_closed(self: &Self) bool {
+        return self.closed != 0 || self.fd < 0;
+    }
+
     fn drop(self: WebSocketFdTransport) void {
         if self.owned != 0 && self.closed == 0 && self.fd >= 0 {
             _ = sys_close(self.fd) catch {};
@@ -228,6 +232,8 @@ export fn websocket_fd_transport_borrowed(fd: i32) WebSocketFdTransport {
 /// 返回值说明：无。
 export struct WebSocketConn : AsyncWebSocketConn {
     io: WebSocketFdTransport,
+    tls_io: WebSocketTlsTransport,
+    use_tls: bool,
     role: WebSocketRole,
     auto_pong: bool,
     max_frame_size: usize,
@@ -291,21 +297,21 @@ export struct WebSocketConn : AsyncWebSocketConn {
     }
 
     fn borrow_fd(self: &Self) i32 {
-        return self.io.borrow_fd();
+        return websocket_conn_transport_borrow_fd(self);
     }
 
     fn take_fd(self: &Self) i32 {
-        return self.io.take_fd();
+        return websocket_conn_transport_take_fd(self);
     }
 
     fn close(self: &Self) void {
         self.closed = true;
-        self.io.close();
+        websocket_conn_transport_close(self);
     }
 
     fn drop(self: WebSocketConn) void {
         websocket_conn_queue_clear(&self);
-        self.io.close();
+        websocket_conn_transport_close(&self);
     }
 }
 
@@ -408,8 +414,51 @@ fn websocket_conn_queue_pop(self: &WebSocketConn) !WebSocketQueueItem {
     return item;
 }
 
+fn websocket_conn_transport_borrow_fd(self: &WebSocketConn) i32 {
+    if self.use_tls {
+        return self.tls_io.borrow_fd();
+    }
+    return self.io.borrow_fd();
+}
+
+fn websocket_conn_transport_take_fd(self: &WebSocketConn) i32 {
+    if self.use_tls {
+        return self.tls_io.take_fd();
+    }
+    return self.io.take_fd();
+}
+
+fn websocket_conn_transport_close(self: &WebSocketConn) void {
+    if self.use_tls {
+        self.tls_io.close();
+        return;
+    }
+    self.io.close();
+}
+
+fn websocket_conn_transport_is_closed(self: &WebSocketConn) bool {
+    if self.use_tls {
+        return self.tls_io.is_closed();
+    }
+    return self.io.is_closed();
+}
+
+fn websocket_conn_transport_read_exact(self: &WebSocketConn, buf: &byte, count: usize) Future<!usize> {
+    if self.use_tls {
+        return self.tls_io.read_exact(buf, count);
+    }
+    return self.io.read_exact(buf, count);
+}
+
+fn websocket_conn_transport_write_all(self: &WebSocketConn, data: &const byte, count: usize) Future<!usize> {
+    if self.use_tls {
+        return self.tls_io.write_all(data, count);
+    }
+    return self.io.write_all(data, count);
+}
+
 fn websocket_conn_can_write(self: &WebSocketConn, opcode: WebSocketOpcode) !void {
-    if self.closed || self.io.closed != 0 || self.io.fd < 0 {
+    if self.closed || websocket_conn_transport_is_closed(self) || websocket_conn_transport_borrow_fd(self) < 0 {
         return error.WebSocketConnectionClosed;
     }
     if (self.close_sent || self.close_received) && opcode != WebSocketOpcode.Close {
@@ -470,7 +519,7 @@ fn websocket_conn_read_frame_internal(self: &WebSocketConn, rx: &byte, rx_cap: u
         return error.WebSocketFrameTooLarge;
     }
 
-    const read_first: usize = try @await self.io.read_exact(rx, 2);
+    const read_first: usize = try @await websocket_conn_transport_read_exact(self, rx, 2);
     _ = read_first;
     const masked: bool = (rx[1] & (0x80 as byte)) != 0;
     const len7: usize = (rx[1] & (0x7f as byte)) as usize;
@@ -487,7 +536,7 @@ fn websocket_conn_read_frame_internal(self: &WebSocketConn, rx: &byte, rx_cap: u
         return error.WebSocketFrameTooLarge;
     }
     if header_extra > 0 {
-        const read_header: usize = try @await self.io.read_exact(rx + 2, header_extra);
+        const read_header: usize = try @await websocket_conn_transport_read_exact(self, rx + 2, header_extra);
         _ = read_header;
     }
 
@@ -497,7 +546,7 @@ fn websocket_conn_read_frame_internal(self: &WebSocketConn, rx: &byte, rx_cap: u
         return error.WebSocketFrameTooLarge;
     }
     if payload_len > 0 {
-        const read_payload: usize = try @await self.io.read_exact(rx + header_len, payload_len);
+        const read_payload: usize = try @await websocket_conn_transport_read_exact(self, rx + header_len, payload_len);
         _ = read_payload;
     }
     const total: usize = header_len + payload_len;
@@ -524,7 +573,7 @@ fn websocket_conn_read_frame_compact(self: &WebSocketConn, rx: &byte, rx_cap: us
         return error.WebSocketFrameTooLarge;
     }
 
-    const read_first: usize = try @await self.io.read_exact(rx, 2);
+    const read_first: usize = try @await websocket_conn_transport_read_exact(self, rx, 2);
     _ = read_first;
     const masked: bool = (rx[1] & (0x80 as byte)) != 0;
     const len7: usize = (rx[1] & (0x7f as byte)) as usize;
@@ -541,7 +590,7 @@ fn websocket_conn_read_frame_compact(self: &WebSocketConn, rx: &byte, rx_cap: us
         return error.WebSocketFrameTooLarge;
     }
     if header_extra > 0 {
-        const read_header: usize = try @await self.io.read_exact(rx + 2, header_extra);
+        const read_header: usize = try @await websocket_conn_transport_read_exact(self, rx + 2, header_extra);
         _ = read_header;
     }
 
@@ -551,7 +600,7 @@ fn websocket_conn_read_frame_compact(self: &WebSocketConn, rx: &byte, rx_cap: us
         return error.WebSocketFrameTooLarge;
     }
     if payload_len > 0 {
-        const read_payload: usize = try @await self.io.read_exact(rx + header_len, payload_len);
+        const read_payload: usize = try @await websocket_conn_transport_read_exact(self, rx + header_len, payload_len);
         _ = read_payload;
     }
 
@@ -784,7 +833,7 @@ export @async_fn fn websocket_conn_write_frame(self: &WebSocketConn, opcode: Web
         websocket_fill_mask_key(&mask[0]);
     }
     const frame_len: usize = try websocket_encode_frame_raw(self.role, true, opcode, payload, payload_len, mask, tx, tx_cap);
-    const wrote: usize = try @await self.io.write_all(tx as &const byte, frame_len);
+    const wrote: usize = try @await websocket_conn_transport_write_all(self, tx as &const byte, frame_len);
     _ = wrote;
     websocket_conn_mark_send(self, opcode);
     return frame_len;
@@ -834,7 +883,7 @@ export @async_fn fn websocket_conn_write_message(self: &WebSocketConn, opcode: W
             tx,
             tx_cap
         );
-        const wrote: usize = try @await self.io.write_all(tx as &const byte, frame_len);
+        const wrote: usize = try @await websocket_conn_transport_write_all(self, tx as &const byte, frame_len);
         _ = wrote;
         total_wire = total_wire + frame_len;
         sent_payload = sent_payload + chunk;
@@ -913,7 +962,8 @@ export @async_fn fn websocket_conn_flush_pending(self: &WebSocketConn) Future<!u
                 &tx[0],
                 4096
             );
-            _ = try websocket_fd_write_all_sync(self.io.fd, &tx[0] as &const byte, frame_len);
+            const wrote_one: usize = try @await websocket_conn_transport_write_all(self, &tx[0] as &const byte, frame_len);
+            _ = wrote_one;
             total_wire = total_wire + frame_len;
         } else {
             var sent_payload: usize = 0;
@@ -938,7 +988,8 @@ export @async_fn fn websocket_conn_flush_pending(self: &WebSocketConn) Future<!u
                     &tx[0],
                     4096
                 );
-                _ = try websocket_fd_write_all_sync(self.io.fd, &tx[0] as &const byte, frame_len);
+                const wrote_chunk: usize = try @await websocket_conn_transport_write_all(self, &tx[0] as &const byte, frame_len);
+                _ = wrote_chunk;
                 total_wire = total_wire + frame_len;
                 sent_payload = sent_payload + chunk;
                 current_opcode = WebSocketOpcode.Continuation;
@@ -951,7 +1002,7 @@ export @async_fn fn websocket_conn_flush_pending(self: &WebSocketConn) Future<!u
     return total_wire;
 }
 
-/// 由 transport 创建连接对象；此函数会接管 `io` 内 fd 所有权。
+/// 由 fd transport 创建连接对象；此函数会接管 `io` 内 fd 所有权。
 /// 参数说明：`io` 为已连接 transport，`role` 决定 mask 方向，`opts` 为连接策略。
 /// 返回值说明：返回持有 transport 与队列状态的 `WebSocketConn`。
 export fn websocket_conn_new(io: &WebSocketFdTransport, role: WebSocketRole, opts: &WebSocketAcceptOptions) WebSocketConn {
@@ -976,6 +1027,8 @@ export fn websocket_conn_new(io: &WebSocketFdTransport, role: WebSocketRole, opt
             owned: owned,
             closed: closed_fd,
         },
+        tls_io: WebSocketTlsTransport{ fd: -1, owned: 0, closed: 1 },
+        use_tls: false,
         role: role,
         auto_pong: opts.auto_pong,
         max_frame_size: opts.max_frame_size,
@@ -999,6 +1052,49 @@ export fn websocket_conn_new(io: &WebSocketFdTransport, role: WebSocketRole, opt
     };
 }
 
+/// 由 TLS transport 创建连接对象；此函数会接管 `io` 内 TLS 会话与 fd 所有权。
+/// 参数说明：`io` 为已准备好的 TLS transport，`role` 决定 mask 方向，`opts` 为连接策略。
+/// 返回值说明：返回持有 TLS transport 与队列状态的 `WebSocketConn`。
+export fn websocket_conn_new_tls(io: WebSocketTlsTransport, role: WebSocketRole, opts: &WebSocketAcceptOptions) WebSocketConn {
+    const alloc_ref: &MallocAllocator = get_allocator();
+    const alloc: IAllocator = *alloc_ref;
+    var queue_cap: i32 = opts.send_queue_capacity;
+    if queue_cap < 0 {
+        queue_cap = 0;
+    }
+    if queue_cap > WS_QUEUE_MAX_SLOTS {
+        queue_cap = WS_QUEUE_MAX_SLOTS;
+    }
+    var conn: WebSocketConn = WebSocketConn{
+        io: WebSocketFdTransport{ fd: -1, owned: 0, closed: 1 },
+        tls_io: io,
+        use_tls: true,
+        role: role,
+        auto_pong: opts.auto_pong,
+        max_frame_size: opts.max_frame_size,
+        max_message_size: opts.max_message_size,
+        heartbeat: opts.heartbeat,
+        last_activity_ms: websocket_now_ms_or_zero(),
+        last_ping_ms: 0u64,
+        last_pong_ms: 0u64,
+        waiting_pong: false,
+        close_sent: false,
+        close_received: false,
+        closed: false,
+        allocator: alloc,
+        queue_opcodes: [],
+        queue_payloads: [],
+        queue_lens: [],
+        queue_head: 0,
+        queue_len: 0,
+        queue_cap: queue_cap,
+        queue_enabled: queue_cap > 0,
+    };
+    conn.tls_io.ctx.hs = &conn.tls_io.hs;
+    conn.tls_io.ctx.rec = &conn.tls_io.rec;
+    return conn;
+}
+
 /// 创建一个空连接占位值，便于测试或后续覆盖赋值。
 /// 参数说明：无。
 /// 返回值说明：返回字段已初始化、但不绑定任何 fd 的空连接对象。
@@ -1007,6 +1103,8 @@ export fn websocket_conn_empty() WebSocketConn {
     const alloc: IAllocator = *alloc_ref;
     return WebSocketConn{
         io: WebSocketFdTransport{ fd: -1, owned: 0, closed: 1 },
+        tls_io: WebSocketTlsTransport{ fd: -1, owned: 0, closed: 1 },
+        use_tls: false,
         role: WebSocketRole.Server,
         auto_pong: true,
         max_frame_size: 65536,

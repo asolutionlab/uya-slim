@@ -5,7 +5,7 @@
 实现时遵循项目 TDD 流程：先添加测试 → 实现代码 → 运行相关快速验证。  
 新增测试优先覆盖纯协议层、loopback 集成和 `uyagin` upgrade 主链路。
 
-## 当前状态（截至 2026-05-13）
+## 当前状态（截至 2026-05-30）
 
 - 已完成并有测试覆盖：
   - Phase 1：公共类型与模块骨架（除 TLS / client / JSON 文件）
@@ -14,8 +14,8 @@
   - Phase 4：fd transport、async 会话主链路、continuation 聚合、auto pong、close 失败语义、最小 send queue / flush
 - 已完成并有测试覆盖：
   - Phase 5：`uyagin` upgrade 桥接、hijack 语义与主链路回归
+  - Phase 6：`WebSocketTlsTransport`、HTTPS -> WebSocket bridge 与最小 WSS loopback echo
 - 已明确但尚未开始：
-  - TLS / WSS
   - JSON helper
   - reconnect / heartbeat 主动任务
   - HTTP/2 RFC 8441 与 HTTP/3 / QUIC 路线
@@ -244,15 +244,15 @@
 
 ### 6.2 实现
 
-- [ ] 支持 HTTPS 上的 WebSocket handshake
-- [ ] 支持 TLS 连接上的 frame/message 读写
-- [ ] 确保 transport 生命周期与 close/drop 语义一致
+- [x] 支持 HTTPS 上的 WebSocket handshake
+- [x] 支持 TLS 连接上的 frame/message 读写
+- [x] 确保 transport 生命周期与 close/drop 语义一致
 
 ### 6.3 测试
 
-- [ ] 新增 `tests/test_https_websocket_loopback.uya`
-- [ ] 覆盖最小 WSS loopback handshake
-- [ ] 覆盖 TLS 下 echo roundtrip
+- [x] 新增 `tests/test_https_websocket_loopback.uya`
+- [x] 覆盖最小 WSS loopback handshake
+- [x] 覆盖 TLS 下 echo roundtrip
 
 ---
 

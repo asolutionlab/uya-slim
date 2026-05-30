@@ -1,18 +1,19 @@
 # Uya `std.http.websocket` 详细设计
 
 **版本**：v0.2
-**状态**：部分实现（协议层、async 会话核心与 `uyagin` bridge 已落地）
+**状态**：部分实现（协议层、async 会话核心、TLS / WSS 与 `uyagin` bridge 已落地）
 **定位**：放在 `std.http` 下的 WebSocket 能力层，优先服务 `uyagin`，同时保持可脱离框架单独复用
 
 **实现拆解**：见 [todo_http_websocket.md](./todo_http_websocket.md)
 
-**当前实现进度（截至 2026-05-13）**：
+**当前实现进度（截至 2026-05-30）**：
 
 - 已落地：
   - `websocket_types.uya`
   - `websocket_handshake.uya`
   - `websocket_frame.uya`
   - `websocket_async.uya`
+  - `websocket_tls.uya`
   - `uyagin_websocket.uya`
   - `std.crypto.sha1`
 - 已验证：
@@ -22,8 +23,8 @@
   - frame 编解码 / mask / continuation 基础规则
   - loopback async 会话收发、消息聚合、auto pong、close 失败语义、最小 send queue
   - `uyagin` route -> upgrade -> echo roundtrip / fallback / hijack 防呆
+  - HTTPS -> WebSocket upgrade / TLS transport / WSS loopback echo
 - 仍待实现：
-  - TLS / WSS
   - JSON helper
   - reconnect / heartbeat 主动任务
   - HTTP/2 RFC 8441 与 HTTP/3 / QUIC 路线
