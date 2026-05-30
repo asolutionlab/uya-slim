@@ -744,6 +744,19 @@ check: uya
 		exit 1; \
 	fi; \
 	echo ""; \
+	echo "验证结构体数组字段复制与 typed route 泛型回归..."; \
+	if ./tests/verify_c99_struct_array_and_typed_route_regressions.sh > /tmp/verify_out.txt 2>&1; then \
+		grep -E "ok$$|probe|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ 结构体数组字段 / typed route C99 回归验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
 	echo "验证 macOS hosted 单文件 seed extern 声明..."; \
 	if ./tests/verify_macos_hosted_seed_decls.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \

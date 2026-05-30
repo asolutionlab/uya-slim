@@ -2826,7 +2826,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         const field_type: &ASTNode = c99_find_struct_field_type(codegen, struct_decl, field_name);
                         if field_type != null && field_type.type == ASTNodeType.AST_TYPE_ARRAY {
                             const field_value: &ASTNode = init_expr.struct_init_field_values[i];
-                            if field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER {
+                            if c99_struct_array_field_memcpy_source(field_value) != null {
                                 struct_init_needs_memcpy = 1;
                                 break;
                             }
@@ -3418,9 +3418,9 @@ fn gen_var_decl_struct_init_memcpy(codegen: &C99CodeGenerator, var_name: &byte, 
         
         fprintf(codegen.emit_stream as *void, ".%s = " as *byte, safe_field_name as *byte);
         
-        // 如果是数组字段且初始化值是标识符，使用空初始化（后续用memcpy填充）；元素为聚合用 {{0}}，否则 {0}
+        // 如果是数组字段且初始化值需要 memcpy，使用空初始化（后续用memcpy填充）；元素为聚合用 {{0}}，否则 {0}
         if field_type != null && field_type.type == ASTNodeType.AST_TYPE_ARRAY && 
-            field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER {
+            c99_struct_array_field_memcpy_source(field_value) != null {
             if array_element_is_aggregate_c99(codegen, field_type) != 0 {
                 fputs("{{0}}" as *byte, codegen.emit_stream as *void);
             } else {
@@ -3445,7 +3445,7 @@ fn gen_var_decl_struct_init_memcpy(codegen: &C99CodeGenerator, var_name: &byte, 
         const field_value: &ASTNode = init_expr.struct_init_field_values[i];
         
         if field_type != null && field_type.type == ASTNodeType.AST_TYPE_ARRAY && 
-            field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER {
+            c99_struct_array_field_memcpy_source(field_value) != null {
             const safe_field_name: &byte = get_safe_c_identifier(codegen, field_name);
             c99_emit_indent(codegen);
             fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s.%s, " as *byte, var_name as *byte, safe_field_name as *byte);

@@ -1600,6 +1600,48 @@ fn get_method_c_name(codegen: &C99CodeGenerator, struct_name: &byte, method_name
     return buf;
 }
 
+fn get_mono_method_c_name(codegen: &C99CodeGenerator, struct_name: &byte, method_name: &byte,
+    type_args: & & ASTNode, type_arg_count: i32) &byte {
+    if codegen == null || struct_name == null || method_name == null {
+        return null;
+    }
+    if type_args == null || type_arg_count <= 0 {
+        return get_method_c_name(codegen, struct_name, method_name);
+    }
+
+    var suffix: [byte: C99_SUFFIX_BUF_SIZE] = [0: C99_SUFFIX_BUF_SIZE];
+    var suffix_len: i32 = 0;
+    var i: i32 = 0;
+    while i < type_arg_count {
+        if i > 0 {
+            if suffix_len >= 0 && suffix_len < C99_SUFFIX_BUF_SIZE {
+                suffix[suffix_len] = 95 as byte;
+            }
+            suffix_len = suffix_len + 1;
+        }
+        suffix_len = append_type_arg_suffix(codegen, type_args[i], &suffix[0], suffix_len, C99_SUFFIX_BUF_SIZE);
+        i = i + 1;
+    }
+    if suffix_len >= 0 && suffix_len < C99_SUFFIX_BUF_SIZE {
+        suffix[suffix_len] = 0;
+    }
+    normalize_redundant_err_suffix(&suffix[0] as &byte);
+
+    const safe_s: &byte = get_safe_c_identifier(codegen, struct_name);
+    const safe_m: &byte = get_safe_c_identifier(codegen, method_name);
+    if safe_s == null || safe_m == null {
+        return null;
+    }
+
+    const len: i32 = 5 + strlen(safe_s as *byte) + 1 + strlen(safe_m as *byte) + 1 + strlen(&suffix[0]) + 1;
+    const buf: &byte = compiler_arena_alloc(codegen.arena, len as usize) as &byte;
+    if buf == null {
+        return null;
+    }
+    snprintf(buf as *byte, len, "uya_%s_%s_%s" as *byte, safe_s as *byte, safe_m as *byte, &suffix[0] as *byte);
+    return buf;
+}
+
 // 检查接口是否是泛型接口（有类型参数）
 fn is_generic_interface_c99(iface_decl: &ASTNode) i32 {
     if iface_decl == null || iface_decl.type != ASTNodeType.AST_INTERFACE_DECL {

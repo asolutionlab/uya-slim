@@ -7151,20 +7151,8 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
     }
     
     const method_name: &byte = fn_decl.fn_decl_name;
-    
-    // 构建单态化方法名
-    var mono_name_buf: [byte: C99_TYPE_ARG_BUF_SIZE] = [];
-    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "uya_%s_%s" as *byte, struct_name as *byte, method_name as *byte);
-    var ti: i32 = 0;
-    while ti < type_arg_count && pos < C99_TYPE_ARG_BUF_LIMIT {
-        pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "_" as *byte);
-        const type_arg: &ASTNode = type_args[ti];
-        if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
-            pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "%s" as *byte, type_arg.type_named_name as *byte);
-        }
-        ti = ti + 1;
-    }
-    const mono_method_name: &byte = get_safe_c_identifier(codegen, &mono_name_buf[0]);
+    const mono_method_name: &byte = get_mono_method_c_name(codegen, struct_name, method_name,
+        type_args, type_arg_count);
     
     // 保存方法的类型参数上下文
     const saved_type_params: &TypeParam = codegen.current_type_params;
@@ -7232,20 +7220,8 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     }
     
     const method_name: &byte = fn_decl.fn_decl_name;
-    
-    // 构建单态化方法名
-    var mono_name_buf: [byte: C99_TYPE_ARG_BUF_SIZE] = [];
-    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "uya_%s_%s" as *byte, struct_name as *byte, method_name as *byte);
-    var ti: i32 = 0;
-    while ti < type_arg_count && pos < C99_TYPE_ARG_BUF_LIMIT {
-        pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "_" as *byte);
-        const type_arg: &ASTNode = type_args[ti];
-        if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
-            pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "%s" as *byte, type_arg.type_named_name as *byte);
-        }
-        ti = ti + 1;
-    }
-    const mono_method_name: &byte = get_safe_c_identifier(codegen, &mono_name_buf[0]);
+    const mono_method_name: &byte = get_mono_method_c_name(codegen, struct_name, method_name,
+        type_args, type_arg_count);
     
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const params: & & ASTNode = fn_decl.fn_decl_params;

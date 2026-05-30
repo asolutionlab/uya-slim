@@ -828,6 +828,66 @@ fn c99_codegen_ensure_mono_function(codegen: &C99CodeGenerator, generic_name: &b
     codegen.mono_instance_count = codegen.mono_instance_count + 1;
 }
 
+fn c99_codegen_ensure_mono_method(codegen: &C99CodeGenerator, owner_name: &byte, method_name: &byte,
+    type_args: & & ASTNode, type_arg_count: i32) void {
+    if codegen == null || owner_name == null || method_name == null || type_args == null || type_arg_count <= 0 {
+        return;
+    }
+    var inst_name_buf: [byte: NAME_BUF_SIZE] = [];
+    var pos: i32 = snprintf(&inst_name_buf[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte,
+        owner_name as *byte, method_name as *byte);
+    var i: i32 = 0;
+    while i < type_arg_count && pos < NAME_BUF_SIZE - 2 {
+        pos = pos + snprintf(&inst_name_buf[pos] as *byte, NAME_BUF_SIZE - pos, "_" as *byte);
+        pos = append_type_arg_suffix(codegen, type_args[i], &inst_name_buf[0], pos, NAME_BUF_SIZE);
+        i = i + 1;
+    }
+    if pos >= 0 && pos < NAME_BUF_SIZE {
+        inst_name_buf[pos] = 0;
+    } else {
+        inst_name_buf[NAME_BUF_SIZE - 1] = 0;
+    }
+
+    i = 0;
+    while i < codegen.mono_instance_count {
+        const inst: MonoInstanceCodegen = codegen.mono_instances[i];
+        if inst.is_function != 0 && inst.generic_name != null &&
+            strcmp(inst.generic_name as *byte, &inst_name_buf[0] as *byte) == 0 &&
+            c99_codegen_mono_type_args_match(codegen, inst.type_args, inst.type_arg_count, type_args, type_arg_count) != 0 {
+            codegen.reachable_mono_instances[i] = 1;
+            return;
+        }
+        i = i + 1;
+    }
+    if codegen.mono_instance_count >= C99_MAX_MONO_INSTANCES {
+        return;
+    }
+    const args_copy: & & ASTNode = compiler_arena_alloc(codegen.arena, (@size_of(&ASTNode) * (type_arg_count as usize))) as & & ASTNode;
+    if args_copy == null {
+        return;
+    }
+    var ai: i32 = 0;
+    while ai < type_arg_count {
+        args_copy[ai] = type_args[ai];
+        ai = ai + 1;
+    }
+    const generic_name_copy: &byte = compiler_arena_alloc(codegen.arena, (strlen(&inst_name_buf[0] as *byte) + 1) as usize) as &byte;
+    if generic_name_copy == null {
+        return;
+    }
+    strcpy(generic_name_copy as *byte, &inst_name_buf[0] as *byte);
+    const idx_u: usize = codegen.mono_instance_count as usize;
+    if idx_u >= C99_MAX_MONO_INSTANCES as usize {
+        return;
+    }
+    codegen.mono_instances[idx_u].generic_name = generic_name_copy;
+    codegen.mono_instances[idx_u].is_function = 1;
+    codegen.mono_instances[idx_u].type_arg_count = type_arg_count;
+    codegen.mono_instances[idx_u].type_args = args_copy;
+    codegen.reachable_mono_instances[idx_u] = 1;
+    codegen.mono_instance_count = codegen.mono_instance_count + 1;
+}
+
 fn c99_collect_nested_mono_calls_from_ast(codegen: &C99CodeGenerator, node: &ASTNode, type_params: &TypeParam, type_param_count: i32, mono_type_args: & & ASTNode, mono_type_arg_count: i32) void {
     if codegen == null || node == null {
         return;
@@ -845,6 +905,47 @@ fn c99_collect_nested_mono_calls_from_ast(codegen: &C99CodeGenerator, node: &AST
                     ti = ti + 1;
                 }
                 c99_codegen_ensure_mono_function(codegen, callee.identifier_name, subst_args, node.call_expr_type_arg_count);
+            }
+        } else if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+            callee.member_access_object != null && callee.member_access_field_name != null &&
+            node.call_expr_type_arg_count > 0 && node.call_expr_type_args != null &&
+            codegen.checker != null {
+            const subst_args: & & ASTNode = compiler_arena_alloc(codegen.arena, (@size_of(&ASTNode) * (node.call_expr_type_arg_count as usize))) as & & ASTNode;
+            if subst_args != null {
+                var ti2: i32 = 0;
+                while ti2 < node.call_expr_type_arg_count {
+                    subst_args[ti2] = substitute_type_arg_explicit(codegen, node.call_expr_type_args[ti2], type_params, mono_type_args, mono_type_arg_count);
+                    ti2 = ti2 + 1;
+                }
+                var owner_name_from_ctx: &byte = null;
+                if callee.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
+                    callee.member_access_object.identifier_name != null &&
+                    strcmp(callee.member_access_object.identifier_name as *byte, "self" as *byte) == 0 &&
+                    codegen.current_method_struct_name != null {
+                    owner_name_from_ctx = codegen.current_method_struct_name;
+                }
+                if owner_name_from_ctx != null {
+                    c99_codegen_ensure_mono_method(codegen, owner_name_from_ctx, callee.member_access_field_name,
+                        subst_args, node.call_expr_type_arg_count);
+                } else {
+                    var owner_type: Type = checker_infer_type(codegen.checker, callee.member_access_object);
+                    if owner_type.kind == TypeKind.TYPE_POINTER && owner_type.pointer_to != null {
+                        owner_type = owner_type.pointer_to[0];
+                    }
+                    if owner_type.kind == TypeKind.TYPE_STRUCT {
+                        const owner_struct_name: &byte = c99_mono_owner_name_from_struct_type(codegen, &owner_type, node.line, node.column, node.filename);
+                        if owner_struct_name != null {
+                            c99_codegen_ensure_mono_method(codegen, owner_struct_name, callee.member_access_field_name,
+                                subst_args, node.call_expr_type_arg_count);
+                        }
+                    } else if owner_type.kind == TypeKind.TYPE_UNION {
+                        const owner_union_name: &byte = c99_mono_owner_name_from_union_type(codegen, &owner_type, node.line, node.column, node.filename);
+                        if owner_union_name != null {
+                            c99_codegen_ensure_mono_method(codegen, owner_union_name, callee.member_access_field_name,
+                                subst_args, node.call_expr_type_arg_count);
+                        }
+                    }
+                }
             }
         }
         c99_collect_nested_mono_calls_from_ast(codegen, node.call_expr_callee, type_params, type_param_count, mono_type_args, mono_type_arg_count);
@@ -3804,7 +3905,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             di2 = di2 + 1;
         }
         var mj: i32 = 0;
-        while mj < codegen.mono_instance_count {
+        while mj < codegen.mono_instance_count && mj < @len(codegen.mono_instances) {
             if codegen.mono_instances[mj].generic_name != null && codegen.mono_instances[mj].is_function != 0 {
                 if c99_mono_name_is_future_ready_helper(codegen.mono_instances[mj].generic_name) != 0 {
                     c99_codegen_ensure_mono_function(codegen, "poll_ready_ok" as &byte,
@@ -3829,13 +3930,60 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             mj = mj + 1;
         }
+        var nested_method_changed: i32 = 1;
+        while nested_method_changed != 0 {
+            nested_method_changed = 0;
+            const before_nested_method_count: i32 = codegen.mono_instance_count;
+            var smi: i32 = 0;
+            while smi < decl_count {
+                const struct_decl_nested: &ASTNode = ast.program_decls[smi];
+                if struct_decl_nested != null && struct_decl_nested.type == ASTNodeType.AST_STRUCT_DECL &&
+                    is_generic_struct_c99(struct_decl_nested) == 0 &&
+                    struct_decl_nested.struct_decl_methods != null {
+                    var smj: i32 = 0;
+                    while smj < struct_decl_nested.struct_decl_method_count {
+                        const method_decl: &ASTNode = struct_decl_nested.struct_decl_methods[smj];
+                        if method_decl != null && method_decl.type == ASTNodeType.AST_FN_DECL &&
+                            method_decl.fn_decl_body != null && method_decl.fn_decl_type_param_count > 0 {
+                            var smk: i32 = 0;
+                            var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                            const prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte,
+                                struct_decl_nested.struct_decl_name as *byte, method_decl.fn_decl_name as *byte);
+                            while smk < codegen.mono_instance_count {
+                                const mono_inst_smk: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, smk);
+                                if mono_inst_smk == null {
+                                    break;
+                                }
+                                if mono_inst_smk.generic_name != null &&
+                                    mono_inst_smk.is_function != 0 &&
+                                    strncmp(mono_inst_smk.generic_name as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 &&
+                                    has_unresolved_mono_type_args(method_decl, mono_inst_smk.type_args, mono_inst_smk.type_arg_count) == 0 {
+                                    const saved_method_owner: &byte = codegen.current_method_struct_name;
+                                    codegen.current_method_struct_name = struct_decl_nested.struct_decl_name;
+                                    c99_collect_nested_mono_calls_from_ast(codegen, method_decl.fn_decl_body,
+                                        method_decl.fn_decl_type_params, method_decl.fn_decl_type_param_count,
+                                        mono_inst_smk.type_args, mono_inst_smk.type_arg_count);
+                                    codegen.current_method_struct_name = saved_method_owner;
+                                }
+                                smk = smk + 1;
+                            }
+                        }
+                        smj = smj + 1;
+                    }
+                }
+                smi = smi + 1;
+            }
+            if codegen.mono_instance_count > before_nested_method_count {
+                nested_method_changed = 1;
+            }
+        }
     }
     
     // 第六步 e：收集所有单态化函数和方法签名（返回/参数）中的错误联合结构体
     // 必须在生成单态化函数原型之前收集
     {
         var j: i32 = 0;
-        while j < codegen.mono_instance_count {
+        while j < codegen.mono_instance_count && j < @len(codegen.mono_instances) {
             if codegen.mono_instances[j].generic_name != null && codegen.mono_instances[j].is_function != 0 {
                 const gn: &byte = codegen.mono_instances[j].generic_name;
                 // 首先检查是否是普通泛型函数
@@ -3915,7 +4063,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 第六步 e1：收集泛型结构体单态化实例的方法签名（返回/参数）中的错误联合与接口类型
     {
         var mi: i32 = 0;
-        while mi < codegen.mono_instance_count {
+        while mi < codegen.mono_instance_count && mi < @len(codegen.mono_instances) {
             if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function == 0 {
                 var di: i32 = 0;
                 while di < decl_count {
@@ -3997,7 +4145,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
                 if is_generic_function_c99(decl) != 0 {
                     j = 0;
-                    while j < codegen.mono_instance_count {
+                    while j < codegen.mono_instance_count && j < @len(codegen.mono_instances) {
                         if codegen.mono_instances[j].generic_name != null &&
                             c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[j].generic_name, decl) != 0 &&
                             codegen.mono_instances[j].is_function != 0 &&
@@ -4059,7 +4207,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             if is_generic_function_c99(decl) != 0 {
                 const fn_name: &byte = decl.fn_decl_name;
                 var j: i32 = 0;
-                while j < codegen.mono_instance_count {
+                while j < codegen.mono_instance_count && j < @len(codegen.mono_instances) {
                     if codegen.mono_instances[j].generic_name != null &&
                         c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[j].generic_name, decl) != 0 &&
                         codegen.mono_instances[j].is_function != 0 &&
@@ -4091,16 +4239,20 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             // 泛型方法：为每个单态化实例生成原型
                             var k: i32 = 0;
                             while k < codegen.mono_instance_count {
-                                if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
+                                const mono_inst: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, k);
+                                if mono_inst == null {
+                                    break;
+                                }
+                                if mono_inst.generic_name != null && mono_inst.is_function != 0 {
                                     // 检查单态化实例名称是否匹配 "TypeName_method_name" 格式
                                     var expected_prefix: [byte: NAME_BUF_SIZE] = [];
                                     var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, type_name as *byte, m.fn_decl_name as *byte);
                                     
-                                    const gn: &byte = codegen.mono_instances[k].generic_name;
+                                    const gn: &byte = mono_inst.generic_name;
                                     if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                         gen_mono_method_prototype(codegen, m, type_name,
-                                            codegen.mono_instances[k].type_args,
-                                            codegen.mono_instances[k].type_arg_count);
+                                            mono_inst.type_args,
+                                            mono_inst.type_arg_count);
                                     }
                                 }
                                 k = k + 1;
@@ -4119,7 +4271,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             // 跳过泛型结构体模板的内部方法，为单态化实例生成方法原型
             if is_generic_struct_c99(decl) != 0 {
                 var k: i32 = 0;
-                while k < codegen.mono_instance_count {
+                while k < codegen.mono_instance_count && k < @len(codegen.mono_instances) {
                     if codegen.mono_instances[k].generic_name != null &&
                         strcmp(codegen.mono_instances[k].generic_name as *byte, struct_name as *byte) == 0 &&
                         codegen.mono_instances[k].is_function == 0 {
@@ -4149,7 +4301,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                     if m.fn_decl_type_param_count > 0 {
                                         // 为泛型方法生成单态化原型
                                         var mi: i32 = 0;
-                                        while mi < codegen.mono_instance_count {
+                                        while mi < codegen.mono_instance_count && mi < @len(codegen.mono_instances) {
                                             if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function != 0 {
                                                 // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
                                                 var expected_prefix: [byte: NAME_BUF_SIZE] = [];
@@ -4193,13 +4345,17 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             const prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
                             var k: i32 = 0;
                             while k < codegen.mono_instance_count {
-                                if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
+                                const mono_inst_k: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, k);
+                                if mono_inst_k == null {
+                                    break;
+                                }
+                                if mono_inst_k.generic_name != null && mono_inst_k.is_function != 0 {
                                     // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                    const gn: &byte = codegen.mono_instances[k].generic_name;
+                                    const gn: &byte = mono_inst_k.generic_name;
                                     if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                         gen_mono_method_prototype(codegen, m, struct_name,
-                                            codegen.mono_instances[k].type_args,
-                                            codegen.mono_instances[k].type_arg_count);
+                                            mono_inst_k.type_args,
+                                            mono_inst_k.type_arg_count);
                                     }
                                 }
                                 k = k + 1;
@@ -4363,17 +4519,21 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 if is_generic_struct_c99(decl) != 0 {
                     var k: i32 = 0;
                     while k < codegen.mono_instance_count {
-                        if codegen.mono_instances[k].generic_name != null &&
-                            strcmp(codegen.mono_instances[k].generic_name as *byte, struct_name as *byte) == 0 &&
-                            codegen.mono_instances[k].is_function == 0 {
+                        const mono_inst_k2: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, k);
+                        if mono_inst_k2 == null {
+                            break;
+                        }
+                        if mono_inst_k2.generic_name != null &&
+                            strcmp(mono_inst_k2.generic_name as *byte, struct_name as *byte) == 0 &&
+                            mono_inst_k2.is_function == 0 {
                             // 跳过包含未解析类型参数的实例
                             if has_unresolved_mono_type_args(decl,
-                                codegen.mono_instances[k].type_args,
-                                codegen.mono_instances[k].type_arg_count) == 0 {
+                                mono_inst_k2.type_args,
+                                mono_inst_k2.type_arg_count) == 0 {
                                 // 为该单态化实例生成方法定义
                                 const mono_name: &byte = get_mono_struct_name(codegen, struct_name,
-                                    codegen.mono_instances[k].type_args,
-                                    codegen.mono_instances[k].type_arg_count);
+                                    mono_inst_k2.type_args,
+                                    mono_inst_k2.type_arg_count);
                                 // 设置结构体的类型参数上下文（用于二级查找）
                                 const saved_stp: &TypeParam = codegen.struct_type_params;
                                 const saved_stpc: i32 = codegen.struct_type_param_count;
@@ -4381,8 +4541,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 const saved_stac: i32 = codegen.struct_type_arg_count;
                                 codegen.struct_type_params = decl.struct_decl_type_params;
                                 codegen.struct_type_param_count = decl.struct_decl_type_param_count;
-                                codegen.struct_type_args = codegen.mono_instances[k].type_args;
-                                codegen.struct_type_arg_count = codegen.mono_instances[k].type_arg_count;
+                                codegen.struct_type_args = mono_inst_k2.type_args;
+                                codegen.struct_type_arg_count = mono_inst_k2.type_arg_count;
                                 
                                 var j: i32 = 0;
                                 while j < decl.struct_decl_method_count {
@@ -4397,13 +4557,17 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                             // 为泛型方法生成单态化定义
                                             var mi: i32 = 0;
                                             while mi < codegen.mono_instance_count {
-                                                if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function != 0 {
+                                                const mono_inst_mi: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, mi);
+                                                if mono_inst_mi == null {
+                                                    break;
+                                                }
+                                                if mono_inst_mi.generic_name != null && mono_inst_mi.is_function != 0 {
                                                     // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                                    const gn: &byte = codegen.mono_instances[mi].generic_name;
+                                                    const gn: &byte = mono_inst_mi.generic_name;
                                                     if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                                         gen_mono_method_function(codegen, m, mono_name,
-                                                            codegen.mono_instances[mi].type_args,
-                                                            codegen.mono_instances[mi].type_arg_count);
+                                                            mono_inst_mi.type_args,
+                                                            mono_inst_mi.type_arg_count);
                                                         c99_emit_newline(codegen);
                                                     }
                                                 }
@@ -4441,13 +4605,17 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 // 泛型方法：为每个单态化实例生成定义
                                 var k: i32 = 0;
                                 while k < codegen.mono_instance_count {
-                                    if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
+                                    const mono_inst_k3: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, k);
+                                    if mono_inst_k3 == null {
+                                        break;
+                                    }
+                                    if mono_inst_k3.generic_name != null && mono_inst_k3.is_function != 0 {
                                         // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                        const gn: &byte = codegen.mono_instances[k].generic_name;
+                                        const gn: &byte = mono_inst_k3.generic_name;
                                         if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                             gen_mono_method_function(codegen, m, struct_name,
-                                                codegen.mono_instances[k].type_args,
-                                                codegen.mono_instances[k].type_arg_count);
+                                                mono_inst_k3.type_args,
+                                                mono_inst_k3.type_arg_count);
                                             c99_emit_newline(codegen);
                                         }
                                     }
@@ -4499,7 +4667,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     // 跳过泛型函数模板，为单态化实例生成定义（跳过未解析类型参数如 T、void）
                     if is_generic_function_c99(decl) != 0 {
                         var j: i32 = 0;
-                        while j < codegen.mono_instance_count {
+                        while j < codegen.mono_instance_count && j < @len(codegen.mono_instances) {
                             if codegen.mono_instances[j].generic_name != null &&
                                 c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[j].generic_name, decl) != 0 &&
                                 codegen.mono_instances[j].is_function != 0 &&
@@ -4536,18 +4704,22 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 // 泛型方法：为每个单态化实例生成代码
                                 var k: i32 = 0;
                                 while k < codegen.mono_instance_count {
-                                    if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
+                                    const mono_inst_k4: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, k);
+                                    if mono_inst_k4 == null {
+                                        break;
+                                    }
+                                    if mono_inst_k4.generic_name != null && mono_inst_k4.is_function != 0 {
                                         // 检查单态化实例名称是否匹配 "TypeName_method_name" 格式
                                         var expected_prefix: [byte: NAME_BUF_SIZE] = [];
                                         var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, type_name as *byte, m.fn_decl_name as *byte);
                                         
                                         // 检查 generic_name 是否以 expected_prefix 开头
-                                        const gn: &byte = codegen.mono_instances[k].generic_name;
+                                        const gn: &byte = mono_inst_k4.generic_name;
                                         if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                             // 找到匹配的单态化实例，生成方法代码
                                             gen_mono_method_function(codegen, m, type_name,
-                                                codegen.mono_instances[k].type_args,
-                                                codegen.mono_instances[k].type_arg_count);
+                                                mono_inst_k4.type_args,
+                                                mono_inst_k4.type_arg_count);
                                             c99_emit_newline(codegen);
                                         }
                                     }
