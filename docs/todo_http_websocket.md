@@ -260,21 +260,21 @@
 
 ### 7.1 API 设计
 
-- [ ] 设计文本消息与 JSON 的关系：限定 text opcode 还是允许调用方自行指定
-- [ ] 确定依赖现有 `std.json` 的 encoder / value / decoder 形式
+- [x] 设计文本消息与 JSON 的关系：限定 text opcode 还是允许调用方自行指定
+- [x] 确定依赖现有 `std.json` 的 encoder / value / decoder 形式
 
 ### 7.2 实现
 
 - [ ] 提供 `write_json(...)` 一类高层方法
-- [ ] 提供 `read_json(...)` 或 “读 text + decode” 辅助方法
-- [ ] 明确解码失败错误映射
+- [x] 提供 `read_json(...)` 或 “读 text + decode” 辅助方法
+- [x] 明确解码失败错误映射
 
 ### 7.3 测试
 
-- [ ] 新增 `tests/test_http_websocket_json.uya`
-- [ ] 覆盖 struct -> JSON -> text frame
-- [ ] 覆盖 text frame -> JSON decode
-- [ ] 覆盖非法 JSON 错误路径
+- [x] 新增 `tests/test_http_websocket_json.uya`
+- [x] 覆盖 struct -> JSON -> text frame
+- [x] 覆盖 text frame -> JSON decode
+- [x] 覆盖非法 JSON 错误路径
 
 ---
 

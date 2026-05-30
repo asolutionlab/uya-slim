@@ -544,6 +544,40 @@ _ = try @await ws.flush_pending();
 - `read_frame` 不隐藏控制帧
 - 由调用方决定如何处理
 
+### 7.4 Phase 7 JSON helper 决策（2026-05-30）
+
+Phase 7 的 JSON helper 先收敛成“**JSON = text message 的高层便利层**”，而不是再引入第二套 message opcode 语义：
+
+- `websocket_json_decode_value(...)` 只接受 `Text` 消息；若读到任意非 `Text` opcode，返回 `error.WebSocketProtocolError`
+- 若业务明确需要 binary JSON、压缩 JSON 或自定义 envelope，不走 helper，直接用 `std.json` + `write_message(...)`
+
+这样做的原因：
+
+- RFC 语义和大多数现有生态默认把 JSON 放进 text frame
+- helper 的目标是减少业务样板，而不是把“payload 格式”和“opcode 策略”重新抽象一层
+- 保持 `write_message(...)` 作为唯一“调用方自行指定 opcode”的入口，避免 helper API 发生重复分叉
+
+与现有 `std.json` 的衔接也明确收敛为两条固定路径：
+
+- **typed path**：当前先保留 `to_json<T>(arena, value) + write_message(Text, ...)` 直连用法；库内再包装成 typed `write_json<T>` helper 仍受当前编译器泛型单态化限制约束
+- **value path**：`write_json_value(...)` 使用 `std.json.encoder.encode(arena, &value)`；raw `JsonValue` 解码提供同步 `websocket_json_decode_value(...)`，给调用方在 `read_message(...)` 之后复用
+
+当前实现额外遵守一条编译器收敛约束：
+
+- 由于当前编译器在 “`Future<!union>` 返回值” 与“库内再包装 `to_json<T>` / `from_json<T>` 泛型 helper”路径上仍有 lowering / 单态化风险，Phase 7 当前不额外提供 typed `read_json<T>` / `write_json<T>` 包装
+- 需要 JSON 读取时，优先走 “`read_message(...)` -> `websocket_json_decode_value(...)`” 两步链路；业务若要落到结构体，再基于 `JsonValue` 做现有 `std.json` 风格提取
+
+错误映射保持“WebSocket 错误与 JSON 错误分层可见”：
+
+- transport / frame / message 层错误原样透传，例如 `WebSocketConnectionClosed`、`WebSocketMessageTooLarge`
+- 非 `Text` 消息走 JSON decode helper 时返回 `error.WebSocketProtocolError`
+- JSON 解析与类型解码失败时，保留 `std.json.errors` 原始错误，例如 `UnexpectedToken`、`UnexpectedEof`、`WrongType`、`MissingField`
+
+这意味着：
+
+- 业务层可以用单个 `catch` 处理“不是 JSON 消息”
+- 也可以按 `std.json.errors` 精细区分“payload 不是合法 JSON”与“JSON 合法但结构不匹配”
+
 ## 8. frame 编码与解析策略
 
 ### 8.1 编码函数
@@ -934,6 +968,9 @@ export fn websocket_build_upgrade_response(out: &byte, out_cap: usize, accept: &
 export fn websocket_accept_from_http(fd: i32, req: &Request, options: &WebSocketAcceptOptions) !WebSocketConn;
 
 export @async_fn fn uyagin_websocket_upgrade(ctx: &GinContext, options: &WebSocketAcceptOptions) Future<!WebSocketConn>;
+
+export fn websocket_conn_write_json_value(self: &WebSocketConn, arena: &Arena, value: &JsonValue, tx: &byte, tx_cap: usize) Future<!usize>;
+export fn websocket_json_decode_value(arena: &Arena, opcode: WebSocketOpcode, msg: &byte, msg_len: usize) !JsonValue;
 ```
 
 ## 17. 关键决策
