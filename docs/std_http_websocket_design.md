@@ -264,6 +264,7 @@ export struct WebSocketAcceptOptions {
 - `max_frame_size` 与 `max_message_size` 分开，便于后续做聚合消息限制。
 - `send_queue_capacity` 控制连接内 owned queue 容量；当前实现还会再被固定上限 32 截断。
 - `heartbeat` 当前已进入配置结构，但主动定时任务仍待补。
+- Phase 8 的收敛方向明确为“**外部调度驱动的主动任务**”：连接对象负责保存 `last_activity_ms / last_ping_ms / last_pong_ms / waiting_pong` 等状态，`read_* / write_*` 路径只做时间戳更新与被动 `auto_pong`，不在业务读写函数内部隐式 sleep / 轮询定时器。
 
 ### 4.5 连接状态结构体
 
