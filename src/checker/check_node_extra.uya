@@ -261,16 +261,17 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
             // 类型推断失败：放宽检查，允许通过（不报错）
             // 这在编译器自举时很常见，因为类型推断可能失败（如 for 循环变量）
             // 允许解引用赋值，但不进行严格的类型检查
+            dest_type = make_void_type();
         } else if operand_type.pointer_to == null {
             // 指针类型无效（可能是 void 指针）
             // 对于 void 指针，不允许解引用赋值（类型不明确）
             checker_report_error(checker, dest, "不能对 void 指针进行解引用赋值" as *byte);
             return 0;
+        } else {
+            // 解引用表达式的类型是指针指向的类型
+            // 注意：Uya 不支持指针解引用，需要使用数组访问
+            dest_type = operand_type.pointer_to[0];
         }
-        
-        // 解引用表达式的类型是指针指向的类型
-        // 注意：Uya 不支持指针解引用，需要使用数组访问
-        dest_type = operand_type.pointer_to[0];
     } else {
         checker_report_error(checker, dest, "无效的赋值目标" as *byte);
         return 0;
@@ -342,17 +343,17 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         const src_unary_op_tmp: !TokenType = src.unary_expr_op as! TokenType;
         const src_unary_op: TokenType = src_unary_op_tmp.value;
         if src_unary_op == TokenType.TOKEN_AMPERSAND {
-        const src_operand: &ASTNode = src.unary_expr_operand;
-        if src_operand != null && src_operand.type == ASTNodeType.AST_IDENTIFIER {
-        const sym: &Symbol = symbol_table_lookup(checker, dest.identifier_name);
-        if sym != null {
-            const x: &byte = src_operand.identifier_name;
-            const copy: &byte = checker_intern_strdup(checker, x);
-            if copy != null {
-                sym.pointee_of = copy;
+            const src_operand: &ASTNode = src.unary_expr_operand;
+            if src_operand != null && src_operand.type == ASTNodeType.AST_IDENTIFIER {
+                const sym: &Symbol = symbol_table_lookup(checker, dest.identifier_name);
+                if sym != null {
+                    const x: &byte = src_operand.identifier_name;
+                    const copy: &byte = checker_intern_strdup(checker, x);
+                    if copy != null {
+                        sym.pointee_of = copy;
+                    }
+                }
             }
-        }
-        }
         }
     }
     if src != null && src.type == ASTNodeType.AST_IDENTIFIER {
