@@ -30,6 +30,7 @@ export error WebSocketFragmentedControlFrame;
 export error WebSocketContinuationMissing;
 export error WebSocketQueueFull;
 export error WebSocketHeartbeatTimeout;
+export error WebSocketReconnectExhausted;
 export error WebSocketExtensionsNotSupported;
 
 export const WS_GUID: &const byte = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -354,6 +355,8 @@ export interface AsyncWebSocketConn {
     fn write_message(self: &Self, opcode: WebSocketOpcode, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
     @async_fn
     fn ping(self: &Self, payload: &const byte, payload_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
+    @async_fn
+    fn heartbeat_tick(self: &Self, now_ms: u64, tx: &byte, tx_cap: usize) Future<!usize>;
     @async_fn
     fn close_with_code(self: &Self, code: u16, reason: &const byte, reason_len: usize, tx: &byte, tx_cap: usize) Future<!usize>;
     @async_fn

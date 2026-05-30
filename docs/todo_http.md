@@ -10,6 +10,7 @@
 - `std.http` / `uyagin` 主链路现已支持 **chunked request** 的线级解析 + 连接缓冲原地解码。
 - `std.http.server` 与 `std.http.uyagin` 响应热路径现已接通 **`writev`**；UyaGin 文件响应在 **Linux x86_64** 上优先 `sendfile`。
 - `tls.https` 现已可把 TLS 握手后的最小 HTTP 请求桥接到 `std.http.uyagin.Engine`，用于 HTTPS loopback server 回归。
+- WebSocket 相关拆解、示例与路线占位现已独立整理到 [`todo_http_websocket.md`](./todo_http_websocket.md)、[`std_http_websocket.md`](./std_http_websocket.md) 与 [`std_http_websocket_http2_http3_route.md`](./std_http_websocket_http2_http3_route.md)。
 - 因此，本页 Phase 1–8 的“最小 HTTP 基础设施”已超出最初 blocking-only 范围；更偏 UyaGin 的协议 / I/O 优化路线请同步参考 [`uyagin_todo.md`](./uyagin_todo.md) 与 [`uyagin_design.md`](./uyagin_design.md)。
 
 ---

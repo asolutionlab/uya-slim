@@ -1,5 +1,6 @@
 use std.http.websocket_types;
 use std.http.websocket_tls;
+use std.http.websocket_async;
 use std.http.websocket_client;
 use std.testing.assert_eq_i32;
 use std.testing.assert_true;
@@ -48,12 +49,14 @@ test "websocket_type_struct_init_smoke" {
     try assert_eq_i32(0, policy.enabled as i32);
     try assert_eq_i32(1000, policy.initial_delay_ms as i32);
 
-    const tls_transport: WebSocketTlsTransport = WebSocketTlsTransport{};
-    try assert_eq_i32(-1, tls_transport.fd);
-    try assert_eq_i32(0, tls_transport.owned);
-    try assert_eq_i32(1, tls_transport.closed);
+    const empty_conn: WebSocketConn = websocket_conn_empty();
+    try assert_eq_i32(-1, empty_conn.tls_io.fd);
+    try assert_eq_i32(0, empty_conn.tls_io.owned);
+    try assert_eq_i32(1, empty_conn.tls_io.closed);
 
-    const client: WebSocketClient = WebSocketClient{};
+    var client_session: WebSocketConn = empty_conn;
+    var client: WebSocketClient = WebSocketClient{};
+    websocket_client_init_default(&client, &client_session);
     try assert_eq_i32(1, client.role as i32);
     try assert_true(client.options.auto_pong);
     try assert_eq_i32(0, client.reconnect.enabled as i32);

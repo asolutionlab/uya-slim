@@ -8,21 +8,30 @@
 ## 当前状态（截至 2026-05-30）
 
 - 已完成并有测试覆盖：
-  - Phase 1：公共类型与模块骨架（除 TLS / client / JSON 文件）
+  - Phase 1：公共类型与模块骨架
   - Phase 2：HTTP/1.1 握手 helper、扩展策略与裸 HTTP upgrade 接管
   - Phase 3：frame 编解码
   - Phase 4：fd transport、async 会话主链路、continuation 聚合、auto pong、close 失败语义、最小 send queue / flush
 - 已完成并有测试覆盖：
   - Phase 5：`uyagin` upgrade 桥接、hijack 语义与主链路回归
   - Phase 6：`WebSocketTlsTransport`、HTTPS -> WebSocket bridge 与最小 WSS loopback echo
+  - Phase 7：JSON 消息辅助 API
+  - Phase 8：外部调度驱动 heartbeat tick、auto ping、pong/idle timeout 关闭与活动时间追踪
+  - Phase 9：连接工厂驱动的 client reconnect wrapper、固定/指数退避、最大重试次数与重连期写拒绝策略
+  - Phase 10：控制帧优先级、close 抢占、单项 flush pump 与 graceful queue drain
+  - Phase 11：HTTP/2 RFC 8441 / HTTP/3 QUIC 路线归属、占位模块与 compile 级验证规划
+  - Phase 12：echo/chat/WSS/JSON 示例、WebSocket baseline 与用户文档收口
 - 已明确但尚未开始：
-  - JSON helper
-  - reconnect / heartbeat 主动任务
-  - HTTP/2 RFC 8441 与 HTTP/3 / QUIC 路线
+  - 真实 HTTP/2 frame/HPACK 与 HTTP/3/QUIC transport 实装
 - 当前实现收敛说明：
   - async read API 采用 primitive out 参数 + caller-owned buffer，避免当前编译器在“复杂 view struct + 多次 `@await`”路径上的 lowering 不稳定点
   - 内部写队列当前采用固定槽位 owned queue，`flush_pending()` 已可用，但后台 sender pump 仍待补
   - `uyagin` bridge 额外提供 `uyagin_websocket_upgrade_sync(...)`；异步包装仍保留，但当前在“handler 内升级后持有大结构体跨多次 `@await`”场景下，测试与示例优先采用同步 helper + 单次 `@await` 组合以规避 lowering 缺陷
+  - heartbeat 主动任务当前采用外部调度驱动 `heartbeat_tick(...)`；为规避当前编译器在“多分支 await 后直接 return”路径上的 lowering 缺陷，内部实现采用同步分发 + 自定义 Future 收敛控制流
+  - reconnect 当前同样采用外部调度驱动 `websocket_client_reconnect_tick(...)`；client wrapper 只保存 caller-owned session 槽位与策略状态，真正的 dial/handshake/header/auth 复用由 `WebSocketClientConnector` 工厂承担
+  - send queue 当前在 flush 顺序上采用 `close` 抢占、控制帧优先、业务帧 FIFO；后台发送能力先收敛成外部调度驱动的 `flush_one_pending(...)` / `shutdown_pending(...)`，不引入隐藏线程或隐式阻塞
+  - HTTP/2 / HTTP/3 当前先冻结为“路线文档 + 占位模块 + compile smoke”；真正的 stream adapter、HPACK/QPACK 与 QUIC transport 仍留待后续协议层实现
+  - Phase 12 当前基准采用轻量 loopback 方法：Uya 记录 plain WS 多轮吞吐与 WSS 单轮基线，Go 对照组记录轻量 raw-frame echo 控制值；后续若引入专门 wrk/进程级 WebSocket bench，可继续替换为更强基线
 
 ## 范围说明
 
@@ -288,16 +297,16 @@
 
 ### 8.2 实现
 
-- [ ] 自动定期发送 ping
-- [ ] 追踪最近 pong / 最近活动时间
-- [ ] 超时后进入关闭流程
+- [x] 自动定期发送 ping
+- [x] 追踪最近 pong / 最近活动时间
+- [x] 超时后进入关闭流程
 
 ### 8.3 测试
 
-- [ ] 新增 `tests/test_http_websocket_heartbeat.uya`
-- [ ] 覆盖自动 ping
-- [ ] 覆盖 pong 超时
-- [ ] 覆盖仅业务流量存在时无需额外 ping 的策略分支
+- [x] 新增 `tests/test_http_websocket_heartbeat.uya`
+- [x] 覆盖自动 ping
+- [x] 覆盖 pong 超时
+- [x] 覆盖仅业务流量存在时无需额外 ping 的策略分支
 
 ---
 
@@ -305,23 +314,23 @@
 
 ### 9.1 客户端侧抽象
 
-- [ ] 明确自动重连只适用于 client role，不污染 server 侧连接对象
-- [ ] 设计 `WebSocketClient` / `ReconnectPolicy` 等包装结构体
-- [ ] 明确重连对外暴露的是“会话对象”还是“连接工厂”
+- [x] 明确自动重连只适用于 client role，不污染 server 侧连接对象
+- [x] 设计 `WebSocketClient` / `ReconnectPolicy` 等包装结构体
+- [x] 明确重连对外暴露的是“会话对象”还是“连接工厂”
 
 ### 9.2 策略
 
-- [ ] 支持固定间隔 / 指数退避
-- [ ] 支持最大重试次数
-- [ ] 支持重连后自动重新握手
-- [ ] 明确 subprotocol / header / auth 信息如何复用
+- [x] 支持固定间隔 / 指数退避
+- [x] 支持最大重试次数
+- [x] 支持重连后自动重新握手
+- [x] 明确 subprotocol / header / auth 信息如何复用
 
 ### 9.3 测试
 
-- [ ] 新增 `tests/test_http_websocket_reconnect.uya`
-- [ ] 覆盖断连后重连成功
-- [ ] 覆盖超过最大重试次数
-- [ ] 覆盖重连期间写请求被拒绝或排队的策略
+- [x] 新增 `tests/test_http_websocket_reconnect.uya`
+- [x] 覆盖断连后重连成功
+- [x] 覆盖超过最大重试次数
+- [x] 覆盖重连期间写请求被拒绝或排队的策略
 
 ---
 
@@ -336,22 +345,22 @@
 ### 10.2 背压策略
 
 - [x] 队列满时返回错误、阻塞等待还是丢弃旧消息
-- [ ] 控制帧与业务帧优先级策略
-- [ ] close frame 是否抢占发送
+- [x] 控制帧与业务帧优先级策略
+- [x] close frame 是否抢占发送
 
 ### 10.3 后台发送
 
-- [ ] 增加后台 flush task / frame pump
+- [x] 增加后台 flush task / frame pump
 - [x] 保证与显式 `write_message` 行为不冲突
 - [x] 当前先提供显式 `flush_pending()` drain；后台 pump 仍待补
-- [ ] 明确 shutdown 时 drain 还是直接丢弃
+- [x] 明确 shutdown 时 drain 还是直接丢弃
 
 ### 10.4 测试
 
-- [ ] 新增 `tests/test_http_websocket_backpressure.uya`
-- [ ] 覆盖队列满
-- [ ] 覆盖高频发送
-- [ ] 覆盖 close 与排队消息竞争
+- [x] 新增 `tests/test_http_websocket_backpressure.uya`
+- [x] 覆盖队列满
+- [x] 覆盖高频发送
+- [x] 覆盖 close 与排队消息竞争
 
 ---
 
@@ -359,22 +368,22 @@
 
 ### 11.1 HTTP/2 WebSocket
 
-- [ ] 明确 RFC 8441 在现有 `std.http` 架构中的模块归属
-- [ ] 设计 HTTP/2 extended CONNECT 与现有 `WebSocketConn` 的对接方式
-- [ ] 评估是否复用相同 frame/message/session 层
-- [ ] 新增 HTTP/2 WebSocket 测试规划
+- [x] 明确 RFC 8441 在现有 `std.http` 架构中的模块归属
+- [x] 设计 HTTP/2 extended CONNECT 与现有 `WebSocketConn` 的对接方式
+- [x] 评估是否复用相同 frame/message/session 层
+- [x] 新增 HTTP/2 WebSocket 测试规划
 
 ### 11.2 HTTP/3 / QUIC
 
-- [ ] 明确 HTTP/3 / QUIC WebSocket 仍保留在 `std.http.*` 命名空间
-- [ ] 设计与现有 transport / session 接口的兼容层
-- [ ] 评估 QUIC stream 与当前 `AsyncReader` / `AsyncWriter` 抽象是否足够
-- [ ] 新增路线文档或实现占位
+- [x] 明确 HTTP/3 / QUIC WebSocket 仍保留在 `std.http.*` 命名空间
+- [x] 设计与现有 transport / session 接口的兼容层
+- [x] 评估 QUIC stream 与当前 `AsyncReader` / `AsyncWriter` 抽象是否足够
+- [x] 新增路线文档或实现占位
 
 ### 11.3 测试与验证
 
-- [ ] 为 HTTP/2 WebSocket 规划最小 loopback / compile 级验证
-- [ ] 为 HTTP/3 / QUIC 路线规划编译级或接口一致性验证
+- [x] 为 HTTP/2 WebSocket 规划最小 loopback / compile 级验证
+- [x] 为 HTTP/3 / QUIC 路线规划编译级或接口一致性验证
 
 ---
 
@@ -382,22 +391,22 @@
 
 ### 12.1 示例
 
-- [ ] 新增最小 echo 示例
-- [ ] 新增 `uyagin` chat/broadcast 示例
-- [ ] 新增 WSS 示例
-- [ ] 新增 JSON 消息示例
+- [x] 新增最小 echo 示例
+- [x] 新增 `uyagin` chat/broadcast 示例
+- [x] 新增 WSS 示例
+- [x] 新增 JSON 消息示例
 
 ### 12.2 基准
 
-- [ ] 新增 WebSocket echo benchmark
-- [ ] 记录明文 WS 与 TLS WSS 的基线
-- [ ] 如有对照组，可补 Go websocket benchmark
+- [x] 新增 WebSocket echo benchmark
+- [x] 记录明文 WS 与 TLS WSS 的基线
+- [x] 如有对照组，可补 Go websocket benchmark
 
 ### 12.3 文档同步
 
-- [ ] 在 `std_http_websocket_design.md` 中回填实现决策
-- [ ] 视实现成熟度新增 `docs/std_http_websocket.md` 用户文档
-- [ ] 评估是否在 `docs/todo_http.md` 增加 WebSocket 子条目或跳转链接
+- [x] 在 `std_http_websocket_design.md` 中回填实现决策
+- [x] 视实现成熟度新增 `docs/std_http_websocket.md` 用户文档
+- [x] 评估是否在 `docs/todo_http.md` 增加 WebSocket 子条目或跳转链接
 
 ---
 

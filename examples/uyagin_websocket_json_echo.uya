@@ -1,0 +1,89 @@
+// examples/uyagin_websocket_json_echo.uya - UyaGin WebSocket JSON 示例
+//
+// 构建运行（仓库根目录）:
+//   ./bin/uya --c99 examples/uyagin_websocket_json_echo.uya -o /tmp/uyagin_websocket_json_echo.c
+//   cc -std=c99 -O0 -g -fno-builtin -o /tmp/uyagin_websocket_json_echo /tmp/uyagin_websocket_json_echo.c
+//   /tmp/uyagin_websocket_json_echo
+//
+// 当前示例监听 ws://127.0.0.1:8772/json ，读取一条 JSON text message，
+// 然后返回 `{"ok":true,"kind":"json"}`。
+
+use std.async;
+use std.async_scheduler;
+use std.http.server;
+use std.http.types;
+use std.http.uyagin;
+use std.http.uyagin_websocket;
+use std.http.websocket_async;
+use std.http.websocket_json;
+use std.http.websocket_types;
+use std.json.value.JsonStrView;
+use std.json.value.JsonValue;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+
+struct JsonAck {
+    ok: bool,
+    kind: JsonStrView,
+}
+
+struct JsonEchoHandler : AsyncHandler {}
+
+JsonEchoHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        _ = self;
+        var opts: WebSocketAcceptOptions = websocket_accept_options_default();
+        var ws: WebSocketConn = try uyagin_websocket_upgrade_sync(ctx, &opts);
+        var arena_buf: [byte: 262144] = [];
+        var arena: Arena = Arena{ buffer: null, size: 0, used: 0 };
+        arena_init(&arena, &arena_buf[0], 262144);
+        var rx: [byte: 4096] = [];
+        var msg: [byte: 4096] = [];
+        var tx: [byte: 4096] = [];
+        var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+        const n: usize = try @await ws.read_message(&rx[0], 4096, &msg[0], 4096, &opcode);
+        const decoded: JsonValue = try websocket_json_decode_value(&arena, opcode, &msg[0], n);
+        _ = decoded;
+        var kind_buf: [byte: 4] = [106, 115, 111, 110];
+        const reply: JsonAck = JsonAck{
+            ok: true,
+            kind: JsonStrView{ ptr: &kind_buf[0], len: 4 },
+        };
+        _ = try @await websocket_conn_write_json<JsonAck>(&ws, &arena, reply, &tx[0], 4096);
+        return 0;
+    }
+}
+
+fn run_json_demo() !i32 {
+    var engine: Engine = uyagin_new();
+    var handler_impl: JsonEchoHandler = JsonEchoHandler{};
+    const handler: AsyncHandler = handler_impl;
+    try engine.GET("/json", handler);
+
+    const cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 1,
+        port: 8772,
+        host: [],
+    };
+    var srv: HttpServer = try http_server_listen(&cfg);
+    @println("json websocket demo listening on ws://127.0.0.1:8772/json");
+    @println("accepting one JSON message and then exiting");
+
+    var accepted: Conn = try http_server_accept(&srv);
+    http_server_close(&srv);
+
+    var scheduler: Scheduler = Scheduler{};
+    scheduler_init(&scheduler);
+    const server_fd: i32 = accepted.fd;
+    accepted.fd = -1;
+    _ = try scheduler_run<!i32>(&scheduler, uyagin_serve_conn(&engine, server_fd, &scheduler));
+    return 0;
+}
+
+export fn main() i32 {
+    return run_json_demo() catch {
+        return 1;
+    };
+}

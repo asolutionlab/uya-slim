@@ -1,10 +1,12 @@
 # Uya `std.http.websocket` 详细设计
 
 **版本**：v0.2
-**状态**：部分实现（协议层、async 会话核心、TLS / WSS 与 `uyagin` bridge 已落地）
+**状态**：部分实现（协议层、async 会话核心、TLS / WSS、JSON、heartbeat、reconnect 与队列 pump 已落地；HTTP/2 / HTTP/3 仍为路线占位）
 **定位**：放在 `std.http` 下的 WebSocket 能力层，优先服务 `uyagin`，同时保持可脱离框架单独复用
 
 **实现拆解**：见 [todo_http_websocket.md](./todo_http_websocket.md)
+**用户文档**：见 [std_http_websocket.md](./std_http_websocket.md)
+**HTTP/2 / HTTP/3 路线占位**：见 [std_http_websocket_http2_http3_route.md](./std_http_websocket_http2_http3_route.md)
 
 **当前实现进度（截至 2026-05-30）**：
 
@@ -14,6 +16,8 @@
   - `websocket_frame.uya`
   - `websocket_async.uya`
   - `websocket_tls.uya`
+  - `websocket_client.uya`
+  - `websocket_http2_h3_route.uya`
   - `uyagin_websocket.uya`
   - `std.crypto.sha1`
 - 已验证：
@@ -24,10 +28,14 @@
   - loopback async 会话收发、消息聚合、auto pong、close 失败语义、最小 send queue
   - `uyagin` route -> upgrade -> echo roundtrip / fallback / hijack 防呆
   - HTTPS -> WebSocket upgrade / TLS transport / WSS loopback echo
+- 已补齐：
+  - JSON 文本消息辅助 API
+  - 外部调度驱动 heartbeat / reconnect
+  - 控制帧优先、close 抢占与 flush pump
+  - HTTP/2 / HTTP/3 路线占位 compile smoke
 - 仍待实现：
-  - JSON helper
-  - reconnect / heartbeat 主动任务
-  - HTTP/2 RFC 8441 与 HTTP/3 / QUIC 路线
+  - 真实 HTTP/2 frame / HPACK / extended CONNECT transport
+  - 真实 HTTP/3 / QUIC stream adapter
 
 ## 1. 设计目标
 

@@ -1,0 +1,241 @@
+// benchmarks/websocket_echo_bench.uya - WebSocket / WSS echo 基准
+
+extern fn printf(fmt: *byte, ...) i32;
+
+use tls.https;
+use tls.ssl.handshake;
+use tls.ssl.record;
+use tls.ssl.context;
+use tls.x509.cert;
+use tls.crypto.rsa;
+use std.async;
+use std.http.server;
+use std.http.websocket_async;
+use std.http.websocket_frame;
+use std.http.websocket_tls;
+use std.http.websocket_types;
+use std.time.now_ms;
+use libc.syscall;
+use libc.unistd;
+
+const BENCH_ROUNDS: i32 = 100;
+const WSS_BENCH_ROUNDS: i32 = 1;
+
+fn bytes_eq_raw(a: &byte, b: &byte, n: usize) bool {
+    var i: usize = 0;
+    while i < n {
+        if a[i] != b[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn run_with_loop_usize(f: Future<!usize>) !usize {
+    const result: !usize = block_on<usize>(f);
+    return try result;
+}
+
+fn write_all_fd(fd: i32, data: &[byte]) !void {
+    var total: usize = 0;
+    while total < data.len {
+        const wn: isize = try sys_write(fd, data.ptr + total, data.len - total);
+        if wn <= 0 {
+            return error.ConnectionClosed;
+        }
+        total = total + (wn as usize);
+    }
+}
+
+fn tls_write_plain(fd: i32, ctx: &SslContext, plain: &const byte, plain_len: usize) !void {
+    var cipher: [byte: 4096] = [0: 4096];
+    var cipher_len: usize = 0;
+    try ssl_write(ctx, plain, plain_len, &cipher[0], 4096, &cipher_len);
+    try https_write_all(fd, &cipher[0], cipher_len);
+}
+
+fn tls_read_plain_record(fd: i32, ctx: &SslContext, plain: &byte, plain_cap: usize) !usize {
+    var cipher: [byte: 4096] = [0: 4096];
+    var cipher_len: usize = 0;
+    try https_read_tls_record_exact(fd, &cipher[0], 4096, &cipher_len);
+    var plain_len: usize = 0;
+    var consumed: usize = 0;
+    try ssl_read(ctx, &cipher[0], cipher_len, plain, plain_cap, &plain_len, &consumed);
+    return plain_len;
+}
+
+fn make_plain_pair(client_out: &WebSocketConn, server_out: &WebSocketConn) !void {
+    const cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 128,
+        port: 0,
+        host: [],
+    };
+    var srv: HttpServer = try http_server_listen(&cfg);
+    errdefer { http_server_close(&srv); }
+    const client_fd: i32 = try http_tcp_connect_loopback(srv.port);
+    var accepted: Conn = try http_server_accept(&srv);
+    http_server_close(&srv);
+    const server_fd: i32 = accepted.fd;
+    accepted.fd = -1;
+
+    var client_io: WebSocketFdTransport = websocket_fd_transport_owned(client_fd);
+    var server_io: WebSocketFdTransport = websocket_fd_transport_owned(server_fd);
+    const opts: WebSocketAcceptOptions = websocket_accept_options_default();
+    client_out[0] = websocket_conn_new(&client_io, WebSocketRole.Client, &opts);
+    server_out[0] = websocket_conn_new(&server_io, WebSocketRole.Server, &opts);
+}
+
+fn bench_plain_ws(rounds: i32) !u64 {
+    var client: WebSocketConn = websocket_conn_empty();
+    var server: WebSocketConn = websocket_conn_empty();
+    try make_plain_pair(&client, &server);
+    var tx_client: [byte: 64] = [];
+    var tx_server: [byte: 64] = [];
+    var rx_client: [byte: 128] = [];
+    var rx_server: [byte: 128] = [];
+    var msg_client: [byte: 128] = [];
+    var msg_server: [byte: 128] = [];
+    var payload: [byte: 2] = [88, 0];
+    var client_opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+    var server_opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+
+    const started_ms: u64 = try now_ms();
+    var i: i32 = 0;
+    while i < rounds {
+        _ = try run_with_loop_usize(websocket_conn_write_message(&client, WebSocketOpcode.Text, &payload[0], 1, &tx_client[0], 64));
+        const got_server: usize = try run_with_loop_usize(websocket_conn_read_message(&server, &rx_server[0], 128, &msg_server[0], 128, &server_opcode));
+        _ = got_server;
+        _ = try run_with_loop_usize(websocket_conn_write_message(&server, server_opcode, &msg_server[0], 1, &tx_server[0], 64));
+        const got_client: usize = try run_with_loop_usize(websocket_conn_read_message(&client, &rx_client[0], 128, &msg_client[0], 128, &client_opcode));
+        if got_client != 1 || client_opcode != WebSocketOpcode.Text || !bytes_eq_raw(&msg_client[0], &payload[0], 1) {
+            return error.WebSocketProtocolError;
+        }
+        i = i + 1;
+    }
+    var elapsed_ms: u64 = (try now_ms()) - started_ms;
+    if elapsed_ms == 0u64 {
+        elapsed_ms = 1u64;
+    }
+    return ((rounds as u64) * 1000u64) / elapsed_ms;
+}
+
+fn bench_wss(rounds: i32) !u64 {
+    var host: [byte: 9] = [108, 111, 99, 97, 108, 104, 111, 115, 116];
+    var srv: HttpsServer = try https_server_listen(&host[0], 9, 0);
+    defer { https_server_close(&srv); }
+
+    var leaf: Cert = Cert{};
+    var key: RsaPrivateKey = RsaPrivateKey{};
+    https_server_set_rsa_identity(&srv, &host[0], 9, &host[0], 9, &host[0], 9, &leaf, &key);
+
+    const pid: i32 = fork();
+    if pid == 0 {
+        const fd: i32 = http_tcp_connect_loopback(srv.port) catch {
+            _exit(11);
+            return 0u64;
+        };
+        var hs: HandshakeCtx = HandshakeCtx{};
+        var rec: RecordCtx = RecordCtx{};
+        var ctx: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs, rec: &rec };
+        ssl_init(&ctx);
+        ssl_set_insecure_skip_verify(&ctx, true);
+        ssl_set_skip_hostname_verify(&ctx, true);
+        ssl_set_hostname(&ctx, &host[0], 9);
+        ssl_set_peer_identity(&ctx, &host[0], 9, &host[0], 9);
+        https_client_handshake(fd, &ctx) catch {
+            _exit(12);
+            return 0u64;
+        };
+
+        const req: &[byte] = &"GET /ws HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"[0: 162];
+        tls_write_plain(fd, &ctx, req.ptr as &const byte, req.len) catch {
+            _exit(13);
+            return 0u64;
+        };
+        var resp_plain: [byte: 512] = [0: 512];
+        _ = tls_read_plain_record(fd, &ctx, &resp_plain[0], 512) catch {
+            _exit(14);
+            return 0u64;
+        };
+
+        var payload: [byte: 2] = [89, 0];
+        var frame: [byte: 128] = [0: 128];
+        var mask: [byte: 4] = [1, 2, 3, 4];
+        var echo_plain: [byte: 256] = [0: 256];
+        var i: i32 = 0;
+        while i < rounds {
+            const frame_len: usize = websocket_encode_frame_raw(
+                WebSocketRole.Client,
+                true,
+                WebSocketOpcode.Text,
+                &payload[0],
+                1,
+                mask,
+                &frame[0],
+                128,
+            ) catch {
+                _exit(15);
+                return 0u64;
+            };
+            tls_write_plain(fd, &ctx, &frame[0] as &const byte, frame_len) catch {
+                _exit(16);
+                return 0u64;
+            };
+            const echo_len: usize = tls_read_plain_record(fd, &ctx, &echo_plain[0], 256) catch {
+                _exit(17);
+                return 0u64;
+            };
+            const view: WebSocketFrameView = websocket_parse_frame_from_buffer(
+                WebSocketRole.Client,
+                &echo_plain[0],
+                echo_len,
+                false,
+            ) catch {
+                _exit(18);
+                return 0u64;
+            };
+            if view.opcode != WebSocketOpcode.Text || view.payload_len != 1 || !bytes_eq_raw(view.payload_ptr, &payload[0], 1) {
+                _exit(19);
+                return 0u64;
+            }
+            i = i + 1;
+        }
+        _exit(0);
+        return 0u64;
+    }
+
+    var opts: WebSocketAcceptOptions = websocket_accept_options_default();
+    var ws: WebSocketConn = try websocket_accept_from_https_server(&srv, &opts);
+    var rx: [byte: 256] = [];
+    var msg: [byte: 256] = [];
+    var tx: [byte: 256] = [];
+    var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+    const started_ms: u64 = try now_ms();
+    var i2: i32 = 0;
+    while i2 < rounds {
+        const n: usize = try run_with_loop_usize(websocket_conn_read_message(&ws, &rx[0], 256, &msg[0], 256, &opcode));
+        _ = try run_with_loop_usize(websocket_conn_write_message(&ws, opcode, &msg[0], n, &tx[0], 256));
+        i2 = i2 + 1;
+    }
+    var st: i32 = 0;
+    _ = try sys_waitpid(pid, &st, 0);
+    const elapsed_ms: u64 = (try now_ms()) - started_ms;
+    var safe_elapsed: u64 = elapsed_ms;
+    if safe_elapsed == 0u64 {
+        safe_elapsed = 1u64;
+    }
+    return ((rounds as u64) * 1000u64) / safe_elapsed;
+}
+
+export fn main() i32 {
+    const ws_rps: u64 = bench_plain_ws(BENCH_ROUNDS) catch {
+        return 1;
+    };
+    const wss_rps: u64 = bench_wss(WSS_BENCH_ROUNDS) catch {
+        return 1;
+    };
+    _ = printf("{\"roundtrips\":%d,\"wss_roundtrips\":%d,\"ws_rps\":%lu,\"wss_rps\":%lu}\n", BENCH_ROUNDS, WSS_BENCH_ROUNDS, ws_rps, wss_rps);
+    return 0;
+}

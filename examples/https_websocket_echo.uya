@@ -1,0 +1,52 @@
+// examples/https_websocket_echo.uya - 最小 WSS echo 示例
+//
+// 构建运行（仓库根目录）:
+//   ./bin/uya --c99 examples/https_websocket_echo.uya -o /tmp/https_websocket_echo.c
+//   cc -std=c99 -O0 -g -fno-builtin -o /tmp/https_websocket_echo /tmp/https_websocket_echo.c
+//   /tmp/https_websocket_echo
+//
+// 当前示例监听 wss://localhost:8771/ws ，接受一个 TLS WebSocket 连接、
+// 回显一条消息后退出。
+
+use tls.https;
+use tls.x509.cert;
+use tls.crypto.rsa;
+use std.async;
+use std.http.websocket_async;
+use std.http.websocket_tls;
+use std.http.websocket_types;
+use std.testing.assert_true;
+
+fn run_with_loop_usize(f: Future<!usize>) !usize {
+    const result: !usize = block_on<usize>(f);
+    return try result;
+}
+
+fn run_wss_echo_demo() !i32 {
+    var host: [byte: 9] = [108, 111, 99, 97, 108, 104, 111, 115, 116];
+    var srv: HttpsServer = try https_server_listen(&host[0], 9, 8771);
+    defer { https_server_close(&srv); }
+
+    var leaf: Cert = Cert{};
+    var key: RsaPrivateKey = RsaPrivateKey{};
+    https_server_set_rsa_identity(&srv, &host[0], 9, &host[0], 9, &host[0], 9, &leaf, &key);
+    @println("wss echo demo listening on wss://localhost:8771/ws");
+    @println("accepting one websocket message and then exiting");
+
+    var opts: WebSocketAcceptOptions = websocket_accept_options_default();
+    var ws: WebSocketConn = try websocket_accept_from_https_server(&srv, &opts);
+    var rx: [byte: 4096] = [];
+    var msg: [byte: 4096] = [];
+    var tx: [byte: 4096] = [];
+    var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+    const n: usize = try run_with_loop_usize(websocket_conn_read_message(&ws, &rx[0], 4096, &msg[0], 4096, &opcode));
+    try assert_true(n > 0);
+    _ = try run_with_loop_usize(websocket_conn_write_message(&ws, opcode, &msg[0], n, &tx[0], 4096));
+    return 0;
+}
+
+export fn main() i32 {
+    return run_wss_echo_demo() catch {
+        return 1;
+    };
+}

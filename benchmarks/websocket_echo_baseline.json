@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-05-30",
+  "uya_ws_roundtrips": 100,
+  "uya_wss_roundtrips": 1,
+  "uya_ws_rps": 5555,
+  "uya_wss_rps": 1000,
+  "go_ws_roundtrips": 100,
+  "go_ws_rps": 100000,
+  "notes": "Uya benchmark uses loopback WebSocketConn echo; WSS baseline is single-round due current TLS route being compile/loopback placeholder oriented. Go baseline uses benchmarks/websocket_echo_bench.go over net.Pipe as a lightweight control."
+}
