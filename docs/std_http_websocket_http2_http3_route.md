@@ -1,12 +1,17 @@
 # Uya WebSocket HTTP/2 / HTTP/3 路线占位
 
-本文档对应 `std.http.websocket` 的 Phase 11 路线收敛，目标不是立即补完 HTTP/2 frame、HPACK、HTTP/3 / QUIC 传输栈，而是把**模块归属、接口边界、复用策略和最小验证方式**固定下来，避免后续实现偏航。
+本文档对应 `std.http.websocket` 的 Phase 11 路线收敛。当前仓库已经补上 **HTTP/2 frame / stream / HPACK 基础栈**，本页继续负责把**模块归属、接口边界、复用策略和后续 transport 落点**固定下来，避免后续 extended CONNECT / QUIC 实现偏航。
 
 ## 1. 模块归属
 
 - HTTP/2 WebSocket 继续归属 `std.http.*`，不拆出新的顶层 `std.websocket`。
 - HTTP/3 / QUIC WebSocket 也继续归属 `std.http.*`，因为建连入口仍然是 HTTP CONNECT / WebSocket 语义，而不是裸 QUIC stream。
-- 当前仓库的实现占位落在 `lib/std/http/websocket_http2_h3_route.uya`，作为 compile 级锚点。
+- 当前仓库的实现锚点包括：
+  - `lib/std/http/http2_types.uya`
+  - `lib/std/http/http2_frame.uya`
+  - `lib/std/http/http2_stream.uya`
+  - `lib/std/http/hpack.uya`
+  - `lib/std/http/websocket_http2_h3_route.uya`
 
 ## 2. HTTP/2 RFC 8441
 
@@ -23,6 +28,10 @@
   - 新增一个面向 HTTP/2 stream 的 transport adapter；
   - adapter 对上暴露与 `AsyncReader` / `AsyncWriter` 一致的按字节读写；
   - `WebSocketConn` / `read_frame` / `read_message` / `write_message` 继续复用，不重写 frame/message/session 逻辑。
+- 当前已落地的基础层：
+  - frame header / DATA / SETTINGS / WINDOW_UPDATE / HEADERS payload 解析
+  - stream 生命周期与窗口记账
+  - HPACK static table、literal、incremental indexing 与 dynamic table 驱逐
 
 ## 3. HTTP/3 / QUIC
 
@@ -35,9 +44,12 @@
 
 ## 4. 最小验证
 
-- 当前最小验证先收敛为 **compile + interface smoke**：
+- 当前最小验证已扩展为 **protocol unit tests + route smoke**：
+  - `tests/test_http_http2_frame.uya`
+  - `tests/test_http_http2_stream.uya`
+  - `tests/test_http_hpack.uya`
   - `tests/test_http_websocket_http2_h3_route.uya`
-  - 验证 HTTP/2 / HTTP/3 路线占位配置可编译、默认决策值稳定。
+  - 验证 HTTP/2 基础栈可编译并通过协议层回归，同时保留路线占位默认值稳定。
 - 后续真正进入实现阶段时，再补：
   - HTTP/2 loopback extended CONNECT smoke；
   - HTTP/3 / QUIC adapter compile+loopback smoke。

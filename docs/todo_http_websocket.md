@@ -20,9 +20,10 @@
   - Phase 9：连接工厂驱动的 client reconnect wrapper、固定/指数退避、最大重试次数与重连期写拒绝策略
   - Phase 10：控制帧优先级、close 抢占、单项 flush pump 与 graceful queue drain
   - Phase 11：HTTP/2 RFC 8441 / HTTP/3 QUIC 路线归属、占位模块与 compile 级验证规划
+  - `std.http` HTTP/2 frame / stream / HPACK 基础栈
   - Phase 12：echo/chat/WSS/JSON 示例、WebSocket baseline 与用户文档收口
 - 已明确但尚未开始：
-  - 真实 HTTP/2 frame/HPACK 与 HTTP/3/QUIC transport 实装
+  - HTTP/2 extended CONNECT transport 与 HTTP/3/QUIC transport 实装
 - 当前实现收敛说明：
   - async read API 采用 primitive out 参数 + caller-owned buffer，避免当前编译器在“复杂 view struct + 多次 `@await`”路径上的 lowering 不稳定点
   - 内部写队列当前采用固定槽位 owned queue，`flush_pending()` 已可用，但后台 sender pump 仍待补
@@ -30,7 +31,8 @@
   - heartbeat 主动任务当前采用外部调度驱动 `heartbeat_tick(...)`；为规避当前编译器在“多分支 await 后直接 return”路径上的 lowering 缺陷，内部实现采用同步分发 + 自定义 Future 收敛控制流
   - reconnect 当前同样采用外部调度驱动 `websocket_client_reconnect_tick(...)`；client wrapper 只保存 caller-owned session 槽位与策略状态，真正的 dial/handshake/header/auth 复用由 `WebSocketClientConnector` 工厂承担
   - send queue 当前在 flush 顺序上采用 `close` 抢占、控制帧优先、业务帧 FIFO；后台发送能力先收敛成外部调度驱动的 `flush_one_pending(...)` / `shutdown_pending(...)`，不引入隐藏线程或隐式阻塞
-  - HTTP/2 / HTTP/3 当前先冻结为“路线文档 + 占位模块 + compile smoke”；真正的 stream adapter、HPACK/QPACK 与 QUIC transport 仍留待后续协议层实现
+  - `std.http` 已补 `http2_types.uya` / `http2_frame.uya` / `http2_stream.uya` / `hpack.uya`，可先承接 HTTP/2 frame、stream 生命周期与 HPACK header block 的纯协议层需求
+  - HTTP/2 / HTTP/3 当前仍未接上真实 WebSocket transport；HTTP/2 extended CONNECT adapter、HTTP/3 QPACK / QUIC transport 仍留待后续协议层实现
   - Phase 12 当前基准采用轻量 loopback 方法：Uya 记录 plain WS 多轮吞吐与 WSS 单轮基线，Go 对照组记录轻量 raw-frame echo 控制值；后续若引入专门 wrk/进程级 WebSocket bench，可继续替换为更强基线
 
 ## 范围说明

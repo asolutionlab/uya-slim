@@ -1,7 +1,7 @@
 # Uya `std.http.websocket` 详细设计
 
 **版本**：v0.2
-**状态**：部分实现（协议层、async 会话核心、TLS / WSS、JSON、heartbeat、reconnect 与队列 pump 已落地；HTTP/2 / HTTP/3 仍为路线占位）
+**状态**：部分实现（协议层、async 会话核心、TLS / WSS、JSON、heartbeat、reconnect 与队列 pump 已落地；HTTP/2 frame/stream/HPACK 基础栈已落地；HTTP/2 extended CONNECT transport 与 HTTP/3 / QUIC 仍待实现）
 **定位**：放在 `std.http` 下的 WebSocket 能力层，优先服务 `uyagin`，同时保持可脱离框架单独复用
 
 **实现拆解**：见 [todo_http_websocket.md](./todo_http_websocket.md)
@@ -11,6 +11,10 @@
 **当前实现进度（截至 2026-05-30）**：
 
 - 已落地：
+  - `http2_types.uya`
+  - `http2_frame.uya`
+  - `http2_stream.uya`
+  - `hpack.uya`
   - `websocket_types.uya`
   - `websocket_handshake.uya`
   - `websocket_frame.uya`
@@ -21,6 +25,9 @@
   - `uyagin_websocket.uya`
   - `std.crypto.sha1`
 - 已验证：
+  - HTTP/2 frame header / DATA / SETTINGS / WINDOW_UPDATE / HEADERS payload 解析
+  - HTTP/2 stream 状态迁移与窗口记账
+  - HPACK integer / string / static table / incremental indexing / dynamic table 驱逐
   - `Sec-WebSocket-Accept`
   - HTTP/1.1 Upgrade 请求校验
   - 裸 HTTP `websocket_accept_from_http(...)`
@@ -34,7 +41,7 @@
   - 控制帧优先、close 抢占与 flush pump
   - HTTP/2 / HTTP/3 路线占位 compile smoke
 - 仍待实现：
-  - 真实 HTTP/2 frame / HPACK / extended CONNECT transport
+  - HTTP/2 extended CONNECT transport 与 WebSocket session bridge
   - 真实 HTTP/3 / QUIC stream adapter
 
 ## 1. 设计目标
