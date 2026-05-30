@@ -3,7 +3,6 @@ use std.http.server;
 use std.http.websocket_async;
 use std.http.websocket_json;
 use std.http.websocket_types;
-use std.json.encoder.to_json;
 use std.json.value.JsonStrView;
 use std.json.value.JsonValue;
 use std.json.encoder.json_expect_i64;
@@ -80,11 +79,7 @@ test "websocket_json_struct_roundtrip_as_text_message" {
     var msg: [byte: 256] = [];
     var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
 
-    const encoded: &[byte] = to_json<JsonUser>(&arena, user) catch {
-        try assert_eq_i32(909, 0);
-        return;
-    };
-    _ = try run_with_loop_usize(websocket_conn_write_message(&client, WebSocketOpcode.Text, encoded.ptr as &const byte, encoded.len, &tx[0], 256));
+    _ = try run_with_loop_usize(websocket_conn_write_json<JsonUser>(&client, &arena, user, &tx[0], 256));
     const msg_len: usize = try run_with_loop_usize(websocket_conn_read_message(&server, &rx[0], 256, &msg[0], 256, &opcode));
     const decoded_result: !JsonValue = websocket_json_decode_value(&arena, opcode, &msg[0], msg_len);
     if decoded_result.error_id != 0u32 {

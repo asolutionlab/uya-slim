@@ -6939,6 +6939,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     var body_to_gen: &ASTNode = body;
     if codegen.checker != null && orig_name != null &&
        (strcmp(orig_name as *byte, "to_json" as *byte) == 0 ||
+        strcmp(orig_name as *byte, "websocket_conn_write_json" as *byte) == 0 ||
         strcmp(orig_name as *byte, "async_compute" as *byte) == 0) &&
        fn_decl.fn_decl_type_params != null && fn_decl.fn_decl_type_param_count > 0 &&
        type_args != null && type_arg_count > 0 {

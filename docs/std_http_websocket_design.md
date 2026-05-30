@@ -559,12 +559,12 @@ Phase 7 的 JSON helper 先收敛成“**JSON = text message 的高层便利层*
 
 与现有 `std.json` 的衔接也明确收敛为两条固定路径：
 
-- **typed path**：当前先保留 `to_json<T>(arena, value) + write_message(Text, ...)` 直连用法；库内再包装成 typed `write_json<T>` helper 仍受当前编译器泛型单态化限制约束
+- **typed path**：提供 `websocket_conn_write_json<T>(...)`；实现上直接在 helper 内单态化展开 `encode_to_to_json(T, ...)`，避免再额外依赖 `to_json<T>` 的二次泛型包装发射路径
 - **value path**：`write_json_value(...)` 使用 `std.json.encoder.encode(arena, &value)`；raw `JsonValue` 解码提供同步 `websocket_json_decode_value(...)`，给调用方在 `read_message(...)` 之后复用
 
 当前实现额外遵守一条编译器收敛约束：
 
-- 由于当前编译器在 “`Future<!union>` 返回值” 与“库内再包装 `to_json<T>` / `from_json<T>` 泛型 helper”路径上仍有 lowering / 单态化风险，Phase 7 当前不额外提供 typed `read_json<T>` / `write_json<T>` 包装
+- `write_json<T>` 已可用，但当前仍不额外提供 typed `read_json<T>`；读取侧继续收敛为 “`read_message(...)` -> `websocket_json_decode_value(...)`”
 - 需要 JSON 读取时，优先走 “`read_message(...)` -> `websocket_json_decode_value(...)`” 两步链路；业务若要落到结构体，再基于 `JsonValue` 做现有 `std.json` 风格提取
 
 错误映射保持“WebSocket 错误与 JSON 错误分层可见”：
@@ -969,6 +969,7 @@ export fn websocket_accept_from_http(fd: i32, req: &Request, options: &WebSocket
 
 export @async_fn fn uyagin_websocket_upgrade(ctx: &GinContext, options: &WebSocketAcceptOptions) Future<!WebSocketConn>;
 
+export fn websocket_conn_write_json<T>(self: &WebSocketConn, arena: &Arena, value: T, tx: &byte, tx_cap: usize) Future<!usize>;
 export fn websocket_conn_write_json_value(self: &WebSocketConn, arena: &Arena, value: &JsonValue, tx: &byte, tx_cap: usize) Future<!usize>;
 export fn websocket_json_decode_value(arena: &Arena, opcode: WebSocketOpcode, msg: &byte, msg_len: usize) !JsonValue;
 ```
