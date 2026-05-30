@@ -323,6 +323,26 @@ export struct WebSocketTlsTransport : AsyncReader, AsyncWriter {
 
 这样 `ws://` 与 `wss://` 共用会话层，而不是在 `WebSocketConn` 内写死 fd 特判。
 
+### 5.1.1 Phase 6 收敛决策（2026-05-30）
+
+- **先保留独立 `WebSocketTlsTransport`，不立即把 `WebSocketConn` 泛化到任意 `AsyncReader` / `AsyncWriter`。**
+  当前 `WebSocketConn` 已经绑定了 `WebSocketFdTransport`、fixed queue、心跳时间戳与多处 `@async_fn` 状态机；如果在这一阶段把它整体泛化成“任意 reader/writer”，会把 Phase 6 变成一次大范围重构，而不是 WSS 能力接入。
+- **`WebSocketTlsTransport` 的职责是包装已完成 TLS 握手后的连接，而不是重复发明 TLS 会话栈。**
+  也就是说，TLS 握手、record 加解密、应用数据收发的事实来源仍然是 `tls.https` + `tls.ssl.context`；`websocket_tls.uya` 只补 WebSocket 侧需要的 transport 生命周期、upgrade glue 与后续 frame/message I/O 接口。
+- **与现有 `tls.https` 对齐时，优先复用已验证过的 server 路径，而不是复制一份“WebSocket 专用 TLS server”。**
+  当前仓库已经有 `https_server_handshake(...)`、`https_read_uyagin_request(...)`、`ssl_read(...)`、`ssl_write(...)` 和 `https_server_serve_uyagin_once(...)` 这条最小 HTTPS -> UyaGin 主链路。Phase 6 应该把其中“TLS 握手完成后得到明文 HTTP 请求”和“把明文响应重新封装回 TLS record”这两个边界提炼成可复用 helper，而不是在 `websocket_tls.uya` 里再手写一套握手/record 驱动。
+- **`https_server_serve_uyagin_once(...)` 的 capture-file 响应路径不能直接复用到 WSS upgrade 成功后的会话期。**
+  普通 HTTPS handler 可以先把 HTTP 响应写到 capture fd，再统一 TLS 加密回放；但 WebSocket upgrade 成功后，连接所有权已经被会话对象接管，后续 frame 需要立即经由活跃 TLS session 双向收发，因此 hijack 后必须切到 transport 直通模式。
+- **TLS -> WebSocket upgrade 的桥接顺序明确为：**
+  1. `https_accept_one(...)` 接受 TCP 连接。
+  2. `https_server_handshake(...)` 完成 TLS 握手，拿到可用 `SslContext`。
+  3. 通过 `https_read_uyagin_request(...)`（或等价复用 helper）读取并解密首个 HTTP 请求。
+  4. 在明文请求上继续复用现有 `websocket_request_is_upgrade(...)` / `websocket_validate_upgrade_request(...)` / `websocket_build_upgrade_response(...)`。
+  5. 将 `101 Switching Protocols` 响应通过 `ssl_write(...)` 回写。
+  6. 把 `fd + SslContext + 生命周期状态` 移交给 `WebSocketTlsTransport`，后续 `read_frame` / `write_frame` 只走 TLS application data，不再回到 capture-file HTTP 响应路径。
+- **`uyagin` 集成层也遵循同样边界。**
+  WSS 版本不应把 upgrade 后的流量重新塞回普通 `GinContext` 响应写入路径，而是应在 TLS 已解密的请求上下文里完成一次 WebSocket upgrade 判断后，直接把活跃 TLS session 交给 `WebSocketTlsTransport` / `WebSocketConn`。
+
 ### 5.2 AsyncWebSocketConn 接口
 
 建议像 `AsyncMqttClient` 一样定义能力接口，便于接 fd、TLS、内存环回、测试桩。

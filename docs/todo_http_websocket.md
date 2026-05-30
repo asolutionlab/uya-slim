@@ -49,9 +49,9 @@
 - [x] 新增 `lib/std/http/websocket_frame.uya`
 - [x] 新增 `lib/std/http/websocket_handshake.uya`
 - [x] 新增 `lib/std/http/websocket_async.uya`
-- [ ] 新增 `lib/std/http/websocket_tls.uya`
-- [ ] 新增 `lib/std/http/websocket_client.uya`
-- [ ] 新增 `lib/std/http/websocket_json.uya`
+- [x] 新增 `lib/std/http/websocket_tls.uya`
+- [x] 新增 `lib/std/http/websocket_client.uya`
+- [x] 新增 `lib/std/http/websocket_json.uya`
 - [x] 新增 `lib/std/http/uyagin_websocket.uya` 作为框架桥接层
 
 ### 1.2 错误、常量、枚举
@@ -88,9 +88,9 @@
 - [x] 定义 `WebSocketAcceptOptions`
 - [x] 定义 `AsyncWebSocketConn` 接口
 - [x] 定义 `WebSocketFdTransport`
-- [ ] 定义 `WebSocketTlsTransport`
+- [x] 定义 `WebSocketTlsTransport`
 - [x] 定义 `WebSocketConn`
-- [ ] 定义 `WebSocketClient`
+- [x] 定义 `WebSocketClient`
 - [x] 定义 `ReconnectPolicy`
 
 ### 1.4 测试
@@ -221,9 +221,9 @@
 
 ### 5.2 业务使用体验
 
-- [ ] 提供 echo handler 风格示例
-- [ ] 提供 chat/session 风格示例
-- [ ] 验证结构体 `AsyncHandler` + 结构体 `WebSocketConn` 方法组合是否顺手
+- [x] 提供 echo handler 风格示例
+- [x] 提供 chat/session 风格示例
+- [x] 验证结构体 `AsyncHandler` + 结构体 `WebSocketConn` 方法组合是否顺手
 
 ### 5.3 测试
 
@@ -238,9 +238,9 @@
 
 ### 6.1 设计收敛
 
-- [ ] 明确是新增 `WebSocketTlsTransport`，还是让现有抽象泛化到任意 `AsyncReader` / `AsyncWriter`
-- [ ] 与 `tls.https` / 现有 TLS server 能力对齐，避免重复包装
-- [ ] 明确 TLS 握手结束后如何桥接到 WebSocket upgrade
+- [x] 明确是新增 `WebSocketTlsTransport`，还是让现有抽象泛化到任意 `AsyncReader` / `AsyncWriter`
+- [x] 与 `tls.https` / 现有 TLS server 能力对齐，避免重复包装
+- [x] 明确 TLS 握手结束后如何桥接到 WebSocket upgrade
 
 ### 6.2 实现
 

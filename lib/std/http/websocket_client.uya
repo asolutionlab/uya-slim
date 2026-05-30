@@ -1,0 +1,18 @@
+// lib/std/http/websocket_client.uya - WebSocket client / policy 模块骨架
+//
+// 模块路径：use std.http.websocket_client
+//
+// 当前先落客户端包装结构体；自动重连、主动心跳与后台发送模型
+// 在后续 Phase 8/9 中继续补齐。
+
+use std.http.websocket_types;
+
+/// WebSocket 客户端包装结构体骨架。
+/// 参数说明：`options` 保存会话级配置；`reconnect` 保存重连策略；`connected` 表示当前是否持有活跃会话。
+/// 返回值说明：无。
+export struct WebSocketClient {
+    role: WebSocketRole = WebSocketRole.Client,
+    options: WebSocketAcceptOptions = WebSocketAcceptOptions{},
+    reconnect: ReconnectPolicy = ReconnectPolicy{},
+    connected: bool = false,
+}

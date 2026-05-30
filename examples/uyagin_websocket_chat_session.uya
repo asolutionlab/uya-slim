@@ -1,0 +1,133 @@
+// examples/uyagin_websocket_chat_session.uya - UyaGin WebSocket session/chat 风格示例
+//
+// 构建运行（仓库根目录）:
+//   ./bin/uya --c99 examples/uyagin_websocket_chat_session.uya -o /tmp/uyagin_websocket_chat_session.c
+//   cc -std=c99 -O0 -g -fno-builtin -o /tmp/uyagin_websocket_chat_session /tmp/uyagin_websocket_chat_session.c
+//   /tmp/uyagin_websocket_chat_session
+//
+// 当前示例监听 ws://127.0.0.1:8767/chat ，接受一个连接、读取一条 text 消息，
+// 再以 `room[<name>] <payload>` 形式回复后退出。
+// 这个示例重点演示：handler 结构体自带会话配置，而 WebSocketConn 方法负责单次会话动作。
+
+use std.async_scheduler;
+use std.http.server;
+use std.http.types;
+use std.http.uyagin;
+use std.http.uyagin_websocket;
+use std.http.websocket_async;
+use std.http.websocket_frame;
+use std.http.websocket_types;
+use libc.syscall;
+
+fn copy_bytes(dst: &byte, src: &const byte, len: usize) void {
+    var i: usize = 0;
+    while i < len {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+}
+
+fn write_all_fd(fd: i32, data: &[byte]) !void {
+    var total: usize = 0;
+    while total < data.len {
+        const wn: isize = try sys_write(fd, data.ptr + total, data.len - total);
+        if wn <= 0 {
+            return error.ConnectionClosed;
+        }
+        total = total + (wn as usize);
+    }
+}
+
+fn sync_ws_write_message(ws: &WebSocketConn, opcode: WebSocketOpcode, payload: &byte, payload_len: usize) !void {
+    var frame: [byte: 4096] = [];
+    var mask: [byte: 4] = [0: 4];
+    const frame_len: usize = try websocket_encode_frame_raw(
+        WebSocketRole.Server,
+        true,
+        opcode,
+        payload as &const byte,
+        payload_len,
+        mask,
+        &frame[0],
+        4096,
+    );
+    try write_all_fd(ws.borrow_fd(), frame[0: frame_len]);
+}
+
+fn build_room_reply(room_name: &const byte, room_name_len: usize, msg: &byte, msg_len: usize, out: &byte, out_cap: usize) !usize {
+    const prefix: &[byte] = &"room["[0: 5];
+    const middle: &[byte] = &"] "[0: 2];
+    const total_len: usize = prefix.len + room_name_len + middle.len + msg_len;
+    if total_len > out_cap {
+        return error.WebSocketMessageTooLarge;
+    }
+    var pos: usize = 0;
+    copy_bytes(out + pos, prefix.ptr as &const byte, prefix.len);
+    pos = pos + prefix.len;
+    copy_bytes(out + pos, room_name, room_name_len);
+    pos = pos + room_name_len;
+    copy_bytes(out + pos, middle.ptr as &const byte, middle.len);
+    pos = pos + middle.len;
+    copy_bytes(out + pos, msg as &const byte, msg_len);
+    return total_len;
+}
+
+struct ChatSessionHandler : AsyncHandler {
+    room_name: &const byte,
+    room_name_len: usize,
+}
+
+ChatSessionHandler {
+    @async_fn
+    fn handle(self: &Self, ctx: &GinContext) Future<!i32> {
+        var opts: WebSocketAcceptOptions = websocket_accept_options_default();
+        var ws: WebSocketConn = try uyagin_websocket_upgrade_sync(ctx, &opts);
+        var rx: [byte: 4096] = [];
+        var msg: [byte: 4096] = [];
+        var reply: [byte: 4096] = [];
+        var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
+        const n: usize = try @await ws.read_message(&rx[0], 4096, &msg[0], 4096, &opcode);
+        if opcode != WebSocketOpcode.Text {
+            return error.WebSocketUnsupportedOpcode;
+        }
+        const reply_len: usize = try build_room_reply(self.room_name, self.room_name_len, &msg[0], n, &reply[0], 4096);
+        try sync_ws_write_message(&ws, WebSocketOpcode.Text, &reply[0], reply_len);
+        return 0;
+    }
+}
+
+fn run_chat_demo() !i32 {
+    var engine: Engine = uyagin_new();
+    var handler_impl: ChatSessionHandler = ChatSessionHandler{
+        room_name: "lobby",
+        room_name_len: 5,
+    };
+    const handler: AsyncHandler = handler_impl;
+    try engine.GET("/chat", handler);
+
+    const cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 1,
+        port: 8767,
+        host: [],
+    };
+    var srv: HttpServer = try http_server_listen(&cfg);
+    @println("chat/session demo listening on ws://127.0.0.1:8767/chat");
+    @println("accepting one text message and then exiting");
+
+    var accepted: Conn = try http_server_accept(&srv);
+    http_server_close(&srv);
+
+    var scheduler: Scheduler = Scheduler{};
+    scheduler_init(&scheduler);
+    const server_fd: i32 = accepted.fd;
+    accepted.fd = -1;
+    _ = try scheduler_run<!i32>(&scheduler, uyagin_serve_conn(&engine, server_fd, &scheduler));
+    return 0;
+}
+
+export fn main() i32 {
+    return run_chat_demo() catch {
+        return 1;
+    };
+}

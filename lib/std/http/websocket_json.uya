@@ -1,0 +1,8 @@
+// lib/std/http/websocket_json.uya - WebSocket JSON helper 模块骨架
+//
+// 模块路径：use std.http.websocket_json
+//
+// 当前文件先作为 Phase 1 的模块占位；JSON 文本消息辅助 API
+// 在后续 Phase 7 中继续补齐。
+
+fn websocket_json_module_placeholder() void {}

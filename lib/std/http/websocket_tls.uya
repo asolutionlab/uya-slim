@@ -1,0 +1,15 @@
+// lib/std/http/websocket_tls.uya - WebSocket TLS / WSS 模块骨架
+//
+// 模块路径：use std.http.websocket_tls
+//
+// 当前先落公共 transport 类型与生命周期字段；具体 TLS 握手、WSS upgrade
+// 与异步收发实现将在后续 Phase 6 中继续补齐。
+
+/// WebSocket over TLS transport 的公共类型骨架。
+/// 参数说明：`fd` 为握手完成后绑定的底层连接；`owned` / `closed` 与 `WebSocketFdTransport` 对齐生命周期语义。
+/// 返回值说明：无。
+export struct WebSocketTlsTransport {
+    fd: i32 = -1,
+    owned: i32 = 0,
+    closed: i32 = 1,
+}
