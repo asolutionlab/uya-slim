@@ -749,6 +749,241 @@ fn c99_codegen_ensure_mono_struct_1arg(codegen: &C99CodeGenerator, generic_name:
     }
 }
 
+fn c99_codegen_type_arg_signature(codegen: &C99CodeGenerator, type_arg: &ASTNode, out: &byte, out_cap: i32) void {
+    if out == null || out_cap <= 0 {
+        return;
+    }
+    out[0] = 0;
+    if codegen == null || type_arg == null {
+        return;
+    }
+    var len: i32 = 0;
+    len = append_type_arg_suffix(codegen, type_arg, out, len, out_cap);
+    if len >= out_cap {
+        len = out_cap - 1;
+    }
+    out[len] = 0;
+}
+
+fn c99_codegen_mono_type_args_match(codegen: &C99CodeGenerator, lhs: & & ASTNode, lhs_count: i32, rhs: & & ASTNode, rhs_count: i32) i32 {
+    if lhs_count != rhs_count {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < lhs_count {
+        if lhs == null || rhs == null || lhs[i] == null || rhs[i] == null {
+            return 0;
+        }
+        var lhs_sig: [byte: 256] = [];
+        var rhs_sig: [byte: 256] = [];
+        c99_codegen_type_arg_signature(codegen, lhs[i], &lhs_sig[0], 256);
+        c99_codegen_type_arg_signature(codegen, rhs[i], &rhs_sig[0], 256);
+        if strcmp(&lhs_sig[0] as *byte, &rhs_sig[0] as *byte) != 0 {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn c99_codegen_ensure_mono_function(codegen: &C99CodeGenerator, generic_name: &byte, type_args: & & ASTNode, type_arg_count: i32) void {
+    if codegen == null || generic_name == null || type_args == null || type_arg_count <= 0 {
+        return;
+    }
+    var i: i32 = 0;
+    while i < codegen.mono_instance_count {
+        const inst: MonoInstanceCodegen = codegen.mono_instances[i];
+        if inst.is_function != 0 && inst.generic_name != null &&
+            strcmp(inst.generic_name as *byte, generic_name as *byte) == 0 &&
+            c99_codegen_mono_type_args_match(codegen, inst.type_args, inst.type_arg_count, type_args, type_arg_count) != 0 {
+            codegen.reachable_mono_instances[i] = 1;
+            return;
+        }
+        i = i + 1;
+    }
+    if codegen.mono_instance_count >= C99_MAX_MONO_INSTANCES {
+        return;
+    }
+    const args_copy: & & ASTNode = compiler_arena_alloc(codegen.arena, (@size_of(&ASTNode) * (type_arg_count as usize))) as & & ASTNode;
+    if args_copy == null {
+        return;
+    }
+    var ai: i32 = 0;
+    while ai < type_arg_count {
+        args_copy[ai] = type_args[ai];
+        ai = ai + 1;
+    }
+    if codegen.mono_instance_count < 0 {
+        return;
+    }
+    const idx_u: usize = codegen.mono_instance_count as usize;
+    if idx_u >= C99_MAX_MONO_INSTANCES as usize {
+        return;
+    }
+    codegen.mono_instances[idx_u].generic_name = generic_name;
+    codegen.mono_instances[idx_u].is_function = 1;
+    codegen.mono_instances[idx_u].type_arg_count = type_arg_count;
+    codegen.mono_instances[idx_u].type_args = args_copy;
+    codegen.reachable_mono_instances[idx_u] = 1;
+    codegen.mono_instance_count = codegen.mono_instance_count + 1;
+}
+
+fn c99_collect_nested_mono_calls_from_ast(codegen: &C99CodeGenerator, node: &ASTNode, type_params: &TypeParam, type_param_count: i32, mono_type_args: & & ASTNode, mono_type_arg_count: i32) void {
+    if codegen == null || node == null {
+        return;
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        const callee: &ASTNode = node.call_expr_callee;
+        if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER &&
+            callee.identifier_name != null &&
+            node.call_expr_type_arg_count > 0 && node.call_expr_type_args != null {
+            const subst_args: & & ASTNode = compiler_arena_alloc(codegen.arena, (@size_of(&ASTNode) * (node.call_expr_type_arg_count as usize))) as & & ASTNode;
+            if subst_args != null {
+                var ti: i32 = 0;
+                while ti < node.call_expr_type_arg_count {
+                    subst_args[ti] = substitute_type_arg_explicit(codegen, node.call_expr_type_args[ti], type_params, mono_type_args, mono_type_arg_count);
+                    ti = ti + 1;
+                }
+                c99_codegen_ensure_mono_function(codegen, callee.identifier_name, subst_args, node.call_expr_type_arg_count);
+            }
+        }
+        c99_collect_nested_mono_calls_from_ast(codegen, node.call_expr_callee, type_params, type_param_count, mono_type_args, mono_type_arg_count);
+        if node.call_expr_args != null {
+            var ci: i32 = 0;
+            while ci < node.call_expr_arg_count {
+                c99_collect_nested_mono_calls_from_ast(codegen, node.call_expr_args[ci], type_params, type_param_count, mono_type_args, mono_type_arg_count);
+                ci = ci + 1;
+            }
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            c99_collect_nested_mono_calls_from_ast(codegen, node.block_stmts[bi], type_params, type_param_count, mono_type_args, mono_type_arg_count);
+            bi = bi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_condition != null { c99_collect_nested_mono_calls_from_ast(codegen, node.if_stmt_condition, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.if_stmt_then_branch != null { c99_collect_nested_mono_calls_from_ast(codegen, node.if_stmt_then_branch, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.if_stmt_else_branch != null { c99_collect_nested_mono_calls_from_ast(codegen, node.if_stmt_else_branch, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        if node.while_stmt_condition != null { c99_collect_nested_mono_calls_from_ast(codegen, node.while_stmt_condition, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.while_stmt_body != null { c99_collect_nested_mono_calls_from_ast(codegen, node.while_stmt_body, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        if node.for_stmt_array != null { c99_collect_nested_mono_calls_from_ast(codegen, node.for_stmt_array, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.for_stmt_range_start != null { c99_collect_nested_mono_calls_from_ast(codegen, node.for_stmt_range_start, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.for_stmt_range_end != null { c99_collect_nested_mono_calls_from_ast(codegen, node.for_stmt_range_end, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.for_stmt_body != null { c99_collect_nested_mono_calls_from_ast(codegen, node.for_stmt_body, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        if node.var_decl_init != null { c99_collect_nested_mono_calls_from_ast(codegen, node.var_decl_init, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if node.assign_dest != null { c99_collect_nested_mono_calls_from_ast(codegen, node.assign_dest, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.assign_src != null { c99_collect_nested_mono_calls_from_ast(codegen, node.assign_src, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        if node.return_stmt_expr != null { c99_collect_nested_mono_calls_from_ast(codegen, node.return_stmt_expr, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR {
+        if node.match_expr_expr != null { c99_collect_nested_mono_calls_from_ast(codegen, node.match_expr_expr, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        var mi: i32 = 0;
+        while mi < node.match_expr_arm_count {
+            if node.match_expr_arms[mi].result_expr != null {
+                c99_collect_nested_mono_calls_from_ast(codegen, node.match_expr_arms[mi].result_expr, type_params, type_param_count, mono_type_args, mono_type_arg_count);
+            }
+            mi = mi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_TRY_EXPR {
+        if node.try_expr_operand != null { c99_collect_nested_mono_calls_from_ast(codegen, node.try_expr_operand, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        if node.catch_expr_operand != null { c99_collect_nested_mono_calls_from_ast(codegen, node.catch_expr_operand, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.catch_expr_catch_block != null { c99_collect_nested_mono_calls_from_ast(codegen, node.catch_expr_catch_block, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_AWAIT_EXPR {
+        if node.await_expr_operand != null { c99_collect_nested_mono_calls_from_ast(codegen, node.await_expr_operand, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if node.binary_expr_left != null { c99_collect_nested_mono_calls_from_ast(codegen, node.binary_expr_left, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.binary_expr_right != null { c99_collect_nested_mono_calls_from_ast(codegen, node.binary_expr_right, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        if node.unary_expr_operand != null { c99_collect_nested_mono_calls_from_ast(codegen, node.unary_expr_operand, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_STRUCT_INIT && node.struct_init_field_values != null {
+        var sfi: i32 = 0;
+        while sfi < node.struct_init_field_count {
+            c99_collect_nested_mono_calls_from_ast(codegen, node.struct_init_field_values[sfi], type_params, type_param_count, mono_type_args, mono_type_arg_count);
+            sfi = sfi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_ARRAY_LITERAL && node.array_literal_elements != null {
+        var ali: i32 = 0;
+        while ali < node.array_literal_element_count {
+            c99_collect_nested_mono_calls_from_ast(codegen, node.array_literal_elements[ali], type_params, type_param_count, mono_type_args, mono_type_arg_count);
+            ali = ali + 1;
+        }
+        if node.array_literal_repeat_count_expr != null { c99_collect_nested_mono_calls_from_ast(codegen, node.array_literal_repeat_count_expr, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_TUPLE_LITERAL && node.tuple_literal_elements != null {
+        var tli: i32 = 0;
+        while tli < node.tuple_literal_element_count {
+            c99_collect_nested_mono_calls_from_ast(codegen, node.tuple_literal_elements[tli], type_params, type_param_count, mono_type_args, mono_type_arg_count);
+            tli = tli + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        if node.member_access_object != null { c99_collect_nested_mono_calls_from_ast(codegen, node.member_access_object, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        if node.array_access_array != null { c99_collect_nested_mono_calls_from_ast(codegen, node.array_access_array, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.array_access_index != null { c99_collect_nested_mono_calls_from_ast(codegen, node.array_access_index, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+    if node.type == ASTNodeType.AST_SLICE_EXPR {
+        if node.slice_expr_base != null { c99_collect_nested_mono_calls_from_ast(codegen, node.slice_expr_base, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.slice_expr_start_expr != null { c99_collect_nested_mono_calls_from_ast(codegen, node.slice_expr_start_expr, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        if node.slice_expr_len_expr != null { c99_collect_nested_mono_calls_from_ast(codegen, node.slice_expr_len_expr, type_params, type_param_count, mono_type_args, mono_type_arg_count); }
+        return;
+    }
+}
+
+fn c99_mono_name_is_future_ready_helper(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    if strcmp(name as *byte, "future_ready_ok" as *byte) == 0 ||
+        strcmp(name as *byte, "std_future_ready_ok" as *byte) == 0 ||
+        strcmp(name as *byte, "task_ready_ok" as *byte) == 0 ||
+        strcmp(name as *byte, "std_task_ready_ok" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
 // 递归收集函数体内 try 表达式的类型，提前注册 err_union_*，避免 from_json 等中嵌套 try 使用未定义类型
 fn collect_err_union_from_ast(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -3549,6 +3784,48 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     if prof_codegen != 0 {
         t_mk4 = clock();
         prof_ms_step6_mid = ((t_mk4 as i64) - (t_mk3 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+    }
+
+    // 第六步 d2：补注册单态化泛型函数体中的嵌套泛型调用。
+    // 例如 future_ready_ok<T> 内部会调用 poll_ready_ok<T>；若不在实例化后的函数体上递归登记，
+    // Future<!WebSocketConn> 这类路径会漏发 poll_ready_ok<WebSocketConn>，进而缺少 Poll/err_union 相关定义。
+    {
+        var di2: i32 = 0;
+        while di2 < decl_count {
+            const decl_plain: &ASTNode = ast.program_decls[di2];
+            if decl_plain != null && decl_plain.type == ASTNodeType.AST_FN_DECL &&
+                decl_plain.fn_decl_body != null &&
+                is_generic_function_c99(decl_plain) == 0 {
+                c99_collect_nested_mono_calls_from_ast(codegen, decl_plain.fn_decl_body, null, 0, null, 0);
+            }
+            di2 = di2 + 1;
+        }
+        var mj: i32 = 0;
+        while mj < codegen.mono_instance_count {
+            if codegen.mono_instances[mj].generic_name != null && codegen.mono_instances[mj].is_function != 0 {
+                if c99_mono_name_is_future_ready_helper(codegen.mono_instances[mj].generic_name) != 0 {
+                    c99_codegen_ensure_mono_function(codegen, "poll_ready_ok" as &byte,
+                        codegen.mono_instances[mj].type_args, codegen.mono_instances[mj].type_arg_count);
+                }
+                var dk: i32 = 0;
+                while dk < decl_count {
+                    const decl2: &ASTNode = ast.program_decls[dk];
+                    if decl2 != null && decl2.type == ASTNodeType.AST_FN_DECL &&
+                        decl2.fn_decl_body != null &&
+                        is_generic_function_c99(decl2) != 0 &&
+                        c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[mj].generic_name, decl2) != 0 &&
+                        has_unresolved_mono_type_args(decl2, codegen.mono_instances[mj].type_args, codegen.mono_instances[mj].type_arg_count) == 0 {
+                        c99_collect_nested_mono_calls_from_ast(codegen, decl2.fn_decl_body,
+                            decl2.fn_decl_type_params, decl2.fn_decl_type_param_count,
+                            codegen.mono_instances[mj].type_args, codegen.mono_instances[mj].type_arg_count);
+                        dk = decl_count;
+                    } else {
+                        dk = dk + 1;
+                    }
+                }
+            }
+            mj = mj + 1;
+        }
     }
     
     // 第六步 e：收集所有单态化函数和方法签名（返回/参数）中的错误联合结构体

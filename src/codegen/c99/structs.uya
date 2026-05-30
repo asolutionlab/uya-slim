@@ -6,6 +6,7 @@
 
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
+extern fn emit_err_union_struct_for_type_node(codegen: &C99CodeGenerator, type_node: &ASTNode) void;
 
 // 检查结构体是否已添加到表中
 fn is_struct_in_table(codegen: &C99CodeGenerator, struct_name: &byte) i32 {
@@ -606,6 +607,18 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
     if n <= 0 || variants == null {
         return -1;
     }
+    var di: i32 = 0;
+    while di < n {
+        const dv: &ASTNode = variants[di];
+        if dv != null && dv.type == ASTNodeType.AST_VAR_DECL && dv.var_decl_type != null {
+            ensure_value_type_deps_emitted(codegen, dv.var_decl_type);
+            c99_emit_async_frame_forward_for_type(codegen, dv.var_decl_type);
+            if dv.var_decl_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                emit_err_union_struct_for_type_node(codegen, dv.var_decl_type);
+            }
+        }
+        di = di + 1;
+    }
     c99_emit_indent(codegen);
     fprintf(codegen.emit_stream as *void, "union %s {\n" as *byte, union_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
@@ -714,6 +727,9 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
             }
             ensure_value_type_deps_emitted(codegen, dep_type);
             c99_emit_async_frame_forward_for_type(codegen, dep_type);
+            if dep_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                emit_err_union_struct_for_type_node(codegen, dep_type);
+            }
         }
         di = di + 1;
     }

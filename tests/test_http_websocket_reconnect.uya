@@ -60,18 +60,17 @@ struct ServerRoleConnector : WebSocketClientConnector {
 
 ServerRoleConnector {
     @async_fn
-    fn connect(self: &Self, options: &WebSocketAcceptOptions, out: &WebSocketConn) Future<!usize> {
+    fn connect(self: &Self, options: &WebSocketAcceptOptions) Future<!WebSocketConn> {
         _ = self;
         const opts: WebSocketAcceptOptions = options[0];
         var io: WebSocketFdTransport = websocket_fd_transport_borrowed(-1);
-        out[0] = websocket_conn_new(&io, WebSocketRole.Server, &opts);
-        return 1 as usize;
+        return websocket_conn_new(&io, WebSocketRole.Server, &opts);
     }
 }
 
 LoopbackConnector {
     @async_fn
-    fn connect(self: &Self, options: &WebSocketAcceptOptions, out: &WebSocketConn) Future<!usize> {
+    fn connect(self: &Self, options: &WebSocketAcceptOptions) Future<!WebSocketConn> {
         self.connect_calls_ptr[0] = self.connect_calls_ptr[0] + 1;
         self.seen_subprotocol_count_ptr[0] = options.subprotocol_count;
         if self.fail_remaining_ptr[0] > 0 {
@@ -88,8 +87,7 @@ LoopbackConnector {
             self.server_out[0].close();
         }
         self.server_out[0] = server;
-        out[0] = client;
-        return 1 as usize;
+        return client;
     }
 }
 

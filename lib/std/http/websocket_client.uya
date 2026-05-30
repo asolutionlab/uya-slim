@@ -55,11 +55,11 @@ fn websocket_client_note_connect_failure(self: &WebSocketClient, now_ms: u64) !v
 }
 
 /// Client 侧连接工厂。
-/// 参数说明：实现方负责持有 endpoint、header、auth 等 client 专属握手上下文，并在每次 `connect(...)` 时复用；`out` 用于回填新会话。
-/// 返回值说明：返回成功建立的新会话标记；实际 `WebSocketConn` 写入 `out`。
+/// 参数说明：实现方负责持有 endpoint、header、auth 等 client 专属握手上下文，并在每次 `connect(...)` 时复用。
+/// 返回值说明：返回已完成 dial + handshake 的 client role `WebSocketConn`。
 export interface WebSocketClientConnector {
     @async_fn
-    fn connect(self: &Self, options: &WebSocketAcceptOptions, out: &WebSocketConn) Future<!usize>;
+    fn connect(self: &Self, options: &WebSocketAcceptOptions) Future<!WebSocketConn>;
 }
 
 /// WebSocket 客户端包装结构体。
@@ -81,18 +81,16 @@ struct WebSocketClientReconnectFuture : Future<!bool> {
     client: &WebSocketClient,
     connector: WebSocketClientConnector,
     now_ms: u64,
-    connect_out: WebSocketConn,
-    connect_fut: Future<!usize>,
+    connect_fut: Future<!WebSocketConn>,
     state: i32,
 
     fn poll(self: &Self, waker: &Waker) Poll<!bool> {
         if self.state == 0 {
-            self.connect_out = websocket_conn_empty();
-            self.connect_fut = self.connector.connect(&self.client.options, &self.connect_out);
+            self.connect_fut = self.connector.connect(&self.client.options);
             self.state = 1;
         }
 
-        const polled: Poll<!usize> = self.connect_fut.poll(waker);
+        const polled: Poll<!WebSocketConn> = self.connect_fut.poll(waker);
         match polled {
             .Pending(_) => {
                 return Poll<!bool>.Pending({});
@@ -100,7 +98,7 @@ struct WebSocketClientReconnectFuture : Future<!bool> {
             .Ready(result) => {
                 self.connect_fut.release();
                 self.state = 2;
-                const wrote: usize = result catch |err| {
+                var conn: WebSocketConn = result catch |err| {
                     _ = err;
                     const note: !void = websocket_client_note_connect_failure(self.client, self.now_ms);
                     _ = note catch {
@@ -108,10 +106,9 @@ struct WebSocketClientReconnectFuture : Future<!bool> {
                     };
                     return Poll<!bool>.Ready(ok<bool>(false));
                 };
-                _ = wrote;
-                const attach_result: !void = websocket_client_attach(self.client, &self.connect_out);
+                const attach_result: !void = websocket_client_attach(self.client, &conn);
                 if attach_result.error_id != 0u32 {
-                    self.connect_out.close();
+                    conn.close();
                     return Poll<!bool>.Ready(error.WebSocketProtocolError);
                 }
                 return Poll<!bool>.Ready(ok<bool>(true));
@@ -264,8 +261,7 @@ export fn websocket_client_reconnect_tick(self: &WebSocketClient, connector: Web
         client: self,
         connector: connector,
         now_ms: now_ms,
-        connect_out: websocket_conn_empty(),
-        connect_fut: future_ready_ok<usize>(0),
+        connect_fut: future_ready_ok<WebSocketConn>(websocket_conn_empty()),
         state: 0,
     };
 }
