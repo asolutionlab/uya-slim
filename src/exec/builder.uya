@@ -3709,6 +3709,9 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
     while i < module.function_count {
         const built: &BCFunction = exec_builder_build_function(arena, checker, &const_pool_builder, &host_call_builder, module, module.functions[i]);
         if built == null {
+            if exec_backend_get_last_error() == null {
+                exec_backend_set_error(module.functions[i].decl, "exec: bytecode 函数构建失败" as *byte, 0);
+            }
             return null;
         }
         functions[i] = built[0];
@@ -3720,6 +3723,9 @@ export fn exec_build_bytecode(arena: &CompilerArena, checker: &TypeChecker, modu
     if module.global_init_function != null {
         const built_global_init: &BCFunction = exec_builder_build_function(arena, checker, &const_pool_builder, &host_call_builder, module, module.global_init_function);
         if built_global_init == null {
+            if exec_backend_get_last_error() == null {
+                exec_backend_set_error(module.global_init_function.decl, "exec: bytecode 全局初始化函数构建失败" as *byte, 0);
+            }
             return null;
         }
         functions[i] = built_global_init[0];

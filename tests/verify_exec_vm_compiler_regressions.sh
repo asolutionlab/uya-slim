@@ -540,6 +540,50 @@ if grep -q '回退 C99' "$TMP_STDERR"; then
 fi
 echo "  catch void tail --exec ✓"
 
+echo "验证空 catch block 丢弃错误路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_catch_empty_block.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q 'catch 分支块为空' "$TMP_STDERR"; then
+    echo "✗ empty catch block still unsupported"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  empty catch block --vm ✓"
+
+echo "验证 run --exec 下空 catch block 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_catch_empty_block.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ empty catch block unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+if grep -q 'catch 分支块为空' "$TMP_STDERR"; then
+    echo "✗ empty catch block still unsupported under --exec"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  empty catch block --exec ✓"
+
+echo "验证 catch block 裸 return 路径..."
+"$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_catch_bare_return.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+echo "  catch bare return --vm ✓"
+
+echo "验证 run --exec 下 catch block 裸 return 路径不发生 fallback..."
+"$COMPILER" run --exec "$SCRIPT_DIR/test_exec_vm_catch_bare_return.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
+grep -q '后端类型: EXEC' "$TMP_STDERR"
+grep -q 'exec backend 构建完成' "$TMP_STDERR"
+if grep -q '回退 C99' "$TMP_STDERR"; then
+    echo "✗ catch bare return unexpectedly fell back to C99"
+    cat "$TMP_STDERR"
+    exit 1
+fi
+echo "  catch bare return --exec ✓"
+
 echo "验证 catch 错误绑定路径..."
 "$COMPILER" run --vm "$SCRIPT_DIR/test_exec_vm_catch_error_bind.uya" >"$TMP_STDOUT" 2>"$TMP_STDERR"
 grep -q '后端类型: EXEC' "$TMP_STDERR"

@@ -1244,6 +1244,34 @@ fn exec_lower_make_zero_expr(ctx: &ExecLowerContext, ast_node: &ASTNode, type: &
     return exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_ZERO, type);
 }
 
+fn exec_lower_make_bare_return_expr(ctx: &ExecLowerContext, ast_node: &ASTNode) &HIRExpr {
+    if ctx == null {
+        return null;
+    }
+    var return_type: Type = make_void_type();
+    if ctx.function_decl != null && ctx.function_decl.fn_decl_return_type != null {
+        return_type = type_from_ast(ctx.checker, ctx.function_decl.fn_decl_return_type);
+    }
+    if return_type.kind == TypeKind.TYPE_VOID {
+        return exec_lower_make_zero_expr(ctx, ast_node, &return_type);
+    }
+    if return_type.kind == TypeKind.TYPE_ERROR_UNION &&
+        return_type.error_union_payload_type != null &&
+        return_type.error_union_payload_type[0].kind == TypeKind.TYPE_VOID {
+        const payload_zero: &HIRExpr = exec_lower_make_zero_expr(ctx, ast_node, return_type.error_union_payload_type);
+        if payload_zero == null {
+            return null;
+        }
+        const ok_expr: &HIRExpr = exec_lower_alloc_expr(ctx, ast_node, HIRExprKind.HIR_EXPR_MAKE_OK, &return_type);
+        if ok_expr == null {
+            return null;
+        }
+        ok_expr.left = payload_zero;
+        return ok_expr;
+    }
+    return exec_lower_fail_expr(ast_node, "exec: 非 void 函数缺少返回值" as *byte);
+}
+
 fn exec_lower_make_repeat_array_init_expr(ctx: &ExecLowerContext, expr: &ASTNode, array_type: &Type) &HIRExpr {
     if ctx == null || expr == null || array_type == null {
         return null;
@@ -3950,10 +3978,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         const catch_block_early: &ASTNode = expr.catch_expr_catch_block;
         const catch_last_stmt_early: &ASTNode = exec_lower_block_last_stmt(catch_block_early);
         if catch_last_stmt_early == null {
+            hir_catch_early.right = exec_lower_make_zero_expr(ctx, catch_block_early, &catch_payload_type);
+            if hir_catch_early.right == null {
+                if catch_bind_scope_early != 0 {
+                    exec_lower_pop_scope(ctx);
+                }
+                return null;
+            }
             if catch_bind_scope_early != 0 {
                 exec_lower_pop_scope(ctx);
             }
-            return exec_lower_fail_expr_reason(expr, "exec: catch 分支块为空" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+            return hir_catch_early;
         }
         if catch_payload_type.kind == TypeKind.TYPE_VOID && catch_last_stmt_early.type != ASTNodeType.AST_RETURN_STMT {
             hir_catch_early.block = exec_lower_block(ctx, catch_block_early);
@@ -3985,6 +4020,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 } else {
                     hir_catch_early.extra = exec_lower_expr(ctx, return_stmt_early.return_stmt_expr);
                 }
+                if hir_catch_early.extra == null {
+                    if catch_bind_scope_early != 0 {
+                        exec_lower_pop_scope(ctx);
+                    }
+                    return null;
+                }
+            } else {
+                hir_catch_early.extra = exec_lower_make_bare_return_expr(ctx, return_stmt_early);
                 if hir_catch_early.extra == null {
                     if catch_bind_scope_early != 0 {
                         exec_lower_pop_scope(ctx);
@@ -5046,10 +5089,17 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
         const catch_block: &ASTNode = expr.catch_expr_catch_block;
         const catch_last_stmt: &ASTNode = exec_lower_block_last_stmt(catch_block);
         if catch_last_stmt == null {
+            hir_catch.right = exec_lower_make_zero_expr(ctx, catch_block, &expr_type);
+            if hir_catch.right == null {
+                if catch_bind_scope != 0 {
+                    exec_lower_pop_scope(ctx);
+                }
+                return null;
+            }
             if catch_bind_scope != 0 {
                 exec_lower_pop_scope(ctx);
             }
-            return exec_lower_fail_expr_reason(expr, "exec: catch 分支块为空" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_CATCH_EXPR);
+            return hir_catch;
         }
         if expr_type.kind == TypeKind.TYPE_VOID && catch_last_stmt.type != ASTNodeType.AST_RETURN_STMT {
             hir_catch.block = exec_lower_block(ctx, catch_block);
@@ -5081,6 +5131,14 @@ fn exec_lower_expr(ctx: &ExecLowerContext, expr: &ASTNode) &HIRExpr {
                 } else {
                     hir_catch.extra = exec_lower_expr(ctx, return_stmt.return_stmt_expr);
                 }
+                if hir_catch.extra == null {
+                    if catch_bind_scope != 0 {
+                        exec_lower_pop_scope(ctx);
+                    }
+                    return null;
+                }
+            } else {
+                hir_catch.extra = exec_lower_make_bare_return_expr(ctx, return_stmt);
                 if hir_catch.extra == null {
                     if catch_bind_scope != 0 {
                         exec_lower_pop_scope(ctx);

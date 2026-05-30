@@ -1,7 +1,7 @@
 # Uya Bytecode / IR 执行后端 TODO
 
 **状态**：executable TODO, implementation in progress
-**更新日期**：2026-05-27
+**更新日期**：2026-05-30
 **配套设计**：`docs/bytecode_exec_design.md`
 
 ---
@@ -282,6 +282,19 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
     - `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`
     - `src/checker/types.uya:160:5: exec: 当前不支持该类型的零值初始化`
   - 最新观测已前推到“exec build 成功并进入 VM 运行”；在未额外传 CLI 参数时，编译器本体当前返回码为 `1`，更接近 `argc < 2` 的 usage / driver 路径，而不是新的 exec 构建期 unsupported
+- 2026-05-30 已继续收口 `src/main.uya --vm` usage 路径：
+  - `catch {}` 空分支块当前会在 exec lowering 中产出 payload 零值，不再以 `exec: catch 分支块为空` 提前失败
+  - `catch { return; }` 位于 `void` / `!void` 函数内时，当前会分别降为 void return 与 `ok(void)` return，不再在 bytecode builder 阶段掉成无诊断失败或误报 `exec: 非 void 函数缺少返回值`
+  - bytecode builder 当前会在函数构建返回 null 且没有更具体 exec 错误时补充兜底诊断，避免后续 staged smoke 只看到“失败但无原因”
+  - 已新增并通过：
+    - `tests/test_exec_vm_catch_empty_block.uya`
+    - `tests/test_exec_vm_catch_bare_return.uya`
+    - `UYA_COMPILER=/tmp/uya_exec_catch_return_bin bash ./tests/verify_exec_vm_compiler_regressions.sh`
+  - `tests/verify_exec_vm_compiler_stage_smoke.sh` 当前已升级为直接校验 `src/main.uya --vm` usage 路径：
+    - 基于当前源码重编 staged compiler
+    - 分别运行 `run --vm src/main.uya` 与 `run --vm src/main.uya --no-safety-proof`
+    - 要求输出 `后端类型: EXEC`、`exec backend 构建完成`、`exec vm 运行耗时`、`程序运行返回码：1`
+    - 要求命令进程状态为 `1`，与现有 C99 hosted 无参数 usage 路径一致
 - 2026-05-18 已加强回归脚本，避免“只看退出码”的假绿：
   - `verify_exec_vm_smoke.sh`
   - `verify_exec_vm_aggregates.sh`
@@ -293,7 +306,7 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
   - 当前并非卡在 CLI 接线、VM 启动、也不再卡在最早的 `fprintf/2` varargs ABI，而是在 lowering 阶段继续向前推进后，命中“模块别名.导出全局访问”这类标识符覆盖缺口
 - 当前已知最新观测：
   - 旧的 `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法` 已于 `2026-05-27` 收口；其根因是“聚合值 pack 失败未正确上浮”与 `TYPE_UNION` 零值初始化缺口叠加
-  - 基于当前源码重编的新编译器二进制，`env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya` 与 `... --no-safety-proof` 当前都已能完成 exec build 并进入 VM 运行；在无附加 CLI 参数时当前返回码为 `1`
+  - 基于当前源码重编的新编译器二进制，`run --vm src/main.uya` 与 `run --vm src/main.uya --no-safety-proof` 当前都已能完成 exec build 并进入 VM 运行；在无附加 CLI 参数时，exec VM 进程状态与 C99 hosted usage 路径一致，均为 `1`
   - 当前观测点已从：
     - `fprintf(..., "%s -> %s", ...)` 这类 varargs `extern`
     - `_ = expr;` discard assignment
@@ -324,14 +337,14 @@ lexer -> parser -> checker -> optimizer -> codegen/c99 -> gcc/clang -> run
 - 当前观测：
   - 仓库内现成的 `./bin/uya run --vm src/main.uya` 仍会停在更早的历史前沿；要观察当前源码的真实 exec 前沿，需要先用当前源码重编临时编译器
   - 基于当前源码重编的新编译器二进制继续验证后：
-    - `env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya`
-    - `env UYA_ROOT=./lib/ /tmp/uya_exec_fix2_bin run --vm src/main.uya --no-safety-proof`
-    - 两条路线当前都已不再停在 `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法` 或 `src/checker/types.uya:160:5: exec: 当前不支持该类型的零值初始化`
-    - 当前已能完成 exec build 并进入 VM 运行；在未额外传 CLI 参数时，观测到返回码为 `1`
-- 缺口：继续确认 `src/main.uya --vm` 运行期返回码与现有 C99/hosted 路线在“无参数 usage 路径”上的行为是否一致；若不一致，需要把差异收口到最小 staged regression
+    - `run --vm src/main.uya`
+    - `run --vm src/main.uya --no-safety-proof`
+    - 两条路线当前都已不再停在 `src/exec/lower.uya:3739:1: exec: MAKE_* 源槽位非法`、`src/checker/types.uya:160:5: exec: 当前不支持该类型的零值初始化`、`exec: catch 分支块为空` 或 catch 裸 `return;` 的 bytecode 构建失败
+    - 当前已能完成 exec build 并进入 VM 运行；在未额外传 CLI 参数时，观测到 `程序运行返回码：1`，命令进程状态也为 `1`
+- 已确认：`src/main.uya --vm` 运行期返回码与现有 C99 hosted 路线在“无参数 usage 路径”上的行为一致；`tests/verify_exec_vm_compiler_stage_smoke.sh` 已固定该观测
 - 缺口：继续用真实子命令与输入把编译器本体 hosted 路径从“能进入运行期”推进到“能稳定穿过更多 driver / parser / checker / codegen 实际工作负载”
 - 缺口：继续扩大面向编译器本体路径的 staged regressions，优先覆盖这轮刚打通的 global/init 聚合零值、内部 union 字段 zero-init，以及后续运行期路径
-- 推荐推进顺序：先确认 `src/main.uya --vm` 的运行期返回码与 usage 路径，再补带真实参数的 staged smoke，最后继续扩更深的编译器本体 hosted 负载回归
+- 推荐推进顺序：下一步补带真实参数的 staged smoke，再继续扩更深的编译器本体 hosted 负载回归
 
 ---
 
