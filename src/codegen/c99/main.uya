@@ -3134,6 +3134,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("uint16_t uya_thread_call_u16(void *fn, uint16_t arg);\n" as *byte, codegen.split_protos_out as *void);
         fputs("int8_t uya_thread_call_i8(void *fn, int8_t arg);\n" as *byte, codegen.split_protos_out as *void);
         fputs("uint8_t uya_thread_call_u8(void *fn, uint8_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("int32_t uya_thread_call_bool(void *fn, int32_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("uint64_t uya_thread_call_f64(void *fn, uint64_t arg_bits);\n" as *byte, codegen.split_protos_out as *void);
     }
     fputs("// std.thread：宿主工具链间接调用（跨 -O0/-O2 稳定；见 lib/std/thread.uya）\n" as *byte, codegen.emit_stream as *void);
     fputs("int32_t uya_call0_i32(void *fn) {\n" as *byte, codegen.emit_stream as *void);
