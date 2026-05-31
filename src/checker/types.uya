@@ -13,7 +13,7 @@ use std.mem.memcpy;
 
 // ===== 常量定义 =====
 
-const MAX_ERROR_NAMES: i32 = 256;
+const MAX_ERROR_NAMES: i32 = 1024;
 const MAX_MOVED_NAMES: i32 = 128;
 const MAX_MONO_INSTANCES: i32 = 512;
 const MAX_UNION_VARIANTS: i32 = 32;
@@ -303,8 +303,8 @@ struct TypeChecker {
     current_self_type_name: &byte,
     current_self_is_union: i32,
     suppress_codegen_diagnostics: i32,
-    error_names: [&byte: 256],
-    error_hashes: [u32: 256],
+    error_names: [&byte: MAX_ERROR_NAMES],
+    error_hashes: [u32: MAX_ERROR_NAMES],
     error_name_count: i32,
     moved_names: [&byte: 128],
     moved_count: i32,

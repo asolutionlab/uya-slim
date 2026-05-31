@@ -47,7 +47,7 @@ const C99_MAX_ERR_UNION_STRUCTS: i32 = 256;
 const C99_MAX_SIMD_STRUCTS: i32 = 128;
 const C99_MAX_MONO_INSTANCES: i32 = 1024;
 const C99_CHECKER_MAX_MONO_INSTANCES: i32 = 512;  // checker.mono_instances 数组大小
-const C99_MAX_ERROR_IDS: i32 = 256;
+const C99_MAX_ERROR_IDS: i32 = 1024;
 const C99_ASYNC_MAX_AWAITS: i32 = 4096;
 const C99_GENERIC_NAME_BUF_SIZE: i32 = 128;
 const C99_MAX_INTERFACE_METHODS: i32 = 128;
@@ -211,8 +211,8 @@ struct C99CodeGenerator {
     interp_temp_counter: i32,
     interp_fill_counter: i32,
     test_count: i32,  // 测试语句数量（用于判断是否生成 uya_run_tests 调用）
-    error_names: [&byte: 256],   // 错误集
-    error_hashes: [u32: 256],    // 对应 error_id（hash 值）
+    error_names: [&byte: C99_MAX_ERROR_IDS],   // 错误集
+    error_hashes: [u32: C99_MAX_ERROR_IDS],    // 对应 error_id（hash 值）
     error_count: i32,
     // defer/errdefer 栈：扁平化为 [depth * C99_MAX_DEFERS_PER_BLOCK + index]
     defer_stack: [&ASTNode: C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK],
