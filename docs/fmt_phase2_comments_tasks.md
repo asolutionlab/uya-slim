@@ -8,7 +8,7 @@
 
 ## Status
 
-- [x] Not started
+- [ ] Not started
 - [x] Done
 
 ---
@@ -63,7 +63,7 @@
 - [x] 验证注释可从 token 流中提取
 - [x] 验证连续注释可归组
 - [x] 验证注释可附着到函数声明
-- [ ] 验证注释可泛化附着到语句或块
+- [x] 验证注释可泛化附着到语句或块（最小 printer 路径）
 
 ### `lib/std/fmt/positions.uya`
 
@@ -96,7 +96,7 @@
 - [ ] 实现完整 `print_comment()`
 - [x] 实现 `print_comment_group()`
 - [x] 在 `print_decl()` 中插入注释输出逻辑
-- [ ] 在 `print_stmt()` 中插入显式注释输出逻辑
+- [x] 在 `print_stmt()` 中插入显式注释输出逻辑（最小 trailing/after-stmt 路径）
 - [ ] 在 `print_block()` 中插入显式注释输出逻辑
 - [x] 保持文档注释在声明前逐行输出
 - [x] 保持独立行注释可保留
@@ -179,5 +179,6 @@ fn add(a,b){
 
 - 当前完成的是 **Phase 2 最小可用目标**。
 - 已显式打通 comment token / collect / group / 最小 decl attach / printer 输出链路。
-- 尚未实现完整泛化的 `AttachedComments` 与 statement/block 级 attach。
+- 已具备最小 statement 级注释输出能力（覆盖 trailing comment 与 after-stmt comment 场景）。
+- 尚未实现完整泛化的 `AttachedComments` 与完整 statement/block attach 模型。
 - 若后续需要更接近 gofmt，可在 Phase 2.5 再扩展完整 attach 模型。

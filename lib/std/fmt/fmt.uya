@@ -22,6 +22,11 @@ export struct FormatOptions {
     has_rewrite_rule: bool,
 }
 
+export struct FormatResult {
+    output: &[byte],
+    changed: bool,
+}
+
 fn slice_equals(a: &[byte], b: &[byte]) bool {
     if a.len != b.len {
         return false;
@@ -67,7 +72,7 @@ export fn format_ptr_len(arena: &Arena, ptr: &byte, len: usize) !&[byte] {
     return format(arena, src);
 }
 
-export fn format(arena: &Arena, source: &[byte]) !&[byte] {
+export fn format_result(arena: &Arena, source: &[byte]) !FormatResult {
     const empty_rule: RewriteRule = RewriteRule {
         from: empty_byte_slice(arena),
         to: empty_byte_slice(arena),
@@ -78,7 +83,20 @@ export fn format(arena: &Arena, source: &[byte]) !&[byte] {
         rewrite_rule: empty_rule,
         has_rewrite_rule: false,
     };
-    return format_with_options(arena, source, opts);
+    return format_result_with_options(arena, source, opts);
+}
+
+export fn format(arena: &Arena, source: &[byte]) !&[byte] {
+    const result: FormatResult = try format_result(arena, source);
+    return result.output;
+}
+
+export fn format_result_with_options(arena: &Arena, source: &[byte], opts: FormatOptions) !FormatResult {
+    const output: &[byte] = try format_with_options(arena, source, opts);
+    return FormatResult {
+        output: output,
+        changed: !slice_equals(source, output),
+    };
 }
 
 export fn format_with_options(arena: &Arena, source: &[byte], opts: FormatOptions) !&[byte] {
@@ -111,6 +129,6 @@ export fn format_node(arena: &Arena, file: &FmtFile) !&[byte] {
 }
 
 export fn is_formatted(arena: &Arena, source: &[byte]) !bool {
-    const formatted: &[byte] = try format(arena, source);
-    return slice_equals(source, formatted);
+    const result: FormatResult = try format_result(arena, source);
+    return !result.changed;
 }

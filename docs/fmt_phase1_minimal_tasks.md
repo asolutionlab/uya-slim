@@ -9,7 +9,7 @@
 
 ## Status
 
-- [x] Not started
+- [ ] Not started
 - [x] Done
 
 ---
@@ -183,6 +183,8 @@
 ### `tests/test_fmt_api.uya`
 - [x] 验证 `format(source)` 返回预期文本
 - [x] 验证 `is_formatted(source)` 判断正确
+- [x] 验证 `format_result(source)` 返回 changed 信息
+- [x] 验证 `format_result_with_options(...)` 支持 simplify / rewrite
 
 ### `tests/test_fmt_idempotent.uya`
 - [x] 验证 `format(format(x)) == format(x)`
@@ -223,3 +225,4 @@ fn main() {
 - [x] 最小测试集全部通过
 - [x] 通过幂等测试：`format(format(x)) == format(x)`
 - [x] 不依赖编译器 `src/` 内部 parser / lexer
+- [x] 库层 API 已补充 changed 信息返回能力
