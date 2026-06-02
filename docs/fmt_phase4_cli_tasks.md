@@ -8,24 +8,24 @@
 
 ## Status
 
-- [x] Not started
-- [ ] Done
+- [ ] Not started
+- [x] Done
 
 ---
 
 ## Phase 4 Goals
 
-- [ ] 提供 `uya fmt` 命令
-- [ ] 支持 stdout / write-back / list / diff
-- [ ] 支持 simplify 与 rewrite 的 CLI 选项
-- [ ] 支持文件、目录、stdin 输入
-- [ ] 集成到 Makefile / CI 工作流
+- [x] 提供 `uya fmt` 命令
+- [x] 支持 stdout / write-back / list / diff
+- [x] 支持 simplify 与 rewrite 的 CLI 选项
+- [x] 支持文件、目录、stdin 输入
+- [x] 集成到 Makefile / CI 工作流
 
 ---
 
 ## Main Pipeline
 
-- [ ] 打通 `cli args -> collect inputs -> read source -> format_with_options -> compare original/formatted -> stdout | write back | list | diff`
+- [x] 打通 `cli args -> collect inputs -> read source -> format_with_options -> compare original/formatted -> stdout | write back | list | diff`
 
 ---
 
@@ -38,15 +38,15 @@
 - [x] 实现 stdout 输出路径
 - [x] 实现 `-w` 写回路径
 - [x] 实现错误码返回
-- [ ] 实现目录遍历
-- [ ] 实现 stdin 输入
-- [ ] 实现 `-d` 显示差异
-- [ ] 实现 `-l` 列出未格式化文件
-- [ ] 实现 `-r "rule"` 应用 rewrite 规则
-- [ ] 实现 `-s` 应用 simplify
-- [ ] 验证单文件格式化运行时可用
-- [ ] 验证多文件输入可用
-- [ ] 验证无参数时支持 stdin
+- [x] 实现目录遍历
+- [x] 实现 stdin 输入
+- [x] 实现 `-d` 显示差异
+- [x] 实现 `-l` 列出未格式化文件
+- [x] 实现 `-r "rule"` 应用 rewrite 规则
+- [x] 实现 `-s` 应用 simplify
+- [x] 验证单文件格式化运行时可用
+- [x] 验证多文件输入可用
+- [x] 验证无参数时支持 stdin
 
 ### `lib/std/fmt/fmt.uya`
 
@@ -55,14 +55,14 @@
 - [x] 保持 `format(source)` 可用
 - [x] 保持 `format_with_options(source, options)` 可用
 - [x] 保持 `is_formatted(source)` 可用
-- [ ] 返回格式化结果与是否变更的信息
+- [x] 返回格式化结果与是否变更的信息
 
 ### `Makefile`
 
-- [ ] 增加 `make fmt`
-- [ ] 增加 `make check-fmt`
-- [ ] 验证可批量格式化仓库源码
-- [ ] 验证可在 CI 中检查格式化状态
+- [x] 增加 `make fmt`
+- [x] 增加 `make check-fmt`
+- [x] 验证可批量格式化仓库源码
+- [x] 验证可在 CI 中检查格式化状态
 
 ---
 
@@ -73,6 +73,7 @@
 - [x] `tools/fmt.uya` 已可编译链接
 - [x] Phase 4 的主要阻塞已从 CLI 逻辑收敛为底层 runtime 问题
 - [x] 当前已确认：`arena_alloc(...)` 返回的内存在运行时写入即可能触发 segfault
+- [x] 运行级阻塞已解除，CLI 可完成单文件/目录/stdin 验收
 
 ### 最小复现文件
 
@@ -90,6 +91,7 @@
 - [x] fmt AST 类型名冲突已解决（`File` -> `FmtFile`）
 - [x] 运行时 segfault 可在不依赖 fmt 的 arena smoke 中复现
 - [x] 当前阻塞不再属于 fmt 业务逻辑，而属于 arena/runtime 层
+- [x] 当前 CLI 已通过运行级验证，可继续后续库层收尾优化
 
 ---
 
@@ -100,33 +102,32 @@
 - [ ] 验证选项组合不冲突
 
 ### CLI 集成测试
-- [ ] 验证 `uya fmt file.uya`
-- [ ] 验证 `uya fmt -w file.uya`
-- [ ] 验证 `uya fmt -l file.uya`
-- [ ] 验证 `uya fmt -d file.uya`
-- [ ] 验证 `uya fmt -s file.uya`
-- [ ] 验证 `uya fmt -r "foo.bar -> bar" file.uya`
-- [ ] 验证 `cat file.uya | uya fmt`
+- [x] 验证 `uya fmt file.uya`
+- [x] 验证 `uya fmt -w file.uya`
+- [x] 验证 `uya fmt -l file.uya`
+- [x] 验证 `uya fmt -d file.uya`
+- [x] 验证 `uya fmt -s file.uya`
+- [x] 验证 `uya fmt -r "foo.bar -> bar" file.uya`
+- [x] 验证 `cat file.uya | uya fmt`
 
 ### 工程级验证
-- [ ] 验证 `make fmt` 可执行
-- [ ] 验证 `make check-fmt` 可报告未格式化文件
+- [x] 验证 `make fmt` 可执行
+- [x] 验证 `make check-fmt` 可报告未格式化文件
 
 ---
 
 ## Definition of Done
 
-- [ ] `uya fmt` 可处理单文件、目录、stdin
-- [ ] `-w/-d/-l/-r/-s` 全部可用
-- [ ] CLI 返回码符合预期
-- [ ] `make fmt` / `make check-fmt` 可用
-- [ ] CLI 行为与库层 API 保持一致
+- [x] `uya fmt` 可处理单文件、目录、stdin
+- [x] `-w/-d/-l/-r/-s` 全部可用
+- [x] CLI 返回码符合预期
+- [x] `make fmt` / `make check-fmt` 可用
+- [x] CLI 行为与库层 API 保持一致
 
 ---
 
 ## Notes
 
-- 当前 Phase 4 为 **进行中**，尚未完成。
-- `tools/fmt.uya` 的最小 CLI 原型已经能成功编译链接。
-- 当前运行时阻塞已经被压缩到 arena/runtime 层，而不是 fmt/CLI 逻辑本身。
-- 在修复 `std.mem.arena` 或相关后端问题前，Phase 4 无法完成运行级验收。
+- 当前 Phase 4 已完成。
+- `tools/fmt.uya` 已能成功编译链接并通过运行级验证。
+- CLI 阻塞已解除，后续剩余事项主要是库层 API 和测试覆盖增强。

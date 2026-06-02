@@ -8,7 +8,7 @@
 
 ## Status
 
-- [x] Not started
+- [ ] Not started
 - [x] Done
 
 ---
@@ -123,6 +123,7 @@
 - [x] 变换结果均能被 printer 稳定输出
 - [x] 所有最小变换均通过 `format_with_options` 暴露
 - [ ] 所有变换均已升级为 AST 级实现
+- [x] 库层 API 已补充 `FormatOptions` / `FormatResult` 以支撑 CLI 与调用方
 
 ---
 
@@ -132,4 +133,5 @@
 - `import_sort` 当前为 **源码级 use 行排序**，不是 AST 级 `UseDecl` 排序。
 - `simplify` 当前为 **最小文本级规则**，仅覆盖 `return (x);` / `return (1);` 这类保守场景。
 - `rewrite` 当前为 **文本级 rewrite**，不是 AST pattern match。
+- 当前库层已补充 `FormatOptions` 与 `FormatResult`，可直接支撑 CLI 与外部调用方。
 - 若后续需要更接近 gofmt，可在 Phase 3.5 再将三类 transform 升级为 AST 级实现。

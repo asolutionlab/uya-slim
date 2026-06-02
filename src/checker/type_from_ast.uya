@@ -8,6 +8,7 @@ use std.string.strcat;
 const TYPE_FROM_AST_CACHE_BITS: i32 = 12;
 const TYPE_FROM_AST_CACHE_SIZE: i32 = 4096;
 const TYPE_FROM_AST_CACHE_MASK: i32 = 4095;
+const TYPE_FROM_AST_CACHE_MAX_PROBE: i32 = 8;
 
 var g_type_from_ast_cached_checker: &TypeChecker = null;
 var g_type_from_ast_cached_program: &ASTNode = null;
@@ -90,20 +91,21 @@ fn type_from_ast_cache_lookup(checker: &TypeChecker, type_node: &ASTNode) &Type 
     if slot >= TYPE_FROM_AST_CACHE_SIZE {
         return null;
     }
-    const cached: &Type = g_type_from_ast_cache_values[slot];
-    if cached == null {
-        return null;
+    var probe: i32 = 0;
+    while probe < TYPE_FROM_AST_CACHE_MAX_PROBE {
+        const idx: i32 = (slot + probe) & TYPE_FROM_AST_CACHE_MASK;
+        const cached: &Type = g_type_from_ast_cache_values[idx];
+        if cached == null {
+            return null;
+        }
+        if g_type_from_ast_cache_nodes[idx] == type_node &&
+            g_type_from_ast_cache_type_params[idx] == checker.current_type_params &&
+            g_type_from_ast_cache_type_param_counts[idx] == checker.current_type_param_count {
+            return cached;
+        }
+        probe = probe + 1;
     }
-    if g_type_from_ast_cache_nodes[slot] != type_node {
-        return null;
-    }
-    if g_type_from_ast_cache_type_params[slot] != checker.current_type_params {
-        return null;
-    }
-    if g_type_from_ast_cache_type_param_counts[slot] != checker.current_type_param_count {
-        return null;
-    }
-    return cached;
+    return null;
 }
 
 fn type_from_ast_cache_store(checker: &TypeChecker, type_node: &ASTNode, result: &Type) void {
@@ -118,15 +120,38 @@ fn type_from_ast_cache_store(checker: &TypeChecker, type_node: &ASTNode, result:
     if slot >= TYPE_FROM_AST_CACHE_SIZE {
         return;
     }
+    var target_idx: i32 = -1;
+    var probe: i32 = 0;
+    while probe < TYPE_FROM_AST_CACHE_MAX_PROBE {
+        const idx: i32 = (slot + probe) & TYPE_FROM_AST_CACHE_MASK;
+        const cached: &Type = g_type_from_ast_cache_values[idx];
+        if cached == null ||
+            (g_type_from_ast_cache_nodes[idx] == type_node &&
+                g_type_from_ast_cache_type_params[idx] == checker.current_type_params &&
+                g_type_from_ast_cache_type_param_counts[idx] == checker.current_type_param_count) {
+            target_idx = idx;
+            break;
+        }
+        probe = probe + 1;
+    }
+    if target_idx < 0 {
+        target_idx = slot;
+    }
+    if target_idx < 0 {
+        return;
+    }
+    if target_idx >= TYPE_FROM_AST_CACHE_SIZE {
+        return;
+    }
     const stored: &Type = compiler_arena_alloc(checker.arena, @size_of(Type) as usize) as &Type;
     if stored == null {
         return;
     }
     stored[0] = copy_type(result);
-    g_type_from_ast_cache_nodes[slot] = type_node;
-    g_type_from_ast_cache_type_params[slot] = checker.current_type_params;
-    g_type_from_ast_cache_type_param_counts[slot] = checker.current_type_param_count;
-    g_type_from_ast_cache_values[slot] = stored;
+    g_type_from_ast_cache_nodes[target_idx] = type_node;
+    g_type_from_ast_cache_type_params[target_idx] = checker.current_type_params;
+    g_type_from_ast_cache_type_param_counts[target_idx] = checker.current_type_param_count;
+    g_type_from_ast_cache_values[target_idx] = stored;
 }
 
 // 从AST类型节点创建Type结构

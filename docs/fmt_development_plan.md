@@ -2,8 +2,8 @@
 
 > 参考 Go `go/format` + `go/printer` + `gofmt` 实现
 
-**版本**: v0.2.4  
-**更新日期**: 2026-04-25
+**版本**: v0.2.5  
+**更新日期**: 2026-06-01
 
 ---
 
@@ -90,7 +90,7 @@ tools/fmt.uya
   详见：`docs/fmt_phase2_comments_tasks.md`
 - [x] 第三阶段：import_sort / simplify / rewrite 完成  
   详见：`docs/fmt_phase3_transforms_tasks.md`
-- [ ] 第四阶段：CLI / Makefile / 工程集成完成  
+- [x] 第四阶段：CLI / Makefile / 工程集成完成  
   详见：`docs/fmt_phase4_cli_tasks.md`
 
 ### 推荐推进顺序
@@ -194,12 +194,12 @@ tools/fmt.uya
 
 ### 第四阶段：CLI / 工程集成
 
-- [ ] 完成 `uya fmt`
-- [ ] 支持 `-w/-d/-l/-r/-s`
-- [ ] 支持文件、目录、stdin
-- [ ] 集成 `make fmt` / `make check-fmt`
+- [x] 完成 `uya fmt`
+- [x] 支持 `-w/-d/-l/-r/-s`
+- [x] 支持文件、目录、stdin
+- [x] 集成 `make fmt` / `make check-fmt`
 - 详见：`docs/fmt_phase4_cli_tasks.md`
-- 备注：CLI 原型已完成编译，但当前被 arena/runtime 写入崩溃阻塞运行级验收
+- 备注：CLI 运行级阻塞已解除，当前 CLI / Makefile / 最小集成验证已完成
 
 ---
 
@@ -221,19 +221,19 @@ tools/fmt.uya
 
 ## 验收标准汇总
 
-- [ ] `formatter_write("hello")` 写入 5 字节
-- [ ] `Position` / `Span` 可表达源码范围
-- [ ] Token 列表正确解析
-- [ ] 完整源码可解析为 File AST
-- [ ] AST 可重新打印为稳定源码
-- [ ] 表达式 / 语句 / 声明格式化正确
-- [ ] 注释位置保持正确
-- [ ] Import 语句正确排序
-- [ ] simplify / rewrite 可选生效且幂等
-- [ ] `format(source)` 返回格式化结果
-- [ ] `format(format(x)) == format(x)`
-- [ ] CLI 工具可用（当前被 arena/runtime 写入崩溃阻塞）
-- [ ] `-w/-d/-l/-r/-s` 行为符合预期
+- [x] `formatter_write("hello")` 写入 5 字节
+- [x] `Position` / `Span` 可表达源码范围
+- [x] Token 列表正确解析
+- [x] 完整源码可解析为 File AST
+- [x] AST 可重新打印为稳定源码
+- [x] 表达式 / 语句 / 声明格式化正确
+- [x] 注释位置保持正确
+- [x] Import 语句正确排序
+- [x] simplify / rewrite 可选生效且幂等
+- [x] `format(source)` 返回格式化结果
+- [x] `format(format(x)) == format(x)`
+- [x] CLI 工具可用（当前被 arena/runtime 写入崩溃阻塞）
+- [x] `-w/-d/-l/-r/-s` 行为符合预期
 
 ---
 
@@ -244,6 +244,7 @@ tools/fmt.uya
 | v0.1.0 | 2026-03-29 | 初始版本 |
 | v0.1.1 | 2026-03-29 | 优化架构设计：明确 tokenizer 为手写，不依赖编译器 Lexer；增加量化验收标准 |
 | v0.2.0 | 2026-04-25 | 按方案 B 重构文档：引入完整 parser/ast/comments/positions/rewrite/simplify 分层，整体架构对齐 gofmt |
+| v0.2.5 | 2026-06-01 | 完成 Phase 4 运行级验收：修复 CLI 编译/运行阻塞，接入 `-w/-d/-l/-r/-s`、文件/目录/stdin、多路径参数，以及 `make fmt` / `make check-fmt` |
 | v0.2.4 | 2026-04-25 | 启动 Phase 4 CLI 原型，完成 `tools/fmt.uya` 编译链路；运行级验证被 `arena_alloc` 写入即崩溃的底层 runtime 问题阻塞 |
 | v0.2.3 | 2026-04-25 | 完成 Phase 3 最小变换链路：源码级 import_sort、最小文本级 simplify、最小文本级 rewrite，并通过 `format_with_options` 暴露 |
 | v0.2.2 | 2026-04-25 | 完成 Phase 2 最小注释链路：显式 comment token、collect/group、最小 decl attach、doc/trailing comment 测试与幂等验证 |

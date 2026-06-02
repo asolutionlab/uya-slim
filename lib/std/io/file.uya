@@ -33,7 +33,11 @@ var std_io_fopen_fd_storage: [FILE: 128] = [];
 
 export fn file_open(path: &const byte, flags: i32, mode: u32) !File {
     const raw_fd: i32 = try sys_open(path as *const byte, flags, mode as i32);
-    return File { fd: raw_fd, owns_fd: true };
+    var file: File = File {
+        fd: raw_fd,
+        owns_fd: true,
+    };
+    return file;
 }
 
 export fn file_close(f: &File) !void {
