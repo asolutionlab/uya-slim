@@ -4926,6 +4926,24 @@ fn emit_async_frame_descriptor_type_defs(codegen: &C99CodeGenerator) void {
     }
 }
 
+fn c99_program_uses_async_frame_runtime(codegen: &C99CodeGenerator) i32 {
+    if codegen == null || codegen.program_node == null {
+        return 0;
+    }
+    const program: &ASTNode = codegen.program_node;
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[i];
+        if decl != null && decl.filename != null {
+            if strstr(decl.filename as *byte, "std/async_frame.uya" as *byte) != null {
+                return 1;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 // 生成 async frame descriptor 静态表，供统一 AsyncFramePool 运行时 O(1) 查表
 fn emit_async_frame_descriptors(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.emit_stream == null || codegen.checker == null {
@@ -4938,11 +4956,17 @@ fn emit_async_frame_descriptors(codegen: &C99CodeGenerator) void {
     if count > MAX_ASYNC_FRAME_METAS {
         count = MAX_ASYNC_FRAME_METAS;
     }
-    if count > 0 {
-        fputs("// Async frame descriptors (for unified AsyncFramePool)\n" as *byte, codegen.emit_stream as *void);
-        emit_async_frame_descriptor_type_defs(codegen);
-        fputs("struct AsyncFrameDescriptorTable _uya_async_frame_descriptors = {\n" as *byte, codegen.emit_stream as *void);
-        fputs("    .entries = {\n" as *byte, codegen.emit_stream as *void);
+    if count == 0 && c99_program_uses_async_frame_runtime(codegen) == 0 {
+        fprintf(codegen.emit_stream as *void, "int32_t _uya_async_frame_heap_fallback = %d;\n" as *byte, codegen.async_frame_heap_fallback);
+        return;
+    }
+    fputs("// Async frame descriptors (for unified AsyncFramePool)\n" as *byte, codegen.emit_stream as *void);
+    emit_async_frame_descriptor_type_defs(codegen);
+    fputs("struct AsyncFrameDescriptorTable _uya_async_frame_descriptors = {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    .entries = {\n" as *byte, codegen.emit_stream as *void);
+    if count == 0 {
+        fputs("        { 0, 0, (void*)0 }\n" as *byte, codegen.emit_stream as *void);
+    } else {
         var i: i32 = 0;
         while i < count {
             const meta: &AsyncFrameMeta = &codegen.checker.async_frame_metas[i];
@@ -4959,9 +4983,9 @@ fn emit_async_frame_descriptors(codegen: &C99CodeGenerator) void {
             fputs("\n" as *byte, codegen.emit_stream as *void);
             i = i + 1;
         }
-        fputs("    }\n};\n" as *byte, codegen.emit_stream as *void);
-        fprintf(codegen.emit_stream as *void, "int32_t _uya_async_frame_descriptor_count = %d;\n" as *byte, count);
     }
+    fputs("    }\n};\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "int32_t _uya_async_frame_descriptor_count = %d;\n" as *byte, count);
     // 生成编译期开关变量（供 lib/std/async_frame.uya 读取）
     fprintf(codegen.emit_stream as *void, "int32_t _uya_async_frame_heap_fallback = %d;\n" as *byte, codegen.async_frame_heap_fallback);
 }

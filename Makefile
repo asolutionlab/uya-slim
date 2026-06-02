@@ -654,6 +654,24 @@ check: uya
 		exit 1; \
 	fi; \
 	echo ""; \
+	echo "验证 async frame descriptor C99 发射..."; \
+	VERIFY_EXIT=0; \
+	for script in \
+		./tests/verify_c99_async_frame_descriptors.sh \
+		./tests/verify_c99_async_frame_empty_descriptors.sh; do \
+		if bash "$$script" > /tmp/verify_out.txt 2>&1; then \
+			grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		else \
+			cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=1; \
+			break; \
+		fi; \
+	done; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ async frame descriptor C99 发射验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
 	echo "验证 split-C 共享 cache 并发锁..."; \
 	if bash ./tests/verify_split_c_cache_lock.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
