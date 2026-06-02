@@ -93,14 +93,14 @@ tools/fmt.uya
 - [x] 第四阶段：CLI / Makefile / 工程集成完成  
   详见：`docs/fmt_phase4_cli_tasks.md`
 
-### 推荐推进顺序
+### 推荐推进顺序（历史记录）
 
-- [ ] 先完成第一阶段，再进入第二阶段
-- [ ] 第二阶段完成后，再进入第三阶段
-- [ ] 第三阶段完成后，再进入第四阶段
-- [ ] 避免在主链路未稳定前并行铺开高级特性
+- [x] 先完成第一阶段，再进入第二阶段
+- [x] 第二阶段完成后，再进入第三阶段
+- [x] 第三阶段完成后，再进入第四阶段
+- [x] 避免在主链路未稳定前并行铺开高级特性
 
-建议实际开发时把这里作为总看板，把具体勾选动作放到各阶段 TodoList 中维护。
+当前四个阶段均已完成，具体勾选动作以下沉到各阶段 TodoList 为准。
 
 ---
 
@@ -122,20 +122,24 @@ lib/std/fmt/
 └── rules.uya            # 打印和布局规则
 
 tests/
-├── test_fmt_formatter.uya
-├── test_fmt_tokenizer.uya
-├── test_fmt_parser.uya
-├── test_fmt_ast.uya
-├── test_fmt_printer.uya
-├── test_fmt_expr.uya
-├── test_fmt_stmt.uya
-├── test_fmt_decl.uya
+├── test_fmt_api.uya
+├── test_fmt_api_phase3.uya
+├── test_fmt_api_rewrite.uya
+├── test_fmt_api_simplify.uya
+├── test_fmt_comment_collection.uya
+├── test_fmt_comment_grouping.uya
 ├── test_fmt_comments.uya
+├── test_fmt_comments_phase2.uya
+├── test_fmt_doc_comment_attach.uya
+├── test_fmt_formatter.uya
+├── test_fmt_idempotent.uya
 ├── test_fmt_import_sort.uya
+├── test_fmt_parser.uya
+├── test_fmt_printer.uya
 ├── test_fmt_rewrite.uya
 ├── test_fmt_simplify.uya
-├── test_fmt_api.uya
-└── test_fmt_idempotent.uya
+├── test_fmt_tokenizer.uya
+└── test_fmt_trailing_comment_attach.uya
 
 tools/
 └── fmt.uya              # CLI 工具
@@ -232,7 +236,7 @@ tools/fmt.uya
 - [x] simplify / rewrite 可选生效且幂等
 - [x] `format(source)` 返回格式化结果
 - [x] `format(format(x)) == format(x)`
-- [x] CLI 工具可用（当前被 arena/runtime 写入崩溃阻塞）
+- [x] CLI 工具可用
 - [x] `-w/-d/-l/-r/-s` 行为符合预期
 
 ---

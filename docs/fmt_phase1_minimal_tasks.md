@@ -10,7 +10,7 @@
 ## Status
 
 - [ ] Not started
-- [x] Done
+- [x] MVP Done
 
 ---
 

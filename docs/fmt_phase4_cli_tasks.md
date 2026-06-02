@@ -19,6 +19,7 @@
 - [x] 支持 stdout / write-back / list / diff
 - [x] 支持 simplify 与 rewrite 的 CLI 选项
 - [x] 支持文件、目录、stdin 输入
+- [x] 备注：stdin 模式当前仅支持基础格式化，不支持 `-w/-l/-d/-s/-r` 组合
 - [x] 集成到 Makefile / CI 工作流
 
 ---
@@ -66,13 +67,13 @@
 
 ---
 
-## Runtime Blocker
+## Runtime Blocker（历史记录）
 
-### 当前阻塞结论
+### 阶段内阻塞结论
 
 - [x] `tools/fmt.uya` 已可编译链接
-- [x] Phase 4 的主要阻塞已从 CLI 逻辑收敛为底层 runtime 问题
-- [x] 当前已确认：`arena_alloc(...)` 返回的内存在运行时写入即可能触发 segfault
+- [x] Phase 4 曾一度从 CLI 逻辑收敛为底层 runtime 问题
+- [x] 当时已确认：`arena_alloc(...)` 返回的内存在运行时写入即可能触发 segfault
 - [x] 运行级阻塞已解除，CLI 可完成单文件/目录/stdin 验收
 
 ### 最小复现文件
@@ -109,6 +110,7 @@
 - [x] 验证 `uya fmt -s file.uya`
 - [x] 验证 `uya fmt -r "foo.bar -> bar" file.uya`
 - [x] 验证 `cat file.uya | uya fmt`
+- [ ] 验证 stdin 与 `-s/-r` 组合（当前未支持）
 
 ### 工程级验证
 - [x] 验证 `make fmt` 可执行
