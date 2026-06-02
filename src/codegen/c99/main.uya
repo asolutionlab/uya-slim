@@ -4654,12 +4654,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 // extern 变量已在第九步 a 生成声明，这里不重复生成
             } else if decl.type == ASTNodeType.AST_FN_DECL {
                 // 特殊处理：main 函数在后面生成（需要添加测试运行器调用）
-                const func_name: &byte = decl.fn_decl_name;
-                var is_main: i32 = 0;
-                if func_name != null && strcmp(func_name as *byte, "main" as *byte) == 0 {
-                    is_main = 1;
-                }
-                if is_main == 0 {
+                const is_special_main: i32 = c99_fn_decl_is_c_main(decl) | c99_fn_decl_is_user_entry_main(codegen, decl);
+                if is_special_main == 0 {
                     if should_emit_top_level_function_decl(codegen, decl) == 0 {
                         i = i + 1;
                         continue;
@@ -4769,23 +4765,19 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
-            const func_name: &byte = decl.fn_decl_name;
-            if func_name != null && strcmp(func_name as *byte, "main" as *byte) == 0 && decl.fn_decl_body != null {
+            const is_c_main: i32 = c99_fn_decl_is_c_main(decl);
+            const is_entry_main: i32 = c99_fn_decl_is_user_entry_main(codegen, decl);
+            if (is_c_main != 0 || is_entry_main != 0) && decl.fn_decl_body != null {
                 const is_export: i32 = decl.fn_decl_is_export;
-                const is_extern_keyword: i32 = decl.fn_decl_is_extern;  // extern 关键字（含 export extern fn main）
-                var is_c_main: i32 = 0;
-                if is_export != 0 && is_extern_keyword != 0 {
-                    is_c_main = 1;
-                }
                 var is_app_main: i32 = 0;
-                if is_export != 0 && is_extern_keyword == 0 {
+                if is_entry_main != 0 && is_export != 0 {
                     is_app_main = 1;
                 }
                 // 只有用户 main 才计入 has_user_main（排除 C main）
-                if is_c_main == 0 {
+                if is_entry_main != 0 {
                     has_user_main = 1;
                 }
-                if is_app_main == 0 && is_c_main == 0 {
+                if is_entry_main != 0 && is_app_main == 0 {
                     has_plain_user_main = 1;
                 }
                 c99_mirror_emit_for_node(codegen, decl);
@@ -4914,14 +4906,41 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     return 0;
 }
 
+fn emit_async_frame_descriptor_type_defs(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.emit_stream == null {
+        return;
+    }
+    if is_struct_defined(codegen, "AsyncFrameDescriptor" as &byte) == 0 {
+        fputs("struct AsyncFrameDescriptor {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    size_t size;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    size_t align;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    void *drop_fn;\n" as *byte, codegen.emit_stream as *void);
+        fputs("};\n" as *byte, codegen.emit_stream as *void);
+        mark_struct_defined(codegen, "AsyncFrameDescriptor" as &byte);
+    }
+    if is_struct_defined(codegen, "AsyncFrameDescriptorTable" as &byte) == 0 {
+        fputs("struct AsyncFrameDescriptorTable {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    struct AsyncFrameDescriptor entries[512];\n" as *byte, codegen.emit_stream as *void);
+        fputs("};\n" as *byte, codegen.emit_stream as *void);
+        mark_struct_defined(codegen, "AsyncFrameDescriptorTable" as &byte);
+    }
+}
+
 // 生成 async frame descriptor 静态表，供统一 AsyncFramePool 运行时 O(1) 查表
 fn emit_async_frame_descriptors(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.emit_stream == null || codegen.checker == null {
         return;
     }
-    const count: i32 = codegen.checker.async_frame_meta_count;
+    var count: i32 = codegen.checker.async_frame_meta_count;
+    if count < 0 {
+        count = 0;
+    }
+    if count > MAX_ASYNC_FRAME_METAS {
+        count = MAX_ASYNC_FRAME_METAS;
+    }
     if count > 0 {
         fputs("// Async frame descriptors (for unified AsyncFramePool)\n" as *byte, codegen.emit_stream as *void);
+        emit_async_frame_descriptor_type_defs(codegen);
         fputs("struct AsyncFrameDescriptorTable _uya_async_frame_descriptors = {\n" as *byte, codegen.emit_stream as *void);
         fputs("    .entries = {\n" as *byte, codegen.emit_stream as *void);
         var i: i32 = 0;

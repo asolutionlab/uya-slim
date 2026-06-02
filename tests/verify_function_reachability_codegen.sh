@@ -66,6 +66,17 @@ fi
 echo "  callback_target 已保留 ✓"
 
 echo ""
+echo "验证导入模块时普通 main 桥接：运行 test_c99_import_main_codegen.uya ..."
+RUN_OUT=$("$COMPILER" run "$SCRIPT_DIR/test_c99_import_main_codegen.uya" 2>&1)
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "✗ import main 运行失败"
+    echo "$RUN_OUT"
+    exit 1
+fi
+echo "  import main 运行通过 ✓"
+
+echo ""
 echo "验证 microapp 顶层函数可达性：编译 test_function_reachability_codegen_microapp.uya ..."
 set +e
 COMPILE_OUT=$("$COMPILER" build --app microapp "$SCRIPT_DIR/test_function_reachability_codegen_microapp.uya" -o "$SCRIPT_DIR/build/function_reachability_microapp.uapp" 2>&1)

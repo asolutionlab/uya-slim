@@ -11,15 +11,11 @@ use lower.async;
 // 哈希函数（来自 checker/symbols.uya）
 extern fn hash_string(str: &byte) i32;
 extern fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type;
-extern fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type;
-extern fn type_to_ast(checker: &TypeChecker, t: &Type, line: i32, column: i32, filename: &byte) &ASTNode;
 // expr.uya 在 compile.sh 中晚于 function.uya，需前向声明
 extern fn gen_array_literal_contents(codegen: &C99CodeGenerator, expr: &ASTNode) void;
 // async frame meta 注册（来自 checker/async_frame_meta.uya）
 extern fn checker_register_async_frame_meta(checker: &TypeChecker, meta: &AsyncFrameMeta) i32;
 extern fn checker_find_async_frame_meta_by_key_text(checker: &TypeChecker, key_text: &byte) &AsyncFrameMeta;
-// lowering 分析函数（来自 lower/async.uya）
-extern fn async_lower_analyze_escape_class(checker: &TypeChecker, fn_body: &ASTNode) AsyncFrameEscapeClass;
 
 // 查找函数声明
 // 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
@@ -494,6 +490,139 @@ fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename:
     return result;
 }
 
+fn get_private_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename: &byte) &byte {
+    if name == null {
+        return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    const safe_name: &byte = get_safe_c_identifier(codegen, name);
+    if filename == null {
+        return safe_name;
+    }
+    const file_hash: u32 = hash_string(filename) as u32;
+    const buf_len: i32 = strlen(safe_name as *byte) + 48;
+    const result: &byte = compiler_arena_alloc(codegen.arena, buf_len as usize) as &byte;
+    if result == null {
+        return safe_name;
+    }
+    snprintf(result as *byte, buf_len, "uya_priv_%u_%s" as *byte, file_hash, safe_name as *byte);
+    return get_safe_c_identifier(codegen, result);
+}
+
+fn c99_private_function_needs_file_scope_name(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        fn_decl.fn_decl_name == null || fn_decl.filename == null ||
+        fn_decl.fn_decl_body == null || fn_decl.fn_decl_is_export != 0 ||
+        fn_decl.fn_decl_extern_lib_name != null ||
+        codegen.program_node == null || codegen.program_node.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < codegen.program_node.program_decl_count {
+        const other: &ASTNode = codegen.program_node.program_decls[i];
+        if other != null && other != fn_decl && other.type == ASTNodeType.AST_FN_DECL &&
+            other.fn_decl_name != null && other.filename != null &&
+            other.fn_decl_body != null && other.fn_decl_is_export == 0 &&
+            other.fn_decl_extern_lib_name == null &&
+            strcmp(other.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 &&
+            strcmp(other.filename as *byte, fn_decl.filename as *byte) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn c99_fn_decl_is_c_main(fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_name == null {
+        return 0;
+    }
+    if strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) != 0 {
+        return 0;
+    }
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_path_has_component_suffix(path: &byte, suffix: &byte) i32 {
+    if path == null || suffix == null {
+        return 0;
+    }
+    const path_len: i32 = strlen(path as *byte);
+    const suffix_len: i32 = strlen(suffix as *byte);
+    if suffix_len <= 0 || path_len < suffix_len {
+        return 0;
+    }
+    const start: i32 = path_len - suffix_len;
+    if strcmp((&path[start]) as *byte, suffix as *byte) != 0 {
+        return 0;
+    }
+    if start == 0 {
+        return 1;
+    }
+    const sep: byte = path[start - 1];
+    if sep == 47 as byte || sep == 92 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_paths_match_entry_file(filename: &byte, entry_filename: &byte) i32 {
+    if filename == null || entry_filename == null {
+        return 0;
+    }
+    if strcmp(filename as *byte, entry_filename as *byte) == 0 {
+        return 1;
+    }
+    if c99_path_has_component_suffix(filename, entry_filename) != 0 {
+        return 1;
+    }
+    if c99_path_has_component_suffix(entry_filename, filename) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_fn_decl_is_user_entry_main(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        fn_decl.fn_decl_name == null || fn_decl.filename == null || codegen.module_name == null {
+        return 0;
+    }
+    if strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) != 0 {
+        return 0;
+    }
+    if c99_fn_decl_is_c_main(fn_decl) != 0 {
+        return 0;
+    }
+    return c99_paths_match_entry_file(fn_decl.filename, codegen.module_name);
+}
+
+fn get_c_name_for_function_decl(codegen: &C99CodeGenerator, fn_decl: &ASTNode) &byte {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_name == null {
+        return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    if should_use_raw_libc_symbol_name(codegen, fn_decl) != 0 {
+        return get_safe_c_identifier(codegen, fn_decl.fn_decl_name);
+    }
+    if c99_fn_decl_is_c_main(fn_decl) != 0 {
+        return get_safe_c_identifier(codegen, fn_decl.fn_decl_name);
+    }
+    if c99_fn_decl_is_user_entry_main(codegen, fn_decl) != 0 {
+        if fn_decl.fn_decl_is_export != 0 {
+            return ("main_main" as *byte) as &byte;
+        }
+        return ("uya_main" as *byte) as &byte;
+    }
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null {
+        return get_export_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
+    }
+    if c99_private_function_needs_file_scope_name(codegen, fn_decl) != 0 {
+        return get_private_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
+    }
+    return get_safe_c_identifier(codegen, fn_decl.fn_decl_name);
+}
+
 // 全局函数在 C 中的名称（export 函数带模块前缀；仅原始 libc 符号名保持裸名）
 fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_definition: i32) &byte {
     if name == null {
@@ -661,13 +790,8 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
-    const use_raw_libc_name: i32 = should_use_raw_libc_symbol_name(codegen, fn_decl);
     // hosted 下 extern "libc" 带函数体改为模块前缀名，避免与系统 libc 原型冲突
-    var func_name: &byte = get_c_name_for_global_function(codegen, fn_decl.fn_decl_name, 1);
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null &&
-        (extern_lib_name == null || use_raw_libc_name == 0) {
-        func_name = get_export_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
-    }
+    var func_name: &byte = get_c_name_for_function_decl(codegen, fn_decl);
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
@@ -696,16 +820,8 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
 
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
     // 注意：Uya Mini 不支持三元运算符，使用 if-else 代替
-    var is_main: i32 = 0;
-    if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) == 0 {
-        is_main = 1;
-    }
-
-    // 检查是否为标准 C main 函数（export extern fn main）
-    var is_c_main: i32 = 0;
-    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
-        is_c_main = 1;
-    }
+    const is_entry_main: i32 = c99_fn_decl_is_user_entry_main(codegen, fn_decl);
+    const is_c_main: i32 = c99_fn_decl_is_c_main(fn_decl);
 
     // export extern fn main：生成裸名 main 的前向声明，不带模块前缀
     // C 入口统一使用 char **argv，以兼容 Zig/Clang 对 main 签名的要求；
@@ -737,7 +853,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
 
     // 仅 fn main（非 export）提前返回生成 uya_main(void)；export fn main 走通用路径生成 main_main()
-    if is_main != 0 && is_c_main == 0 && fn_decl.fn_decl_is_export == 0 {
+    if is_entry_main != 0 && fn_decl.fn_decl_is_export == 0 {
         fprintf(codegen.emit_stream, "%s uya_main(void);\n" as *byte, return_c as *byte);
         return;
     }
@@ -911,13 +1027,8 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const orig_name: &byte = fn_decl.fn_decl_name;
     const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
-    const use_raw_libc_name: i32 = should_use_raw_libc_symbol_name(codegen, fn_decl);
     // hosted 下 extern "libc" 带函数体改为模块前缀名，避免与系统 libc 原型冲突
-    var func_name: &byte = get_c_name_for_global_function(codegen, orig_name, 1);
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null &&
-        (extern_lib_name == null || use_raw_libc_name == 0) {
-        func_name = get_export_function_c_name(codegen, orig_name, fn_decl.filename);
-    }
+    var func_name: &byte = get_c_name_for_function_decl(codegen, fn_decl);
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
@@ -973,10 +1084,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
     // 注意：Uya Mini 不支持三元运算符，使用 if-else 代替
-    var is_main: i32 = 0;
-    if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) == 0 {
-        is_main = 1;
-    }
+    const is_entry_main: i32 = c99_fn_decl_is_user_entry_main(codegen, fn_decl);
     
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
@@ -993,12 +1101,9 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const is_static: i32 = c99_should_emit_static_top_level_function(codegen, fn_decl);
 
     // 检查是否为标准 C main 函数（export extern fn main）
-    var is_c_main: i32 = 0;
-    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
-        is_c_main = 1;
-    }
+    const is_c_main: i32 = c99_fn_decl_is_c_main(fn_decl);
 
-    if is_main != 0 && is_c_main == 0 {
+    if is_entry_main != 0 {
         // export fn main → main_main，fn main → uya_main
         var main_def_name: &byte = "uya_main" as *byte;
         if fn_decl.fn_decl_is_export != 0 {
@@ -1106,10 +1211,10 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
     
     // 添加函数体开始
-    if is_main != 0 {
+    if is_entry_main != 0 || is_c_main != 0 {
         fputs(" {\n" as *byte, codegen.emit_stream);
         // 在 main 函数开始时调用测试运行器（只有在有测试时才调用）
-        if codegen.test_count > 0 {
+        if codegen.test_count > 0 && is_entry_main != 0 {
             fputs("    uya_run_tests();\n" as *byte, codegen.emit_stream);
         }
     } else {

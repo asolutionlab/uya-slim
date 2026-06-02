@@ -2229,16 +2229,14 @@ export extern "libc" fn puts(s: &const byte) i32 {
     
     // 输出字符串
     if len > 0 {
-        const result1: !isize = sys_write(STDOUT as i32, s as *const byte, len);
-        result1 catch {
+        _ = sys_write(STDOUT as i32, s as *const byte, len) catch {
             return 0 - 1;
         };
     }
     
     // 输出换行符
     var nl: byte = 10;
-    const result2: !isize = sys_write(STDOUT as i32, &nl as *const byte, 1);
-    result2 catch {
+    _ = sys_write(STDOUT as i32, &nl as *const byte, 1) catch {
         return 0 - 1;
     };
     

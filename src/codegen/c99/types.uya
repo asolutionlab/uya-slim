@@ -10,7 +10,6 @@ use std.string.strcat;
 
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
-extern fn c99_ident_ref_cache_reset() void;
 extern fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte;
 extern fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode;
 extern fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename: &byte) &byte;
@@ -7171,6 +7170,19 @@ fn c99_find_interface_decl_from_value_type_c(codegen: &C99CodeGenerator, interfa
     return null;
 }
 
+fn c99_if_expr_branch_type_c(codegen: &C99CodeGenerator, branch: &ASTNode) &byte {
+    if branch == null {
+        return null;
+    }
+    if branch.type == ASTNodeType.AST_BLOCK {
+        if branch.block_stmts == null || branch.block_stmt_count <= 0 {
+            return null;
+        }
+        return get_c_type_of_expr(codegen, branch.block_stmts[branch.block_stmt_count - 1]);
+    }
+    return get_c_type_of_expr(codegen, branch);
+}
+
 fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     if codegen == null || expr == null {
         return ("int32_t" as *byte) as &byte;
@@ -7614,6 +7626,16 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             if first_t != null && strcmp(first_t as *byte, "int32_t" as *byte) != 0 {
                 return first_t;
             }
+        }
+        return ("int32_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_IF_STMT {
+        const then_type: &byte = c99_if_expr_branch_type_c(codegen, expr.if_stmt_then_branch);
+        if then_type != null {
+            return then_type;
+        }
+        const else_type: &byte = c99_if_expr_branch_type_c(codegen, expr.if_stmt_else_branch);
+        if else_type != null {
+            return else_type;
         }
         return ("int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_STRUCT_INIT {

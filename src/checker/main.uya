@@ -435,7 +435,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 // 检查语句，但不报告错误（放宽检查）
                 const prev_errors: i32 = checker.error_count;
                 checker_check_node(checker, stmt);
-                if checker.error_count == prev_errors {
+                if checker.error_count == prev_errors &&
+                    stmt.type != ASTNodeType.AST_IF_STMT &&
+                    stmt.type != ASTNodeType.AST_WHILE_STMT &&
+                    stmt.type != ASTNodeType.AST_FOR_STMT {
                     const stmt_type: Type = checker_infer_type(checker, stmt);
                     if stmt_type.kind == TypeKind.TYPE_ERROR_UNION {
                         var allow_error_void_stmt: i32 = 0;

@@ -36,7 +36,6 @@ extern fn strstr(haystack: *byte, needle: *byte) *byte;
 extern fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void;
 
 extern fn hash_string(str: &byte) i32;
-extern fn c99_ident_ref_cache_reset() void;
 
 const C99_SAFE_IDENT_CACHE_BITS: i32 = 11;
 const C99_SAFE_IDENT_CACHE_SIZE: i32 = 2048;
@@ -1293,8 +1292,8 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
             }
             fputs(" -lm\n" as *byte, mf);
         }
-        fputs("uya_part1.o: uya_part1.c uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
-        fputs("uya_common.o: uya_common.c uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_common.c -o uya_common.o\n" as *byte, mf);
+        fputs("uya_part1.o: uya_part1.c uya_part1_types.h uya_strings_extern.h uya_vtable_externs.h\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
+        fputs("uya_common.o: uya_common.c uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h uya_vtable_externs.h\n\t$(CC) -c $(CFLAGS) -I. uya_common.c -o uya_common.o\n" as *byte, mf);
         if codegen.c_import_plan != null {
             var cimp_rule_i: i32 = 0;
             while cimp_rule_i < codegen.c_import_plan.item_count {
@@ -1345,7 +1344,7 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
                                 }
                             }
                         }
-                        fprintf(mf as *void, "%s: %s uya_split_protos.h uya_mirror_globals.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. %s -o %s\n" as *byte, &opr[0] as *byte, &cpr[0] as *byte, &cpr[0] as *byte, &opr[0] as *byte);
+                        fprintf(mf as *void, "%s: %s uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h uya_vtable_externs.h\n\t$(CC) -c $(CFLAGS) -I. %s -o %s\n" as *byte, &opr[0] as *byte, &cpr[0] as *byte, &cpr[0] as *byte, &opr[0] as *byte);
                     }
                 }
             }
@@ -1393,8 +1392,8 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         }
         fputs(" -lm\n" as *byte, mf);
     }
-    fputs("uya_part1.o: uya_part1.c\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
-    fputs("uya_part2.o: uya_part2.c\n\t$(CC) -c $(CFLAGS) -I. uya_part2.c -o uya_part2.o\n" as *byte, mf);
+    fputs("uya_part1.o: uya_part1.c uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
+    fputs("uya_part2.o: uya_part2.c uya_part1_types.h uya_split_protos.h uya_mirror_globals.h uya_strings_extern.h uya_vtable_externs.h\n\t$(CC) -c $(CFLAGS) -I. uya_part2.c -o uya_part2.o\n" as *byte, mf);
     if codegen.c_import_plan != null {
         var cimp_rule_i2: i32 = 0;
         while cimp_rule_i2 < codegen.c_import_plan.item_count {

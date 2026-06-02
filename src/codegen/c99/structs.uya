@@ -4,10 +4,6 @@
 // 注意：需要先包含 internal.uya（包含类型定义和函数声明）
 // 由于 Uya Mini 不支持模块系统，这里假设相关类型已经定义
 
-// ===== 外部函数声明 =====
-// C 标准库函数（在 extern_decls.uya 中声明）
-extern fn emit_err_union_struct_for_type_node(codegen: &C99CodeGenerator, type_node: &ASTNode) void;
-
 // 检查结构体是否已添加到表中
 fn is_struct_in_table(codegen: &C99CodeGenerator, struct_name: &byte) i32 {
     if struct_name == null {

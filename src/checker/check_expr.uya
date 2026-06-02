@@ -1258,6 +1258,136 @@ fn checker_current_fn_returns_future_error_union(checker: &TypeChecker) i32 {
 
 // ===== 表达式类型推断 =====
 
+fn checker_infer_if_expr_branch_type(checker: &TypeChecker, branch: &ASTNode) Type {
+    if branch == null {
+        return make_void_type();
+    }
+    if branch.type == ASTNodeType.AST_BLOCK {
+        if branch.block_stmts == null || branch.block_stmt_count <= 0 {
+            return make_void_type();
+        }
+        const last: &ASTNode = branch.block_stmts[branch.block_stmt_count - 1];
+        return checker_infer_type(checker, last);
+    }
+    return checker_infer_type(checker, branch);
+}
+
+fn checker_if_expr_branch_value_node(branch: &ASTNode) &ASTNode {
+    if branch == null {
+        return null;
+    }
+    if branch.type == ASTNodeType.AST_BLOCK {
+        if branch.block_stmts == null || branch.block_stmt_count <= 0 {
+            return null;
+        }
+        return branch.block_stmts[branch.block_stmt_count - 1];
+    }
+    return branch;
+}
+
+fn checker_if_expr_branch_matches_expected_type(checker: &TypeChecker, branch: &ASTNode, expected_type: Type, scene: &byte) i32 {
+    const value: &ASTNode = checker_if_expr_branch_value_node(branch);
+    if checker == null || value == null {
+        checker_report_error(checker, branch, "if 表达式分支必须返回值" as *byte);
+        return 0;
+    }
+
+    if value.type == ASTNodeType.AST_STRING && value.string_literal_value != null {
+        if expected_type.kind == TypeKind.TYPE_ARRAY && expected_type.element_type != null &&
+            expected_type.element_type[0].kind == TypeKind.TYPE_BYTE {
+            var sl: i32 = 0;
+            while value.string_literal_value[sl] != 0 {
+                sl = sl + 1;
+            }
+            const need: i32 = sl + 1;
+            if expected_type.array_size < need {
+                const msg_cap: usize = 256;
+                const msg_buf: &byte = compiler_arena_alloc(checker.arena, msg_cap) as &byte;
+                if msg_buf != null {
+                    sprintf(msg_buf as *byte,
+                        "[byte:N] 容量不足：至少需要 N>=%d（含结尾 0；本字面可见 %d 字节），当前 N=%d" as *byte,
+                        need, sl, expected_type.array_size);
+                    checker_report_error(checker, value, msg_buf);
+                } else {
+                    checker_report_error(checker, value, "字符串字面量过长，无法装入 byte 数组（需含结尾 0）" as *byte);
+                }
+                return 0;
+            }
+            return 1;
+        }
+        if expected_type.kind == TypeKind.TYPE_SLICE && expected_type.slice_element_type != null &&
+            expected_type.slice_element_type[0].kind == TypeKind.TYPE_BYTE {
+            if expected_type.slice_element_is_const == 0 {
+                checker_report_error(checker, value, "字符串字面量赋值给切片须使用 &[const byte] 或 &[const byte:N]" as *byte);
+                return 0;
+            }
+            var sl2: i32 = 0;
+            while value.string_literal_value[sl2] != 0 {
+                sl2 = sl2 + 1;
+            }
+            if expected_type.slice_len >= 0 && sl2 > expected_type.slice_len {
+                checker_report_error(checker, value, "字符串可见字节数超过 &[const byte:N] 的 N" as *byte);
+                return 0;
+            }
+            return 1;
+        }
+    }
+
+    if value.type == ASTNodeType.AST_ARRAY_LITERAL && value.array_literal_element_count == 0 {
+        if expected_type.kind == TypeKind.TYPE_ARRAY || expected_type.kind == TypeKind.TYPE_SLICE {
+            return 1;
+        }
+        checker_report_error(checker, value, "empty array literal '[]' can only initialize array or slice types" as *byte);
+        return 0;
+    }
+
+    _ = checker_check_expr_type(checker, value, copy_type(&expected_type));
+
+    const actual_type: Type = checker_infer_type(checker, value);
+    if actual_type.kind == TypeKind.TYPE_ERROR && expected_type.kind == TypeKind.TYPE_ERROR_UNION {
+        return 1;
+    }
+    if actual_type.kind == TypeKind.TYPE_ERROR_UNION && expected_type.kind != TypeKind.TYPE_ERROR_UNION {
+        checker_report_error(checker, value,
+            "错误联合类型 !T 不能隐式用于普通类型上下文；请使用 try 或 catch 处理" as *byte);
+        return 0;
+    }
+    if type_equals(copy_type(&actual_type), copy_type(&expected_type)) != 0 {
+        return 1;
+    }
+    if value.type == ASTNodeType.AST_SLICE_EXPR && value.slice_expr_base != null &&
+        value.slice_expr_base.type == ASTNodeType.AST_STRING &&
+        expected_type.kind == TypeKind.TYPE_SLICE && expected_type.slice_element_type != null &&
+        expected_type.slice_element_type[0].kind == TypeKind.TYPE_BYTE &&
+        expected_type.slice_element_is_const != 0 {
+        if expected_type.slice_len >= 0 && value.slice_expr_len_expr != null &&
+            is_constant_expression(checker, value.slice_expr_len_expr) != 0 {
+            const len_v: i32 = checker_eval_const_expr(checker, value.slice_expr_len_expr);
+            if len_v > expected_type.slice_len {
+                checker_report_error(checker, value, "切片长度超过 &[const byte:N] 的 N" as *byte);
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if actual_type.kind == TypeKind.TYPE_STRUCT && expected_type.kind == TypeKind.TYPE_INTERFACE &&
+        actual_type.struct_name != null && expected_type.interface_name != null {
+        if struct_implements_interface(checker, actual_type.struct_name, expected_type.interface_name) != 0 {
+            return 1;
+        }
+    }
+    if actual_type.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(expected_type.kind) != 0 {
+        resolve_int_limit_node(value, copy_type(&expected_type));
+        return 1;
+    }
+    if actual_type.kind == TypeKind.TYPE_VOID && expected_type.kind == TypeKind.TYPE_POINTER {
+        return 1;
+    }
+
+    checker_report_error_type_kind_mismatch(checker, value, scene, copy_type(&expected_type), copy_type(&actual_type));
+    return 0;
+}
+
 // 表达式类型推断函数（从表达式AST节点推断类型）
 // 参数：checker - TypeChecker 指针，expr - 表达式AST节点
 // 返回：Type结构，如果无法推断返回TYPE_VOID类型
@@ -2141,6 +2271,12 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         // 代码块：返回void类型（代码块不返回值）
         // 放宽检查：允许代码块作为表达式使用（在编译器自举时可能发生）
         return make_void_type();
+    } else if expr.type == ASTNodeType.AST_IF_STMT {
+        const then_type: Type = checker_infer_if_expr_branch_type(checker, expr.if_stmt_then_branch);
+        if is_void_type(then_type) == 0 {
+            return then_type;
+        }
+        return checker_infer_if_expr_branch_type(checker, expr.if_stmt_else_branch);
     } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
         return infer_match_expr(checker, expr);
     } else if expr.type == ASTNodeType.AST_STRUCT_DECL {
@@ -2585,6 +2721,15 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
             }
             return 1;
         }
+    }
+    if expr.type == ASTNodeType.AST_IF_STMT {
+        if checker_if_expr_branch_matches_expected_type(checker, expr.if_stmt_then_branch, copy_type(&expected_copy), "if 表达式 then 分支" as *byte) == 0 {
+            return 0;
+        }
+        if checker_if_expr_branch_matches_expected_type(checker, expr.if_stmt_else_branch, copy_type(&expected_copy), "if 表达式 else 分支" as *byte) == 0 {
+            return 0;
+        }
+        return 1;
     }
     const actual_type: Type = checker_infer_type(checker, expr);
     if actual_type.kind == TypeKind.TYPE_ERROR && expected_copy.kind == TypeKind.TYPE_ERROR_UNION {

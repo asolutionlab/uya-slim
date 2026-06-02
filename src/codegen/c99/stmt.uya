@@ -1897,6 +1897,47 @@ fn assign_dest_is_byte_slice_c(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
     return 1;
 }
 
+fn c99_expr_is_empty_array_literal(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_ARRAY_LITERAL {
+        return 0;
+    }
+    if expr.array_literal_repeat_count_expr != null {
+        return 0;
+    }
+    if expr.array_literal_element_count != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn assign_dest_is_array_c(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
+    const tc: &byte = assign_dest_type_c_for_string_assign(codegen, dest);
+    if tc == null {
+        return 0;
+    }
+    if strchr(tc as *byte, 91) == null {
+        return 0;
+    }
+    return 1;
+}
+
+fn assign_dest_is_slice_c(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
+    const tc: &byte = assign_dest_type_c_for_string_assign(codegen, dest);
+    if tc == null {
+        return 0;
+    }
+    if strstr(tc as *byte, "uya_slice_" as *byte) == null {
+        return 0;
+    }
+    return 1;
+}
+
+fn c99_emit_assign_lvalue(codegen: &C99CodeGenerator, dest: &ASTNode) void {
+    codegen.emitting_assign_lhs = 1;
+    gen_expr(codegen, dest);
+    codegen.emitting_assign_lhs = 0;
+}
+
 fn gen_assign_string_to_byte_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
     if codegen == null || dest == null || src == null || src.type != ASTNodeType.AST_STRING {
         return;
@@ -1945,6 +1986,45 @@ fn gen_assign_string_to_byte_slice(codegen: &C99CodeGenerator, dest: &ASTNode, s
     c99_emit_semi_newline(codegen);
 }
 
+fn gen_assign_array_literal_to_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
+    if codegen == null || dest == null || src == null || src.type != ASTNodeType.AST_ARRAY_LITERAL {
+        return;
+    }
+    if c99_expr_is_empty_array_literal(src) != 0 {
+        c99_emit(codegen, "__builtin_memset(" as *byte);
+        c99_emit_assign_lvalue(codegen, dest);
+        fputs(", 0, sizeof(" as *byte, codegen.emit_stream as *void);
+        c99_emit_assign_lvalue(codegen, dest);
+        fputs("));\n" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    const dest_type_c: &byte = assign_dest_type_c_for_string_assign(codegen, dest);
+    if dest_type_c == null {
+        return;
+    }
+    c99_emit(codegen, "__uya_memcpy(" as *byte);
+    c99_emit_assign_lvalue(codegen, dest);
+    c99_emit_comma_space(codegen);
+    fprintf(codegen.emit_stream as *void, "(%s){" as *byte, dest_type_c as *byte);
+    gen_array_literal_contents(codegen, src);
+    fputs("}, sizeof(" as *byte, codegen.emit_stream as *void);
+    c99_emit_assign_lvalue(codegen, dest);
+    fputs("));\n" as *byte, codegen.emit_stream as *void);
+}
+
+fn gen_assign_empty_array_literal_to_slice(codegen: &C99CodeGenerator, dest: &ASTNode) void {
+    if codegen == null || dest == null {
+        return;
+    }
+    const dest_type_c: &byte = assign_dest_type_c_for_string_assign(codegen, dest);
+    if dest_type_c == null {
+        return;
+    }
+    c99_emit(codegen, "" as *byte);
+    c99_emit_assign_lvalue(codegen, dest);
+    fprintf(codegen.emit_stream as *void, " = (%s){0};\n" as *byte, dest_type_c as *byte);
+}
+
 // 生成赋值语句
 fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const dest: &ASTNode = stmt.assign_dest;
@@ -1965,6 +2045,18 @@ fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         }
         if assign_dest_is_byte_slice_c(codegen, dest) != 0 {
             gen_assign_string_to_byte_slice(codegen, dest, src);
+            return;
+        }
+    }
+
+    if src != null && src.type == ASTNodeType.AST_ARRAY_LITERAL &&
+        (dest.type == ASTNodeType.AST_IDENTIFIER || dest.type == ASTNodeType.AST_MEMBER_ACCESS) {
+        if assign_dest_is_array_c(codegen, dest) != 0 {
+            gen_assign_array_literal_to_array(codegen, dest, src);
+            return;
+        }
+        if c99_expr_is_empty_array_literal(src) != 0 && assign_dest_is_slice_c(codegen, dest) != 0 {
+            gen_assign_empty_array_literal_to_slice(codegen, dest);
             return;
         }
     }
@@ -3352,10 +3444,31 @@ fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, s
                 if field_name != null && field_type != null {
                     // 如果有默认值，使用默认值
                     if default_value != null {
-                        c99_emit_indent(codegen);
-                        fprintf(codegen.emit_stream as *void, "%s.%s = " as *byte, var_name as *byte, field_name as *byte);
-                        gen_expr(codegen, default_value);
-                        c99_emit_semi_newline(codegen);
+                        if field_type.type == ASTNodeType.AST_TYPE_ARRAY && default_value.type == ASTNodeType.AST_ARRAY_LITERAL {
+                            if c99_expr_is_empty_array_literal(default_value) != 0 {
+                                c99_emit_indent(codegen);
+                                fprintf(codegen.emit_stream as *void, "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n" as *byte,
+                                    var_name as *byte, field_name as *byte, var_name as *byte, field_name as *byte);
+                            } else {
+                                const field_type_c: &byte = c99_type_to_c(codegen, field_type);
+                                c99_emit_indent(codegen);
+                                fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s.%s, (%s){" as *byte,
+                                    var_name as *byte, field_name as *byte, field_type_c as *byte);
+                                gen_array_literal_contents(codegen, default_value);
+                                fprintf(codegen.emit_stream as *void, "}, sizeof(%s.%s));\n" as *byte,
+                                    var_name as *byte, field_name as *byte);
+                            }
+                        } else if field_type.type == ASTNodeType.AST_TYPE_SLICE && c99_expr_is_empty_array_literal(default_value) != 0 {
+                            const slice_type_c: &byte = c99_type_to_c(codegen, field_type);
+                            c99_emit_indent(codegen);
+                            fprintf(codegen.emit_stream as *void, "%s.%s = (%s){0};\n" as *byte,
+                                var_name as *byte, field_name as *byte, slice_type_c as *byte);
+                        } else {
+                            c99_emit_indent(codegen);
+                            fprintf(codegen.emit_stream as *void, "%s.%s = " as *byte, var_name as *byte, field_name as *byte);
+                            gen_expr(codegen, default_value);
+                            c99_emit_semi_newline(codegen);
+                        }
                     } else {
                         // 根据字段类型生成初始化代码
                         if field_type.type == ASTNodeType.AST_TYPE_POINTER {
