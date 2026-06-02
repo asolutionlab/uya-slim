@@ -62,10 +62,43 @@ fn test_simplify_idempotent() !void {
     try assert_eq_i32(out1.len as i32, out2.len as i32);
 }
 
+fn test_simplify_redundant_paren_expr() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "x = (value);\n" as &[byte];
+    const out: &[byte] = try simplify_text(&a, src);
+    try assert_eq_i32(index_of(out, "x = value;\n" as &[byte]), 0);
+}
+
+fn test_simplify_does_not_break_call() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "foo(x);\n" as &[byte];
+    const out: &[byte] = try simplify_text(&a, src);
+    try assert_eq_i32(index_of(out, "foo(x);\n" as &[byte]), 0);
+}
+
+fn test_simplify_return_paren_ident_ast_input() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "fn main(){return (x);}" as &[byte];
+    const out: &[byte] = try simplify_text(&a, src);
+    try assert_eq_i32(index_of(out, "fn main(){return x;}" as &[byte]) >= 0 as i32, true as i32);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt simplify tests");
     run_test("simplify return paren ident", test_simplify_return_paren_ident);
     run_test("simplify return paren number", test_simplify_return_paren_number);
+    run_test("simplify redundant paren expr", test_simplify_redundant_paren_expr);
+    run_test("simplify does not break call", test_simplify_does_not_break_call);
+    run_test("simplify return paren ident ast input", test_simplify_return_paren_ident_ast_input);
     run_test("simplify idempotent", test_simplify_idempotent);
     return test_suite_end();
 }

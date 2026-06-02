@@ -59,14 +59,15 @@ assert_contains "$DIFF_OUT" 'fn diff(a, b) {'
 assert_contains "$DIFF_OUT" "$INPUT3"
 
 INPUT4="$TMP_DIR/input_simplify.uya"
-printf 'fn sum(){return 1+2;}' > "$INPUT4"
+printf 'fn sum(){return (1);}' > "$INPUT4"
 SIMPLIFY_OUT="$($FMT_BIN -s "$INPUT4")"
-assert_contains "$SIMPLIFY_OUT" $'\treturn 3;'
+assert_contains "$SIMPLIFY_OUT" $'\treturn 1;'
 
 INPUT5="$TMP_DIR/input_rewrite.uya"
-printf 'fn sample(){foo.bar();}' > "$INPUT5"
-REWRITE_OUT="$($FMT_BIN -r 'foo.bar -> bar' "$INPUT5")"
+printf 'fn sample(){foo();foobar();}' > "$INPUT5"
+REWRITE_OUT="$($FMT_BIN -r 'foo -> bar' "$INPUT5")"
 assert_contains "$REWRITE_OUT" 'bar();'
+assert_contains "$REWRITE_OUT" 'foobar();'
 
 DIR1="$TMP_DIR/dir_case"
 rm -rf "$DIR1"

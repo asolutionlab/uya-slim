@@ -75,6 +75,10 @@ fn test_comment_model() !void {
     const g: CommentGroup = CommentGroup {
         comments: &arr[0],
         count: 1,
+        attached_decl_index: -1,
+        attached_stmt_index: -1,
+        is_trailing: false,
+        printed: false,
     };
 
     try assert_eq_i32(g.count as i32, 1);
@@ -95,10 +99,34 @@ fn test_format_preserves_mixed_comments() !void {
     try assert_eq_i32(contains_bytes(out, "// trailing" as &[byte]) as i32, true as i32);
 }
 
+fn test_format_preserves_unattached_top_level_comment() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "/* mid */\nfn a(){return 1;}\nfn b(){return 2;}\n" as &[byte];
+    const out: &[byte] = try format(&a, src);
+
+    try assert_eq_i32(contains_bytes(out, "/* mid */" as &[byte]) as i32, true as i32);
+}
+
+fn test_format_preserves_file_end_comment() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "fn a(){return 1;}\n/* end */\n" as &[byte];
+    const out: &[byte] = try format(&a, src);
+
+    try assert_eq_i32(contains_bytes(out, "/* end */" as &[byte]) as i32, true as i32);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt comments phase2 tests");
     run_test("span helpers", test_span_helpers);
     run_test("comment model", test_comment_model);
     run_test("format preserves mixed comments", test_format_preserves_mixed_comments);
+    run_test("format preserves unattached top level comment", test_format_preserves_unattached_top_level_comment);
+    run_test("format preserves file end comment", test_format_preserves_file_end_comment);
     return test_suite_end();
 }

@@ -71,9 +71,38 @@ fn test_format_comments_is_idempotent() !void {
     try assert_eq_i32(count_subslice(f1, "// sum" as &[byte]), 1);
 }
 
+fn test_format_header_comments_idempotent() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "// h1\n\n/* h2 */\nfn add(a,b){return a+b;}" as &[byte];
+    const f1: &[byte] = try format(&a, src);
+    const f2: &[byte] = try format(&a, f1);
+
+    try assert_eq_i32(slices_equal(f1, f2) as i32, true as i32);
+    try assert_eq_i32(count_subslice(f1, "// h1" as &[byte]), 1);
+    try assert_eq_i32(count_subslice(f1, "/* h2 */" as &[byte]), 1);
+}
+
+fn test_format_between_decl_comments_idempotent() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "fn a(){return 1;}\n/* between */\nfn b(){return 2;}" as &[byte];
+    const f1: &[byte] = try format(&a, src);
+    const f2: &[byte] = try format(&a, f1);
+
+    try assert_eq_i32(slices_equal(f1, f2) as i32, true as i32);
+    try assert_eq_i32(count_subslice(f1, "/* between */" as &[byte]), 1);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt idempotent tests");
     run_test("format is idempotent", test_format_is_idempotent);
     run_test("format comments is idempotent", test_format_comments_is_idempotent);
+    run_test("format header comments idempotent", test_format_header_comments_idempotent);
+    run_test("format between decl comments idempotent", test_format_between_decl_comments_idempotent);
     return test_suite_end();
 }

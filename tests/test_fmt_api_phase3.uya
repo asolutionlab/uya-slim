@@ -52,8 +52,29 @@ fn test_format_with_sort_imports() !void {
     try assert_eq_i32(index_of(out, "use std.runtime.entry;\nuse libc.syscall;\nuse tls.https;\n" as &[byte]), 0);
 }
 
+fn test_format_with_sort_imports_and_fn() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const empty: &[byte] = "" as &[byte];
+    const opts: FormatOptions = FormatOptions {
+        sort_imports: true,
+        simplify: false,
+        rewrite_rule: RewriteRule {
+            from: empty,
+            to: empty,
+        },
+        has_rewrite_rule: false,
+    };
+    const out: &[byte] = try format_with_options(&a, "use tls.https;\nuse std.runtime.entry;\nuse libc.syscall;\nfn main(){return 1;}" as &[byte], opts);
+
+    try assert_eq_i32(index_of(out, "use std.runtime.entry;\nuse libc.syscall;\nuse tls.https;\n\nfn main() {\n\treturn 1;\n}" as &[byte]), 0);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt api phase3 tests");
     run_test("format with sort imports", test_format_with_sort_imports);
+    run_test("format with sort imports and fn", test_format_with_sort_imports_and_fn);
     return test_suite_end();
 }

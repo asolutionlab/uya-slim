@@ -79,10 +79,24 @@ fn test_print_two_functions_with_blank_line() !void {
     try assert_eq_i32(found_double_newline as i32, true as i32);
 }
 
+fn test_print_leading_use_block() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "use tls.https; use std.runtime.entry; fn main(){return 1;}" as &[byte];
+    var tokens: &[Token] = try tokenize(&a, src);
+    var file: &File = try parse_file(&a, tokens);
+    const out: &[byte] = try print_file_to_buffer(&a, file, empty_comment_groups());
+
+    try assert_eq_i32(byte_at(out, 0), 'u' as i32);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt printer tests");
     run_test("print simple function", test_print_simple_function);
     run_test("print assign and call", test_print_assign_and_call);
     run_test("print two functions blank line", test_print_two_functions_with_blank_line);
+    run_test("print leading use block", test_print_leading_use_block);
     return test_suite_end();
 }

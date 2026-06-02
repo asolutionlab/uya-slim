@@ -76,11 +76,26 @@ fn test_parse_assign_stmt() !void {
     try assert_eq_i32(stmt.assign.value.kind as i32, ExprKind.EXPR_BINARY as i32);
 }
 
+fn test_parse_leading_use_stmts() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "use std.runtime.entry;\nuse tls.https;\nfn main() { return 1; }" as &[byte];
+    var tokens: &[Token] = try tokenize(&a, src);
+    var file: &File = try parse_file(&a, tokens);
+
+    try assert_eq_i32(file.use_count as i32, 2);
+    try assert_eq_i32(file.use_stmts[0].kind as i32, StmtKind.STMT_USE as i32);
+    try assert_eq_i32(file.decl_count as i32, 1);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt parser tests");
     run_test("parse function decl", test_parse_function_decl);
     run_test("parse return precedence", test_parse_return_binary_precedence);
     run_test("parse call expr stmt", test_parse_call_expr_stmt);
     run_test("parse assign stmt", test_parse_assign_stmt);
+    run_test("parse leading use stmts", test_parse_leading_use_stmts);
     return test_suite_end();
 }

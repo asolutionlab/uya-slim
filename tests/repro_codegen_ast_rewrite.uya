@@ -1,5 +1,4 @@
-use std.mem.arena.Arena;
-use std.mem.arena.arena_alloc;
+use std.runtime.entry;
 use std.fmt.ast.FmtFile;
 use std.fmt.ast.Expr;
 use std.fmt.ast.ExprKind;
@@ -52,7 +51,6 @@ fn rewrite_expr_ast(expr: &Expr, from: &[byte], to: &[byte]) &Expr {
 }
 
 export fn rewrite_file(file: &FmtFile, rule: RewriteRule) void {
-    if rule.from.len == 0 { return; }
     const from: &[byte] = rule.from;
     const to: &[byte] = rule.to;
     var di: usize = 0;
@@ -62,11 +60,6 @@ export fn rewrite_file(file: &FmtFile, rule: RewriteRule) void {
             const stmt: &Stmt = &file.decls[di].fn_decl.body.stmts[si];
             if stmt.kind == StmtKind.STMT_RETURN {
                 stmt.return_stmt.value = rewrite_expr_ast(stmt.return_stmt.value, from, to);
-            } else if stmt.kind == StmtKind.STMT_ASSIGN {
-                stmt.assign.target = rewrite_expr_ast(stmt.assign.target, from, to);
-                stmt.assign.value = rewrite_expr_ast(stmt.assign.value, from, to);
-            } else if stmt.kind == StmtKind.STMT_EXPR {
-                stmt.expr_stmt.expr = rewrite_expr_ast(stmt.expr_stmt.expr, from, to);
             }
             si = si + 1;
         }
@@ -74,11 +67,4 @@ export fn rewrite_file(file: &FmtFile, rule: RewriteRule) void {
     }
 }
 
-fn is_space(c: byte) bool { return c == ' ' as byte; }
-fn copy_trimmed(arena: &Arena, s: &[byte], start_inclusive: usize, end_exclusive: usize) &[byte] { return s[start_inclusive:end_exclusive - start_inclusive]; }
-fn find_arrow(text: &[byte]) i32 { return -1; }
-export fn parse_rewrite_rule(arena: &Arena, text: &[byte]) !RewriteRule { return RewriteRule { from: text, to: text }; }
-fn is_boundary_byte(c: byte) bool { return true; }
-fn match_at(source: &[byte], pos: usize, needle: &[byte]) bool { return false; }
-fn match_rule_at(source: &[byte], pos: usize, needle: &[byte]) bool { return false; }
-export fn apply_rewrite_text(arena: &Arena, source: &[byte], rule: RewriteRule) !&[byte] { return source; }
+fn main() i32 { return 0; }

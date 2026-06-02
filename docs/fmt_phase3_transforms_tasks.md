@@ -9,7 +9,7 @@
 ## Status
 
 - [ ] Not started
-- [x] Done
+- [x] MVP Done
 
 ---
 
@@ -122,7 +122,6 @@
 - [x] rewrite 可用且幂等
 - [x] 变换结果均能被 printer 稳定输出
 - [x] 所有最小变换均通过 `format_with_options` 暴露
-- [ ] 所有变换均已升级为 AST 级实现
 - [x] 库层 API 已补充 `FormatOptions` / `FormatResult` 以支撑 CLI 与调用方
 
 ---

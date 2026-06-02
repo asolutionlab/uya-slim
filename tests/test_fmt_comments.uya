@@ -106,11 +106,47 @@ fn test_format_preserves_trailing_comment() !void {
     try assert_eq_i32(contains_bytes(out, "return a + b; // sum" as &[byte]) as i32, true as i32);
 }
 
+fn test_format_preserves_comment_between_decls() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "fn a(){return 1;}\n/* between */\nfn b(){return 2;}" as &[byte];
+    const out: &[byte] = try format(&a, src);
+
+    try assert_eq_i32(contains_bytes(out, "fn a() {\n\treturn 1;\n}\n\n/* between */\n\nfn b()" as &[byte]) as i32, true as i32);
+}
+
+fn test_format_preserves_multiple_file_header_groups() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "// header a\n\n/* header b */\nfn a(){return 1;}" as &[byte];
+    const out: &[byte] = try format(&a, src);
+
+    try assert_eq_i32(contains_bytes(out, "// header a\n\n/* header b */\n\nfn a()" as &[byte]) as i32, true as i32);
+}
+
+fn test_format_does_not_triple_blank_line_before_decl() !void {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = undefined;
+    arena_init(&a, &arena_buf[0], 65536);
+
+    const src: &[byte] = "// h1\n\n/* h2 */\nfn a(){return 1;}" as &[byte];
+    const out: &[byte] = try format(&a, src);
+
+    try assert_eq_i32(contains_bytes(out, "// h1\n\n/* h2 */\n\n\nfn a" as &[byte]) as i32, false as i32);
+}
+
 export fn main() i32 {
     test_suite_begin("fmt comments tests");
     run_test("tokenize line comment", test_tokenize_line_comment);
     run_test("tokenize block comment", test_tokenize_block_comment);
     run_test("format preserves doc comment", test_format_preserves_doc_comment);
     run_test("format preserves trailing comment", test_format_preserves_trailing_comment);
+    run_test("format preserves comment between decls", test_format_preserves_comment_between_decls);
+    run_test("format preserves multiple file header groups", test_format_preserves_multiple_file_header_groups);
+    run_test("format does not triple blank line before decl", test_format_does_not_triple_blank_line_before_decl);
     return test_suite_end();
 }
