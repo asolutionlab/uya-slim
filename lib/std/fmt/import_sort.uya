@@ -162,7 +162,7 @@ export fn sort_use_lines(arena: &Arena, source: &[byte]) !&[byte] {
             const line: &[byte] = source[start:i - start];
             if i == start {
                 if saw_use {
-                    prefix_end = i + (i < source.len) as usize;
+                    break;
                 }
                 start = i + 1;
                 i = i + 1;
