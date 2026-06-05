@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-05-28（新增“`std.thread.async_compute<usize>` 并行 worker 返回结构体结果时运行时崩溃”编译器/运行时交界 bug；此前已记录 “泛型 wrapper 转发 `std.thread.async_compute<T>` 时 C99 backend 漏发射单态化符号”）
+**最后更新：** 2026-06-06（新增“数组索引边界证明器不跨 `as usize` cast 传递范围事实”编译器 bug，P2/中，含最小复现 `tests/repros/bounds_prover_as_usize_cast.uya`）；2026-05-28 曾新增“`std.thread.async_compute<usize>` 并行 worker 返回结构体结果时运行时崩溃”编译器/运行时交界 bug，及“泛型 wrapper 转发 `std.thread.async_compute<T>` 时 C99 backend 漏发射单态化符号”
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -71,6 +71,19 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [ ] **P2 / 中：数组索引边界证明器不跨 `as usize` cast 传递范围事实**
+  - 状态：未修复
+  - 验证状态：`./bin/uya build tests/repros/bounds_prover_as_usize_cast.uya -o /tmp/bounds_prover_as_usize_cast` 复现 `数组索引安全证明失败`（24:20）；改用 checked cast + 在 usize 值上守卫后通过
+  - 归属：`src/` 类型检查阶段的边界 / 区间证明器对 cast 节点的事实传播
+  - 现象：
+    1. 在 i32 变量 `i` 上已用 `if i < 0 || i >= N { return }` 证明 `0 <= i < N`（N == @len(数组)）
+    2. 下标用 `arr[i as usize]` 时，范围事实未跨 `as usize` 传播 → 误报越界证明失败
+    3. 把上界守卫的命名常量换成字面量同样失败，根因在 cast 边界丢事实
+  - 影响：常见的"窄整型守卫 + `as usize` 下标定长数组"写法被迫改为 `(i as! usize).value` 再在 usize 值上重做守卫，多一层样板
+  - 已观察实例：`benchmarks/http_bench_async_epoll.uya`（已绕过）、`benchmarks/http_bench_async_epoll_await.uya`（同源，仍未编译）
+  - 最小复现：`tests/repros/bounds_prover_as_usize_cast.uya`
+  - 相关文档：`docs/compiler_bug_report_2026-06-06_bounds_prover_as_usize_cast.md`
 
 - [x] **P1 / 高：`std.thread.async_compute<usize>` 承载“worker 返回结构体结果指针”场景时，生成程序运行期 SIGSEGV**
   - 状态：已修复
