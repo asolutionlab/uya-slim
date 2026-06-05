@@ -4,6 +4,31 @@
 
 - 暂无
 
+## v0.10.0 - fmt CLI 收口、if expression 与 C99 主线稳定性
+
+> 发布日期：2026-06-04
+
+### 概要
+
+**v0.10.0** 在 **v0.9.9** 的 WebSocket / HTTP/2 / exec VM 稳定性基础上，把开发工具链与 C99 后端继续推到可发布口径：
+
+1. **`fmt` CLI / API 收口**：完成 phase4 命令行集成，保留注释与 doc comment，稳定 import sort、simplify、rewrite 与 idempotent 行为。
+2. **语言与 C99 路径增强**：新增 if expression 的 parser / checker / C99 codegen 路径，并补齐 bare `catch` statement、const pointer 与若干 codegen 回归。
+3. **发布种子与 split-C 稳定性**：刷新 backup seeds，修复 split-C cache 清理、Makefile 依赖与私有函数命名冲突，继续保持自举输出与 C99 种子一致。
+
+详见 [docs/releases/RELEASE_v0.10.0.md](./docs/releases/RELEASE_v0.10.0.md)。
+
+### fmt 工具链
+
+- `lib/std/fmt/*.uya` 与 `tools/fmt.uya` 完成 CLI/API 收口，覆盖 tokenization、parser、printer、comments、import sort、simplify 与 rewrite。
+- 新增 / 扩展 `tests/test_fmt_*.uya` 与 `tests/verify_fmt_cli.sh`，锁定注释保真、doc comment 附着、语句注释附着、导入排序与幂等格式化。
+
+### 语言 / 编译器
+
+- `src/parser/primary.uya`、`src/checker/check_expr.uya` 与 C99 codegen 支持 if expression。
+- C99 后端修复 monomorphized method、typed route generic method、struct array field member copy、async frame descriptor、empty slice zero-init、private function name collision 与 VP8 short payload codegen 回归。
+- `src/compile.sh` 与 Makefile 补齐 split-C cache cleanup、Makefile dependency 与 release seed 刷新路径。
+
 ## v0.9.6 - microapp 结果面 / 能力契约收口与 CLI 设计同步
 
 > 发布日期：2026-05-12

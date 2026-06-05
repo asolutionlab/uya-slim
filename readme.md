@@ -323,14 +323,14 @@ fn increment(counter: *Counter) void {
 }
 ```
 
-## 当前状态（v0.9.9）
+## 当前状态（v0.10.0）
 
 - **自举编译器**：已完成自举，所有测试通过。编译器能编译自身，输出 C99 代码（默认多文件至 `.uyacache`，可用 `--no-split-c` 单文件）。
 - **开发模式**：仅维护 `src/` 目录的自举编译器。
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：在 **v0.9.8** 的 package mode / exec VM / WebSocket 基础上，当前 **v0.9.9** 继续补齐 `std.http.websocket` 的 WSS、heartbeat、reconnect、backpressure 与 JSON 辅助能力，新增 HTTP/2 frame / stream / HPACK 基础栈，并修复 exec VM `catch` lowering、double pointer 赋值检查与 `Future<!WebSocketConn>` C99 codegen 回归。
+- **最新特性**：在 **v0.9.9** 的 WebSocket / HTTP/2 / exec VM 稳定性基础上，当前 **v0.10.0** 完成 `fmt` CLI/API 收口，新增 if expression 的解析、检查与 C99 codegen 路径，并继续修复 C99 后端在 monomorphized method、typed route、async frame descriptor、split-C 构建与私有符号命名上的回归。
 
 ## 文档
 
@@ -361,6 +361,6 @@ fn increment(counter: *Counter) void {
 
 ---
 
-**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.9.9**（v0.9.0 里程碑线），说明见 [docs/releases/RELEASE_v0.9.9.md](./docs/releases/RELEASE_v0.9.9.md)；里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
+**注意**：语言规范为完整版（0.72）；当前 **次版本发行**为 **v0.10.0**，说明见 [docs/releases/RELEASE_v0.10.0.md](./docs/releases/RELEASE_v0.10.0.md)；上一里程碑总览见 [docs/releases/RELEASE_v0.9.0.md](./docs/releases/RELEASE_v0.9.0.md) 与 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目
