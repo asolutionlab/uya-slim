@@ -4,6 +4,7 @@
 
 use std.http.types;
 use std.http.parse.http_parse_request;
+use std.http.parse.http_parse_request_into;
 use std.http.parse.http_decode_chunked_body_inplace;
 use libc.syscall;
 use libc.errno;
@@ -304,6 +305,58 @@ export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize
                     _ = try http_decode_chunked_body_inplace(&pr);
                 }
                 return pr;
+            }
+        }
+    }
+}
+
+/// 与 `http_conn_read_parse_nonblocking` 相同，但解析结果**就地写入** `out: &ParseResult`，
+/// 不构造/返回巨型 `ParseResult` 值（其内含 `[ReqHeader: MAX_HEADER_SIZE]`，按值复制开销巨大）。
+/// 调用方持有一个可复用的 `ParseResult`（如静态/每连接缓冲）即可避免每请求多次拷贝。
+export fn http_conn_read_parse_nonblocking_into(conn_fd: i32, base: &byte, cap: usize, filled: &usize, out: &ParseResult) !void {
+    while true {
+        const cur: usize = *filled;
+        if cur > cap {
+            return error.PayloadTooLarge;
+        }
+        const sl: &[byte] = base[0: cur];
+        const p: !void = http_parse_request_into(sl, out);
+        match p {
+            error.IncompleteRequest => {
+                if cur >= cap {
+                    return error.PayloadTooLarge;
+                }
+                var room: usize = cap - cur;
+                var chunk: usize = HTTP_RECV_BUF;
+                if chunk > room {
+                    chunk = room;
+                }
+                const dst: *byte = @ptr_from_usize(@usize_from_ptr(base as &void) + cur) as *byte;
+                while true {
+                    const rr: !isize = sys_read(conn_fd, dst, chunk);
+                    const n: isize = rr catch |err| {
+                        const eid: i32 = @error_id(err) as i32;
+                        if eid == EAGAIN {
+                            return error.ReadWouldBlock;
+                        }
+                        if eid == EINTR {
+                            continue;
+                        }
+                        return error.ConnectionClosed;
+                    };
+                    if n <= 0 {
+                        return error.ConnectionClosed;
+                    }
+                    *filled = cur + (n as usize);
+                    break;
+                }
+            }
+            else => {
+                try p;
+                if request_has_chunked_transfer_encoding(&out.request) {
+                    _ = try http_decode_chunked_body_inplace(out);
+                }
+                return;
             }
         }
     }

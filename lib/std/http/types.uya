@@ -144,6 +144,16 @@ export struct Header {
     value_len: usize,
 }
 
+/// 请求头视图（零拷贝）：`name`/`value` 为指向请求读缓冲的切片，`name` 在解析时**就地小写化**。
+/// 生命周期与 `Request.body` 一致——借用请求缓冲，须在缓冲被复用/`http_connbuf_shift` 前消费。
+/// 仅用于**请求**解析；响应/HPACK/HTTP2 仍用上面的 owned `Header`。
+export struct ReqHeader {
+    name: &[byte],
+    name_hash: u64,
+    name_kind: i32,
+    value: &[byte],
+}
+
 export struct Request {
     method: Method,
     /// 请求行是否为 `HTTP/1.1`（否则为 `HTTP/1.0`）；由解析器填写。
@@ -154,7 +164,7 @@ export struct Request {
     path_param_count: i32,
     query: [HttpKvSlice: MAX_QUERY_PARAMS],
     query_count: i32,
-    headers: [Header: MAX_HEADER_SIZE],
+    headers: [ReqHeader: MAX_HEADER_SIZE],
     header_count: i32,
     body: &[byte],
 }
@@ -402,13 +412,13 @@ fn request_header_lookup_hash(name: &[byte]) u64 {
     return hash;
 }
 
-fn request_header_name_eq_ci(h: &Header, name: &[byte]) bool {
-    if h.name_len != name.len {
+fn request_header_name_eq_ci(h: &ReqHeader, name: &[byte]) bool {
+    if h.name.len != name.len {
         return false;
     }
     var i: usize = 0;
     while i < name.len {
-        if http_byte_to_lower_ty(h.name[i]) != http_byte_to_lower_ty(name.ptr[i]) {
+        if http_byte_to_lower_ty(h.name.ptr[i]) != http_byte_to_lower_ty(name.ptr[i]) {
             return false;
         }
         i = i + 1;
@@ -416,7 +426,7 @@ fn request_header_name_eq_ci(h: &Header, name: &[byte]) bool {
     return true;
 }
 
-fn request_header_name_eq_ci_lit(h: &Header, name: &[byte], expected_kind: i32) bool {
+fn request_header_name_eq_ci_lit(h: &ReqHeader, name: &[byte], expected_kind: i32) bool {
     if expected_kind != HEADER_KIND_OTHER && h.name_kind != 0 && h.name_kind != expected_kind {
         return false;
     }
@@ -435,22 +445,19 @@ export fn request_get_header(req: &Request, name: &[byte]) !&[byte] {
     var hi: i32 = 0;
     while hi < req.header_count && hi < header_cap {
         if hi >= 0 && hi < header_cap {
-            const h: &Header = &req.headers[hi];
-            if h.name_len == name.len && h.name_hash != 0u64 && h.name_hash == name_hash {
+            const h: &ReqHeader = &req.headers[hi];
+            if h.name.len == name.len && h.name_hash != 0u64 && h.name_hash == name_hash {
                 if name_kind != HEADER_KIND_OTHER && h.name_kind != HEADER_KIND_OTHER && h.name_kind != name_kind {
                     hi = hi + 1;
                     continue;
                 }
                 if request_header_name_eq_ci(h, name) {
-                    const vb: &byte = &h.value[0] as &byte;
-                    return vb[0: h.value_len];
+                    return h.value;
                 }
             } else if name_kind != HEADER_KIND_OTHER && h.name_kind == name_kind && request_header_name_eq_ci(h, name) {
-                const vb: &byte = &h.value[0] as &byte;
-                return vb[0: h.value_len];
+                return h.value;
             } else if request_header_name_eq_ci(h, name) {
-                const vb: &byte = &h.value[0] as &byte;
-                return vb[0: h.value_len];
+                return h.value;
             }
         } else {
             return error.InvalidRequest;
@@ -516,7 +523,7 @@ export fn request_has_content_length(req: &Request) bool {
     const lit: &[byte] = &"Content-Length"[0: 14];
     var hi: i32 = 0;
     while hi < req.header_count && hi < header_cap {
-        const h: &Header = &req.headers[hi];
+        const h: &ReqHeader = &req.headers[hi];
         if h.name_kind == HEADER_KIND_CONTENT_LENGTH || request_header_name_eq_ci_lit(h, lit, HEADER_KIND_CONTENT_LENGTH) {
             return true;
         }

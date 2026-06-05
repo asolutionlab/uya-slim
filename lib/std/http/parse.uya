@@ -331,7 +331,7 @@ fn parse_one_header_line(buf: &[byte], line_start: usize, line_end: usize, req: 
         return error.InvalidRequest;
     }
     const name_len: usize = colon - line_start;
-    if name_len > @len(req.headers[0].name) {
+    if name_len > MAX_HEADER_SIZE as usize {
         return error.HeaderTooLarge;
     }
     var va: usize = colon + 1;
@@ -339,7 +339,7 @@ fn parse_one_header_line(buf: &[byte], line_start: usize, line_end: usize, req: 
         va = va + 1;
     }
     const value_len: usize = line_end - va;
-    if value_len > @len(req.headers[0].value) {
+    if value_len > MAX_HEADER_VALUE_SIZE as usize {
         return error.HeaderTooLarge;
     }
     if req.header_count >= header_cap {
@@ -347,42 +347,35 @@ fn parse_one_header_line(buf: &[byte], line_start: usize, line_end: usize, req: 
     }
     const hi: i32 = req.header_count;
     if hi >= 0 && hi < header_cap {
+        // 零拷贝：就地小写化 name 区间并累计 hash，name/value 存为指向 buf 的切片视图。
         var ni: usize = 0;
         var name_hash: u64 = http_header_hash_init();
-        while ni < name_len && ni < @len(req.headers[hi].name) {
+        while ni < name_len {
             const lower: byte = http_byte_to_lower(buf.ptr[line_start + ni]);
-            req.headers[hi].name[ni] = lower;
+            buf.ptr[line_start + ni] = lower;
             name_hash = http_header_hash_push(name_hash, lower);
             ni = ni + 1;
         }
-        req.headers[hi].name_len = name_len;
+        const nm: &[byte] = buf[line_start: name_len];
+        req.headers[hi].name = nm;
         req.headers[hi].name_hash = name_hash;
-        req.headers[hi].name_kind = http_header_kind_from_lower_name(&req.headers[hi].name[0], name_len);
-        var vi: usize = 0;
-        while vi < value_len && vi < @len(req.headers[hi].value) {
-            req.headers[hi].value[vi] = buf.ptr[va + vi];
-            vi = vi + 1;
-        }
-        req.headers[hi].value_len = value_len;
+        req.headers[hi].name_kind = http_header_kind_from_lower_name(nm.ptr, name_len);
+        req.headers[hi].value = buf[va: value_len];
         req.header_count = req.header_count + 1;
     } else {
         return error.HeaderTooLarge;
     }
 }
 
-fn header_name_is_content_length(h: &Header) bool {
+fn header_name_is_content_length(h: &ReqHeader) bool {
     return h.name_kind == HEADER_KIND_CONTENT_LENGTH;
 }
 
-fn parse_decimal_from_header_value(h: &Header) usize {
-    const value_cap: usize = @len(h.value);
-    if h.value_len > value_cap {
-        return 0;
-    }
+fn parse_decimal_from_header_value(h: &ReqHeader) usize {
     var n: usize = 0;
     var j: usize = 0;
-    while j < h.value_len && j < value_cap {
-        const c: byte = h.value[j];
+    while j < h.value.len {
+        const c: byte = h.value.ptr[j];
         if c < 48 as byte || c > 57 as byte {
             return 0;
         }
@@ -396,7 +389,7 @@ fn find_content_length_info(req: &Request) ContentLengthInfo {
     const header_cap: i32 = @len(req.headers) as i32;
     var hi: i32 = 0;
     while hi < req.header_count && hi >= 0 && hi < header_cap {
-        const h: &Header = &req.headers[hi];
+        const h: &ReqHeader = &req.headers[hi];
         if header_name_is_content_length(h) {
             return ContentLengthInfo{ found: true, value: parse_decimal_from_header_value(h) };
         }

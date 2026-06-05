@@ -67,6 +67,10 @@ var g_slot_persist: [bool: EPOLL_SERVER_MAX_SLOTS] = [];
 var g_http10_sess: [bool: EPOLL_SERVER_MAX_SLOTS] = [];
 var g_wbody_base: [&byte: EPOLL_SERVER_MAX_SLOTS] = [];
 
+// 可复用的解析结果缓冲（单线程 epoll，逐请求处理，单实例即可）。
+// 走 http_conn_read_parse_nonblocking_into 就地解析，避免每请求多次按值复制 ~百 KB 的 ParseResult。
+var g_bench_pr: [ParseResult: 1] = [];
+
 var g_oneshot: [byte: BENCH_ONESHOT_CAP * EPOLL_SERVER_MAX_SLOTS] = [];
 var g_whdr: [byte: BENCH_HDR_CAP * EPOLL_SERVER_MAX_SLOTS] = [];
 var g_item_store: [byte: BENCH_ITEM_CAP * EPOLL_SERVER_MAX_SLOTS] = [];
@@ -809,7 +813,7 @@ fn bench_slot_after_parse_success(
     srv: &EpollServer,
     slot: usize,
     rt: &Router,
-    pr: ParseResult,
+    pr: &ParseResult,
     base: &byte,
     filled: &usize,
     persist: bool,
@@ -824,7 +828,7 @@ fn bench_slot_after_parse_success(
     if conn == null {
         return;
     }
-    bench_prepare_dispatch(slot, conn.fd, srv, &pr, persist) catch {
+    bench_prepare_dispatch(slot, conn.fd, srv, pr, persist) catch {
         bench_slot_close(srv, slot);
         return;
     };
@@ -848,7 +852,8 @@ fn bench_slot_try_read(srv: &EpollServer, slot: usize, rt: &Router) void {
     const base: &byte = &conn.buf[0] as &byte;
     var filled: &usize = &conn.buf_len;
 
-    const st: !ParseResult = http_conn_read_parse_nonblocking(cfd, base, EPOLL_SERVER_IO_CAP, filled);
+    const prp: &ParseResult = &g_bench_pr[0];
+    const st: !void = http_conn_read_parse_nonblocking_into(cfd, base, EPOLL_SERVER_IO_CAP, filled, prp);
     match st {
         error.ReadWouldBlock => {
             return;
@@ -922,11 +927,8 @@ fn bench_slot_try_read(srv: &EpollServer, slot: usize, rt: &Router) void {
             return;
         }
         else => {
-            var pr: ParseResult = st catch {
-                return;
-            };
-            const p: bool = request_wants_persistent_with_session(&pr.request, bench_http10_sess_get(slot));
-            bench_slot_after_parse_success(srv, slot, rt, pr, base, filled, p);
+            const p: bool = request_wants_persistent_with_session(&prp.request, bench_http10_sess_get(slot));
+            bench_slot_after_parse_success(srv, slot, rt, prp, base, filled, p);
             return;
         }
     }
