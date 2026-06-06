@@ -19,6 +19,10 @@ SCRIPTS=(
     "$ROOT_DIR/tests/verify_upm_transitive_conflict.sh"
     "$ROOT_DIR/tests/verify_upm_git_ref_conflict.sh"
     "$ROOT_DIR/tests/verify_upm_git_dep.sh"
+    "$ROOT_DIR/tests/verify_upm_add_path.sh"
+    "$ROOT_DIR/tests/verify_upm_add_git.sh"
+    "$ROOT_DIR/tests/verify_upm_remove.sh"
+    "$ROOT_DIR/tests/verify_upm_add_remove_e2e.sh"
 )
 
 for script in "${SCRIPTS[@]}"; do

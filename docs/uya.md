@@ -6931,8 +6931,26 @@ mc hash_string(s) expr {
   - `uya.lock`
   - `path` / `git` 依赖
   - 包感知的模块查找
+  - `uya upm add/remove` 最小工作流
 - **当前兼容要求**：
   - 无 manifest 的 `uya build file.uya` / `uya build dir/` 工作流继续可用
+- **当前已实现的 upm CLI**：
+  - `uya upm init`
+  - `uya upm install`
+  - `uya upm update`
+  - `uya upm build`
+  - `uya upm add <alias> --path <dir>`
+  - `uya upm add <alias> --git <url> (--branch <name> | --tag <name> | --commit <sha>)`
+  - `uya upm add <alias> --dev ...`
+  - `uya upm remove <alias>` / `--dep` / `--dev`
+- **CLI 示例**：
+  - `uya upm add gui_uya --git https://github.com/uya-lang/gui-uya.git --branch main`
+  - `uya upm add gui_uya --dev --path ../gui_uya`
+  - `uya upm remove gui_uya --dep`
+- **remove 分区行为**：
+  - `uya upm remove foo`：可匹配普通依赖或开发依赖
+  - `uya upm remove foo --dep`：只删除 `[dependencies]`
+  - `uya upm remove foo --dev`：只删除 `[dev-dependencies]`
 - **非目标**：
   - registry
   - semver range 求解

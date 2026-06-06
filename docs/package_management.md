@@ -425,24 +425,25 @@ v1 的 canonical public UX 是：
 
 ### 9.2 MVP 子命令
 
-v1 MVP 命令集：
+当前实现已支持：
 
 - `upm init`
 - `upm install`
 - `upm update`
 - `upm build`
-
-第二批可选命令：
-
 - `upm add`
 - `upm remove`
 
-第二批命令的冻结方向：
+其中 `add/remove` 当前提供的最小 UX 为：
 
-- `upm add`：直接改写 `uya.toml`
-- `upm add`：自动执行一次 `install`
-- `upm add`：同步重写 `uya.lock`
-- `upm remove`：与 `add` 对称，改写 manifest 后立即重写 lockfile 并同步安装目录
+- `upm add <alias> --path <dir>`
+- `upm add <alias> --git <url> --branch <name>`
+- `upm add <alias> --git <url> --tag <name>`
+- `upm add <alias> --git <url> --commit <sha>`
+- `upm add <alias> --dev ...`（写入 `[dev-dependencies]`）
+- `upm remove <alias>`
+- `upm remove <alias> --dep`
+- `upm remove <alias> --dev`
 
 ### 9.3 语义
 
@@ -450,10 +451,30 @@ v1 MVP 命令集：
 - `upm install`：解析 manifest / lockfile，安装依赖并写回 lockfile
 - `upm update`：刷新可变 ref（如 branch/tag）并重写 lockfile
 - `upm build`：wrapper，按 package mode 准备依赖后调用现有构建流程
-- `upm add`（第二批冻结语义）：改写 manifest 后立即 install，并同步刷新 lockfile
-- `upm remove`（第二批冻结语义）：改写 manifest 后立即 install，并同步刷新 lockfile
+- `upm add`：直接改写 `uya.toml` 后自动执行一次 `install`，并同步刷新 `uya.lock`
+- `upm add --dev`：把依赖写入 `[dev-dependencies]`
+- `upm remove`：从 manifest 删除指定 alias 后自动执行一次 `install`
+- `upm remove --dep`：只从 `[dependencies]` 删除
+- `upm remove --dev`：只从 `[dev-dependencies]` 删除
 
-### 9.4 manifest 发现
+### 9.4 示例
+
+```bash
+uya upm add gui_uya --git https://github.com/uya-lang/gui-uya.git --branch main
+uya upm add gui_uya --dev --path ../gui_uya
+uya upm remove gui_uya --dep
+uya upm remove gui_uya --dev
+```
+
+### 9.5 remove 的分区语义
+
+- `upm remove <alias>`：在 `[dependencies]` 与 `[dev-dependencies]` 中都允许匹配；命中即删除
+- `upm remove <alias> --dep`：只检查并删除 `[dependencies]`
+- `upm remove <alias> --dev`：只检查并删除 `[dev-dependencies]`
+- 若目标分区中没有该 alias，应报错，而不是静默成功
+- 当前实现按 alias 对应的整行声明做最小文本删除，不做完整 TOML 重排
+
+### 9.6 manifest 发现
 
 `upm install/update/build` 默认在当前目录向上查找 manifest，并支持显式：
 
