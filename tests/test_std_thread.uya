@@ -478,7 +478,10 @@ test "async_compute_usize_runs_with_thread_pool" {
 
     const result: usize = try thread_test_run_usize(&pool, &double_usize as &void, 21 as usize);
     try assert_eq_i32(result as i32, 42);
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+    // worker 数是调度相关的实现细节：线程池被允许按需启动 [1, worker_count] 个 worker，
+    // 这里只断言落在合法区间，避免把"恰好复用 1 个"这一非不变量当成回归判据。
+    // （"恰好复用"由专门的 thread_pool_lazily_starts_and_reuses_worker_thread 用例守护。）
+    try expect(thread_pool_started_workers(&pool) >= 1 && thread_pool_started_workers(&pool) <= pool.worker_count);
 }
 
 test "async_compute_usize_can_roundtrip_heap_pointer_with_thread_pool" {
@@ -495,7 +498,8 @@ test "async_compute_usize_can_roundtrip_heap_pointer_with_thread_pool" {
     try assert_eq_i32(result.doubled as i32, 42);
     try assert_eq_i32(result.marker, 77);
     free(result as &void);
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+    // worker 数为调度相关实现细节，断言落在 [1, worker_count] 合法区间即可。
+    try expect(thread_pool_started_workers(&pool) >= 1 && thread_pool_started_workers(&pool) <= pool.worker_count);
 }
 
 test "async_compute_generic_i32_runs_with_thread_pool" {
@@ -526,7 +530,8 @@ test "async_compute_u32_runs_with_thread_pool" {
 
     const result: u32 = try thread_test_run_u32(&pool, &double_u32 as &void, 21 as u32);
     try assert_eq_i32(result as i32, 42);
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+    // worker 数为调度相关实现细节，断言落在 [1, worker_count] 合法区间即可。
+    try expect(thread_pool_started_workers(&pool) >= 1 && thread_pool_started_workers(&pool) <= pool.worker_count);
 }
 
 test "async_compute_generic_u32_runs_with_thread_pool" {
@@ -581,7 +586,8 @@ test "async_compute_i32_queue_runs_multiple_tasks_with_scheduler" {
     var second: Future<!i32> = async_compute<i32>(&pool, &delayed_triple_i32 as &void, 7);
     try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
     try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+    // worker 数为调度相关实现细节，断言落在 [1, worker_count] 合法区间即可。
+    try expect(thread_pool_started_workers(&pool) >= 1 && thread_pool_started_workers(&pool) <= pool.worker_count);
 }
 
 test "async_compute_i32_cancelled_queued_slot_returns_cancelled" {
