@@ -532,7 +532,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // @syscall(nr, arg1, ..., arg6) 返回 !i64
         // 生成：({ long _uya_syscall_ret = uya_syscallN(nr, arg1, ...);
         //         struct err_union_int64_t _uya_result;
-        //         if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); }
+        //         if (_uya_syscall_ret < 0 && _uya_syscall_ret >= -4095) { _uya_result.error_id = (int)(-_uya_syscall_ret); }
         //         else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; }
         //         _uya_result; })
         fputs("({ " as *byte, codegen.emit_stream as *void);
@@ -572,7 +572,16 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         // 生成错误联合类型包装
         fputs("struct err_union_int64_t _uya_result; " as *byte, codegen.emit_stream as *void);
-        fputs("if (_uya_syscall_ret < 0) { " as *byte, codegen.emit_stream as *void);
+        if use_microapp_syscall != 0 {
+            // microapp bridge ABI：错误以 `0 - error_id` 编码，error_id 为全局计数器，
+            // 可远超 4095（与 Linux -errno 区间无关），故任何负值都判为错误。
+            fputs("if (_uya_syscall_ret < 0) { " as *byte, codegen.emit_stream as *void);
+        } else {
+            // Linux 系统调用约定：仅当返回值落在 [-4095, -1] 时才是错误（-errno）。
+            // 32 位目标（如 ARM EABI mmap2）上成功的高地址会被符号扩展为负数，
+            // 若仅以 "< 0" 判定会把成功的映射误判为失败，导致 malloc/morecore 失败。
+            fputs("if (_uya_syscall_ret < 0 && _uya_syscall_ret >= -4095) { " as *byte, codegen.emit_stream as *void);
+        }
         fputs("_uya_result.error_id = (int)(-_uya_syscall_ret); " as *byte, codegen.emit_stream as *void);
         fputs("} else { " as *byte, codegen.emit_stream as *void);
         fputs("_uya_result.error_id = 0; " as *byte, codegen.emit_stream as *void);

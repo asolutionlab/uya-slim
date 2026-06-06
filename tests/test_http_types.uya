@@ -61,13 +61,10 @@ test "request_get_header_ci" {
         header_count: 0,
         body: empty,
     };
-    req.headers[0].name[0] = 'H' as byte;
-    req.headers[0].name[1] = 'o' as byte;
-    req.headers[0].name[2] = 's' as byte;
-    req.headers[0].name[3] = 't' as byte;
-    req.headers[0].name_len = 4;
-    req.headers[0].value[0] = 'x' as byte;
-    req.headers[0].value_len = 1;
+    const host_name: &[byte] = &"Host"[0: 4];
+    const host_val: &[byte] = &"x"[0: 1];
+    req.headers[0].name = host_name;
+    req.headers[0].value = host_val;
     req.header_count = 1;
     const v: &[byte] = try request_get_header(&req, &"HOST"[0: 4]);
     if !slice_eq(v, &"x"[0: 1]) {
@@ -117,19 +114,9 @@ test "get_bearer_token_ok_ci" {
         body: empty,
     };
     const auth_name: &[byte] = &"Authorization"[0: 13];
-    var ni: usize = 0;
-    while ni < auth_name.len {
-        req.headers[0].name[ni] = auth_name.ptr[ni];
-        ni = ni + 1;
-    }
-    req.headers[0].name_len = auth_name.len;
     const auth_val: &[byte] = &"bearer abc"[0: 10];
-    var vi: usize = 0;
-    while vi < auth_val.len {
-        req.headers[0].value[vi] = auth_val.ptr[vi];
-        vi = vi + 1;
-    }
-    req.headers[0].value_len = auth_val.len;
+    req.headers[0].name = auth_name;
+    req.headers[0].value = auth_val;
     req.header_count = 1;
     const tok: &[byte] = try get_bearer_token(&req);
     if !slice_eq(tok, &"abc"[0: 3]) {
@@ -179,19 +166,9 @@ test "get_bearer_token_invalid_scheme" {
         body: empty,
     };
     const auth_name: &[byte] = &"Authorization"[0: 13];
-    var ni: usize = 0;
-    while ni < auth_name.len {
-        req.headers[0].name[ni] = auth_name.ptr[ni];
-        ni = ni + 1;
-    }
-    req.headers[0].name_len = auth_name.len;
     const auth_val: &[byte] = &"Basic xx"[0: 8];
-    var vi: usize = 0;
-    while vi < auth_val.len {
-        req.headers[0].value[vi] = auth_val.ptr[vi];
-        vi = vi + 1;
-    }
-    req.headers[0].value_len = auth_val.len;
+    req.headers[0].name = auth_name;
+    req.headers[0].value = auth_val;
     req.header_count = 1;
     const t: !&[byte] = get_bearer_token(&req);
     match t {
@@ -219,19 +196,9 @@ test "get_bearer_token_empty_token" {
         body: empty,
     };
     const auth_name: &[byte] = &"Authorization"[0: 13];
-    var ni: usize = 0;
-    while ni < auth_name.len {
-        req.headers[0].name[ni] = auth_name.ptr[ni];
-        ni = ni + 1;
-    }
-    req.headers[0].name_len = auth_name.len;
     const auth_val: &[byte] = &"Bearer "[0: 7];
-    var vi: usize = 0;
-    while vi < auth_val.len {
-        req.headers[0].value[vi] = auth_val.ptr[vi];
-        vi = vi + 1;
-    }
-    req.headers[0].value_len = auth_val.len;
+    req.headers[0].name = auth_name;
+    req.headers[0].value = auth_val;
     req.header_count = 1;
     const t: !&[byte] = get_bearer_token(&req);
     match t {

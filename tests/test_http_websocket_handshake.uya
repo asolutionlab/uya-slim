@@ -84,7 +84,8 @@ fn run_with_loop_usize(f: Future<!usize>) !usize {
 }
 
 test "websocket_handshake_success_and_accept" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: keep-alive, Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"[0: 171];
+    var raw_buf: [byte: 172] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: keep-alive, Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 171];
     const req: Request = try parse_req(raw);
     try assert_true(websocket_request_is_upgrade(&req));
     try websocket_validate_upgrade_request(&req);
@@ -99,7 +100,8 @@ test "websocket_handshake_success_and_accept" {
 }
 
 test "websocket_handshake_missing_key" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\r\n"[0: 115];
+    var raw_buf: [byte: 116] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 115];
     const req: Request = try parse_req(raw);
     const result: !void = websocket_validate_upgrade_request(&req);
     match result {
@@ -109,7 +111,8 @@ test "websocket_handshake_missing_key" {
 }
 
 test "websocket_handshake_rejects_wrong_version" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 12\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"[0: 159];
+    var raw_buf: [byte: 160] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 12\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 159];
     const req: Request = try parse_req(raw);
     const result: !void = websocket_validate_upgrade_request(&req);
     match result {
@@ -119,14 +122,16 @@ test "websocket_handshake_rejects_wrong_version" {
 }
 
 test "websocket_handshake_header_case_insensitive" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\ncoNNection: UpGrade\r\nuPgrade: WebSocket\r\nsec-websocket-version: 13\r\nsec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"[0: 167];
+    var raw_buf: [byte: 168] = "GET /ws HTTP/1.1\r\nHost: example.com\r\ncoNNection: UpGrade\r\nuPgrade: WebSocket\r\nsec-websocket-version: 13\r\nsec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 167];
     const req: Request = try parse_req(raw);
     try assert_true(websocket_request_is_upgrade(&req));
     try websocket_validate_upgrade_request(&req);
 }
 
 test "websocket_handshake_pick_subprotocol" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\n\r\n"[0: 208];
+    var raw_buf: [byte: 209] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 208];
     const req: Request = try parse_req(raw);
     var supported: [&const byte: 2] = ["graphql-ws", "superchat"];
     const picked: &[const byte] = try websocket_pick_subprotocol(&req, &supported[0], 2);
@@ -136,7 +141,8 @@ test "websocket_handshake_pick_subprotocol" {
 }
 
 test "websocket_handshake_pick_subprotocol_missing" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\n\r\n"[0: 208];
+    var raw_buf: [byte: 209] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 208];
     const req: Request = try parse_req(raw);
     var supported: [&const byte: 1] = ["json"];
     const picked: &[const byte] = try websocket_pick_subprotocol(&req, &supported[0], 1);
@@ -144,7 +150,8 @@ test "websocket_handshake_pick_subprotocol_missing" {
 }
 
 test "websocket_accept_from_http_writes_response_and_roundtrips" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat\r\n\r\n"[0: 195];
+    var raw_buf: [byte: 196] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 195];
     const req: Request = try parse_req(raw);
 
     var supported: [&const byte: 1] = ["chat"];
@@ -185,7 +192,8 @@ test "websocket_accept_from_http_writes_response_and_roundtrips" {
 }
 
 test "websocket_accept_from_http_rejects_extensions_when_disabled" {
-    const raw: &[byte] = &"GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"[0: 222];
+    var raw_buf: [byte: 223] = "GET /ws HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
+    const raw: &[byte] = raw_buf[0: 222];
     const req: Request = try parse_req(raw);
     var opts: WebSocketAcceptOptions = websocket_accept_options_default();
 

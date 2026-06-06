@@ -376,18 +376,10 @@ fn request_set_header(req: &Request, idx: i32, name: &[const byte], value: &[con
     if header_idx >= MAX_HEADER_SIZE as usize {
         return;
     }
-    req.headers[header_idx].name_len = name.len;
-    req.headers[header_idx].value_len = value.len;
-    var i: usize = 0;
-    while i < name.len && i < MAX_HEADER_SIZE as usize {
-        req.headers[header_idx].name[i] = name.ptr[i];
-        i = i + 1;
-    }
-    i = 0;
-    while i < value.len && i < MAX_HEADER_VALUE_SIZE as usize {
-        req.headers[header_idx].value[i] = value.ptr[i];
-        i = i + 1;
-    }
+    req.headers[header_idx].name = name as &[byte];
+    req.headers[header_idx].value = value as &[byte];
+    req.headers[header_idx].name_hash = 0u64;
+    req.headers[header_idx].name_kind = HEADER_KIND_OTHER;
 }
 
 fn make_basic_request(method: Method, path: &[const byte], body: &[byte], req: &Request) void {
@@ -416,8 +408,10 @@ fn make_basic_request(method: Method, path: &[const byte], body: &[byte], req: &
     req.header_count = 0;
     i = 0;
     while i < MAX_HEADER_SIZE as usize {
-        req.headers[i].name_len = 0;
-        req.headers[i].value_len = 0;
+        req.headers[i].name = body[0: 0];
+        req.headers[i].value = body[0: 0];
+        req.headers[i].name_hash = 0u64;
+        req.headers[i].name_kind = HEADER_KIND_OTHER;
         i = i + 1;
     }
     req.body = body;
