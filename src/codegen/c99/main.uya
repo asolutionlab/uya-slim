@@ -1646,6 +1646,14 @@ fn is_top_level_function_reachable(codegen: &C99CodeGenerator, fn_decl: &ASTNode
     if codegen == null || fn_decl == null {
         return 0;
     }
+    if fn_decl.type == ASTNodeType.AST_FN_DECL {
+        if fn_decl.fn_decl_is_export != 0 {
+            return 1;
+        }
+        if c99_fn_decl_is_user_entry_main(codegen, fn_decl) != 0 {
+            return 1;
+        }
+    }
     var i: i32 = 0;
     while i < codegen.reachable_function_decl_count {
         const reachable_decl: &ASTNode = codegen.reachable_function_decls[i];
@@ -1860,6 +1868,9 @@ fn should_emit_top_level_function_decl(codegen: &C99CodeGenerator, fn_decl: &AST
     if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return 0;
     }
+    if fn_decl.fn_decl_is_export != 0 {
+        return 1;
+    }
     // 顶层 extern/前向声明没有函数体，不参与可达性裁剪，但仍需保留 C 原型。
     if fn_decl.fn_decl_body == null {
         return 1;
@@ -2003,18 +2014,26 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
 }
 
 // 生成 C99 代码
-fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: &byte) i32 {
-    if codegen == null || ast == null || output_file == null {
+fn c99_codegen_generate(codegen: &C99CodeGenerator, input_ast: &ASTNode, output_file: &byte) i32 {
+    if codegen == null || input_ast == null || output_file == null {
         return -1;
     }
     
     // 检查是否是程序节点
-    if ast.type != ASTNodeType.AST_PROGRAM {
+    if input_ast.type != ASTNodeType.AST_PROGRAM {
         return -1;
     }
+
+    var ast: &ASTNode = input_ast;
+    var root_ast: &ASTNode = ast;
+    const flat_ast: &ASTNode = ast_flatten_nested_program_decls(ast, codegen.arena);
+    if flat_ast != null {
+        root_ast = flat_ast;
+    }
+    ast = root_ast;
     
     // 保存程序节点引用
-    codegen.program_node = ast;
+    codegen.program_node = root_ast;
     var saved_checker_codegen_diag: i32 = 0;
     if codegen.checker != null {
         saved_checker_codegen_diag = codegen.checker.suppress_codegen_diagnostics;

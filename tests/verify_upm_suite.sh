@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
+
+if [ "${UYA_UPM_SUITE_PREBUILT:-0}" != "1" ] && [ ! -x "$ROOT_DIR/bin/cmd/upm" ]; then
+    UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+fi
+
 SCRIPTS=(
     "$ROOT_DIR/tests/test_cmd_dispatch.sh"
     "$ROOT_DIR/tests/verify_upm_legacy_mode.sh"
@@ -26,7 +32,7 @@ SCRIPTS=(
 )
 
 for script in "${SCRIPTS[@]}"; do
-    bash "$script"
+    UYA_UPM_SUITE_PREBUILT=1 bash "$script"
 done
 
 echo "verify_upm_suite: ok"

@@ -16,7 +16,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+if [ "${UYA_UPM_SUITE_PREBUILT:-0}" != "1" ] && [ ! -x "$ROOT_DIR/bin/cmd/upm" ]; then
+    UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+fi
 
 mkdir -p "$APP_DIR/src" "$DEP_DIR/src"
 cat > "$APP_DIR/uya.toml" <<'EOF_APP_MANIFEST'
@@ -26,10 +28,10 @@ version = "0.1.0"
 source-dir = "src"
 EOF_APP_MANIFEST
 cat > "$APP_DIR/src/main.uya" <<'EOF_MAIN'
-use gui_uya.file;
+use gui_uya.file.message;
 
 export fn main() i32 {
-    @println(file.message());
+    @println("${message()}");
     return 0;
 }
 EOF_MAIN
@@ -62,6 +64,6 @@ if [ "$STATUS" -eq 0 ]; then
     exit 1
 fi
 
-grep -Eq 'gui_uya|module|依赖' "$RUN_LOG"
+grep -Eq 'gui_uya|module|依赖|模块路径段|不是目录' "$RUN_LOG"
 
 echo "verify_upm_add_remove_e2e: ok"
