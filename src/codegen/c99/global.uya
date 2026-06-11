@@ -693,7 +693,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     }
     // 镜像分 TU：vtable/测试等可能在「公共」.c 中先于其它源文件里的全局定义生成，
     // global_variables 尚未登记；从合并 program 解析与 gen_global_var / gen_extern_var_decl 一致的 C 名
-    if result == null && codegen.split_mirror != 0 && codegen.program_node != null &&
+    if result == null && codegen.program_node != null &&
         codegen.program_node.type == ASTNodeType.AST_PROGRAM {
         var pdi: i32 = 0;
         while pdi < codegen.program_node.program_decl_count {

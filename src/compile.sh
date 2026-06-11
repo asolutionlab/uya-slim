@@ -208,8 +208,8 @@ cleanup_uya_split_cache_dir() {
     done < "$makefile"
     rm -f "$makefile"
     rm -f "${split_dir}/uya" "${split_dir}/uya.build" "${split_dir}/a.out"
-    find "$split_dir" -type f -name '*.o' -delete
-    find "$split_dir" -depth -type d -empty ! -path "$split_dir" -delete
+    find "$split_dir" -type f -name '*.o' -delete || true
+    find "$split_dir" -depth -type d -empty ! -path "$split_dir" -delete || true
 }
 
 # 多文件自举对比：主编译产物在 src/.uyacache/…，自举产物在 src/build/bootstrap_split_c/…。
@@ -1076,16 +1076,24 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 rm -rf "$BOOTSTRAP_SPLIT_DIR"
                 mkdir -p "$BOOTSTRAP_SPLIT_DIR"
             fi
+            BOOTSTRAP_SPLIT_DIR_ARG=""
+            if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then
+                BOOTSTRAP_SPLIT_DIR_ARG="$BOOTSTRAP_SPLIT_DIR"
+            elif [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+                BOOTSTRAP_SPLIT_DIR_ARG="$UYA_SPLIT_C_DIR"
+            elif [ "$MULTI_FILE_C" = "1" ]; then
+                BOOTSTRAP_SPLIT_DIR_ARG=".uyacache"
+            fi
             if [ "$USE_AUTO_DEPS" = true ]; then
                 ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then
-                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_EXE" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                if [ -n "$BOOTSTRAP_SPLIT_DIR_ARG" ]; then
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR_ARG" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_EXE" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 else
                     (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 fi
             else
-                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then
-                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_EXE" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                if [ -n "$BOOTSTRAP_SPLIT_DIR_ARG" ]; then
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR_ARG" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_EXE" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 else
                     (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 fi

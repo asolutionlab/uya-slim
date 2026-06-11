@@ -6943,6 +6943,10 @@ mc hash_string(s) expr {
   - `uya upm add <alias> --git <url> (--branch <name> | --tag <name> | --commit <sha>)`
   - `uya upm add <alias> --dev ...`
   - `uya upm remove <alias>` / `--dep` / `--dev`
+- **manifest package 字段**：
+  - `package.version`：当前仍必填
+  - `package.uya_min_version`：当前可选；用于声明运行该包所需的最小 Uya 版本
+  - 当 `package.uya_min_version` 高于当前 `uya` 版本时，`uya upm install/update/build` 与 package mode 构建会直接报错
 - **CLI 示例**：
   - `uya upm add gui_uya --git https://github.com/uya-lang/gui-uya.git --branch main`
   - `uya upm add gui_uya --dev --path ../gui_uya`

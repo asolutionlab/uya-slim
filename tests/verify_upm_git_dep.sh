@@ -33,7 +33,9 @@ init_git_repo_fixture() {
     git --git-dir="$REPO_DIR" symbolic-ref HEAD refs/heads/stable
 }
 
-UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+if [ "${UYA_UPM_SUITE_PREBUILT:-0}" != "1" ] && [ ! -x "$ROOT_DIR/bin/cmd/upm" ]; then
+    UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+fi
 
 init_git_repo_fixture
 COMMIT_V1="$(git -C "$REPO_WORK_DIR" rev-parse HEAD)"

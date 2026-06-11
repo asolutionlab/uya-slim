@@ -13,7 +13,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+if [ "${UYA_UPM_SUITE_PREBUILT:-0}" != "1" ] && [ ! -x "$ROOT_DIR/bin/cmd/upm" ]; then
+    UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+fi
 
 "$COMPILER" build "$ROOT_DIR/examples/HelloWorld.uya" -o "$OUT_BIN" --no-split-c >"$BUILD_LOG" 2>&1
 "$OUT_BIN" >"$RUN_LOG" 2>&1

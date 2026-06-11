@@ -28,7 +28,9 @@ assert_no_stage_dirs() {
     fi
 }
 
-UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+if [ "${UYA_UPM_SUITE_PREBUILT:-0}" != "1" ] && [ ! -x "$ROOT_DIR/bin/cmd/upm" ]; then
+    UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+fi
 
 cp -R "$FIXTURE" "$WORK_DIR"
 mkdir -p "$TMP_STAGE_ROOT"
