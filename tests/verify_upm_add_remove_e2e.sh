@@ -28,10 +28,10 @@ version = "0.1.0"
 source-dir = "src"
 EOF_APP_MANIFEST
 cat > "$APP_DIR/src/main.uya" <<'EOF_MAIN'
-use gui_uya.file.message;
+use gui_uya.file;
 
 export fn main() i32 {
-    @println("${message()}");
+    @println("${file.message()}");
     return 0;
 }
 EOF_MAIN

@@ -2968,33 +2968,58 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             const obj_name: &byte = mod_obj.identifier_name;
             // 局部/参数变量优先于导入模块：避免变量名与模块别名同名时误判 module.func
             const obj_symbol: &Symbol = symbol_table_lookup(checker, obj_name);
-            if obj_symbol == null {
-                const ih: i32 = hash_string(obj_name);
-                var ii: i32 = ih & (IMPORT_TABLE_SIZE - 1);
-                var mi: i32 = 0;
-                while mi < IMPORT_TABLE_SIZE {
-                    const sl: i32 = (ii + mi) & (IMPORT_TABLE_SIZE - 1);
-                    const imp: &ImportedItem = checker.import_table.slots[sl];
-                    if imp == null { break; }
-                    if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
-                        // 模块限定调用
-                        callee.member_access_is_module_access = 1;
-                        callee.member_access_module_name = imp.module_name;
-                        const func_name: &byte = callee.member_access_field_name;
-                        if func_name != null {
-                            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, func_name);
-                            if fn_decl != null {
-                                return type_from_ast(checker, fn_decl.fn_decl_return_type);
-                            }
-                            const sig: &FunctionSignature = function_table_lookup(checker, func_name);
-                            if sig != null {
-                                return sig.return_type;
-                            }
-                        }
-                        return make_void_type();
-                    }
-                    mi = mi + 1;
+            var module_name: &byte = null;
+            if checker_name_is_type_namespace_name(checker, obj_name) == 0 {
+                if callee.member_access_is_module_access != 0 && callee.member_access_module_name != null {
+                    module_name = callee.member_access_module_name;
+                } else if obj_symbol == null {
+                    module_name = checker_resolve_module_alias_from_file(checker, callee.filename, obj_name);
                 }
+            }
+            if module_name != null {
+                // 模块限定调用
+                callee.member_access_is_module_access = 1;
+                callee.member_access_module_name = module_name;
+                const func_name: &byte = callee.member_access_field_name;
+                if func_name != null {
+                    var mh: u32 = hash_string(module_name);
+                    var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
+                    var i3: i32 = 0;
+                    while i3 < MODULE_TABLE_SIZE {
+                        const ml: i32 = (mi + i3) & (MODULE_TABLE_SIZE - 1);
+                        const mod: &ModuleInfo = checker.module_table.slots[ml];
+                        if mod == null {
+                            break;
+                        }
+                        if str_equals(mod.module_name, module_name) != 0 {
+                            if mod.exports != null {
+                                var ei: i32 = 0;
+                                while ei < mod.export_count {
+                                    if mod.exports[ei].name != null &&
+                                        str_equals(mod.exports[ei].name, func_name) != 0 {
+                                        const fn_decl: &ASTNode = mod.exports[ei].decl_node;
+                                        if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
+                                            return type_from_ast(checker, fn_decl.fn_decl_return_type);
+                                        }
+                                        return make_void_type();
+                                    }
+                                    ei = ei + 1;
+                                }
+                            }
+                            break;
+                        }
+                        i3 = i3 + 1;
+                    }
+                    const fn_decl2: &ASTNode = find_fn_decl_from_program(checker.program_node, func_name);
+                    if fn_decl2 != null {
+                        return type_from_ast(checker, fn_decl2.fn_decl_return_type);
+                    }
+                    const sig: &FunctionSignature = function_table_lookup(checker, func_name);
+                    if sig != null {
+                        return sig.return_type;
+                    }
+                }
+                return make_void_type();
             }
         }
         
@@ -3380,7 +3405,8 @@ fn infer_member_access(checker: &TypeChecker, expr: &ASTNode) Type {
                     const sl: i32 = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
                     const imp: &ImportedItem = checker.import_table.slots[sl];
                     if imp == null { break; }
-                    if imp.item_type == (0 - 1) && str_equals(imp.local_name, enum_name) != 0 {
+                    if checker_name_is_type_namespace_name(checker, enum_name) == 0 &&
+                        imp.item_type == (0 - 1) && str_equals(imp.local_name, enum_name) != 0 {
                         expr.member_access_is_module_access = 1;
                         expr.member_access_module_name = imp.module_name;
                         if imp.module_name != null && strcmp(imp.module_name as *byte, "std" as *byte) == 0 {

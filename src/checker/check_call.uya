@@ -317,6 +317,194 @@ fn checker_import_table_lookup_local_name(checker: &TypeChecker, local_name: &by
     return null;
 }
 
+fn checker_build_use_module_name(checker: &TypeChecker, use_stmt: &ASTNode) &byte {
+    if checker == null || use_stmt == null || use_stmt.type != ASTNodeType.AST_USE_STMT ||
+        use_stmt.use_stmt_path_segments == null || use_stmt.use_stmt_path_segment_count <= 0 {
+        return null;
+    }
+    var total_len: usize = 0usize;
+    var i: i32 = 0;
+    while i < use_stmt.use_stmt_path_segment_count {
+        const seg: &byte = use_stmt.use_stmt_path_segments[i];
+        if seg != null {
+            total_len = total_len + strlen(seg as *byte);
+            if i > 0 {
+                total_len = total_len + 1usize;
+            }
+        }
+        i = i + 1;
+    }
+    if total_len == 0usize {
+        return null;
+    }
+    const buf: &byte = compiler_arena_alloc(checker.arena, total_len + 1usize) as &byte;
+    if buf == null {
+        return null;
+    }
+    var dst: &byte = buf;
+    i = 0;
+    while i < use_stmt.use_stmt_path_segment_count {
+        const seg2: &byte = use_stmt.use_stmt_path_segments[i];
+        if seg2 != null {
+            if i > 0 {
+                dst[0] = 46;
+                dst = &dst[1];
+            }
+            const seg_len: usize = strlen(seg2 as *byte);
+            memcpy(dst as *void, seg2 as *void, seg_len);
+            dst = &dst[seg_len];
+        }
+        i = i + 1;
+    }
+    dst[0] = 0;
+    return buf;
+}
+
+fn checker_build_use_parent_module_name(checker: &TypeChecker, use_stmt: &ASTNode) &byte {
+    if checker == null || use_stmt == null || use_stmt.type != ASTNodeType.AST_USE_STMT ||
+        use_stmt.use_stmt_path_segments == null || use_stmt.use_stmt_path_segment_count <= 1 {
+        return null;
+    }
+    const parent_count: i32 = use_stmt.use_stmt_path_segment_count - 1;
+    var total_len: usize = 0usize;
+    var i: i32 = 0;
+    while i < parent_count {
+        const seg: &byte = use_stmt.use_stmt_path_segments[i];
+        if seg != null {
+            total_len = total_len + strlen(seg as *byte);
+            if i > 0 {
+                total_len = total_len + 1usize;
+            }
+        }
+        i = i + 1;
+    }
+    if total_len == 0usize {
+        return null;
+    }
+    const buf: &byte = compiler_arena_alloc(checker.arena, total_len + 1usize) as &byte;
+    if buf == null {
+        return null;
+    }
+    var dst: &byte = buf;
+    i = 0;
+    while i < parent_count {
+        const seg2: &byte = use_stmt.use_stmt_path_segments[i];
+        if seg2 != null {
+            if i > 0 {
+                dst[0] = 46;
+                dst = &dst[1];
+            }
+            const seg_len: usize = strlen(seg2 as *byte);
+            memcpy(dst as *void, seg2 as *void, seg_len);
+            dst = &dst[seg_len];
+        }
+        i = i + 1;
+    }
+    dst[0] = 0;
+    return buf;
+}
+
+fn checker_module_exports_name(checker: &TypeChecker, module_name: &byte, item_name: &byte) i32 {
+    if checker == null || module_name == null || item_name == null {
+        return 0;
+    }
+    const mh: i32 = hash_string(module_name);
+    var mi: i32 = mh & (MODULE_TABLE_SIZE - 1);
+    var i: i32 = 0;
+    while i < MODULE_TABLE_SIZE {
+        const slot: i32 = (mi + i) & (MODULE_TABLE_SIZE - 1);
+        const mod: &ModuleInfo = checker.module_table.slots[slot];
+        if mod == null {
+            break;
+        }
+        if str_equals(mod.module_name, module_name) != 0 {
+            if mod.exports != null {
+                var ei: i32 = 0;
+                while ei < mod.export_count {
+                    if mod.exports[ei].name != null &&
+                        str_equals(mod.exports[ei].name, item_name) != 0 {
+                        return 1;
+                    }
+                    ei = ei + 1;
+                }
+            }
+            break;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn checker_use_stmt_imports_parent_export(checker: &TypeChecker, use_stmt: &ASTNode) i32 {
+    if checker == null || use_stmt == null || use_stmt.type != ASTNodeType.AST_USE_STMT ||
+        use_stmt.use_stmt_path_segments == null || use_stmt.use_stmt_path_segment_count <= 1 {
+        return 0;
+    }
+    const item_name: &byte = use_stmt.use_stmt_path_segments[use_stmt.use_stmt_path_segment_count - 1];
+    const parent_module: &byte = checker_build_use_parent_module_name(checker, use_stmt);
+    return checker_module_exports_name(checker, parent_module, item_name);
+}
+
+fn checker_resolve_module_alias_from_file(checker: &TypeChecker, context_filename: &byte, local_name: &byte) &byte {
+    if checker == null || checker.program_node == null || local_name == null {
+        return null;
+    }
+    if checker_name_is_type_namespace_name(checker, local_name) != 0 {
+        return null;
+    }
+    if context_filename != null {
+        var i: i32 = 0;
+        while i < checker.program_node.program_decl_count {
+            const decl: &ASTNode = checker.program_node.program_decls[i];
+            if decl != null && decl.type == ASTNodeType.AST_USE_STMT &&
+                decl.filename != null && strcmp(decl.filename as *byte, context_filename as *byte) == 0 &&
+                decl.use_stmt_item_name == null &&
+                decl.use_stmt_path_segments != null && decl.use_stmt_path_segment_count > 0 {
+                var imported_local: &byte = decl.use_stmt_alias;
+                if imported_local == null {
+                    imported_local = decl.use_stmt_path_segments[decl.use_stmt_path_segment_count - 1];
+                }
+                if imported_local != null && str_equals(imported_local, local_name) != 0 {
+                    if checker_use_stmt_imports_parent_export(checker, decl) != 0 {
+                        i = i + 1;
+                        continue;
+                    }
+                    const module_name: &byte = checker_build_use_module_name(checker, decl);
+                    if module_name != null {
+                        return module_name;
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    const imported_item: &ImportedItem = checker_import_table_lookup_local_name(checker, local_name);
+    if imported_item != null && imported_item.item_type == (0 - 1) {
+        return imported_item.module_name;
+    }
+    return null;
+}
+
+fn checker_name_is_type_namespace_name(checker: &TypeChecker, local_name: &byte) i32 {
+    if checker == null || checker.program_node == null || local_name == null {
+        return 0;
+    }
+    if find_struct_decl_from_program(checker.program_node, local_name) != null {
+        return 1;
+    }
+    if find_union_decl_from_program(checker.program_node, local_name) != null {
+        return 1;
+    }
+    if find_enum_decl_from_program(checker.program_node, local_name) != null {
+        return 1;
+    }
+    if find_type_alias_from_program(checker.program_node, local_name) != null {
+        return 1;
+    }
+    return 0;
+}
+
 fn checker_microapp_host_module_name_is_forbidden(module_name: &byte) i32 {
     if module_name == null {
         return 0;
@@ -440,23 +628,11 @@ fn resolve_reachable_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &AS
             return null;
         }
         var module_name: &byte = null;
-        if callee.member_access_is_module_access != 0 && callee.member_access_module_name != null {
-            module_name = callee.member_access_module_name;
-        } else {
-            var ih: u32 = hash_string(obj_name);
-            var ii: i32 = (ih as i32) & (IMPORT_TABLE_SIZE - 1);
-            var i2: i32 = 0;
-            while i2 < IMPORT_TABLE_SIZE {
-                const sl: i32 = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
-                const imp: &ImportedItem = checker.import_table.slots[sl];
-                if imp == null {
-                    break;
-                }
-                if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
-                    module_name = imp.module_name;
-                    break;
-                }
-                i2 = i2 + 1;
+        if checker_name_is_type_namespace_name(checker, obj_name) == 0 {
+            if callee.member_access_is_module_access != 0 && callee.member_access_module_name != null {
+                module_name = callee.member_access_module_name;
+            } else {
+                module_name = checker_resolve_module_alias_from_file(checker, callee.filename, obj_name);
             }
         }
         if module_name == null {
@@ -1403,22 +1579,20 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             const obj_name: &byte = object.identifier_name;
             // 局部/参数变量优先于导入模块：避免变量名与模块别名同名时被误判为 module.func
             const obj_symbol: &Symbol = symbol_table_lookup(checker, obj_name);
-            if obj_symbol == null {
-                var ih: u32 = hash_string(obj_name);
-                var ii: i32 = (ih as i32) & (IMPORT_TABLE_SIZE - 1);
-                var i2: i32 = 0;
-                var found_import: i32 = 0;
-                while i2 < IMPORT_TABLE_SIZE {
-                    const sl: i32 = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
-                    const imp: &ImportedItem = checker.import_table.slots[sl];
-                    if imp == null { break; }
-                    if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
-                        found_import = 1;
-                        // 模块限定调用
-                        callee.member_access_is_module_access = 1;
-                        callee.member_access_module_name = imp.module_name;  // 保存模块名
-                        // 在模块导出表中查找函数
-                        const module_name: &byte = imp.module_name;
+            var module_name: &byte = null;
+            if checker_name_is_type_namespace_name(checker, obj_name) == 0 {
+                if callee.member_access_is_module_access != 0 && callee.member_access_module_name != null {
+                    module_name = callee.member_access_module_name;
+                } else if obj_symbol == null {
+                    module_name = checker_resolve_module_alias_from_file(checker, callee.filename, obj_name);
+                }
+            }
+            if module_name != null {
+                    // 模块限定调用
+                    callee.member_access_is_module_access = 1;
+                    callee.member_access_module_name = module_name;  // 保存模块名
+                    // 在模块导出表中查找函数
+                    if module_name != null {
                         var mh: u32 = hash_string(module_name);
                         var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
                         var i3: i32 = 0;
@@ -1463,10 +1637,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                             checker_report_error(checker, node, "模块不存在" as *byte);
                             return result;
                         }
-                        break;
                     }
-                    i2 = i2 + 1;
-                }
             }
             // 注意：这里不再报告"未导入的模块"错误
             // 因为可能是结构体方法调用（如 p.distance()）
@@ -2546,7 +2717,8 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                 if imp == null {
                     break;
                 }
-                if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj.identifier_name) != 0 {
+                if checker_name_is_type_namespace_name(checker, obj.identifier_name) == 0 &&
+                    imp.item_type == (0 - 1) && str_equals(imp.local_name, obj.identifier_name) != 0 {
                     node.member_access_is_module_access = 1;
                     node.member_access_module_name = imp.module_name;
                     if imp.module_name != null && strcmp(imp.module_name as *byte, "std" as *byte) == 0 {

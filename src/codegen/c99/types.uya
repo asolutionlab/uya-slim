@@ -7448,6 +7448,41 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         const callee: &ASTNode = expr.call_expr_callee;
         const type_args: & & ASTNode = expr.call_expr_type_args;
         const type_arg_count: i32 = expr.call_expr_type_arg_count;
+        if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+            callee.member_access_is_module_access != 0 && callee.member_access_module_name != null &&
+            callee.member_access_field_name != null {
+            const module_name: &byte = callee.member_access_module_name;
+            const func_name: &byte = callee.member_access_field_name;
+            var mh: u32 = hash_string(module_name);
+            var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
+            var i3: i32 = 0;
+            while i3 < MODULE_TABLE_SIZE {
+                const ml: i32 = (mi + i3) & (MODULE_TABLE_SIZE - 1);
+                const mod: &ModuleInfo = codegen.checker.module_table.slots[ml];
+                if mod == null {
+                    break;
+                }
+                if str_equals(mod.module_name, module_name) != 0 {
+                    if mod.exports != null {
+                        var ei: i32 = 0;
+                        while ei < mod.export_count {
+                            if mod.exports[ei].name != null &&
+                                str_equals(mod.exports[ei].name, func_name) != 0 {
+                                const fn_decl: &ASTNode = mod.exports[ei].decl_node;
+                                if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL &&
+                                    fn_decl.fn_decl_return_type != null {
+                                    return c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
+                                }
+                                break;
+                            }
+                            ei = ei + 1;
+                        }
+                    }
+                    break;
+                }
+                i3 = i3 + 1;
+            }
+        }
         if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
             const inferred_call: Type = checker_infer_type(codegen.checker, expr);
             if inferred_call.kind != TypeKind.TYPE_VOID {

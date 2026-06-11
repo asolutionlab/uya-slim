@@ -467,6 +467,43 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
             return prefix;
         }
     }
+
+    // UPM staging and non-src project roots place package files directly under
+    // module_root_dir (for example root/gui_uya/file.uya).  Keep exported C
+    // names aligned with module-qualified calls such as gui_uya.file.message().
+    if codegen.checker != null && codegen.checker.module_root_dir != null {
+        const root_len: usize = strlen(codegen.checker.module_root_dir as *byte);
+        if root_len > 0 && strncmp(filename as *byte, codegen.checker.module_root_dir as *byte, root_len) == 0 {
+            var rel_root: &byte = (filename as *byte + root_len) as &byte;
+            while rel_root[0] == 47 || rel_root[0] == 92 {
+                rel_root = &rel_root[1];
+            }
+            const rel_root_len: usize = strlen(rel_root as *byte);
+            if rel_root_len > 4 && strcmp((rel_root as *byte + (rel_root_len - 4)) as *byte, ".uya" as *byte) == 0 {
+                const base_root_len: usize = rel_root_len - 4;
+                const prefix_root: &byte = compiler_arena_alloc(codegen.arena, base_root_len + 2) as &byte;
+                if prefix_root != null {
+                    memcpy(prefix_root as *void, rel_root as *void, base_root_len);
+                    const root_idx1: i32 = base_root_len as i32;
+                    const root_idx2: i32 = root_idx1 + 1;
+                    if root_idx1 >= 0 && root_idx1 < 1000000 {
+                        prefix_root[root_idx1] = 95 as byte;
+                    }
+                    if root_idx2 >= 0 && root_idx2 < 1000000 {
+                        prefix_root[root_idx2] = 0 as byte;
+                    }
+                    var root_i: usize = 0;
+                    while root_i < base_root_len {
+                        if prefix_root[root_i] == 47 || prefix_root[root_i] == 92 {
+                            prefix_root[root_i] = 95 as byte;
+                        }
+                        root_i = root_i + 1;
+                    }
+                    return prefix_root;
+                }
+            }
+        }
+    }
     return ("" as *byte) as &byte;
 }
 

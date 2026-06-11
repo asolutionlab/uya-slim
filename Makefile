@@ -641,6 +641,19 @@ check:
 		exit 1; \
 	fi; \
 	echo ""; \
+	echo "验证模块别名 import table codegen..."; \
+	if bash ./tests/verify_module_alias_import_table_codegen.sh > /tmp/verify_out.txt 2>&1; then \
+		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ 模块别名 import table codegen 验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
 	echo "验证 nested async split-C codegen..."; \
 	if bash ./tests/verify_async_nested_split_codegen.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
