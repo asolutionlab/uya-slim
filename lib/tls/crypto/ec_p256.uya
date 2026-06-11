@@ -1179,6 +1179,87 @@ export fn ec_p256_ecdsa_sign_with_k(r_out: &byte, s_out: &byte, d: &const byte, 
     return 0;
 }
 
+export fn ec_p256_ecdsa_precompute_k(r_out: &byte, kinv_out: &byte, rd_out: &byte, d: &const byte, k: &const byte) i32 {
+    if r_out == null || kinv_out == null || rd_out == null || d == null || k == null {
+        return -1;
+    }
+
+    var priv: Sc256 = Sc256{ l: [0:4] };
+    var nonce: Sc256 = Sc256{ l: [0:4] };
+    sc256_from_bytes_be(&priv, d);
+    sc256_from_bytes_be(&nonce, k);
+    if sc256_is_zero(&priv) || sc256_is_zero(&nonce) || sc256_ge_n(&nonce) {
+        return -1;
+    }
+
+    var gx: Fe256 = Fe256{ l: [0:4] };
+    var gy: Fe256 = Fe256{ l: [0:4] };
+    p256_base_point(&gx, &gy);
+    var g_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
+    p256_affine_set(&g_aff, &gx, &gy);
+    var g_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_from_affine(&g_jac, &g_aff);
+    var k_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_scalar_mul(&k_jac, &nonce, &g_jac);
+    if p256_jac_is_zero(&k_jac) {
+        return -1;
+    }
+    var k_x: Fe256 = Fe256{ l: [0:4] };
+    var k_y: Fe256 = Fe256{ l: [0:4] };
+    p256_jac_to_affine(&k_x, &k_y, &k_jac);
+
+    var r_sc: Sc256 = Sc256{ l: [0:4] };
+    fe256_to_bytes_be(&k_x, r_out);
+    sc256_from_bytes_be(&r_sc, r_out);
+    if sc256_ge_n(&r_sc) {
+        sc256_cond_sub_n(&r_sc, 1);
+    }
+    if sc256_is_zero(&r_sc) {
+        return -1;
+    }
+
+    var rd: Sc256 = Sc256{ l: [0:4] };
+    sc256_mul_mod_n(&rd, &r_sc, &priv);
+    var kinv: Sc256 = Sc256{ l: [0:4] };
+    sc256_inv_mod_n(&kinv, &nonce);
+
+    sc256_to_bytes_be(&r_sc, r_out);
+    sc256_to_bytes_be(&kinv, kinv_out);
+    sc256_to_bytes_be(&rd, rd_out);
+    return 0;
+}
+
+export fn ec_p256_ecdsa_sign_precomputed(s_out: &byte, hash: &const byte, kinv: &const byte, rd: &const byte) i32 {
+    if s_out == null || hash == null || kinv == null || rd == null {
+        return -1;
+    }
+
+    var z: Sc256 = Sc256{ l: [0:4] };
+    var kinv_sc: Sc256 = Sc256{ l: [0:4] };
+    var rd_sc: Sc256 = Sc256{ l: [0:4] };
+    sc256_from_bytes_be(&z, hash);
+    sc256_from_bytes_be(&kinv_sc, kinv);
+    sc256_from_bytes_be(&rd_sc, rd);
+    if sc256_is_zero(&kinv_sc) {
+        return -1;
+    }
+
+    var sum: Sc256 = Sc256{ l: [0:4] };
+    sc256_add(&sum, &z, &rd_sc);
+    if sc256_ge_n(&sum) {
+        sc256_sub_n(&sum);
+    }
+
+    var s_sc: Sc256 = Sc256{ l: [0:4] };
+    sc256_mul_mod_n(&s_sc, &kinv_sc, &sum);
+    if sc256_is_zero(&s_sc) {
+        return -1;
+    }
+
+    sc256_to_bytes_be(&s_sc, s_out);
+    return 0;
+}
+
 // ECDSA：低层验签（仅用于已知向量测试）
 export fn ec_p256_ecdsa_verify(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32 {
     if pub == null || hash == null || r == null || s == null {

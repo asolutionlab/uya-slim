@@ -90,6 +90,26 @@ export fn ecdsa_sign_p256_with_k(r_out: &byte, s_out: &byte, d: &const byte, has
     return 0;
 }
 
+export fn ecdsa_precompute_p256_k(r_out: &byte, kinv_out: &byte, rd_out: &byte, d: &const byte, k: &const byte) i32 {
+    if r_out == null || kinv_out == null || rd_out == null || d == null || k == null {
+        return -1;
+    }
+    if ec_p256.ec_p256_ecdsa_precompute_k(r_out, kinv_out, rd_out, d, k) != 0 {
+        return -1;
+    }
+    return 0;
+}
+
+export fn ecdsa_sign_p256_precomputed(s_out: &byte, hash: &const byte, kinv: &const byte, rd: &const byte) i32 {
+    if s_out == null || hash == null || kinv == null || rd == null {
+        return -1;
+    }
+    if ec_p256.ec_p256_ecdsa_sign_precomputed(s_out, hash, kinv, rd) != 0 {
+        return -1;
+    }
+    return 0;
+}
+
 export fn ecdsa_sign_p384_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32 {
     if r_out == null || s_out == null || d == null || hash == null || k == null {
         return -1;
