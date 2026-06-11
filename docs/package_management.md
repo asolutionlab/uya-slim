@@ -252,6 +252,7 @@ util = { git = "ssh://git@example.com/util.git", commit = "abc123" }
 - 不支持字符串 shorthand，如 `http = "../http"`
 - `path` 相对当前 manifest 所在目录解析
 - path 依赖与 git 依赖都要求目标包自身包含 `uya.toml`
+- `package.version` 仍为必填字段；当前实现还支持可选的 `package.uya_min_version = "x.y.z"`，用于要求运行当前包所需的最小 Uya 版本；若当前 `uya` 版本低于该值，则 `upm install/update/build` 与 package mode 构建会直接报错
 
 ### 5.6 保留字段
 
@@ -259,6 +260,7 @@ util = { git = "ssh://git@example.com/util.git", commit = "abc123" }
 
 - 必须在文档中标记为 reserved / future
 - MVP 不要求解析和执行这些字段
+- `package.uya_min_version` 不属于 reserved 字段；当前实现已支持它作为可选 package 字段，且不替代必填的 `package.version`
 
 ---
 

@@ -15,6 +15,8 @@ SCRIPTS=(
     "$ROOT_DIR/tests/verify_upm_manifest_src.sh"
     "$ROOT_DIR/tests/verify_upm_manifest_discovery_file.sh"
     "$ROOT_DIR/tests/verify_upm_manifest_missing.sh"
+    "$ROOT_DIR/tests/verify_upm_min_version_ok.sh"
+    "$ROOT_DIR/tests/verify_upm_min_version_fail.sh"
     "$ROOT_DIR/tests/verify_upm_missing_lockfile.sh"
     "$ROOT_DIR/tests/verify_upm_path_dep.sh"
     "$ROOT_DIR/tests/verify_upm_build_flags.sh"

@@ -39,6 +39,7 @@ const UPM_MAX_DEPS: i32 = 64;
 const UPM_MAX_ALIAS_LEN: usize = 128;
 const UPM_MAX_NAME_LEN: usize = 128;
 const UPM_MAX_VERSION_LEN: usize = 64;
+const UYA_UPM_RUNTIME_VERSION: &byte = "0.10.0" as &byte;
 const UPM_MAX_META_LEN: usize = 256;
 const UPM_MAX_REF_LEN: usize = 256;
 const UPM_MAX_LOCK_ITEMS: i32 = 128;
@@ -96,6 +97,7 @@ export struct UPMManifest {
     source_dir: [byte: UPM_PATH_MAX],
     package_name: [byte: UPM_MAX_NAME_LEN],
     version: [byte: UPM_MAX_VERSION_LEN],
+    uya_min_version: [byte: UPM_MAX_VERSION_LEN],
     description: [byte: UPM_MAX_META_LEN],
     license: [byte: UPM_MAX_META_LEN],
     repository: [byte: UPM_MAX_META_LEN],
@@ -785,6 +787,83 @@ fn upm_parse_manifest_string_value(line: &byte, key_out: &byte, key_cap: usize, 
     return upm_bytes_copy(value_out, value_cap, (&line[start]) as &byte, i - start);
 }
 
+fn upm_parse_version_component(version: &byte, index: usize, next_index_out: &usize, value_out: &i32) i32 {
+    if version == null || next_index_out == null || value_out == null {
+        return 1;
+    }
+    var i: usize = index;
+    if version[i] == 0 as byte {
+        return 1;
+    }
+    var value: i32 = 0;
+    var saw_digit: i32 = 0;
+    while version[i] != 0 as byte {
+        const ch: byte = version[i];
+        if ch >= 48 as byte && ch <= 57 as byte {
+            saw_digit = 1;
+            value = value * 10 + (ch as i32 - 48);
+            i = i + 1usize;
+            continue;
+        }
+        break;
+    }
+    if saw_digit == 0 {
+        return 1;
+    }
+    next_index_out[0] = i;
+    value_out[0] = value;
+    return 0;
+}
+
+fn upm_compare_semver_like(lhs: &byte, rhs: &byte) i32 {
+    if lhs == null || rhs == null {
+        return 0;
+    }
+    var li: usize = 0usize;
+    var ri: usize = 0usize;
+    var next_li: usize = 0usize;
+    var next_ri: usize = 0usize;
+    var part: i32 = 0;
+    while part < 3 {
+        var lv: i32 = 0;
+        var rv: i32 = 0;
+        if upm_parse_version_component(lhs, li, &next_li, &lv) != 0 || upm_parse_version_component(rhs, ri, &next_ri, &rv) != 0 {
+            return 0;
+        }
+        if lv < rv {
+            return -1;
+        }
+        if lv > rv {
+            return 1;
+        }
+        li = next_li;
+        ri = next_ri;
+        part = part + 1;
+        if part < 3 {
+            if lhs[li] != 46 as byte || rhs[ri] != 46 as byte {
+                return 0;
+            }
+            li = li + 1usize;
+            ri = ri + 1usize;
+        }
+    }
+    return 0;
+}
+
+fn upm_validate_uya_min_version(manifest: &UPMManifest) i32 {
+    if manifest == null || manifest.uya_min_version[0] == 0 as byte {
+        return 0;
+    }
+    if upm_compare_semver_like(UYA_UPM_RUNTIME_VERSION as &byte, &manifest.uya_min_version[0] as &byte) < 0 {
+        fprintf(libc.stderr, "错误: 当前 uya 版本 %s 低于 package.uya_min_version 要求 %s（manifest=%s）\n" as *byte,
+            UYA_UPM_RUNTIME_VERSION as *byte,
+            &manifest.uya_min_version[0] as *byte,
+            &manifest.manifest_path[0] as *byte);
+        return 1;
+    }
+    return 0;
+}
+
 fn upm_parse_dependency_inline_table(line: &byte, dep_out: &UPMDependency) i32 {
     if line == null || dep_out == null {
         return 1;
@@ -967,6 +1046,8 @@ export fn upm_parse_manifest(manifest_path: &byte, manifest_out: &UPMManifest) i
                 _ = upm_string_copy(&manifest_out.package_name[0] as &byte, UPM_MAX_NAME_LEN, &value_buf[0] as &byte);
             } else if strcmp(&key_buf[0] as *byte, "version" as *byte) == 0 {
                 _ = upm_string_copy(&manifest_out.version[0] as &byte, UPM_MAX_VERSION_LEN, &value_buf[0] as &byte);
+            } else if strcmp(&key_buf[0] as *byte, "uya_min_version" as *byte) == 0 {
+                _ = upm_string_copy(&manifest_out.uya_min_version[0] as &byte, UPM_MAX_VERSION_LEN, &value_buf[0] as &byte);
             } else if strcmp(&key_buf[0] as *byte, "source-dir" as *byte) == 0 {
                 _ = upm_string_copy(&manifest_out.source_dir[0] as &byte, UPM_PATH_MAX, &value_buf[0] as &byte);
             } else if strcmp(&key_buf[0] as *byte, "description" as *byte) == 0 {
@@ -1042,6 +1123,9 @@ export fn upm_parse_manifest(manifest_path: &byte, manifest_out: &UPMManifest) i
     fclose(file);
     if manifest_out.package_name[0] == 0 as byte || manifest_out.version[0] == 0 as byte {
         fprintf(libc.stderr, "错误: manifest 缺少 package.name 或 package.version: %s\n" as *byte, &manifest_out.manifest_path[0] as *byte);
+        return 1;
+    }
+    if upm_validate_uya_min_version(manifest_out) != 0 {
         return 1;
     }
     if upm_source_dir_is_safe(&manifest_out.source_dir[0] as &byte) == 0 {
@@ -1437,7 +1521,7 @@ fn upm_print_usage() void {
 }
 
 fn upm_print_version() void {
-    fprintf(libc.stdout, "upm draft (uya v0.10.0)\n" as *byte);
+    fprintf(libc.stdout, "upm draft (uya v%s)\n" as *byte, UYA_UPM_RUNTIME_VERSION as *byte);
 }
 
 fn upm_guess_package_name_from_dir(dir_path: &byte, out: &byte, cap: usize) i32 {
