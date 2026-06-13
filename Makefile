@@ -585,7 +585,7 @@ bin/uya-upm-stage2: scripts/uya-upm-stage2.sh
 bin/cmd/upm: src/cmd/upm/main.uya uya
 	@mkdir -p bin/cmd
 	@echo "构建 cmd/upm ..."
-	@$(UYA_CMD_BOOTSTRAP_COMPILER) build $< -o $@ --no-split-c --project-root src/cmd/upm/
+	@$(UYA_CMD_BOOTSTRAP_COMPILER) build $< -o $@ --no-split-c --project-root src/
 
 bin/cmd/%: src/cmd/%/main.uya uya
 	@mkdir -p bin/cmd

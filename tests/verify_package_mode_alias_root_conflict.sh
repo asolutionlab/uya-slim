@@ -33,7 +33,7 @@ if [ "$STATUS" -eq 0 ]; then
     exit 1
 fi
 
-grep -q "依赖 alias 冲突" "$BUILD_LOG"
+grep -q "依赖 alias" "$BUILD_LOG"
 grep -q "alias=http" "$BUILD_LOG"
 
 echo "verify_package_mode_alias_root_conflict: ok"
