@@ -6961,6 +6961,7 @@ mc hash_string(s) expr {
   - 多版本并存
   - workspace
 - 完整规范见 [package_management.md](./package_management.md)
+- 后续架构与阶段性演进设计见 [upm_evolution_design.md](./upm_evolution_design.md)
 
 ### 29.2 drop 机制增强
 - **drop 标记**：`#[no_drop]` 用于无需清理的类型

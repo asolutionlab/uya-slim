@@ -1,0 +1,183 @@
+use upm_lib.types.UPM_PATH_MAX;
+use upm_lib.types.UPM_LINE_MAX;
+use upm_lib.types.UPM_CMD_MAX;
+use upm_lib.types.UPM_MAX_DEPS;
+use upm_lib.types.UPM_MAX_ALIAS_LEN;
+use upm_lib.types.UPM_MAX_NAME_LEN;
+use upm_lib.types.UPM_MAX_VERSION_LEN;
+use upm_lib.types.UYA_UPM_RUNTIME_VERSION;
+use upm_lib.types.UPM_MAX_META_LEN;
+use upm_lib.types.UPM_MAX_REF_LEN;
+use upm_lib.types.UPM_MAX_LOCK_ITEMS;
+use upm_lib.types.UPM_MAX_VISITED;
+use upm_lib.types.UPM_S_IFMT;
+use upm_lib.types.UPM_S_IFDIR;
+use upm_lib.types.UPM_S_IFREG;
+use upm_lib.types.UPMManifestSection;
+use upm_lib.types.UPMDependencyKind;
+use upm_lib.types.UPMGitRefKind;
+use upm_lib.types.UPMBuildArgValueMode;
+use upm_lib.types.UPMDependency;
+use upm_lib.types.UPMManifest;
+use upm_lib.types.UPMLockItem;
+use upm_lib.types.UPMPackageBuildPlan;
+use upm_lib.types.UPMAddArgs;
+use upm_lib.types.UPMRemoveArgs;
+use upm_lib.types.upm_manifest_init;
+use upm_lib.types.upm_build_plan_init;
+
+export const UPM_PATH_MAX: usize = 4096;
+export const UPM_LINE_MAX: i32 = 2048;
+export const UPM_CMD_MAX: i32 = 16384;
+export const UPM_MAX_DEPS: i32 = 64;
+export const UPM_MAX_ALIAS_LEN: usize = 128;
+export const UPM_MAX_NAME_LEN: usize = 128;
+export const UPM_MAX_VERSION_LEN: usize = 64;
+export const UYA_UPM_RUNTIME_VERSION: &byte = "0.10.0" as &byte;
+export const UPM_MAX_META_LEN: usize = 256;
+export const UPM_MAX_REF_LEN: usize = 256;
+export const UPM_MAX_LOCK_ITEMS: i32 = 128;
+export const UPM_MAX_VISITED: i32 = 64;
+
+export const UPM_S_IFMT: u32 = 61440u32;
+export const UPM_S_IFDIR: u32 = 16384u32;
+export const UPM_S_IFREG: u32 = 32768u32;
+
+export enum UPMManifestSection {
+    UPM_SECTION_NONE,
+    UPM_SECTION_PACKAGE,
+    UPM_SECTION_DEPENDENCIES,
+    UPM_SECTION_DEV_DEPENDENCIES,
+    UPM_SECTION_LAYOUT,
+}
+
+export enum UPMDependencyKind {
+    UPM_DEP_NONE,
+    UPM_DEP_PATH,
+    UPM_DEP_GIT,
+}
+
+export enum UPMGitRefKind {
+    UPM_GIT_REF_NONE,
+    UPM_GIT_REF_TAG,
+    UPM_GIT_REF_BRANCH,
+    UPM_GIT_REF_COMMIT,
+}
+
+export enum UPMBuildArgValueMode {
+    UPM_BUILD_ARG_VALUE_NONE,
+    UPM_BUILD_ARG_VALUE_REQUIRED,
+    UPM_BUILD_ARG_VALUE_OPTIONAL,
+}
+
+export struct UPMDependency {
+    alias: [byte: UPM_MAX_ALIAS_LEN],
+    kind: UPMDependencyKind,
+    path_value: [byte: UPM_PATH_MAX],
+    git_url: [byte: UPM_PATH_MAX],
+    ref_kind: UPMGitRefKind,
+    ref_value: [byte: UPM_MAX_REF_LEN],
+}
+
+export struct UPMManifest {
+    manifest_path: [byte: UPM_PATH_MAX],
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    source_dir: [byte: UPM_PATH_MAX],
+    test_dir: [byte: UPM_PATH_MAX],
+    bench_dir: [byte: UPM_PATH_MAX],
+    example_dir: [byte: UPM_PATH_MAX],
+    package_name: [byte: UPM_MAX_NAME_LEN],
+    version: [byte: UPM_MAX_VERSION_LEN],
+    uya_min_version: [byte: UPM_MAX_VERSION_LEN],
+    description: [byte: UPM_MAX_META_LEN],
+    license: [byte: UPM_MAX_META_LEN],
+    repository: [byte: UPM_MAX_META_LEN],
+    dep_count: i32,
+    deps: [UPMDependency: UPM_MAX_DEPS],
+    dev_dep_count: i32,
+    dev_deps: [UPMDependency: UPM_MAX_DEPS],
+}
+
+export struct UPMLockItem {
+    alias: [byte: UPM_MAX_ALIAS_LEN],
+    package_name: [byte: UPM_MAX_NAME_LEN],
+    kind: UPMDependencyKind,
+    path_raw: [byte: UPM_PATH_MAX],
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    git_url: [byte: UPM_PATH_MAX],
+    ref_kind: UPMGitRefKind,
+    ref_value: [byte: UPM_MAX_REF_LEN],
+}
+
+export struct UPMResolvedDep {
+    alias: [byte: UPM_MAX_ALIAS_LEN],
+    package_name: [byte: UPM_MAX_NAME_LEN],
+    kind: UPMDependencyKind,
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    path_raw: [byte: UPM_PATH_MAX],
+    git_url: [byte: UPM_PATH_MAX],
+    requested_ref: [byte: UPM_MAX_REF_LEN],
+    resolved_commit: [byte: UPM_MAX_REF_LEN],
+}
+
+export struct UPMResolvedGraph {
+    manifest_path: [byte: UPM_PATH_MAX],
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    dep_count: i32,
+    deps: [UPMResolvedDep: UPM_MAX_LOCK_ITEMS],
+}
+
+export struct UPMPackageBuildPlan {
+    active: i32,
+    manifest_path: [byte: UPM_PATH_MAX],
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    build_root: [byte: UPM_PATH_MAX],
+    compile_input: [byte: UPM_PATH_MAX],
+    module_root: [byte: UPM_PATH_MAX],
+    resolved_graph: UPMResolvedGraph,
+    lock_item_count: i32,
+    lock_items: [UPMLockItem: UPM_MAX_LOCK_ITEMS],
+}
+
+export struct UPMPackageContext {
+    active: i32,
+    manifest_path: [byte: UPM_PATH_MAX],
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    module_root: [byte: UPM_PATH_MAX],
+    compile_input: [byte: UPM_PATH_MAX],
+    lockfile_path: [byte: UPM_PATH_MAX],
+    materialized_root: [byte: UPM_PATH_MAX],
+}
+
+export struct UPMAddArgs {
+    alias: [byte: UPM_MAX_ALIAS_LEN],
+    input_path: [byte: UPM_PATH_MAX],
+    manifest_path: [byte: UPM_PATH_MAX],
+    dev_only: i32,
+    dep: UPMDependency,
+}
+
+export struct UPMRemoveArgs {
+    alias: [byte: UPM_MAX_ALIAS_LEN],
+    input_path: [byte: UPM_PATH_MAX],
+    manifest_path: [byte: UPM_PATH_MAX],
+    dev_only: i32,
+    dep_only: i32,
+}
+
+export fn upm_manifest_init() UPMManifest {
+    var manifest: UPMManifest = UPMManifest{};
+    manifest.source_dir[0] = '.' as byte;
+    manifest.source_dir[1] = 0 as byte;
+    return manifest;
+}
+
+export fn upm_build_plan_init() UPMPackageBuildPlan {
+    return UPMPackageBuildPlan{};
+}

@@ -1,0 +1,292 @@
+use libc;
+use libc.getenv;
+use libc.fork;
+use libc.waitpid;
+use libc.execve;
+use libc.read;
+use libc.dup2;
+use libc._exit;
+use libc.sys_close;
+use libc.sys_pipe2;
+use libc.fprintf;
+use std.runtime.saved_envp;
+use upm_lib.types.UPM_PATH_MAX;
+use upm_lib.types.UPM_MAX_REF_LEN;
+use upm_lib.types.UPMDependency;
+use upm_lib.types.UPMManifest;
+use upm_lib.types.UPMGitRefKind;
+use upm_lib.path_utils.upm_bytes_copy;
+use upm_lib.path_utils.upm_string_copy;
+use upm_lib.path_utils.upm_join_path;
+use upm_lib.path_utils.upm_is_file;
+use upm_lib.path_utils.upm_exit_code_from_system_status;
+use upm_lib.lockfile.upm_load_locked_git_commit;
+
+fn upm_trim_newline_in_place(buf: &byte) void {
+    if buf == null {
+        return;
+    }
+    var len: usize = std.string.strlen(buf as *byte);
+    while len > 0usize {
+        const idx: usize = len - 1usize;
+        if buf[idx] == 10 as byte || buf[idx] == 13 as byte {
+            buf[idx] = 0 as byte;
+            len = idx;
+            continue;
+        }
+        break;
+    }
+}
+
+export fn upm_find_git_binary(out: &byte, cap: usize) i32 {
+    if out == null || cap == 0usize {
+        return 1;
+    }
+    var path_env: &byte = getenv("PATH" as *byte);
+    if path_env != null && path_env[0] != 0 as byte {
+        var start: usize = 0;
+        var i: usize = 0;
+        while true {
+            const ch: byte = path_env[i];
+            if ch == 58 as byte || ch == 0 as byte {
+                var dir_buf: [byte: UPM_PATH_MAX] = [];
+                if i == start {
+                    _ = upm_string_copy(&dir_buf[0] as &byte, UPM_PATH_MAX, "." as &byte);
+                } else if upm_bytes_copy(&dir_buf[0] as &byte, UPM_PATH_MAX, (&path_env[start]) as &byte, i - start) != 0 {
+                    return 1;
+                }
+                var candidate: [byte: UPM_PATH_MAX] = [];
+                if upm_join_path(&dir_buf[0] as &byte, "git" as &byte, &candidate[0] as &byte, UPM_PATH_MAX) == 0 &&
+                    upm_is_file(&candidate[0] as &byte) != 0 {
+                    return upm_string_copy(out, cap, &candidate[0] as &byte);
+                }
+                if ch == 0 as byte {
+                    break;
+                }
+                start = i + 1usize;
+            }
+            i = i + 1usize;
+        }
+    }
+    if upm_is_file("/usr/bin/git" as &byte) != 0 {
+        return upm_string_copy(out, cap, "/usr/bin/git" as &byte);
+    }
+    if upm_is_file("/bin/git" as &byte) != 0 {
+        return upm_string_copy(out, cap, "/bin/git" as &byte);
+    }
+    fprintf(libc.stderr, "错误: 未找到 git 可执行文件\n" as *byte);
+    return 1;
+}
+
+export fn upm_exec_argv_wait(argv: &(&byte), failure_label: &byte) i32 {
+    if argv == null || argv[0] == null {
+        return 1;
+    }
+    const pid: i32 = fork();
+    if pid == 0 {
+        var empty_env: [&byte: 1] = [null];
+        var envp: &(&byte) = &empty_env[0] as &(&byte);
+        if saved_envp != null {
+            envp = saved_envp as &(&byte);
+        }
+        execve(argv[0], argv as &(&byte), envp as & &byte);
+        _exit(127);
+    }
+    if pid < 0 {
+        fprintf(libc.stderr, "错误: 无法创建子进程\n" as *byte);
+        return 1;
+    }
+    var status: i32 = 0;
+    if waitpid(pid, &status, 0) < 0 {
+        fprintf(libc.stderr, "错误: waitpid 失败\n" as *byte);
+        return 1;
+    }
+    const exit_code: i32 = upm_exit_code_from_system_status(status);
+    if exit_code != 0 {
+        if failure_label != null {
+            fprintf(libc.stderr, "错误: %s 失败 (exit=%d)\n" as *byte, failure_label as *byte, exit_code);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_exec_argv_capture_first_line(argv: &(&byte), out: &byte, cap: usize, failure_label: &byte) i32 {
+    if argv == null || argv[0] == null || out == null || cap == 0usize {
+        return 1;
+    }
+    var pipe_fds: [i32: 2] = [];
+    const pipe_result: !i32 = sys_pipe2(&pipe_fds[0], 0);
+    pipe_result catch {
+        fprintf(libc.stderr, "错误: 无法创建管道\n" as *byte);
+        return 1;
+    };
+    const pid: i32 = fork();
+    if pid == 0 {
+        _ = sys_close(pipe_fds[0]) catch {};
+        if dup2(pipe_fds[1], 1) < 0 {
+            _exit(127);
+        }
+        _ = sys_close(pipe_fds[1]) catch {};
+        var empty_env: [&byte: 1] = [null];
+        var envp: &(&byte) = &empty_env[0] as &(&byte);
+        if saved_envp != null {
+            envp = saved_envp as &(&byte);
+        }
+        execve(argv[0], argv as &(&byte), envp as & &byte);
+        _exit(127);
+    }
+    _ = sys_close(pipe_fds[1]) catch {};
+    if pid < 0 {
+        _ = sys_close(pipe_fds[0]) catch {};
+        fprintf(libc.stderr, "错误: 无法创建子进程\n" as *byte);
+        return 1;
+    }
+
+    var filled: usize = 0;
+    while filled + 1usize < cap {
+        const read_result: i64 = read(pipe_fds[0], (&out[filled]) as &byte, cap - 1usize - filled);
+        if read_result <= 0 {
+            break;
+        }
+        const rn_checked: !usize = read_result as! usize;
+        const rn: usize = rn_checked catch {
+            _ = sys_close(pipe_fds[0]) catch {};
+            return 1;
+        };
+        var scan: usize = 0;
+        while scan < rn {
+            if out[filled + scan] == 10 as byte || out[filled + scan] == 13 as byte {
+                out[filled + scan] = 0 as byte;
+                filled = filled + scan;
+                _ = sys_close(pipe_fds[0]) catch {};
+                var status: i32 = 0;
+                if waitpid(pid, &status, 0) < 0 {
+                    return 1;
+                }
+                const exit_code: i32 = upm_exit_code_from_system_status(status);
+                if exit_code != 0 {
+                    if failure_label != null {
+                        fprintf(libc.stderr, "错误: %s 失败 (exit=%d)\n" as *byte, failure_label as *byte, exit_code);
+                    }
+                    return 1;
+                }
+                return 0;
+            }
+            scan = scan + 1usize;
+        }
+        filled = filled + rn;
+    }
+    _ = sys_close(pipe_fds[0]) catch {};
+    out[filled] = 0 as byte;
+    var status: i32 = 0;
+    if waitpid(pid, &status, 0) < 0 {
+        return 1;
+    }
+    const exit_code: i32 = upm_exit_code_from_system_status(status);
+    if exit_code != 0 {
+        if failure_label != null {
+            fprintf(libc.stderr, "错误: %s 失败 (exit=%d)\n" as *byte, failure_label as *byte, exit_code);
+        }
+        return 1;
+    }
+    upm_trim_newline_in_place(out);
+    if out[0] == 0 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_git_checkout_ref(repo_dir: &byte, ref_name: &byte) i32 {
+    var git_path: [byte: UPM_PATH_MAX] = [];
+    if upm_find_git_binary(&git_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var args: [&byte: 6] = [
+        &git_path[0] as &byte,
+        "-C" as &byte,
+        repo_dir,
+        "checkout" as &byte,
+        ref_name,
+        null,
+    ];
+    return upm_exec_argv_wait(&args[0] as &(&byte), "git checkout" as &byte);
+}
+
+export fn upm_git_rev_parse_head(repo_dir: &byte, commit_out: &byte) i32 {
+    var git_path: [byte: UPM_PATH_MAX] = [];
+    if upm_find_git_binary(&git_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var args: [&byte: 6] = [
+        &git_path[0] as &byte,
+        "-C" as &byte,
+        repo_dir,
+        "rev-parse" as &byte,
+        "HEAD" as &byte,
+        null,
+    ];
+    return upm_exec_argv_capture_first_line(&args[0] as &(&byte), commit_out, UPM_MAX_REF_LEN, "git rev-parse" as &byte);
+}
+
+export fn upm_git_clone_into(url: &byte, dst_dir: &byte) i32 {
+    var git_path: [byte: UPM_PATH_MAX] = [];
+    if upm_find_git_binary(&git_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var args: [&byte: 5] = [
+        &git_path[0] as &byte,
+        "clone" as &byte,
+        url,
+        dst_dir,
+        null,
+    ];
+    return upm_exec_argv_wait(&args[0] as &(&byte), "git clone" as &byte);
+}
+
+export fn upm_git_prepare_checkout(
+    owner_manifest: &UPMManifest,
+    dep: &UPMDependency,
+    force_git_refresh: i32,
+    shell_remove_tree_fn: fn(path: &byte) i32,
+    checkout_dir_out: &byte,
+    commit_out: &byte
+) i32 {
+    if owner_manifest == null || dep == null || checkout_dir_out == null || commit_out == null {
+        return 1;
+    }
+    var git_cache_root: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&owner_manifest.package_root[0] as &byte, ".uya/git-cache" as &byte, &git_cache_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var repo_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&git_cache_root[0] as &byte, &dep.alias[0] as &byte, &repo_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    _ = shell_remove_tree_fn(&repo_dir[0] as &byte);
+    if upm_git_clone_into(&dep.git_url[0] as &byte, &repo_dir[0] as &byte) != 0 {
+        return 1;
+    }
+
+    var ref_to_use: [byte: UPM_MAX_REF_LEN] = [];
+    ref_to_use[0] = 0 as byte;
+    if dep.ref_kind == UPMGitRefKind.UPM_GIT_REF_COMMIT {
+        _ = upm_string_copy(&ref_to_use[0] as &byte, UPM_MAX_REF_LEN, &dep.ref_value[0] as &byte);
+    } else if force_git_refresh == 0 {
+        if upm_load_locked_git_commit(&owner_manifest.package_root[0] as &byte, &dep.alias[0] as &byte, &dep.git_url[0] as &byte, &ref_to_use[0] as &byte) != 0 {
+            _ = upm_string_copy(&ref_to_use[0] as &byte, UPM_MAX_REF_LEN, &dep.ref_value[0] as &byte);
+        }
+    } else {
+        _ = upm_string_copy(&ref_to_use[0] as &byte, UPM_MAX_REF_LEN, &dep.ref_value[0] as &byte);
+    }
+    if ref_to_use[0] == 0 as byte {
+        return 1;
+    }
+    if upm_git_checkout_ref(&repo_dir[0] as &byte, &ref_to_use[0] as &byte) != 0 {
+        return 1;
+    }
+    if upm_git_rev_parse_head(&repo_dir[0] as &byte, commit_out) != 0 {
+        return 1;
+    }
+    return upm_string_copy(checkout_dir_out, UPM_PATH_MAX, &repo_dir[0] as &byte);
+}

@@ -40,6 +40,53 @@ fn find_main_files_in_dir(
     return 0;
 }
 
+
+fn package_mode_module_root_for_path(module_path: &byte, module_root: &byte, out_root: &byte, out_cap: usize) i32 {
+    if module_path == null || module_root == null || out_root == null || out_cap == 0usize {
+        return 1;
+    }
+    if module_root[0] == 0 as byte {
+        return 1;
+    }
+    var first_seg: [byte: PATH_MAX] = [];
+    var i: usize = 0;
+    while module_path[i] != 0 as byte && module_path[i] != 46 as byte {
+        if i + 1usize >= PATH_MAX {
+            return 1;
+        }
+        first_seg[i] = module_path[i];
+        i = i + 1usize;
+    }
+    if i == 0usize {
+        return 1;
+    }
+    first_seg[i] = 0 as byte;
+
+    var candidate: [byte: PATH_MAX] = [];
+    if snprintf(&candidate[0], PATH_MAX, "%s%s/" as *byte, module_root as *byte, &first_seg[0] as *byte) <= 0 {
+        return 1;
+    }
+    if is_directory(&candidate[0] as &byte) == 0 {
+        return 1;
+    }
+    strcpy(out_root as *byte, &candidate[0] as *byte);
+    return 0;
+}
+
+fn package_mode_is_top_level_alias_path(module_path: &byte) i32 {
+    if module_path == null || module_path[0] == 0 as byte {
+        return 0;
+    }
+    var i: usize = 0;
+    while module_path[i] != 0 as byte {
+        if module_path[i] == 46 as byte {
+            return 0;
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}
+
 // 根据模块路径查找文件
 fn find_module_file(
     module_path: &byte,
@@ -85,18 +132,37 @@ fn find_module_file(
         i = i + 1;
     }
     
-    // 在给定根目录下查找模块文件
-    // 策略1：path/ 目录中的 .uya 文件（如 std/c/syscall/ → syscall.uya）
-    // 策略2：path.uya 直接文件（如 std/c/string.uya）
+    // package mode：若顶层 alias 在 module_root 下映射为目录，则优先把该目录当成新的根。
+    var package_mode_root: [byte: PATH_MAX] = [];
+    var package_root_override: &byte = null;
+    if module_root != null && module_root[0] != 0 {
+        if package_mode_module_root_for_path(module_path, module_root, &package_mode_root[0] as &byte, PATH_MAX) == 0 {
+            package_root_override = &package_mode_root[0] as &byte;
+        }
+    }
+
+    var roots: [&byte: 3] = [null, null, null];
+    var root_count: i32 = 0;
+    if package_root_override != null {
+        roots[root_count] = package_root_override;
+        root_count = root_count + 1;
+    }
+    if module_root != null && module_root[0] != 0 {
+        if !(package_root_override != null && package_mode_is_top_level_alias_path(module_path) != 0) {
+            roots[root_count] = module_root;
+            root_count = root_count + 1;
+        }
+    }
+    if uya_root != null && uya_root[0] != 0 {
+        roots[root_count] = uya_root;
+        root_count = root_count + 1;
+    }
+
     var ri: i32 = 0;
-    while ri < 2 {
-        var root: &byte = null;
-        if ri == 0 { root = module_root; }
-        if ri == 1 { root = uya_root; }
+    while ri < root_count {
+        const root: &byte = roots[ri];
         ri = ri + 1;
-        if root == null { continue; }
-        const root_nonnull: &byte = root;  // 为安全证明建立非空引用
-        if root_nonnull[0] == 0 { continue; }
+        if root == null || root[0] == 0 { continue; }
         
         var full_path: [byte: PATH_MAX] = [];
         const len: i32 = snprintf(&full_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
@@ -182,11 +248,34 @@ fn find_direct_module_file(
         return -1;
     }
 
+    var package_mode_root: [byte: PATH_MAX] = [];
+    var package_root_override: &byte = null;
+    if module_root != null && module_root[0] != 0 {
+        if package_mode_module_root_for_path(module_path, module_root, &package_mode_root[0] as &byte, PATH_MAX) == 0 {
+            package_root_override = &package_mode_root[0] as &byte;
+        }
+    }
+
+    var roots: [&byte: 3] = [null, null, null];
+    var root_count: i32 = 0;
+    if package_root_override != null {
+        roots[root_count] = package_root_override;
+        root_count = root_count + 1;
+    }
+    if module_root != null && module_root[0] != 0 {
+        if !(package_root_override != null && package_mode_is_top_level_alias_path(module_path) != 0) {
+            roots[root_count] = module_root;
+            root_count = root_count + 1;
+        }
+    }
+    if uya_root != null && uya_root[0] != 0 {
+        roots[root_count] = uya_root;
+        root_count = root_count + 1;
+    }
+
     var ri: i32 = 0;
-    while ri < 2 {
-        var root: &byte = null;
-        if ri == 0 { root = module_root; }
-        if ri == 1 { root = uya_root; }
+    while ri < root_count {
+        const root: &byte = roots[ri];
         ri = ri + 1;
         if root == null || root[0] == 0 { continue; }
 
@@ -215,11 +304,34 @@ fn module_dir_exists(module_path: &byte, module_root: &byte, uya_root: &byte, ou
         return 0;
     }
 
+    var package_mode_root: [byte: PATH_MAX] = [];
+    var package_root_override: &byte = null;
+    if module_root != null && module_root[0] != 0 {
+        if package_mode_module_root_for_path(module_path, module_root, &package_mode_root[0] as &byte, PATH_MAX) == 0 {
+            package_root_override = &package_mode_root[0] as &byte;
+        }
+    }
+
+    var roots: [&byte: 3] = [null, null, null];
+    var root_count: i32 = 0;
+    if package_root_override != null {
+        roots[root_count] = package_root_override;
+        root_count = root_count + 1;
+    }
+    if module_root != null && module_root[0] != 0 {
+        if !(package_root_override != null && package_mode_is_top_level_alias_path(module_path) != 0) {
+            roots[root_count] = module_root;
+            root_count = root_count + 1;
+        }
+    }
+    if uya_root != null && uya_root[0] != 0 {
+        roots[root_count] = uya_root;
+        root_count = root_count + 1;
+    }
+
     var ri: i32 = 0;
-    while ri < 2 {
-        var root: &byte = null;
-        if ri == 0 { root = module_root; }
-        if ri == 1 { root = uya_root; }
+    while ri < root_count {
+        const root: &byte = roots[ri];
         ri = ri + 1;
         if root == null || root[0] == 0 { continue; }
 

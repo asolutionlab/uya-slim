@@ -1,0 +1,374 @@
+use libc;
+use libc.fprintf;
+use libc.snprintf;
+use std.string.strcmp;
+use upm_lib.types.UPM_PATH_MAX;
+use upm_lib.types.UPM_MAX_REF_LEN;
+use upm_lib.types.UPM_MAX_VISITED;
+use upm_lib.types.UPMDependencyKind;
+use upm_lib.types.UPMGitRefKind;
+use upm_lib.types.UPMDependency;
+use upm_lib.types.UPMManifest;
+use upm_lib.types.UPMPackageBuildPlan;
+use upm_lib.types.UPMResolvedDep;
+use upm_lib.types.UPMResolvedGraph;
+use upm_lib.types.upm_manifest_init;
+use upm_lib.path_utils.upm_string_copy;
+use upm_lib.path_utils.upm_make_absolute_path;
+use upm_lib.path_utils.upm_is_directory;
+use upm_lib.path_utils.upm_realpath_or_copy;
+use upm_lib.path_utils.upm_ensure_trailing_slash;
+use upm_lib.path_utils.upm_join_path;
+use upm_lib.path_utils.upm_path_parent_dir;
+use upm_lib.path_utils.upm_is_file;
+use upm_lib.path_utils.upm_path_exists;
+use upm_lib.lockfile.upm_lock_item_record;
+use upm_lib.lockfile.upm_lock_item_matches_source;
+use upm_lib.manifest.upm_parse_manifest;
+use upm_lib.git_fetch.upm_git_prepare_checkout;
+
+export fn upm_init_resolved_graph(graph: &UPMResolvedGraph, root_manifest: &UPMManifest) void {
+    if graph == null {
+        return;
+    }
+    graph[0] = UPMResolvedGraph{};
+    if root_manifest != null {
+        _ = upm_string_copy(&graph.manifest_path[0] as &byte, UPM_PATH_MAX, &root_manifest.manifest_path[0] as &byte);
+        _ = upm_string_copy(&graph.package_root[0] as &byte, UPM_PATH_MAX, &root_manifest.package_root[0] as &byte);
+        _ = upm_string_copy(&graph.source_root[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+    }
+}
+
+export fn upm_resolved_graph_record_into(graph: &UPMResolvedGraph, manifest: &UPMManifest, dep: &UPMDependency, resolved_commit: &byte) void {
+    if graph == null || manifest == null || dep == null {
+        return;
+    }
+    if graph.dep_count >= UPM_MAX_LOCK_ITEMS {
+        return;
+    }
+    const idx: i32 = graph.dep_count;
+    if idx < 0 || idx >= UPM_MAX_LOCK_ITEMS {
+        return;
+    }
+    const idx_checked: !usize = idx as! usize;
+    const idx_usize: usize = idx_checked catch {
+        return;
+    };
+    const resolved_dep: &UPMResolvedDep = &graph.deps[idx_usize];
+    _ = upm_string_copy(&resolved_dep.alias[0] as &byte, UPM_MAX_ALIAS_LEN, &dep.alias[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.package_name[0] as &byte, UPM_MAX_NAME_LEN, &manifest.package_name[0] as &byte);
+    resolved_dep.kind = dep.kind;
+    _ = upm_string_copy(&resolved_dep.package_root[0] as &byte, UPM_PATH_MAX, &manifest.package_root[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.source_root[0] as &byte, UPM_PATH_MAX, &manifest.source_root[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.path_raw[0] as &byte, UPM_PATH_MAX, &dep.path_value[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.git_url[0] as &byte, UPM_PATH_MAX, &dep.git_url[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.requested_ref[0] as &byte, UPM_MAX_REF_LEN, &dep.ref_value[0] as &byte);
+    if resolved_commit != null && resolved_commit[0] != 0 as byte {
+        _ = upm_string_copy(&resolved_dep.resolved_commit[0] as &byte, UPM_MAX_REF_LEN, resolved_commit);
+    }
+    graph.dep_count = graph.dep_count + 1;
+}
+
+export fn upm_resolved_graph_record(plan: &UPMPackageBuildPlan, manifest: &UPMManifest, dep: &UPMDependency, resolved_commit: &byte) void {
+    if plan == null {
+        return;
+    }
+    upm_resolved_graph_record_into(&plan.resolved_graph, manifest, dep, resolved_commit);
+}
+
+export fn upm_find_manifest_upwards(start_path: &byte, out_manifest_path: &byte) i32 {
+    if start_path == null || out_manifest_path == null {
+        return 1;
+    }
+    var current: [byte: UPM_PATH_MAX] = [];
+    if upm_make_absolute_path(start_path, &current[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_is_directory(&current[0] as &byte) == 0 {
+        if upm_path_parent_dir(&current[0] as &byte, &current[0] as &byte, UPM_PATH_MAX) != 0 {
+            return 1;
+        }
+    } else if upm_ensure_trailing_slash(&current[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    while true {
+        var candidate: [byte: UPM_PATH_MAX] = [];
+        if upm_join_path(&current[0] as &byte, "uya.toml" as &byte, &candidate[0] as &byte, UPM_PATH_MAX) != 0 {
+            return 1;
+        }
+        if upm_is_file(&candidate[0] as &byte) != 0 {
+            return upm_realpath_or_copy(&candidate[0] as &byte, out_manifest_path, UPM_PATH_MAX);
+        }
+        if strcmp(&current[0] as *byte, "/" as *byte) == 0 {
+            break;
+        }
+        var parent: [byte: UPM_PATH_MAX] = [];
+        if upm_path_parent_dir(&current[0] as &byte, &parent[0] as &byte, UPM_PATH_MAX) != 0 {
+            break;
+        }
+        if strcmp(&parent[0] as *byte, &current[0] as *byte) == 0 {
+            break;
+        }
+        strcpy(&current[0] as *byte, &parent[0] as *byte);
+    }
+    return 1;
+}
+
+export fn upm_resolve_manifest_path(input_path: &byte, manifest_override: &byte, out_manifest_path: &byte) i32 {
+    if manifest_override != null && manifest_override[0] != 0 as byte {
+        var override_abs: [byte: UPM_PATH_MAX] = [];
+        if upm_make_absolute_path(manifest_override, &override_abs[0] as &byte, UPM_PATH_MAX) != 0 {
+            return 1;
+        }
+        if upm_is_directory(&override_abs[0] as &byte) != 0 {
+            return upm_join_path(&override_abs[0] as &byte, "uya.toml" as &byte, out_manifest_path, UPM_PATH_MAX);
+        }
+        return upm_realpath_or_copy(&override_abs[0] as &byte, out_manifest_path, UPM_PATH_MAX);
+    }
+    return upm_find_manifest_upwards(input_path, out_manifest_path);
+}
+
+export fn upm_check_dependency_conflicts(plan: &UPMPackageBuildPlan, manifest: &UPMManifest, dep: &UPMDependency, resolved_commit: &byte) i32 {
+    if plan == null || manifest == null || dep == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < plan.lock_item_count {
+        const item = &plan.lock_items[i];
+        const same_source: i32 = upm_lock_item_matches_source(item, manifest, dep, resolved_commit);
+        if strcmp(&item.alias[0] as *byte, &dep.alias[0] as *byte) == 0 {
+            if same_source != 0 {
+                return 1;
+            }
+            fprintf(libc.stderr, "错误: 依赖 alias 冲突（alias=%s, existing_package=%s, new_package=%s）\n" as *byte,
+                &dep.alias[0] as *byte,
+                &item.package_name[0] as *byte,
+                &manifest.package_name[0] as *byte);
+            return -1;
+        }
+        if strcmp(&item.package_name[0] as *byte, &manifest.package_name[0] as *byte) == 0 && same_source == 0 {
+            if dep.kind == UPMDependencyKind.UPM_DEP_GIT {
+                fprintf(libc.stderr, "错误: 同一包要求不同 ref（package=%s, existing_alias=%s, new_alias=%s）\n" as *byte,
+                    &manifest.package_name[0] as *byte,
+                    &item.alias[0] as *byte,
+                    &dep.alias[0] as *byte);
+            } else {
+                fprintf(libc.stderr, "错误: 同一包要求不同来源（package=%s, existing_alias=%s, new_alias=%s）\n" as *byte,
+                    &manifest.package_name[0] as *byte,
+                    &item.alias[0] as *byte,
+                    &dep.alias[0] as *byte);
+            }
+            return -1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+export fn upm_build_root_contains_alias(build_root: &byte, alias: &byte) i32 {
+    var alias_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(build_root, alias, &alias_dir[0] as &byte, UPM_PATH_MAX) == 0 {
+        if upm_path_exists(&alias_dir[0] as &byte) != 0 {
+            return 1;
+        }
+    }
+    var alias_file: [byte: UPM_PATH_MAX] = [];
+    const written: i32 = snprintf(&alias_file[0] as *byte, UPM_PATH_MAX, "%s%s.uya" as *byte, build_root as *byte, alias as *byte);
+    if written > 0 && written < UPM_PATH_MAX {
+        if upm_path_exists(&alias_file[0] as &byte) != 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+export fn upm_source_root_contains_alias(source_root: &byte, alias: &byte) i32 {
+    if source_root == null || alias == null {
+        return 0;
+    }
+    return upm_build_root_contains_alias(source_root, alias);
+}
+
+export fn upm_stage_dependency_recursive(
+    owner_manifest: &UPMManifest,
+    dep: &UPMDependency,
+    plan: &UPMPackageBuildPlan,
+    visited: &(&byte),
+    visited_count: &i32,
+    force_git_refresh: i32,
+    shell_remove_tree_fn: fn(path: &byte) i32,
+    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+) i32 {
+    if owner_manifest == null || dep == null || plan == null || visited == null || visited_count == null {
+        return 1;
+    }
+    if dep.kind != UPMDependencyKind.UPM_DEP_PATH && dep.kind != UPMDependencyKind.UPM_DEP_GIT {
+        fprintf(libc.stderr, "错误: 未知依赖类型（alias=%s）\n" as *byte, &dep.alias[0] as *byte);
+        return 1;
+    }
+
+    var dep_package_root: [byte: UPM_PATH_MAX] = [];
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    var resolved_commit: [byte: UPM_MAX_REF_LEN] = [];
+    if dep.kind == UPMDependencyKind.UPM_DEP_PATH {
+        if upm_join_path(&owner_manifest.package_root[0] as &byte, &dep.path_value[0] as &byte, &dep_package_root[0] as &byte, UPM_PATH_MAX) != 0 {
+            fprintf(libc.stderr, "错误: path 依赖路径无效（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
+            return 1;
+        }
+        if upm_realpath_or_copy(&dep_package_root[0] as &byte, &dep_package_root[0] as &byte, UPM_PATH_MAX) != 0 ||
+            upm_is_directory(&dep_package_root[0] as &byte) == 0 {
+            fprintf(libc.stderr, "错误: path 依赖路径不存在（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
+            return 1;
+        }
+        if upm_join_path(&dep_package_root[0] as &byte, "uya.toml" as &byte, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
+            upm_is_file(&manifest_path[0] as &byte) == 0 {
+            fprintf(libc.stderr, "错误: 依赖包缺少 uya.toml（alias=%s, package_root=%s）\n" as *byte, &dep.alias[0] as *byte, &dep_package_root[0] as *byte);
+            return 1;
+        }
+    } else {
+        if upm_git_prepare_checkout(owner_manifest, dep, force_git_refresh, shell_remove_tree_fn, &dep_package_root[0] as &byte, &resolved_commit[0] as &byte) != 0 {
+            fprintf(libc.stderr, "错误: git 依赖准备失败（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
+            return 1;
+        }
+        if upm_join_path(&dep_package_root[0] as &byte, "uya.toml" as &byte, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
+            upm_is_file(&manifest_path[0] as &byte) == 0 {
+            fprintf(libc.stderr, "错误: git 依赖缺少 uya.toml（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
+            return 1;
+        }
+    }
+
+    var vi: i32 = 0;
+    while vi < visited_count[0] {
+        if visited[vi] != null && strcmp(visited[vi] as *byte, &dep_package_root[0] as *byte) == 0 {
+            fprintf(libc.stderr, "错误: 检测到 path 依赖循环（alias=%s, package_root=%s）\n" as *byte, &dep.alias[0] as *byte, &dep_package_root[0] as *byte);
+            return 1;
+        }
+        vi = vi + 1;
+    }
+
+    var dep_manifest: UPMManifest = upm_manifest_init();
+    if upm_parse_manifest(&manifest_path[0] as &byte, &dep_manifest) != 0 {
+        return 1;
+    }
+
+    const conflict_check: i32 = upm_check_dependency_conflicts(plan, &dep_manifest, dep, &resolved_commit[0] as &byte);
+    if conflict_check < 0 {
+        return 1;
+    }
+    if conflict_check > 0 {
+        return 0;
+    }
+
+    if upm_build_root_contains_alias(&plan.build_root[0] as &byte, &dep.alias[0] as &byte) != 0 {
+        fprintf(libc.stderr, "错误: 依赖 alias 冲突（alias=%s, package_root=%s）\n" as *byte, &dep.alias[0] as *byte, &dep_package_root[0] as *byte);
+        return 1;
+    }
+
+    var install_root: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&owner_manifest.package_root[0] as &byte, ".uya/deps" as &byte, &install_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var install_alias_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&install_root[0] as &byte, &dep.alias[0] as &byte, &install_alias_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var build_alias_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&plan.build_root[0] as &byte, &dep.alias[0] as &byte, &build_alias_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+
+    _ = shell_remove_tree_fn(&install_alias_dir[0] as &byte);
+    _ = shell_remove_tree_fn(&build_alias_dir[0] as &byte);
+    if shell_copy_tree_fn(&dep_manifest.source_root[0] as &byte, &install_alias_dir[0] as &byte) != 0 {
+        return 1;
+    }
+    if shell_copy_tree_fn(&dep_manifest.source_root[0] as &byte, &build_alias_dir[0] as &byte) != 0 {
+        return 1;
+    }
+
+    if dep.kind == UPMDependencyKind.UPM_DEP_GIT && resolved_commit[0] != 0 as byte {
+        var locked_dep: UPMDependency = dep[0];
+        locked_dep.ref_kind = UPMGitRefKind.UPM_GIT_REF_COMMIT;
+        _ = upm_string_copy(&locked_dep.ref_value[0] as &byte, UPM_MAX_REF_LEN, &resolved_commit[0] as &byte);
+        upm_resolved_graph_record(plan, &dep_manifest, &locked_dep, &resolved_commit[0] as &byte);
+        upm_lock_item_record(plan, &dep.alias[0] as &byte, &dep_manifest, &locked_dep);
+    } else {
+        upm_resolved_graph_record(plan, &dep_manifest, dep, null);
+        upm_lock_item_record(plan, &dep.alias[0] as &byte, &dep_manifest, dep);
+    }
+
+    if visited_count[0] >= UPM_MAX_VISITED {
+        fprintf(libc.stderr, "错误: 依赖深度超过上限 %d\n" as *byte, UPM_MAX_VISITED);
+        return 1;
+    }
+    visited[visited_count[0]] = &dep_manifest.package_root[0] as &byte;
+    visited_count[0] = visited_count[0] + 1;
+    var i: i32 = 0;
+    while i < dep_manifest.dep_count {
+        if upm_stage_dependency_recursive(&dep_manifest, &dep_manifest.deps[i], plan, visited, visited_count, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    visited_count[0] = visited_count[0] - 1;
+    return 0;
+}
+
+export fn upm_resolve_root_dependencies_into_plan(
+    root_manifest: &UPMManifest,
+    plan: &UPMPackageBuildPlan,
+    force_git_refresh: i32,
+    shell_remove_tree_fn: fn(path: &byte) i32,
+    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+) i32 {
+    if root_manifest == null || plan == null {
+        return 1;
+    }
+    var visited: [&byte: UPM_MAX_VISITED] = [];
+    var visited_count: i32 = 1;
+    visited[0] = &root_manifest.package_root[0] as &byte;
+    var i: i32 = 0;
+    while i < root_manifest.dep_count {
+        if upm_stage_dependency_recursive(root_manifest, &root_manifest.deps[i], plan, &visited[0] as &(&byte), &visited_count, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+export fn upm_resolve_graph_into_plan(
+    root_manifest: &UPMManifest,
+    plan: &UPMPackageBuildPlan,
+    force_git_refresh: i32,
+    shell_remove_tree_fn: fn(path: &byte) i32,
+    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+) i32 {
+    if root_manifest == null || plan == null {
+        return 1;
+    }
+    upm_init_resolved_graph(&plan.resolved_graph, root_manifest);
+    return upm_resolve_root_dependencies_into_plan(root_manifest, plan, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn);
+}
+
+export fn upm_resolve_graph(
+    root_manifest: &UPMManifest,
+    graph_out: &UPMResolvedGraph,
+    force_git_refresh: i32,
+    shell_remove_tree_fn: fn(path: &byte) i32,
+    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+) i32 {
+    if root_manifest == null || graph_out == null {
+        return 1;
+    }
+    var scratch_plan: UPMPackageBuildPlan = UPMPackageBuildPlan{};
+    scratch_plan.active = 1;
+    _ = upm_string_copy(&scratch_plan.package_root[0] as &byte, UPM_PATH_MAX, &root_manifest.package_root[0] as &byte);
+    _ = upm_string_copy(&scratch_plan.source_root[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+    upm_init_resolved_graph(&scratch_plan.resolved_graph, root_manifest);
+    if upm_resolve_root_dependencies_into_plan(root_manifest, &scratch_plan, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn) != 0 {
+        return 1;
+    }
+    graph_out[0] = scratch_plan.resolved_graph;
+    return 0;
+}

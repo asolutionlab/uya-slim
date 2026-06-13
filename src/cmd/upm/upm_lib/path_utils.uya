@@ -1,0 +1,456 @@
+use libc;
+use libc.Stat;
+use libc.getcwd;
+use libc.stat;
+use libc.snprintf;
+use std.mem.memcpy;
+use std.string.strlen;
+use std.string.strcmp;
+use std.string.strcpy;
+use std.string.strrchr;
+use upm_lib.types.UPM_PATH_MAX;
+use upm_lib.types.UPM_S_IFMT;
+use upm_lib.types.UPM_S_IFDIR;
+use upm_lib.types.UPM_S_IFREG;
+
+export fn upm_ascii_is_space(ch: byte) i32 {
+    if ch == 32 as byte || ch == 9 as byte || ch == 10 as byte || ch == 13 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_is_path_sep(ch: byte) i32 {
+    if ch == 47 as byte || ch == 92 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_normalize_path(input: &byte, out: &byte, out_cap: usize) i32 {
+    if input == null || out == null || out_cap <= 1usize {
+        return 1;
+    }
+    var seg_starts: [i32: 256] = [];
+    var seg_lens: [i32: 256] = [];
+    var seg_count: i32 = 0;
+    var prefix_len: i32 = 0;
+    var has_root: i32 = 0;
+    var start_idx: i32 = 0;
+    if upm_is_path_sep(input[0]) != 0 {
+        has_root = 1;
+        start_idx = 1;
+    } else {
+        const c0: i32 = input[0] as i32;
+        if ((c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122)) && input[1] == 58 as byte {
+            prefix_len = 2;
+            start_idx = 2;
+            if upm_is_path_sep(input[2]) != 0 {
+                has_root = 1;
+                start_idx = 3;
+            }
+        }
+    }
+
+    var i: i32 = start_idx;
+    while input[i] != 0 as byte {
+        while input[i] != 0 as byte && upm_is_path_sep(input[i]) != 0 {
+            i = i + 1;
+        }
+        if input[i] == 0 as byte {
+            break;
+        }
+        const seg_start: i32 = i;
+        while input[i] != 0 as byte && upm_is_path_sep(input[i]) == 0 {
+            i = i + 1;
+        }
+        const seg_len: i32 = i - seg_start;
+        if seg_len == 1 && input[seg_start] == 46 as byte {
+            continue;
+        }
+        if seg_len == 2 && input[seg_start] == 46 as byte && input[seg_start + 1] == 46 as byte {
+            if seg_count > 0 && seg_count - 1 >= 0 && seg_count - 1 < 256 {
+                const prev_start: i32 = seg_starts[seg_count - 1];
+                const prev_len: i32 = seg_lens[seg_count - 1];
+                if !(prev_len == 2 && input[prev_start] == 46 as byte && input[prev_start + 1] == 46 as byte) {
+                    seg_count = seg_count - 1;
+                    continue;
+                }
+            }
+            if has_root == 0 && seg_count < 256 {
+                seg_starts[seg_count] = seg_start;
+                seg_lens[seg_count] = seg_len;
+                seg_count = seg_count + 1;
+            }
+            continue;
+        }
+        if seg_count >= 256 {
+            return 1;
+        }
+        seg_starts[seg_count] = seg_start;
+        seg_lens[seg_count] = seg_len;
+        seg_count = seg_count + 1;
+    }
+
+    var out_pos: i32 = 0;
+    if prefix_len == 2 {
+        if out_pos + 2 >= out_cap as i32 {
+            return 1;
+        }
+        out[out_pos as usize] = input[0];
+        out[(out_pos + 1) as usize] = 58 as byte;
+        out_pos = out_pos + 2;
+    }
+    if has_root != 0 {
+        if out_pos + 1 >= out_cap as i32 {
+            return 1;
+        }
+        out[out_pos as usize] = 47 as byte;
+        out_pos = out_pos + 1;
+    }
+
+    var si: i32 = 0;
+    while si < seg_count {
+        if out_pos > 0 && out[(out_pos - 1) as usize] != 47 as byte {
+            if out_pos + 1 >= out_cap as i32 {
+                return 1;
+            }
+            out[out_pos as usize] = 47 as byte;
+            out_pos = out_pos + 1;
+        }
+        var sj: i32 = 0;
+        while sj < seg_lens[si] {
+            if out_pos + 1 >= out_cap as i32 {
+                return 1;
+            }
+            out[out_pos as usize] = input[(seg_starts[si] + sj) as usize];
+            out_pos = out_pos + 1;
+            sj = sj + 1;
+        }
+        si = si + 1;
+    }
+
+    if out_pos == 0 {
+        out[0] = 46 as byte;
+        out[1] = 0 as byte;
+        return 0;
+    }
+    if out_pos == 2 && prefix_len == 2 && has_root == 0 {
+        out[out_pos as usize] = 0 as byte;
+        return 0;
+    }
+    if out_pos < out_cap as i32 {
+        out[out_pos as usize] = 0 as byte;
+        return 0;
+    }
+    return 1;
+}
+
+export fn upm_exit_code_from_system_status(wstatus: i32) i32 {
+    if wstatus < 0 {
+        return 1;
+    }
+    const low: i32 = wstatus & 0x7f;
+    const code: i32 = (wstatus >> 8) & 0xff;
+    if low == 0 {
+        return code;
+    }
+    const sig: i32 = low & 0x7f;
+    if sig == 0 {
+        return 1;
+    }
+    return 128 + sig;
+}
+
+export fn upm_string_copy(dst: &byte, cap: usize, src: &byte) i32 {
+    if dst == null || cap == 0usize || src == null {
+        return 1;
+    }
+    const len: usize = strlen(src as *byte);
+    if len >= cap {
+        return 1;
+    }
+    strcpy(dst as *byte, src as *byte);
+    return 0;
+}
+
+export fn upm_bytes_copy(dst: &byte, cap: usize, src: &byte, src_len: usize) i32 {
+    if dst == null || src == null || cap == 0usize {
+        return 1;
+    }
+    if src_len >= cap {
+        return 1;
+    }
+    memcpy(dst as *void, src as *void, src_len);
+    dst[src_len] = 0 as byte;
+    return 0;
+}
+
+export fn upm_trim_copy(src: &byte, dst: &byte, cap: usize) i32 {
+    if src == null || dst == null || cap == 0usize {
+        return 1;
+    }
+    var start: usize = 0;
+    const src_len: usize = strlen(src as *byte);
+    while start < src_len && upm_ascii_is_space(src[start]) != 0 {
+        start = start + 1;
+    }
+    var end: usize = src_len;
+    while end > start && upm_ascii_is_space(src[end - 1usize]) != 0 {
+        end = end - 1usize;
+    }
+    return upm_bytes_copy(dst, cap, (&src[start]) as &byte, end - start);
+}
+
+export fn upm_strip_inline_comment(buf: &byte) void {
+    if buf == null {
+        return;
+    }
+    var in_quote: i32 = 0;
+    var escaped: i32 = 0;
+    var i: usize = 0;
+    while buf[i] != 0 as byte {
+        const ch: byte = buf[i];
+        if escaped != 0 {
+            escaped = 0;
+        } else if ch == 92 as byte {
+            escaped = 1;
+        } else if ch == 34 as byte {
+            if in_quote == 0 {
+                in_quote = 1;
+            } else {
+                in_quote = 0;
+            }
+        } else if ch == 35 as byte && in_quote == 0 {
+            buf[i] = 0 as byte;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+export fn upm_is_absolute_path(path: &byte) i32 {
+    if path == null || path[0] == 0 as byte {
+        return 0;
+    }
+    if upm_is_path_sep(path[0]) != 0 {
+        return 1;
+    }
+    if path[0] != 0 as byte && path[1] == 58 as byte &&
+        (path[2] == 0 as byte || upm_is_path_sep(path[2]) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_path_dirname(path: &byte, out: &byte, cap: usize) i32 {
+    if path == null || out == null || cap < 4usize {
+        return 1;
+    }
+    const len: usize = strlen(path as *byte);
+    if len == 0 || len >= UPM_PATH_MAX {
+        return 1;
+    }
+    var tmp: [byte: UPM_PATH_MAX] = [];
+    strcpy(&tmp[0] as *byte, path as *byte);
+    var last: *byte = strrchr(&tmp[0] as *byte, 47);
+    if last == null {
+        return upm_string_copy(out, cap, "./" as &byte);
+    }
+    if last == &tmp[0] as *byte {
+        out[0] = 47 as byte;
+        out[1] = 0 as byte;
+        return 0;
+    }
+    const prefix_len: usize = ptr_diff(last, &tmp[0] as *byte);
+    if prefix_len + 2usize >= cap {
+        return 1;
+    }
+    memcpy(out as *void, &tmp[0] as *void, prefix_len);
+    out[prefix_len] = 47 as byte;
+    out[prefix_len + 1usize] = 0 as byte;
+    return 0;
+}
+
+export fn upm_path_parent_dir(dir_path: &byte, out: &byte, cap: usize) i32 {
+    if dir_path == null || out == null || cap < 4usize {
+        return 1;
+    }
+    var tmp: [byte: UPM_PATH_MAX] = [];
+    if upm_string_copy(&tmp[0] as &byte, UPM_PATH_MAX, dir_path) != 0 {
+        return 1;
+    }
+    var len: usize = strlen(&tmp[0] as *byte);
+    while len > 1usize {
+        const tail_idx: usize = len - 1usize;
+        if tail_idx >= UPM_PATH_MAX {
+            return 1;
+        }
+        if tmp[tail_idx] != 47 as byte {
+            break;
+        }
+        tmp[tail_idx] = 0 as byte;
+        len = tail_idx;
+    }
+    var last: *byte = strrchr(&tmp[0] as *byte, 47);
+    if last == null {
+        return 1;
+    }
+    if last == &tmp[0] as *byte {
+        out[0] = 47 as byte;
+        out[1] = 0 as byte;
+        return 0;
+    }
+    const prefix_len: usize = ptr_diff(last, &tmp[0] as *byte);
+    if prefix_len + 2usize >= cap {
+        return 1;
+    }
+    memcpy(out as *void, &tmp[0] as *void, prefix_len);
+    out[prefix_len] = 47 as byte;
+    out[prefix_len + 1usize] = 0 as byte;
+    return 0;
+}
+
+export fn upm_ensure_trailing_slash(path: &byte, cap: usize) i32 {
+    if path == null || cap < 2usize {
+        return 1;
+    }
+    const len: usize = strlen(path as *byte);
+    if len == 0 {
+        return 1;
+    }
+    if path[len - 1usize] == 47 as byte {
+        return 0;
+    }
+    if len + 1usize >= cap {
+        return 1;
+    }
+    path[len] = 47 as byte;
+    path[len + 1usize] = 0 as byte;
+    return 0;
+}
+
+export fn upm_join_path(base_dir: &byte, rel: &byte, out: &byte, cap: usize) i32 {
+    if rel == null || out == null || cap == 0usize {
+        return 1;
+    }
+    if upm_is_absolute_path(rel) != 0 {
+        return upm_string_copy(out, cap, rel);
+    }
+    if base_dir == null {
+        return 1;
+    }
+    if strcmp(rel as *byte, "." as *byte) == 0 {
+        return upm_string_copy(out, cap, base_dir);
+    }
+    const base_len: usize = strlen(base_dir as *byte);
+    var with_sep: i32 = 0;
+    if base_len > 0 && base_dir[base_len - 1usize] == 47 as byte {
+        with_sep = 1;
+    }
+    var written: i32 = 0;
+    if with_sep != 0 {
+        written = snprintf(out as *byte, cap, "%s%s" as *byte, base_dir as *byte, rel as *byte);
+    } else {
+        written = snprintf(out as *byte, cap, "%s/%s" as *byte, base_dir as *byte, rel as *byte);
+    }
+    if written <= 0 || written >= cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_make_absolute_path(path: &byte, out: &byte, cap: usize) i32 {
+    if path == null || out == null || cap == 0usize {
+        return 1;
+    }
+    if upm_is_absolute_path(path) != 0 {
+        return upm_string_copy(out, cap, path);
+    }
+    var cwd: [byte: UPM_PATH_MAX] = [];
+    if getcwd(&cwd[0] as &byte, UPM_PATH_MAX) == null {
+        return 1;
+    }
+    if upm_ensure_trailing_slash(&cwd[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_join_path(&cwd[0] as &byte, path, out, cap);
+}
+
+export fn upm_realpath_or_copy(path: &byte, out: &byte, cap: usize) i32 {
+    if path == null || out == null || cap == 0usize {
+        return 1;
+    }
+    var absolute: [byte: UPM_PATH_MAX] = [];
+    if upm_make_absolute_path(path, &absolute[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_normalize_path(&absolute[0] as &byte, out, cap);
+}
+
+export fn upm_path_exists(path: &byte) i32 {
+    if path == null || path[0] == 0 as byte {
+        return 0;
+    }
+    var st: Stat = Stat{};
+    if stat(path as *byte, &st) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_is_directory(path: &byte) i32 {
+    if path == null || path[0] == 0 as byte {
+        return 0;
+    }
+    var st: Stat = Stat{};
+    if stat(path as *byte, &st) != 0 {
+        return 0;
+    }
+    if ((st.st_mode as u32) & UPM_S_IFMT) == UPM_S_IFDIR {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_is_file(path: &byte) i32 {
+    if path == null || path[0] == 0 as byte {
+        return 0;
+    }
+    var st: Stat = Stat{};
+    if stat(path as *byte, &st) != 0 {
+        return 0;
+    }
+    if ((st.st_mode as u32) & UPM_S_IFMT) == UPM_S_IFREG {
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_source_dir_is_safe(source_dir: &byte) i32 {
+    if source_dir == null || source_dir[0] == 0 as byte {
+        return 0;
+    }
+    if upm_is_absolute_path(source_dir) != 0 {
+        return 0;
+    }
+    var i: usize = 0;
+    var segment_start: usize = 0;
+    while true {
+        const ch: byte = source_dir[i];
+        if ch == 47 as byte || ch == 0 as byte {
+            const seg_len: usize = i - segment_start;
+            if seg_len == 2usize &&
+                source_dir[segment_start] == 46 as byte &&
+                source_dir[segment_start + 1usize] == 46 as byte {
+                return 0;
+            }
+            if ch == 0 as byte {
+                break;
+            }
+            segment_start = i + 1usize;
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}

@@ -1,0 +1,262 @@
+use libc;
+use libc.fprintf;
+use libc.system;
+use libc.getenv;
+use libc.getpid;
+use libc.snprintf;
+use std.string.strlen;
+use std.string.strncmp;
+use std.string.strcpy;
+use std.string.strcat;
+use upm_lib.types.UPM_PATH_MAX;
+use upm_lib.types.UPM_CMD_MAX;
+use upm_lib.types.UPMPackageBuildPlan;
+use upm_lib.types.UPMManifest;
+use upm_lib.types.upm_build_plan_init;
+use upm_lib.types.upm_manifest_init;
+use upm_lib.path_utils.upm_exit_code_from_system_status;
+use upm_lib.path_utils.upm_string_copy;
+use upm_lib.path_utils.upm_path_parent_dir;
+use upm_lib.path_utils.upm_ensure_trailing_slash;
+use upm_lib.path_utils.upm_make_absolute_path;
+use upm_lib.path_utils.upm_join_path;
+use upm_lib.path_utils.upm_realpath_or_copy;
+use upm_lib.path_utils.upm_is_directory;
+use upm_lib.manifest.upm_parse_manifest;
+use upm_lib.resolver.upm_resolve_manifest_path;
+use upm_lib.resolver.upm_resolve_graph_into_plan;
+use upm_lib.resolver.upm_source_root_contains_alias;
+use upm_lib.lockfile.upm_write_lockfile;
+
+export fn upm_shell_quote(src: &byte, out: &byte, cap: usize) i32 {
+    if src == null || out == null || cap < 3usize {
+        return 1;
+    }
+    var pos: usize = 0;
+    out[pos] = 39 as byte;
+    pos = pos + 1usize;
+    var i: usize = 0;
+    while src[i] != 0 as byte {
+        if src[i] == 39 as byte {
+            if pos + 4usize >= cap {
+                return 1;
+            }
+            out[pos] = 39 as byte;
+            out[pos + 1usize] = 92 as byte;
+            out[pos + 2usize] = 39 as byte;
+            out[pos + 3usize] = 39 as byte;
+            pos = pos + 4usize;
+        } else {
+            if pos + 1usize >= cap {
+                return 1;
+            }
+            out[pos] = src[i];
+            pos = pos + 1usize;
+        }
+        i = i + 1usize;
+    }
+    if pos + 2usize > cap {
+        return 1;
+    }
+    out[pos] = 39 as byte;
+    out[pos + 1usize] = 0 as byte;
+    return 0;
+}
+
+export fn upm_shell_run(cmd: &byte, failure_label: &byte) i32 {
+    if cmd == null {
+        return 1;
+    }
+    const status: i32 = system(cmd as *byte);
+    const exit_code: i32 = upm_exit_code_from_system_status(status);
+    if exit_code != 0 {
+        if failure_label != null {
+            fprintf(libc.stderr, "错误: %s 失败 (exit=%d)\n" as *byte, failure_label as *byte, exit_code);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+export fn upm_shell_remove_tree(path: &byte) i32 {
+    var quoted: [byte: UPM_PATH_MAX * 2] = [];
+    if upm_shell_quote(path, &quoted[0] as &byte, UPM_PATH_MAX * 2usize) != 0 {
+        return 1;
+    }
+    var cmd: [byte: UPM_CMD_MAX] = [];
+    const written: i32 = snprintf(&cmd[0] as *byte, UPM_CMD_MAX as usize, "rm -rf %s" as *byte, &quoted[0] as *byte);
+    if written <= 0 || written >= UPM_CMD_MAX {
+        return 1;
+    }
+    return upm_shell_run(&cmd[0] as &byte, "删除目录树" as &byte);
+}
+
+export fn upm_shell_mkdir_p(path: &byte) i32 {
+    var quoted: [byte: UPM_PATH_MAX * 2] = [];
+    if upm_shell_quote(path, &quoted[0] as &byte, UPM_PATH_MAX * 2usize) != 0 {
+        return 1;
+    }
+    var cmd: [byte: UPM_CMD_MAX] = [];
+    const written: i32 = snprintf(&cmd[0] as *byte, UPM_CMD_MAX as usize, "mkdir -p %s" as *byte, &quoted[0] as *byte);
+    if written <= 0 || written >= UPM_CMD_MAX {
+        return 1;
+    }
+    return upm_shell_run(&cmd[0] as &byte, "创建目录" as &byte);
+}
+
+export fn upm_shell_copy_tree(src_dir: &byte, dst_dir: &byte) i32 {
+    var src_q: [byte: UPM_PATH_MAX * 2] = [];
+    var dst_q: [byte: UPM_PATH_MAX * 2] = [];
+    var src_with_dot: [byte: UPM_PATH_MAX] = [];
+    const src_len: usize = strlen(src_dir as *byte);
+    if src_len + 3usize >= UPM_PATH_MAX {
+        return 1;
+    }
+    strcpy(&src_with_dot[0] as *byte, src_dir as *byte);
+    if src_len > 0 && src_dir[src_len - 1usize] == 47 as byte {
+        strcat(&src_with_dot[0] as *byte, "." as *byte);
+    } else {
+        strcat(&src_with_dot[0] as *byte, "/." as *byte);
+    }
+    if upm_shell_quote(&src_with_dot[0] as &byte, &src_q[0] as &byte, UPM_PATH_MAX * 2usize) != 0 {
+        return 1;
+    }
+    if upm_shell_quote(dst_dir, &dst_q[0] as &byte, UPM_PATH_MAX * 2usize) != 0 {
+        return 1;
+    }
+    var cmd: [byte: UPM_CMD_MAX] = [];
+    const written: i32 = snprintf(
+        &cmd[0] as *byte,
+        UPM_CMD_MAX as usize,
+        "mkdir -p %s && cp -R %s %s" as *byte,
+        &dst_q[0] as *byte,
+        &src_q[0] as *byte,
+        &dst_q[0] as *byte
+    );
+    if written <= 0 || written >= UPM_CMD_MAX {
+        return 1;
+    }
+    return upm_shell_run(&cmd[0] as &byte, "复制目录树" as &byte);
+}
+
+export fn upm_build_plan_cleanup(plan: &UPMPackageBuildPlan) i32 {
+    if plan == null || plan.build_root[0] == 0 as byte {
+        return 0;
+    }
+    var cleanup_root: [byte: UPM_PATH_MAX] = [];
+    if upm_path_parent_dir(&plan.build_root[0] as &byte, &cleanup_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        if upm_string_copy(&cleanup_root[0] as &byte, UPM_PATH_MAX, &plan.build_root[0] as &byte) != 0 {
+            return 1;
+        }
+    }
+    if upm_shell_remove_tree(&cleanup_root[0] as &byte) != 0 {
+        return 1;
+    }
+    plan.active = 0;
+    plan.build_root[0] = 0 as byte;
+    plan.compile_input[0] = 0 as byte;
+    plan.module_root[0] = 0 as byte;
+    return 0;
+}
+
+export fn upm_prepare_build_plan(input_path: &byte, manifest_override: &byte, plan_out: &UPMPackageBuildPlan) i32 {
+    return upm_prepare_build_plan_ex(input_path, manifest_override, plan_out, 0);
+}
+
+export fn upm_prepare_build_plan_ex(input_path: &byte, manifest_override: &byte, plan_out: &UPMPackageBuildPlan, force_git_refresh: i32) i32 {
+    if input_path == null || plan_out == null {
+        return 1;
+    }
+    plan_out[0] = upm_build_plan_init();
+    var cleanup_on_fail: i32 = 0;
+    defer {
+        if cleanup_on_fail != 0 {
+            _ = upm_build_plan_cleanup(plan_out);
+        }
+    }
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_resolve_manifest_path(input_path, manifest_override, &manifest_path[0] as &byte) != 0 {
+        return 0;
+    }
+
+    var root_manifest: UPMManifest = upm_manifest_init();
+    if upm_parse_manifest(&manifest_path[0] as &byte, &root_manifest) != 0 {
+        return 1;
+    }
+
+    plan_out.active = 1;
+    cleanup_on_fail = 1;
+    _ = upm_string_copy(&plan_out.manifest_path[0] as &byte, UPM_PATH_MAX, &root_manifest.manifest_path[0] as &byte);
+    _ = upm_string_copy(&plan_out.package_root[0] as &byte, UPM_PATH_MAX, &root_manifest.package_root[0] as &byte);
+    _ = upm_string_copy(&plan_out.source_root[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+    upm_init_resolved_graph(&plan_out.resolved_graph, &root_manifest);
+
+    var i: i32 = 0;
+    while i < root_manifest.dep_count {
+        if upm_source_root_contains_alias(&root_manifest.source_root[0] as &byte, &root_manifest.deps[i].alias[0] as &byte) != 0 {
+            fprintf(libc.stderr, "错误: root source root 已存在与依赖 alias 同名的顶层模块（alias=%s, source_root=%s）\n" as *byte,
+                &root_manifest.deps[i].alias[0] as *byte,
+                &root_manifest.source_root[0] as *byte);
+            return 1;
+        }
+        i = i + 1;
+    }
+
+    var tmpdir: &byte = getenv("TMPDIR" as *byte);
+    if tmpdir == null || tmpdir[0] == 0 as byte {
+        tmpdir = "/tmp" as &byte;
+    }
+    var tmpdir_slash: [byte: UPM_PATH_MAX] = [];
+    if upm_string_copy(&tmpdir_slash[0] as &byte, UPM_PATH_MAX, tmpdir) != 0 {
+        return 1;
+    }
+    if upm_ensure_trailing_slash(&tmpdir_slash[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    const written: i32 = snprintf(
+        &plan_out.build_root[0] as *byte,
+        UPM_PATH_MAX,
+        "%suya-upm-build-%d/root" as *byte,
+        &tmpdir_slash[0] as *byte,
+        getpid()
+    );
+    if written <= 0 || written >= UPM_PATH_MAX {
+        return 1;
+    }
+    if upm_shell_remove_tree(&plan_out.build_root[0] as &byte) != 0 {
+        return 1;
+    }
+    if upm_shell_copy_tree(&root_manifest.source_root[0] as &byte, &plan_out.build_root[0] as &byte) != 0 {
+        return 1;
+    }
+    if upm_ensure_trailing_slash(&plan_out.build_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    _ = upm_string_copy(&plan_out.module_root[0] as &byte, UPM_PATH_MAX, &plan_out.build_root[0] as &byte);
+
+    var input_abs: [byte: UPM_PATH_MAX] = [];
+    if upm_realpath_or_copy(input_path, &input_abs[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_is_directory(&input_abs[0] as &byte) != 0 {
+        _ = upm_string_copy(&plan_out.compile_input[0] as &byte, UPM_PATH_MAX, &plan_out.build_root[0] as &byte);
+    } else {
+        const root_len: usize = strlen(&root_manifest.source_root[0] as *byte);
+        if root_len > 0usize && strncmp(&input_abs[0] as *byte, &root_manifest.source_root[0] as *byte, root_len) == 0 {
+            if upm_join_path(&plan_out.build_root[0] as &byte, (&input_abs[root_len]) as &byte, &plan_out.compile_input[0] as &byte, UPM_PATH_MAX) != 0 {
+                return 1;
+            }
+        } else {
+            _ = upm_string_copy(&plan_out.compile_input[0] as &byte, UPM_PATH_MAX, &plan_out.build_root[0] as &byte);
+        }
+    }
+
+    if upm_resolve_graph_into_plan(&root_manifest, plan_out, force_git_refresh, upm_shell_remove_tree, upm_shell_copy_tree) != 0 {
+        return 1;
+    }
+    if upm_write_lockfile(&root_manifest, plan_out) != 0 {
+        return 1;
+    }
+    cleanup_on_fail = 0;
+    return 0;
+}

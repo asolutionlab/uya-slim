@@ -23,6 +23,7 @@ use libc;
 use libc.stdlib;  // clock, CLOCKS_PER_SEC
 use libc.unistd;  // system
 use cmd.upm.upm_lib.UPMPackageBuildPlan;
+use cmd.upm.upm_lib.UPMPackageContext;
 use cmd.upm.upm_lib.upm_build_plan_cleanup;
 use cmd.upm.upm_lib.upm_build_plan_init;
 use cmd.upm.upm_lib.upm_prepare_build_plan;
@@ -2049,6 +2050,65 @@ fn is_c_output(output_path: &byte) i32 {
 // output_path_override: 如果非 null，使用此路径替代 get_argv(output_file_index)
 // is_nostdlib: 生成 _start 入口（无 C 标准库链接）
 // stack_size: 堆栈大小（KB），0 表示默认
+fn upm_package_context_init() UPMPackageContext {
+    return UPMPackageContext{};
+}
+
+fn prepare_package_context_for_command(
+    command: CommandType,
+    input_file_indices: &i32,
+    input_file_count: i32,
+    package_context: &UPMPackageContext,
+    package_build_plan: &UPMPackageBuildPlan,
+    package_build_plan_needs_cleanup: &i32,
+    input_paths_override: &(&byte),
+    input_paths_override_count: &i32
+) i32 {
+    if package_context == null || package_build_plan == null || package_build_plan_needs_cleanup == null ||
+        input_paths_override == null || input_paths_override_count == null {
+        return 1;
+    }
+    package_context.active = 0;
+    input_paths_override_count[0] = 0;
+    if !((command == CommandType.COMMAND_BUILD || command == CommandType.COMMAND_CHECK ||
+        command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) &&
+        input_file_count == 1) {
+        return 0;
+    }
+    const input0: *byte = get_argv(input_file_indices[0]);
+    if input0 == null {
+        return 0;
+    }
+    var manifest_override_ptr: &byte = null;
+    if g_manifest_path_override_active != 0 {
+        manifest_override_ptr = &g_manifest_path_override[0] as &byte;
+    }
+    const prepare_result: i32 = upm_prepare_build_plan(input0 as &byte, manifest_override_ptr, package_build_plan);
+    if prepare_result != 0 {
+        return 1;
+    }
+    if package_build_plan.active == 0 {
+        return 0;
+    }
+    package_context.active = 1;
+    strcpy(&package_context.manifest_path[0] as *byte, &package_build_plan.manifest_path[0] as *byte);
+    strcpy(&package_context.package_root[0] as *byte, &package_build_plan.package_root[0] as *byte);
+    strcpy(&package_context.source_root[0] as *byte, &package_build_plan.source_root[0] as *byte);
+    strcpy(&package_context.module_root[0] as *byte, &package_build_plan.module_root[0] as *byte);
+    strcpy(&package_context.compile_input[0] as *byte, &package_build_plan.compile_input[0] as *byte);
+    strcpy(&package_context.materialized_root[0] as *byte, &package_build_plan.build_root[0] as *byte);
+    const lock_written: i32 = snprintf(&package_context.lockfile_path[0] as *byte, PATH_MAX, "%suya.lock" as *byte, &package_build_plan.package_root[0] as *byte);
+    if lock_written <= 0 || lock_written >= PATH_MAX {
+        return 1;
+    }
+    input_paths_override[0] = &package_build_plan.compile_input[0] as &byte;
+    input_paths_override_count[0] = 1;
+    strcpy(&g_module_root_override[0] as *byte, &package_build_plan.module_root[0] as *byte);
+    g_module_root_override_active = 1;
+    package_build_plan_needs_cleanup[0] = 1;
+    return 0;
+}
+
 fn compile_files(
     input_file_indices: &i32,
     input_file_count: i32,
@@ -3070,6 +3130,7 @@ export fn main() i32 {
         }
         split_c_lock_held = 1;
     }
+    var package_context: UPMPackageContext = upm_package_context_init();
     var package_build_plan: UPMPackageBuildPlan = upm_build_plan_init();
     var package_build_plan_needs_cleanup: i32 = 0;
     defer {
@@ -3080,27 +3141,17 @@ export fn main() i32 {
     }
     var input_paths_override: [&byte: MAX_INPUT_FILES] = [null: MAX_INPUT_FILES];
     var input_paths_override_count: i32 = 0;
-    if (command == CommandType.COMMAND_BUILD || command == CommandType.COMMAND_CHECK ||
-        command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) &&
-        input_file_count == 1 {
-        const input0: *byte = get_argv(input_file_indices[0]);
-        if input0 != null {
-            var manifest_override_ptr: &byte = null;
-            if g_manifest_path_override_active != 0 {
-                manifest_override_ptr = &g_manifest_path_override[0] as &byte;
-            }
-            const prepare_result: i32 = upm_prepare_build_plan(input0 as &byte, manifest_override_ptr, &package_build_plan);
-            if prepare_result != 0 {
-                return 1;
-            }
-            if package_build_plan.active != 0 {
-                input_paths_override[0] = &package_build_plan.compile_input[0] as &byte;
-                input_paths_override_count = 1;
-                strcpy(&g_module_root_override[0] as *byte, &package_build_plan.module_root[0] as *byte);
-                g_module_root_override_active = 1;
-                package_build_plan_needs_cleanup = 1;
-            }
-        }
+    if prepare_package_context_for_command(
+        command,
+        &input_file_indices[0],
+        input_file_count,
+        &package_context,
+        &package_build_plan,
+        &package_build_plan_needs_cleanup,
+        &input_paths_override[0] as &(&byte),
+        &input_paths_override_count
+    ) != 0 {
+        return 1;
     }
     var input_paths_override_ptr: &(&byte) = null;
     if input_paths_override_count > 0 {

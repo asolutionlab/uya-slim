@@ -1,0 +1,271 @@
+use libc;
+use libc.FILE;
+use libc.fopen;
+use libc.fclose;
+use libc.fgets;
+use std.string.strcmp;
+use std.string.strlen;
+use upm_lib.types.UPM_PATH_MAX;
+use upm_lib.types.UPM_LINE_MAX;
+use upm_lib.types.UPM_MAX_ALIAS_LEN;
+use upm_lib.types.UPM_MAX_NAME_LEN;
+use upm_lib.types.UPM_MAX_REF_LEN;
+use upm_lib.types.UPM_MAX_LOCK_ITEMS;
+use upm_lib.types.UPMDependencyKind;
+use upm_lib.types.UPMDependency;
+use upm_lib.types.UPMManifest;
+use upm_lib.types.UPMLockItem;
+use upm_lib.types.UPMPackageBuildPlan;
+use upm_lib.path_utils.upm_string_copy;
+use upm_lib.path_utils.upm_join_path;
+use upm_lib.path_utils.upm_is_file;
+use upm_lib.path_utils.upm_strip_inline_comment;
+use upm_lib.path_utils.upm_trim_copy;
+
+export fn upm_lock_item_record(plan: &UPMPackageBuildPlan, alias: &byte, manifest: &UPMManifest, dep: &UPMDependency) void {
+    if plan == null || manifest == null || dep == null {
+        return;
+    }
+    if plan.lock_item_count >= UPM_MAX_LOCK_ITEMS {
+        return;
+    }
+    const idx: i32 = plan.lock_item_count;
+    if idx < 0 || idx >= UPM_MAX_LOCK_ITEMS {
+        return;
+    }
+    const idx_checked: !usize = idx as! usize;
+    const idx_usize: usize = idx_checked catch {
+        return;
+    };
+    if idx_usize >= UPM_MAX_LOCK_ITEMS as usize {
+        return;
+    }
+    _ = upm_string_copy(&plan.lock_items[idx_usize].alias[0] as &byte, UPM_MAX_ALIAS_LEN, alias);
+    _ = upm_string_copy(&plan.lock_items[idx_usize].package_name[0] as &byte, UPM_MAX_NAME_LEN, &manifest.package_name[0] as &byte);
+    plan.lock_items[idx_usize].kind = dep.kind;
+    _ = upm_string_copy(&plan.lock_items[idx_usize].package_root[0] as &byte, UPM_PATH_MAX, &manifest.package_root[0] as &byte);
+    _ = upm_string_copy(&plan.lock_items[idx_usize].source_root[0] as &byte, UPM_PATH_MAX, &manifest.source_root[0] as &byte);
+    _ = upm_string_copy(&plan.lock_items[idx_usize].path_raw[0] as &byte, UPM_PATH_MAX, &dep.path_value[0] as &byte);
+    _ = upm_string_copy(&plan.lock_items[idx_usize].git_url[0] as &byte, UPM_PATH_MAX, &dep.git_url[0] as &byte);
+    plan.lock_items[idx_usize].ref_kind = dep.ref_kind;
+    _ = upm_string_copy(&plan.lock_items[idx_usize].ref_value[0] as &byte, UPM_MAX_REF_LEN, &dep.ref_value[0] as &byte);
+    plan.lock_item_count = plan.lock_item_count + 1;
+}
+
+export fn upm_dependency_exact_ref(dep: &UPMDependency, resolved_commit: &byte, out: &byte, cap: usize) i32 {
+    if dep == null || out == null || cap == 0usize {
+        return 1;
+    }
+    out[0] = 0 as byte;
+    if dep.kind != UPMDependencyKind.UPM_DEP_GIT {
+        return 0;
+    }
+    if resolved_commit != null && resolved_commit[0] != 0 as byte {
+        return upm_string_copy(out, cap, resolved_commit);
+    }
+    return upm_string_copy(out, cap, &dep.ref_value[0] as &byte);
+}
+
+export fn upm_lock_item_matches_source(item: &UPMLockItem, manifest: &UPMManifest, dep: &UPMDependency, resolved_commit: &byte) i32 {
+    if item == null || manifest == null || dep == null {
+        return 0;
+    }
+    if item.kind != dep.kind {
+        return 0;
+    }
+    if dep.kind == UPMDependencyKind.UPM_DEP_PATH {
+        if strcmp(&item.package_root[0] as *byte, &manifest.package_root[0] as *byte) == 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if dep.kind == UPMDependencyKind.UPM_DEP_GIT {
+        var exact_ref: [byte: UPM_MAX_REF_LEN] = [];
+        if upm_dependency_exact_ref(dep, resolved_commit, &exact_ref[0] as &byte, UPM_MAX_REF_LEN) != 0 {
+            return 0;
+        }
+        if strcmp(&item.git_url[0] as *byte, &dep.git_url[0] as *byte) != 0 {
+            return 0;
+        }
+        if strcmp(&item.ref_value[0] as *byte, &exact_ref[0] as *byte) != 0 {
+            return 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_lock_item_reset(alias: &byte, kind: &byte, git_url: &byte, commit: &byte) void {
+    if alias != null {
+        alias[0] = 0 as byte;
+    }
+    if kind != null {
+        kind[0] = 0 as byte;
+    }
+    if git_url != null {
+        git_url[0] = 0 as byte;
+    }
+    if commit != null {
+        commit[0] = 0 as byte;
+    }
+}
+
+fn upm_trim_newline_in_place(buf: &byte) void {
+    if buf == null {
+        return;
+    }
+    var len: usize = strlen(buf as *byte);
+    while len > 0usize {
+        const idx: usize = len - 1usize;
+        if buf[idx] == 10 as byte || buf[idx] == 13 as byte {
+            buf[idx] = 0 as byte;
+            len = idx;
+            continue;
+        }
+        break;
+    }
+}
+
+fn upm_lock_item_matches_git(alias: &byte, source_kind: &byte, git_url: &byte, commit: &byte, want_alias: &byte, want_git_url: &byte) i32 {
+    if alias == null || source_kind == null || git_url == null || commit == null || want_alias == null || want_git_url == null {
+        return 0;
+    }
+    if alias[0] == 0 as byte || git_url[0] == 0 as byte || commit[0] == 0 as byte {
+        return 0;
+    }
+    if strcmp(source_kind as *byte, "git" as *byte) != 0 {
+        return 0;
+    }
+    if strcmp(alias as *byte, want_alias as *byte) != 0 {
+        return 0;
+    }
+    if strcmp(git_url as *byte, want_git_url as *byte) != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+export fn upm_load_locked_git_commit(package_root: &byte, alias: &byte, git_url: &byte, commit_out: &byte) i32 {
+    if package_root == null || alias == null || git_url == null || commit_out == null {
+        return 1;
+    }
+    var lock_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(package_root, "uya.lock" as &byte, &lock_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_is_file(&lock_path[0] as &byte) == 0 {
+        return 1;
+    }
+    const file: &FILE = fopen(&lock_path[0] as *byte, "r" as *byte);
+    if file == null {
+        return 1;
+    }
+    var current_alias: [byte: UPM_MAX_ALIAS_LEN] = [];
+    var current_kind: [byte: 32] = [];
+    var current_git_url: [byte: UPM_PATH_MAX] = [];
+    var current_commit: [byte: UPM_MAX_REF_LEN] = [];
+    upm_lock_item_reset(&current_alias[0] as &byte, &current_kind[0] as &byte, &current_git_url[0] as &byte, &current_commit[0] as &byte);
+
+    var line_buf: [byte: UPM_LINE_MAX] = [];
+    while fgets(&line_buf[0] as &byte, UPM_LINE_MAX, file) != null {
+        upm_strip_inline_comment(&line_buf[0] as &byte);
+        var trimmed: [byte: UPM_LINE_MAX] = [];
+        if upm_trim_copy(&line_buf[0] as &byte, &trimmed[0] as &byte, UPM_LINE_MAX as usize) != 0 {
+            fclose(file);
+            return 1;
+        }
+        if trimmed[0] == 0 as byte {
+            continue;
+        }
+        if strcmp(&trimmed[0] as *byte, "[[package]]" as *byte) == 0 {
+            if upm_lock_item_matches_git(&current_alias[0] as &byte, &current_kind[0] as &byte, &current_git_url[0] as &byte, &current_commit[0] as &byte, alias, git_url) != 0 {
+                fclose(file);
+                return upm_string_copy(commit_out, UPM_MAX_REF_LEN, &current_commit[0] as &byte);
+            }
+            upm_lock_item_reset(&current_alias[0] as &byte, &current_kind[0] as &byte, &current_git_url[0] as &byte, &current_commit[0] as &byte);
+            continue;
+        }
+        var eq_idx: usize = 0;
+        while trimmed[eq_idx] != 0 as byte && trimmed[eq_idx] != 61 as byte {
+            eq_idx = eq_idx + 1usize;
+        }
+        if trimmed[eq_idx] != 61 as byte {
+            continue;
+        }
+        var key_buf: [byte: 64] = [];
+        if upm_bytes_copy(&key_buf[0] as &byte, 64usize, &trimmed[0] as &byte, eq_idx) != 0 {
+            continue;
+        }
+        if upm_trim_copy(&key_buf[0] as &byte, &key_buf[0] as &byte, 64usize) != 0 {
+            continue;
+        }
+        var i: usize = eq_idx + 1usize;
+        while trimmed[i] != 0 as byte && (trimmed[i] == 32 as byte || trimmed[i] == 9 as byte) {
+            i = i + 1usize;
+        }
+        if trimmed[i] != 34 as byte {
+            continue;
+        }
+        i = i + 1usize;
+        const start: usize = i;
+        while trimmed[i] != 0 as byte && trimmed[i] != 34 as byte {
+            i = i + 1usize;
+        }
+        if trimmed[i] != 34 as byte {
+            continue;
+        }
+        var value_buf: [byte: UPM_PATH_MAX] = [];
+        if upm_bytes_copy(&value_buf[0] as &byte, UPM_PATH_MAX, (&trimmed[start]) as &byte, i - start) != 0 {
+            continue;
+        }
+        if strcmp(&key_buf[0] as *byte, "alias" as *byte) == 0 {
+            _ = upm_string_copy(&current_alias[0] as &byte, UPM_MAX_ALIAS_LEN, &value_buf[0] as &byte);
+        } else if strcmp(&key_buf[0] as *byte, "source_kind" as *byte) == 0 {
+            _ = upm_string_copy(&current_kind[0] as &byte, 32usize, &value_buf[0] as &byte);
+        } else if strcmp(&key_buf[0] as *byte, "git" as *byte) == 0 {
+            _ = upm_string_copy(&current_git_url[0] as &byte, UPM_PATH_MAX, &value_buf[0] as &byte);
+        } else if strcmp(&key_buf[0] as *byte, "commit" as *byte) == 0 {
+            _ = upm_string_copy(&current_commit[0] as &byte, UPM_MAX_REF_LEN, &value_buf[0] as &byte);
+        }
+    }
+    fclose(file);
+    if upm_lock_item_matches_git(&current_alias[0] as &byte, &current_kind[0] as &byte, &current_git_url[0] as &byte, &current_commit[0] as &byte, alias, git_url) != 0 {
+        return upm_string_copy(commit_out, UPM_MAX_REF_LEN, &current_commit[0] as &byte);
+    }
+    return 1;
+}
+
+export fn upm_write_lockfile(root_manifest: &UPMManifest, plan: &UPMPackageBuildPlan) i32 {
+    if root_manifest == null || plan == null {
+        return 1;
+    }
+    var lock_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&root_manifest.package_root[0] as &byte, "uya.lock" as &byte, &lock_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    const file: &FILE = fopen(&lock_path[0] as *byte, "w" as *byte);
+    if file == null {
+        fprintf(libc.stderr, "错误: 无法写入 lockfile: %s\n" as *byte, &lock_path[0] as *byte);
+        return 1;
+    }
+    var i: i32 = 0;
+    while i < plan.lock_item_count {
+        const item: &UPMLockItem = &plan.lock_items[i];
+        _ = libc.fprintf(file as *void, "[[package]]\n" as *byte);
+        _ = libc.fprintf(file as *void, "alias = \"%s\"\n" as *byte, &item.alias[0] as *byte);
+        _ = libc.fprintf(file as *void, "name = \"%s\"\n" as *byte, &item.package_name[0] as *byte);
+        if item.kind == UPMDependencyKind.UPM_DEP_PATH {
+            _ = libc.fprintf(file as *void, "source_kind = \"path\"\n" as *byte);
+            _ = libc.fprintf(file as *void, "path = \"%s\"\n" as *byte, &item.path_raw[0] as *byte);
+        } else if item.kind == UPMDependencyKind.UPM_DEP_GIT {
+            _ = libc.fprintf(file as *void, "source_kind = \"git\"\n" as *byte);
+            _ = libc.fprintf(file as *void, "git = \"%s\"\n" as *byte, &item.git_url[0] as *byte);
+            _ = libc.fprintf(file as *void, "commit = \"%s\"\n" as *byte, &item.ref_value[0] as *byte);
+        }
+        _ = libc.fprintf(file as *void, "package_root = \"%s\"\n" as *byte, &item.package_root[0] as *byte);
+        _ = libc.fprintf(file as *void, "source_root = \"%s\"\n\n" as *byte, &item.source_root[0] as *byte);
+        i = i + 1;
+    }
+    fclose(file);
+    return 0;
+}

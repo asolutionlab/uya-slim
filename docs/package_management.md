@@ -1,8 +1,12 @@
 # Uya Package Management v1 Draft
 
 **状态**: design draft, MVP prototype implemented in current branch
-**更新日期**: 2026-05-29
+**更新日期**: 2026-06-12
 **适用范围**: `uya.toml`、`uya.lock`、`uya upm`、带依赖的 `uya build/check/run/test`
+**相关文档**:
+
+- [UPM 演进设计文档](./upm_evolution_design.md)
+- [Uya 总文档中的包管理章节](./uya.md#291-包管理v1-draft--mvp-in-progress)
 
 ---
 
@@ -215,6 +219,26 @@ repository = "optional"
 - `version`：必填；版本字符串
 - `source-dir`：可选；默认 `"."`
 - `description` / `license` / `repository`：可选元数据
+- `uya_min_version`：可选；要求运行当前包所需的最小 Uya 版本
+
+### 5.2.1 `[layout]` 兼容段
+
+当前实现额外兼容旧风格的 `[layout]`：
+
+```toml
+[layout]
+source_dir = "src"
+test_dir = "tests"
+bench_dir = "benchmarks"
+example_dir = "examples"
+```
+
+规则：
+
+- `layout.source_dir` 作为 `package.source-dir` 的兼容别名解析
+- 若同时声明 `package.source-dir` 与 `layout.source_dir`，且值不同，则直接报错
+- `test_dir` / `bench_dir` / `example_dir` 当前仅做解析与路径校验，不参与 `upm build/test` 语义
+- 未知表（例如 `[tool.make]`）不会再被误当成上一段继续解析
 
 ### 5.3 名称规则
 
@@ -546,7 +570,21 @@ v1 至少要能稳定报出以下错误：
   - `upm add`
   - `upm remove`
 
-### 12.3 明确尚未承诺
+### 12.3 后续演进与正式设计文档
+
+本文件聚焦于 **v1 draft / MVP 语义与当前实现边界**。对于后续更长期的架构拆分与演进规划，统一参考：
+
+- [UPM 演进设计文档](./upm_evolution_design.md)
+
+该文档覆盖：
+
+- `src/cmd/upm/upm_lib/main.uya` 的分层拆分方向
+- `resolver` / `build_plan` / `lockfile` / `git_fetch` 的目标边界
+- package mode 下沉到编译器主流程的路径
+- `module identity`、global cache、checksum 与版本模型的后续设计
+- proxy / registry / workspace / publish 的长期扩展路线
+
+### 12.4 明确尚未承诺
 
 - registry
 - publish
