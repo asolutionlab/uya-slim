@@ -1,31 +1,30 @@
-use libc;
 use libc.fprintf;
 use libc.snprintf;
 use std.string.strcmp;
-use upm_lib.types.UPM_PATH_MAX;
-use upm_lib.types.UPM_MAX_REF_LEN;
-use upm_lib.types.UPM_MAX_VISITED;
-use upm_lib.types.UPMDependencyKind;
-use upm_lib.types.UPMGitRefKind;
-use upm_lib.types.UPMDependency;
-use upm_lib.types.UPMManifest;
-use upm_lib.types.UPMPackageBuildPlan;
-use upm_lib.types.UPMResolvedDep;
-use upm_lib.types.UPMResolvedGraph;
-use upm_lib.types.upm_manifest_init;
-use upm_lib.path_utils.upm_string_copy;
-use upm_lib.path_utils.upm_make_absolute_path;
-use upm_lib.path_utils.upm_is_directory;
-use upm_lib.path_utils.upm_realpath_or_copy;
-use upm_lib.path_utils.upm_ensure_trailing_slash;
-use upm_lib.path_utils.upm_join_path;
-use upm_lib.path_utils.upm_path_parent_dir;
-use upm_lib.path_utils.upm_is_file;
-use upm_lib.path_utils.upm_path_exists;
-use upm_lib.lockfile.upm_lock_item_record;
-use upm_lib.lockfile.upm_lock_item_matches_source;
-use upm_lib.manifest.upm_parse_manifest;
-use upm_lib.git_fetch.upm_git_prepare_checkout;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_VISITED;
+use cmd.upm.upm_lib.types.UPMDependencyKind;
+use cmd.upm.upm_lib.types.UPMGitRefKind;
+use cmd.upm.upm_lib.types.UPMDependency;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.UPMPackageBuildPlan;
+use cmd.upm.upm_lib.types.UPMResolvedDep;
+use cmd.upm.upm_lib.types.UPMResolvedGraph;
+use cmd.upm.upm_lib.types.upm_manifest_init;
+use cmd.upm.upm_lib.path_utils.upm_string_copy;
+use cmd.upm.upm_lib.path_utils.upm_make_absolute_path;
+use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
+use cmd.upm.upm_lib.path_utils.upm_ensure_trailing_slash;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_path_parent_dir;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_path_exists;
+use cmd.upm.upm_lib.lockfile.upm_lock_item_record;
+use cmd.upm.upm_lib.lockfile.upm_lock_item_matches_source;
+use cmd.upm.upm_lib.manifest.upm_parse_manifest;
+use cmd.upm.upm_lib.git_fetch.upm_git_prepare_checkout;
 
 export fn upm_init_resolved_graph(graph: &UPMResolvedGraph, root_manifest: &UPMManifest) void {
     if graph == null {
@@ -47,13 +46,13 @@ export fn upm_resolved_graph_record_into(graph: &UPMResolvedGraph, manifest: &UP
         return;
     }
     const idx: i32 = graph.dep_count;
-    if idx < 0 || idx >= UPM_MAX_LOCK_ITEMS {
-        return;
-    }
     const idx_checked: !usize = idx as! usize;
     const idx_usize: usize = idx_checked catch {
         return;
     };
+    if idx_usize >= UPM_MAX_LOCK_ITEMS as usize {
+        return;
+    }
     const resolved_dep: &UPMResolvedDep = &graph.deps[idx_usize];
     _ = upm_string_copy(&resolved_dep.alias[0] as &byte, UPM_MAX_ALIAS_LEN, &dep.alias[0] as &byte);
     _ = upm_string_copy(&resolved_dep.package_name[0] as &byte, UPM_MAX_NAME_LEN, &manifest.package_name[0] as &byte);
@@ -134,7 +133,7 @@ export fn upm_check_dependency_conflicts(plan: &UPMPackageBuildPlan, manifest: &
     }
     var i: i32 = 0;
     while i < plan.lock_item_count {
-        const item = &plan.lock_items[i];
+        const item: &UPMLockItem = &plan.lock_items[i];
         const same_source: i32 = upm_lock_item_matches_source(item, manifest, dep, resolved_commit);
         if strcmp(&item.alias[0] as *byte, &dep.alias[0] as *byte) == 0 {
             if same_source != 0 {
@@ -195,9 +194,7 @@ export fn upm_stage_dependency_recursive(
     plan: &UPMPackageBuildPlan,
     visited: &(&byte),
     visited_count: &i32,
-    force_git_refresh: i32,
-    shell_remove_tree_fn: &byte,
-    shell_copy_tree_fn: &byte
+    force_git_refresh: i32
 ) i32 {
     if owner_manifest == null || dep == null || plan == null || visited == null || visited_count == null {
         return 1;
@@ -226,7 +223,7 @@ export fn upm_stage_dependency_recursive(
             return 1;
         }
     } else {
-        if upm_git_prepare_checkout(owner_manifest, dep, force_git_refresh, shell_remove_tree_fn, &dep_package_root[0] as &byte, &resolved_commit[0] as &byte) != 0 {
+    if upm_git_prepare_checkout(owner_manifest, dep, force_git_refresh, &dep_package_root[0] as &byte, &resolved_commit[0] as &byte) != 0 {
             fprintf(libc.stderr, "错误: git 依赖准备失败（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
             return 1;
         }
@@ -277,12 +274,12 @@ export fn upm_stage_dependency_recursive(
         return 1;
     }
 
-    _ = @call(shell_remove_tree_fn, &install_alias_dir[0] as &byte);
-    _ = @call(shell_remove_tree_fn, &build_alias_dir[0] as &byte);
-    if @call(shell_copy_tree_fn, &dep_manifest.source_root[0] as &byte, &install_alias_dir[0] as &byte) != 0 {
+    _ = upm_shell_remove_tree(&install_alias_dir[0] as &byte);
+    _ = upm_shell_remove_tree(&build_alias_dir[0] as &byte);
+    if upm_shell_copy_tree(&dep_manifest.source_root[0] as &byte, &install_alias_dir[0] as &byte) != 0 {
         return 1;
     }
-    if @call(shell_copy_tree_fn, &dep_manifest.source_root[0] as &byte, &build_alias_dir[0] as &byte) != 0 {
+    if upm_shell_copy_tree(&dep_manifest.source_root[0] as &byte, &build_alias_dir[0] as &byte) != 0 {
         return 1;
     }
 
@@ -305,7 +302,7 @@ export fn upm_stage_dependency_recursive(
     visited_count[0] = visited_count[0] + 1;
     var i: i32 = 0;
     while i < dep_manifest.dep_count {
-        if upm_stage_dependency_recursive(&dep_manifest, &dep_manifest.deps[i], plan, visited, visited_count, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn) != 0 {
+        if upm_stage_dependency_recursive(&dep_manifest, &dep_manifest.deps[i], plan, visited, visited_count, force_git_refresh) != 0 {
             return 1;
         }
         i = i + 1;
@@ -317,9 +314,7 @@ export fn upm_stage_dependency_recursive(
 export fn upm_resolve_root_dependencies_into_plan(
     root_manifest: &UPMManifest,
     plan: &UPMPackageBuildPlan,
-    force_git_refresh: i32,
-    shell_remove_tree_fn: &byte,
-    shell_copy_tree_fn: &byte
+    force_git_refresh: i32
 ) i32 {
     if root_manifest == null || plan == null {
         return 1;
@@ -329,7 +324,7 @@ export fn upm_resolve_root_dependencies_into_plan(
     visited[0] = &root_manifest.package_root[0] as &byte;
     var i: i32 = 0;
     while i < root_manifest.dep_count {
-        if upm_stage_dependency_recursive(root_manifest, &root_manifest.deps[i], plan, &visited[0] as &(&byte), &visited_count, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn) != 0 {
+        if upm_stage_dependency_recursive(root_manifest, &root_manifest.deps[i], plan, &visited[0] as &(&byte), &visited_count, force_git_refresh) != 0 {
             return 1;
         }
         i = i + 1;
@@ -340,23 +335,19 @@ export fn upm_resolve_root_dependencies_into_plan(
 export fn upm_resolve_graph_into_plan(
     root_manifest: &UPMManifest,
     plan: &UPMPackageBuildPlan,
-    force_git_refresh: i32,
-    shell_remove_tree_fn: &byte,
-    shell_copy_tree_fn: &byte
+    force_git_refresh: i32
 ) i32 {
     if root_manifest == null || plan == null {
         return 1;
     }
     upm_init_resolved_graph(&plan.resolved_graph, root_manifest);
-    return upm_resolve_root_dependencies_into_plan(root_manifest, plan, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn);
+    return upm_resolve_root_dependencies_into_plan(root_manifest, plan, force_git_refresh);
 }
 
 export fn upm_resolve_graph(
     root_manifest: &UPMManifest,
     graph_out: &UPMResolvedGraph,
-    force_git_refresh: i32,
-    shell_remove_tree_fn: &byte,
-    shell_copy_tree_fn: &byte
+    force_git_refresh: i32
 ) i32 {
     if root_manifest == null || graph_out == null {
         return 1;
@@ -366,7 +357,7 @@ export fn upm_resolve_graph(
     _ = upm_string_copy(&scratch_plan.package_root[0] as &byte, UPM_PATH_MAX, &root_manifest.package_root[0] as &byte);
     _ = upm_string_copy(&scratch_plan.source_root[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
     upm_init_resolved_graph(&scratch_plan.resolved_graph, root_manifest);
-    if upm_resolve_root_dependencies_into_plan(root_manifest, &scratch_plan, force_git_refresh, shell_remove_tree_fn, shell_copy_tree_fn) != 0 {
+    if upm_resolve_root_dependencies_into_plan(root_manifest, &scratch_plan, force_git_refresh) != 0 {
         return 1;
     }
     graph_out[0] = scratch_plan.resolved_graph;

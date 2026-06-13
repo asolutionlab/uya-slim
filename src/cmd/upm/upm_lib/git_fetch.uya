@@ -1,3 +1,4 @@
+use cmd.upm.upm_lib.build_plan.upm_shell_remove_tree;
 use libc;
 use libc.getenv;
 use libc.fork;
@@ -9,24 +10,25 @@ use libc._exit;
 use libc.sys_close;
 use libc.sys_pipe2;
 use libc.fprintf;
+use libc.strlen;
 use std.runtime.saved_envp;
-use upm_lib.types.UPM_PATH_MAX;
-use upm_lib.types.UPM_MAX_REF_LEN;
-use upm_lib.types.UPMDependency;
-use upm_lib.types.UPMManifest;
-use upm_lib.types.UPMGitRefKind;
-use upm_lib.path_utils.upm_bytes_copy;
-use upm_lib.path_utils.upm_string_copy;
-use upm_lib.path_utils.upm_join_path;
-use upm_lib.path_utils.upm_is_file;
-use upm_lib.path_utils.upm_exit_code_from_system_status;
-use upm_lib.lockfile.upm_load_locked_git_commit;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
+use cmd.upm.upm_lib.types.UPMDependency;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.UPMGitRefKind;
+use cmd.upm.upm_lib.path_utils.upm_bytes_copy;
+use cmd.upm.upm_lib.path_utils.upm_string_copy;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_exit_code_from_system_status;
+use cmd.upm.upm_lib.lockfile.upm_load_locked_git_commit;
 
 fn upm_trim_newline_in_place(buf: &byte) void {
     if buf == null {
         return;
     }
-    var len: usize = std.string.strlen(buf as *byte);
+    var len: usize = strlen(buf as *byte);
     while len > 0usize {
         const idx: usize = len - 1usize;
         if buf[idx] == 10 as byte || buf[idx] == 13 as byte {
@@ -248,7 +250,6 @@ export fn upm_git_prepare_checkout(
     owner_manifest: &UPMManifest,
     dep: &UPMDependency,
     force_git_refresh: i32,
-    shell_remove_tree_fn: &byte,
     checkout_dir_out: &byte,
     commit_out: &byte
 ) i32 {
@@ -263,7 +264,7 @@ export fn upm_git_prepare_checkout(
     if upm_join_path(&git_cache_root[0] as &byte, &dep.alias[0] as &byte, &repo_dir[0] as &byte, UPM_PATH_MAX) != 0 {
         return 1;
     }
-    _ = @call(shell_remove_tree_fn, &repo_dir[0] as &byte);
+    _ = upm_shell_remove_tree(&repo_dir[0] as &byte);
     if upm_git_clone_into(&dep.git_url[0] as &byte, &repo_dir[0] as &byte) != 0 {
         return 1;
     }

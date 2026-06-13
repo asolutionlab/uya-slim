@@ -8,10 +8,10 @@ use std.string.strlen;
 use std.string.strcmp;
 use std.string.strcpy;
 use std.string.strrchr;
-use upm_lib.types.UPM_PATH_MAX;
-use upm_lib.types.UPM_S_IFMT;
-use upm_lib.types.UPM_S_IFDIR;
-use upm_lib.types.UPM_S_IFREG;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_S_IFMT;
+use cmd.upm.upm_lib.types.UPM_S_IFDIR;
+use cmd.upm.upm_lib.types.UPM_S_IFREG;
 
 export fn upm_ascii_is_space(ch: byte) i32 {
     if ch == 32 as byte || ch == 9 as byte || ch == 10 as byte || ch == 13 as byte {

@@ -5,22 +5,22 @@ use libc.fclose;
 use libc.fgets;
 use std.string.strcmp;
 use std.string.strlen;
-use upm_lib.types.UPM_PATH_MAX;
-use upm_lib.types.UPM_LINE_MAX;
-use upm_lib.types.UPM_MAX_ALIAS_LEN;
-use upm_lib.types.UPM_MAX_NAME_LEN;
-use upm_lib.types.UPM_MAX_REF_LEN;
-use upm_lib.types.UPM_MAX_LOCK_ITEMS;
-use upm_lib.types.UPMDependencyKind;
-use upm_lib.types.UPMDependency;
-use upm_lib.types.UPMManifest;
-use upm_lib.types.UPMLockItem;
-use upm_lib.types.UPMPackageBuildPlan;
-use upm_lib.path_utils.upm_string_copy;
-use upm_lib.path_utils.upm_join_path;
-use upm_lib.path_utils.upm_is_file;
-use upm_lib.path_utils.upm_strip_inline_comment;
-use upm_lib.path_utils.upm_trim_copy;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_LINE_MAX;
+use cmd.upm.upm_lib.types.UPM_MAX_ALIAS_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_NAME_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_LOCK_ITEMS;
+use cmd.upm.upm_lib.types.UPMDependencyKind;
+use cmd.upm.upm_lib.types.UPMDependency;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.UPMLockItem;
+use cmd.upm.upm_lib.types.UPMPackageBuildPlan;
+use cmd.upm.upm_lib.path_utils.upm_string_copy;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_strip_inline_comment;
+use cmd.upm.upm_lib.path_utils.upm_trim_copy;
 
 export fn upm_lock_item_record(plan: &UPMPackageBuildPlan, alias: &byte, manifest: &UPMManifest, dep: &UPMDependency) void {
     if plan == null || manifest == null || dep == null {

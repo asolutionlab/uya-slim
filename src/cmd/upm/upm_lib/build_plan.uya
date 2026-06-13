@@ -8,25 +8,25 @@ use std.string.strlen;
 use std.string.strncmp;
 use std.string.strcpy;
 use std.string.strcat;
-use upm_lib.types.UPM_PATH_MAX;
-use upm_lib.types.UPM_CMD_MAX;
-use upm_lib.types.UPMPackageBuildPlan;
-use upm_lib.types.UPMManifest;
-use upm_lib.types.upm_build_plan_init;
-use upm_lib.types.upm_manifest_init;
-use upm_lib.path_utils.upm_exit_code_from_system_status;
-use upm_lib.path_utils.upm_string_copy;
-use upm_lib.path_utils.upm_path_parent_dir;
-use upm_lib.path_utils.upm_ensure_trailing_slash;
-use upm_lib.path_utils.upm_make_absolute_path;
-use upm_lib.path_utils.upm_join_path;
-use upm_lib.path_utils.upm_realpath_or_copy;
-use upm_lib.path_utils.upm_is_directory;
-use upm_lib.manifest.upm_parse_manifest;
-use upm_lib.resolver.upm_resolve_manifest_path;
-use upm_lib.resolver.upm_resolve_graph_into_plan;
-use upm_lib.resolver.upm_source_root_contains_alias;
-use upm_lib.lockfile.upm_write_lockfile;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_CMD_MAX;
+use cmd.upm.upm_lib.types.UPMPackageBuildPlan;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.upm_build_plan_init;
+use cmd.upm.upm_lib.types.upm_manifest_init;
+use cmd.upm.upm_lib.path_utils.upm_exit_code_from_system_status;
+use cmd.upm.upm_lib.path_utils.upm_string_copy;
+use cmd.upm.upm_lib.path_utils.upm_path_parent_dir;
+use cmd.upm.upm_lib.path_utils.upm_ensure_trailing_slash;
+use cmd.upm.upm_lib.path_utils.upm_make_absolute_path;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
+use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.manifest.upm_parse_manifest;
+use cmd.upm.upm_lib.resolver.upm_resolve_manifest_path;
+use cmd.upm.upm_lib.resolver.upm_resolve_graph_into_plan;
+use cmd.upm.upm_lib.resolver.upm_source_root_contains_alias;
+use cmd.upm.upm_lib.lockfile.upm_write_lockfile;
 
 export fn upm_shell_quote(src: &byte, out: &byte, cap: usize) i32 {
     if src == null || out == null || cap < 3usize {
@@ -251,7 +251,7 @@ export fn upm_prepare_build_plan_ex(input_path: &byte, manifest_override: &byte,
         }
     }
 
-    if upm_resolve_graph_into_plan(&root_manifest, plan_out, force_git_refresh, upm_shell_remove_tree, upm_shell_copy_tree) != 0 {
+    if upm_resolve_graph_into_plan(&root_manifest, plan_out, force_git_refresh) != 0 {
         return 1;
     }
     if upm_write_lockfile(&root_manifest, plan_out) != 0 {

@@ -1,4 +1,4 @@
-use upm_lib.upm_cli_main;
+use cmd.upm.upm_lib.upm_cli_main;
 
 /// `cmd/upm` 独立可执行入口。
 /// 参数说明：无。
