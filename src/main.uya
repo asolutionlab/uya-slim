@@ -22,6 +22,7 @@ use std.runtime.entry.set_process_stack_limit_bytes;
 use libc;
 use libc.stdlib;  // clock, CLOCKS_PER_SEC
 use libc.unistd;  // system
+use cmd.upm.upm_lib;
 use cmd.upm.upm_lib.UPMPackageBuildPlan;
 use cmd.upm.upm_lib.UPMPackageContext;
 use cmd.upm.upm_lib.upm_build_plan_cleanup;

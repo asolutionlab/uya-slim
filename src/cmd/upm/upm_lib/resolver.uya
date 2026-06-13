@@ -196,8 +196,8 @@ export fn upm_stage_dependency_recursive(
     visited: &(&byte),
     visited_count: &i32,
     force_git_refresh: i32,
-    shell_remove_tree_fn: fn(path: &byte) i32,
-    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+    shell_remove_tree_fn: &byte,
+    shell_copy_tree_fn: &byte
 ) i32 {
     if owner_manifest == null || dep == null || plan == null || visited == null || visited_count == null {
         return 1;
@@ -277,12 +277,12 @@ export fn upm_stage_dependency_recursive(
         return 1;
     }
 
-    _ = shell_remove_tree_fn(&install_alias_dir[0] as &byte);
-    _ = shell_remove_tree_fn(&build_alias_dir[0] as &byte);
-    if shell_copy_tree_fn(&dep_manifest.source_root[0] as &byte, &install_alias_dir[0] as &byte) != 0 {
+    _ = @call(shell_remove_tree_fn, &install_alias_dir[0] as &byte);
+    _ = @call(shell_remove_tree_fn, &build_alias_dir[0] as &byte);
+    if @call(shell_copy_tree_fn, &dep_manifest.source_root[0] as &byte, &install_alias_dir[0] as &byte) != 0 {
         return 1;
     }
-    if shell_copy_tree_fn(&dep_manifest.source_root[0] as &byte, &build_alias_dir[0] as &byte) != 0 {
+    if @call(shell_copy_tree_fn, &dep_manifest.source_root[0] as &byte, &build_alias_dir[0] as &byte) != 0 {
         return 1;
     }
 
@@ -318,8 +318,8 @@ export fn upm_resolve_root_dependencies_into_plan(
     root_manifest: &UPMManifest,
     plan: &UPMPackageBuildPlan,
     force_git_refresh: i32,
-    shell_remove_tree_fn: fn(path: &byte) i32,
-    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+    shell_remove_tree_fn: &byte,
+    shell_copy_tree_fn: &byte
 ) i32 {
     if root_manifest == null || plan == null {
         return 1;
@@ -341,8 +341,8 @@ export fn upm_resolve_graph_into_plan(
     root_manifest: &UPMManifest,
     plan: &UPMPackageBuildPlan,
     force_git_refresh: i32,
-    shell_remove_tree_fn: fn(path: &byte) i32,
-    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+    shell_remove_tree_fn: &byte,
+    shell_copy_tree_fn: &byte
 ) i32 {
     if root_manifest == null || plan == null {
         return 1;
@@ -355,8 +355,8 @@ export fn upm_resolve_graph(
     root_manifest: &UPMManifest,
     graph_out: &UPMResolvedGraph,
     force_git_refresh: i32,
-    shell_remove_tree_fn: fn(path: &byte) i32,
-    shell_copy_tree_fn: fn(src: &byte, dst: &byte) i32
+    shell_remove_tree_fn: &byte,
+    shell_copy_tree_fn: &byte
 ) i32 {
     if root_manifest == null || graph_out == null {
         return 1;

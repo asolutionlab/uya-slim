@@ -248,7 +248,7 @@ export fn upm_git_prepare_checkout(
     owner_manifest: &UPMManifest,
     dep: &UPMDependency,
     force_git_refresh: i32,
-    shell_remove_tree_fn: fn(path: &byte) i32,
+    shell_remove_tree_fn: &byte,
     checkout_dir_out: &byte,
     commit_out: &byte
 ) i32 {
@@ -263,7 +263,7 @@ export fn upm_git_prepare_checkout(
     if upm_join_path(&git_cache_root[0] as &byte, &dep.alias[0] as &byte, &repo_dir[0] as &byte, UPM_PATH_MAX) != 0 {
         return 1;
     }
-    _ = shell_remove_tree_fn(&repo_dir[0] as &byte);
+    _ = @call(shell_remove_tree_fn, &repo_dir[0] as &byte);
     if upm_git_clone_into(&dep.git_url[0] as &byte, &repo_dir[0] as &byte) != 0 {
         return 1;
     }
