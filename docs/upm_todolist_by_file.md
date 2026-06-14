@@ -15,7 +15,13 @@
 
 ### 当前职责
 
-当前文件同时承担：
+当前文件主要承担：
+
+- CLI 参数解析与命令分发
+- manifest 编辑（`init/add/remove`）
+- `install/update/build` 的编排层 glue
+
+已不再承担：
 
 - 类型/常量定义
 - path 与字符串工具
@@ -24,8 +30,6 @@
 - git 获取
 - dependency resolver
 - build plan / staging root
-- manifest 编辑（`init/add/remove`）
-- CLI 参数解析与命令分发
 
 ### TODO
 
@@ -42,14 +46,14 @@
 - [x] 保留 glue 层：串联 CLI、manifest 编辑、resolver、build_plan
 
 #### 后续保留职责
-- [ ] 保留 CLI 参数解析
-- [ ] 保留 `upm_cli_main(...)`
-- [ ] 保留 manifest 编辑（如暂不继续拆）
-- [ ] 保留 `init/add/remove` 的编排层逻辑
+- [x] 保留 CLI 参数解析
+- [x] 保留 `upm_cli_main(...)`
+- [x] 保留 manifest 编辑（如暂不继续拆）
+- [x] 保留 `init/add/remove` 的编排层逻辑
 
 ### 完成定义
-- [ ] `main.uya` 不再是“大而全”的实现体
-- [ ] `main.uya` 主要变为 CLI 与编排层
+- [x] `main.uya` 不再是“大而全”的实现体
+- [x] `main.uya` 主要变为 CLI 与编排层
 
 ---
 
@@ -357,7 +361,7 @@
 
 ## 11. `src/main.uya`
 
-**状态**：M3 进行中；已通过 helper 收口 package discovery，并引入 `UPMPackageContext`；`build/check/run/test` 已共享 package 准备入口。
+**状态**：M3 已完成；已通过 helper 收口 package discovery，并引入 `UPMPackageContext`；`build/check/run/test` 已共享 package 准备入口。
 
 ### 目标职责
 
@@ -375,14 +379,14 @@
 - [x] 初始化并传递 `UPMPackageContext`
 
 ### 完成定义
-- [ ] `uya build/check/run/test` 可进入原生 package mode
-- [ ] 不再需要把 package-aware 语义长期限定在 `upm build`
+- [x] `uya build/check/run/test` 可进入原生 package mode
+- [x] 不再需要把 package-aware 语义长期限定在 `upm build`
 
 ---
 
 ## 12. `src/driver/modules.uya`
 
-**状态**：M3 进行中；已接入 package mode 下的 alias-root 优先级，冲突策略已落地，并已有 package mode 专项测试覆盖。
+**状态**：M3 已完成；已接入 package mode 下的 alias-root 优先级，冲突策略已落地，并已有 package mode 专项测试覆盖。
 
 ### 目标职责
 
@@ -398,7 +402,7 @@
 - [x] 为 package mode 增加回归测试
 
 ### 完成定义
-- [ ] 模块解析器可直接理解 package graph 的根映射
+- [x] 模块解析器可直接理解 package graph 的根映射
 - [ ] 包感知模块查找不再完全依赖 staging 目录结构
 
 ---

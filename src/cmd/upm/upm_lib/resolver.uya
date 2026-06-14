@@ -22,7 +22,7 @@ use cmd.upm.upm_lib.path_utils.upm_path_parent_dir;
 use cmd.upm.upm_lib.path_utils.upm_is_file;
 use cmd.upm.upm_lib.path_utils.upm_path_exists;
 use cmd.upm.upm_lib.lockfile.upm_lock_item_record;
-use cmd.upm.upm_lib.lockfile.upm_lock_item_matches_source;
+use cmd.upm.upm_lib.checksum.upm_checksum_verify;
 use cmd.upm.upm_lib.manifest.upm_parse_manifest;
 use cmd.upm.upm_lib.git_fetch.upm_git_prepare_checkout;
 
@@ -56,12 +56,15 @@ export fn upm_resolved_graph_record_into(graph: &UPMResolvedGraph, manifest: &UP
     const resolved_dep: &UPMResolvedDep = &graph.deps[idx_usize];
     _ = upm_string_copy(&resolved_dep.alias[0] as &byte, UPM_MAX_ALIAS_LEN, &dep.alias[0] as &byte);
     _ = upm_string_copy(&resolved_dep.package_name[0] as &byte, UPM_MAX_NAME_LEN, &manifest.package_name[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.module[0] as &byte, UPM_MAX_META_LEN, &manifest.module[0] as &byte);
     resolved_dep.kind = dep.kind;
     _ = upm_string_copy(&resolved_dep.package_root[0] as &byte, UPM_PATH_MAX, &manifest.package_root[0] as &byte);
     _ = upm_string_copy(&resolved_dep.source_root[0] as &byte, UPM_PATH_MAX, &manifest.source_root[0] as &byte);
     _ = upm_string_copy(&resolved_dep.path_raw[0] as &byte, UPM_PATH_MAX, &dep.path_value[0] as &byte);
     _ = upm_string_copy(&resolved_dep.git_url[0] as &byte, UPM_PATH_MAX, &dep.git_url[0] as &byte);
     _ = upm_string_copy(&resolved_dep.requested_ref[0] as &byte, UPM_MAX_REF_LEN, &dep.ref_value[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.requested_version[0] as &byte, UPM_MAX_VERSION_LEN, &dep.version[0] as &byte);
+    _ = upm_string_copy(&resolved_dep.resolved_version[0] as &byte, UPM_MAX_VERSION_LEN, &manifest.version[0] as &byte);
     if resolved_commit != null && resolved_commit[0] != 0 as byte {
         _ = upm_string_copy(&resolved_dep.resolved_commit[0] as &byte, UPM_MAX_REF_LEN, resolved_commit);
     }
@@ -200,6 +203,13 @@ export fn upm_stage_dependency_recursive(
         return 1;
     }
     if dep.kind != UPMDependencyKind.UPM_DEP_PATH && dep.kind != UPMDependencyKind.UPM_DEP_GIT {
+        if dep.module[0] != 0 as byte && dep.version[0] != 0 as byte {
+            fprintf(libc.stderr, "错误: module+version 依赖解析尚未实现（alias=%s, module=%s, version=%s）\n" as *byte,
+                &dep.alias[0] as *byte,
+                &dep.module[0] as *byte,
+                &dep.version[0] as *byte);
+            return 1;
+        }
         fprintf(libc.stderr, "错误: 未知依赖类型（alias=%s）\n" as *byte, &dep.alias[0] as *byte);
         return 1;
     }
@@ -207,6 +217,7 @@ export fn upm_stage_dependency_recursive(
     var dep_package_root: [byte: UPM_PATH_MAX] = [];
     var manifest_path: [byte: UPM_PATH_MAX] = [];
     var resolved_commit: [byte: UPM_MAX_REF_LEN] = [];
+    var content_hash: [byte: UPM_MAX_REF_LEN] = [];
     if dep.kind == UPMDependencyKind.UPM_DEP_PATH {
         if upm_join_path(&owner_manifest.package_root[0] as &byte, &dep.path_value[0] as &byte, &dep_package_root[0] as &byte, UPM_PATH_MAX) != 0 {
             fprintf(libc.stderr, "错误: path 依赖路径无效（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
@@ -223,7 +234,7 @@ export fn upm_stage_dependency_recursive(
             return 1;
         }
     } else {
-    if upm_git_prepare_checkout(owner_manifest, dep, force_git_refresh, &dep_package_root[0] as &byte, &resolved_commit[0] as &byte) != 0 {
+        if upm_git_prepare_checkout(owner_manifest, dep, force_git_refresh, &dep_package_root[0] as &byte, &resolved_commit[0] as &byte, &content_hash[0] as &byte) != 0 {
             fprintf(libc.stderr, "错误: git 依赖准备失败（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
             return 1;
         }
@@ -246,6 +257,11 @@ export fn upm_stage_dependency_recursive(
     var dep_manifest: UPMManifest = upm_manifest_init();
     if upm_parse_manifest(&manifest_path[0] as &byte, &dep_manifest) != 0 {
         return 1;
+    }
+    if dep.kind == UPMDependencyKind.UPM_DEP_PATH {
+        if upm_checksum_generate(&dep_manifest.source_root[0] as &byte, &content_hash[0] as &byte, UPM_MAX_REF_LEN) != 0 {
+            return 1;
+        }
     }
 
     const conflict_check: i32 = upm_check_dependency_conflicts(plan, &dep_manifest, dep, &resolved_commit[0] as &byte);
@@ -289,9 +305,22 @@ export fn upm_stage_dependency_recursive(
         _ = upm_string_copy(&locked_dep.ref_value[0] as &byte, UPM_MAX_REF_LEN, &resolved_commit[0] as &byte);
         upm_resolved_graph_record(plan, &dep_manifest, &locked_dep, &resolved_commit[0] as &byte);
         upm_lock_item_record(plan, &dep.alias[0] as &byte, &dep_manifest, &locked_dep);
+        if plan.lock_item_count > 0 {
+            const last_idx: i32 = plan.lock_item_count - 1;
+            if last_idx >= 0 {
+                _ = upm_string_copy(&plan.lock_items[last_idx].resolved_commit[0] as &byte, UPM_MAX_REF_LEN, &resolved_commit[0] as &byte);
+                _ = upm_string_copy(&plan.lock_items[last_idx].content_hash[0] as &byte, UPM_MAX_REF_LEN, &content_hash[0] as &byte);
+            }
+        }
     } else {
         upm_resolved_graph_record(plan, &dep_manifest, dep, null);
         upm_lock_item_record(plan, &dep.alias[0] as &byte, &dep_manifest, dep);
+        if plan.lock_item_count > 0 && content_hash[0] != 0 as byte {
+            const last_idx: i32 = plan.lock_item_count - 1;
+            if last_idx >= 0 {
+                _ = upm_string_copy(&plan.lock_items[last_idx].content_hash[0] as &byte, UPM_MAX_REF_LEN, &content_hash[0] as &byte);
+            }
+        }
     }
 
     if visited_count[0] >= UPM_MAX_VISITED {

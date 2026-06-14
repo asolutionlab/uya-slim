@@ -1,5 +1,7 @@
-use cmd.upm.upm_lib.build_plan.upm_shell_remove_tree;
-use libc;
+use cmd.upm.upm_lib.cache.upm_cache_git_repo_dir;
+use cmd.upm.upm_lib.cache.upm_cache_vcs_root;
+use cmd.upm.upm_lib.cache.upm_cache_path_is_ready;
+use cmd.upm.upm_lib.build_plan.upm_shell_mkdir_p;
 use libc.getenv;
 use libc.fork;
 use libc.waitpid;
@@ -23,6 +25,8 @@ use cmd.upm.upm_lib.path_utils.upm_join_path;
 use cmd.upm.upm_lib.path_utils.upm_is_file;
 use cmd.upm.upm_lib.path_utils.upm_exit_code_from_system_status;
 use cmd.upm.upm_lib.lockfile.upm_load_locked_git_commit;
+use cmd.upm.upm_lib.lockfile.upm_load_locked_git_content_hash;
+use cmd.upm.upm_lib.checksum.upm_checksum_generate;
 
 fn upm_trim_newline_in_place(buf: &byte) void {
     if buf == null {
@@ -251,22 +255,28 @@ export fn upm_git_prepare_checkout(
     dep: &UPMDependency,
     force_git_refresh: i32,
     checkout_dir_out: &byte,
-    commit_out: &byte
+    commit_out: &byte,
+    content_hash_out: &byte
 ) i32 {
-    if owner_manifest == null || dep == null || checkout_dir_out == null || commit_out == null {
+    if owner_manifest == null || dep == null || checkout_dir_out == null || commit_out == null || content_hash_out == null {
         return 1;
     }
-    var git_cache_root: [byte: UPM_PATH_MAX] = [];
-    if upm_join_path(&owner_manifest.package_root[0] as &byte, ".uya/git-cache" as &byte, &git_cache_root[0] as &byte, UPM_PATH_MAX) != 0 {
+    var vcs_root: [byte: UPM_PATH_MAX] = [];
+    if upm_cache_vcs_root(&vcs_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_shell_mkdir_p(&vcs_root[0] as &byte) != 0 {
         return 1;
     }
     var repo_dir: [byte: UPM_PATH_MAX] = [];
-    if upm_join_path(&git_cache_root[0] as &byte, &dep.alias[0] as &byte, &repo_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+    if upm_cache_git_repo_dir(&dep.git_url[0] as &byte, &dep.alias[0] as &byte, &repo_dir[0] as &byte, UPM_PATH_MAX) != 0 {
         return 1;
     }
-    _ = upm_shell_remove_tree(&repo_dir[0] as &byte);
-    if upm_git_clone_into(&dep.git_url[0] as &byte, &repo_dir[0] as &byte) != 0 {
-        return 1;
+    if force_git_refresh != 0 || upm_cache_path_is_ready(&repo_dir[0] as &byte) == 0 {
+        _ = upm_shell_remove_tree(&repo_dir[0] as &byte);
+        if upm_git_clone_into(&dep.git_url[0] as &byte, &repo_dir[0] as &byte) != 0 {
+            return 1;
+        }
     }
 
     var ref_to_use: [byte: UPM_MAX_REF_LEN] = [];
@@ -287,6 +297,18 @@ export fn upm_git_prepare_checkout(
         return 1;
     }
     if upm_git_rev_parse_head(&repo_dir[0] as &byte, commit_out) != 0 {
+        return 1;
+    }
+    var expected_hash: [byte: UPM_MAX_REF_LEN] = [];
+    expected_hash[0] = 0 as byte;
+    if force_git_refresh == 0 {
+        _ = upm_load_locked_git_content_hash(&owner_manifest.package_root[0] as &byte, &dep.alias[0] as &byte, &dep.git_url[0] as &byte, &expected_hash[0] as &byte);
+    }
+    if upm_checksum_generate(&repo_dir[0] as &byte, content_hash_out, UPM_MAX_REF_LEN) != 0 {
+        return 1;
+    }
+    if expected_hash[0] != 0 as byte && strcmp(&expected_hash[0] as *byte, content_hash_out as *byte) != 0 {
+        fprintf(libc.stderr, "错误: lockfile checksum 校验失败（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
         return 1;
     }
     return upm_string_copy(checkout_dir_out, UPM_PATH_MAX, &repo_dir[0] as &byte);

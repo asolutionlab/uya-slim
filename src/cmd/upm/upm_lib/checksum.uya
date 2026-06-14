@@ -1,0 +1,145 @@
+use libc;
+use libc.FILE;
+use libc.DIR;
+use libc.Dirent;
+use libc.opendir;
+use libc.readdir;
+use libc.closedir;
+use libc.fopen;
+use libc.fclose;
+use libc.fread;
+use std.string.strcmp;
+const UPM_DIRENT_OFF_D_NAME: usize = 19usize;
+
+fn upm_dirent_get_name(entry_ptr: &byte) &byte {
+    var p: &byte = entry_ptr;
+    p = p + UPM_DIRENT_OFF_D_NAME;
+    return p;
+}
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
+use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_bytes_copy;
+
+fn upm_checksum_hex_append_u64(value: u64, out: &byte, out_pos: &usize, cap: usize) i32 {
+    const alphabet: &byte = "0123456789abcdef" as &byte;
+    var shift: i32 = 60;
+    while shift >= 0 {
+        if out_pos[0] + 1usize >= cap {
+            return 1;
+        }
+        const nibble: u64 = (value >> shift) & 15u64;
+        out[out_pos[0]] = alphabet[nibble as usize];
+        out_pos[0] = out_pos[0] + 1usize;
+        shift = shift - 4;
+    }
+    return 0;
+}
+
+fn upm_checksum_hash_bytes(path: &byte, hash_io: &u64) i32 {
+    const file: &FILE = fopen(path as *byte, "rb" as *byte);
+    if file == null {
+        return 1;
+    }
+    var buf: [byte: 4096] = [];
+    while true {
+        const read_n: usize = fread(&buf[0] as *void, 1usize, 4096usize, file as *void);
+        if read_n == 0usize {
+            break;
+        }
+        var i: usize = 0usize;
+        while i < read_n {
+            hash_io[0] = hash_io[0] ^ (buf[i] as u64);
+            hash_io[0] = hash_io[0] * 1099511628211u64;
+            i = i + 1usize;
+        }
+    }
+    fclose(file);
+    return 0;
+}
+
+fn upm_checksum_ignore_name(name: &byte) i32 {
+    if name == null {
+        return 1;
+    }
+    if strcmp(name as *byte, "." as *byte) == 0 || strcmp(name as *byte, ".." as *byte) == 0 {
+        return 1;
+    }
+    if strcmp(name as *byte, ".git" as *byte) == 0 || strcmp(name as *byte, ".uya" as *byte) == 0 {
+        return 1;
+    }
+    if strcmp(name as *byte, "uya.lock" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_checksum_hash_tree_recursive(dir_path: &byte, hash_io: &u64) i32 {
+    const dir: *DIR = opendir(dir_path as *byte);
+    if dir == null {
+        return 1;
+    }
+    var entry: *Dirent = readdir(dir);
+    while entry != null {
+        const name: *byte = upm_dirent_get_name(entry as &byte) as *byte;
+        if upm_checksum_ignore_name(name as &byte) == 0 {
+            var child_path: [byte: UPM_PATH_MAX] = [];
+            if upm_join_path(dir_path, name as &byte, &child_path[0] as &byte, UPM_PATH_MAX) != 0 {
+                closedir(dir);
+                return 1;
+            }
+            var i: usize = 0usize;
+            while name[i] != 0 as byte {
+                hash_io[0] = hash_io[0] ^ (name[i] as u64);
+                hash_io[0] = hash_io[0] * 1099511628211u64;
+                i = i + 1usize;
+            }
+            if upm_is_directory(&child_path[0] as &byte) != 0 {
+                if upm_checksum_hash_tree_recursive(&child_path[0] as &byte, hash_io) != 0 {
+                    closedir(dir);
+                    return 1;
+                }
+            } else if upm_is_file(&child_path[0] as &byte) != 0 {
+                if upm_checksum_hash_bytes(&child_path[0] as &byte, hash_io) != 0 {
+                    closedir(dir);
+                    return 1;
+                }
+            }
+        }
+        entry = readdir(dir);
+    }
+    closedir(dir);
+    return 0;
+}
+
+export fn upm_checksum_generate(source_root: &byte, out: &byte, cap: usize) i32 {
+    if source_root == null || out == null || cap < 17usize {
+        return 1;
+    }
+    var hash: u64 = 1469598103934665603u64;
+    if upm_checksum_hash_tree_recursive(source_root, &hash) != 0 {
+        return 1;
+    }
+    var pos: usize = 0usize;
+    if upm_checksum_hex_append_u64(hash, out, &pos, cap) != 0 {
+        return 1;
+    }
+    out[pos] = 0 as byte;
+    return 0;
+}
+
+export fn upm_checksum_verify(source_root: &byte, expected: &byte) i32 {
+    if source_root == null || expected == null {
+        return 1;
+    }
+    var actual: [byte: UPM_MAX_REF_LEN] = [];
+    if upm_checksum_generate(source_root, &actual[0] as &byte, UPM_MAX_REF_LEN) != 0 {
+        return 1;
+    }
+    if strcmp(&actual[0] as *byte, expected as *byte) == 0 {
+        return 0;
+    }
+    return 1;
+}

@@ -75,6 +75,8 @@ export struct UPMDependency {
     kind: UPMDependencyKind,
     path_value: [byte: UPM_PATH_MAX],
     git_url: [byte: UPM_PATH_MAX],
+    module: [byte: UPM_MAX_META_LEN],
+    version: [byte: UPM_MAX_VERSION_LEN],
     ref_kind: UPMGitRefKind,
     ref_value: [byte: UPM_MAX_REF_LEN],
 }
@@ -88,6 +90,7 @@ export struct UPMManifest {
     bench_dir: [byte: UPM_PATH_MAX],
     example_dir: [byte: UPM_PATH_MAX],
     package_name: [byte: UPM_MAX_NAME_LEN],
+    module: [byte: UPM_MAX_META_LEN],
     version: [byte: UPM_MAX_VERSION_LEN],
     uya_min_version: [byte: UPM_MAX_VERSION_LEN],
     description: [byte: UPM_MAX_META_LEN],
@@ -102,6 +105,7 @@ export struct UPMManifest {
 export struct UPMLockItem {
     alias: [byte: UPM_MAX_ALIAS_LEN],
     package_name: [byte: UPM_MAX_NAME_LEN],
+    module: [byte: UPM_MAX_META_LEN],
     kind: UPMDependencyKind,
     path_raw: [byte: UPM_PATH_MAX],
     package_root: [byte: UPM_PATH_MAX],
@@ -109,18 +113,25 @@ export struct UPMLockItem {
     git_url: [byte: UPM_PATH_MAX],
     ref_kind: UPMGitRefKind,
     ref_value: [byte: UPM_MAX_REF_LEN],
+    resolved_version: [byte: UPM_MAX_VERSION_LEN],
+    resolved_commit: [byte: UPM_MAX_REF_LEN],
+    content_hash: [byte: UPM_MAX_REF_LEN],
 }
 
 export struct UPMResolvedDep {
     alias: [byte: UPM_MAX_ALIAS_LEN],
     package_name: [byte: UPM_MAX_NAME_LEN],
+    module: [byte: UPM_MAX_META_LEN],
     kind: UPMDependencyKind,
     package_root: [byte: UPM_PATH_MAX],
     source_root: [byte: UPM_PATH_MAX],
     path_raw: [byte: UPM_PATH_MAX],
     git_url: [byte: UPM_PATH_MAX],
     requested_ref: [byte: UPM_MAX_REF_LEN],
+    requested_version: [byte: UPM_MAX_VERSION_LEN],
     resolved_commit: [byte: UPM_MAX_REF_LEN],
+    resolved_version: [byte: UPM_MAX_VERSION_LEN],
+    content_hash: [byte: UPM_MAX_REF_LEN],
 }
 
 export struct UPMResolvedGraph {

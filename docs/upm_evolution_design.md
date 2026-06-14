@@ -874,7 +874,7 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 - M1：已完成
 - M2：接近完成（resolved graph 已落结构，resolver 已具备 plan-oriented 与 graph-oriented 双入口，仍保留过渡期 staging 耦合）
-- M3：进行中（主入口接入、alias-root 优先级与 package mode 专项测试已落地）
+- M3：已完成（主入口接入、alias-root 优先级与 package mode 专项测试已落地）
 - M4：未开始
 - M5：未开始
 
@@ -994,7 +994,7 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 ## 13. 结论
 
-`upm` 当前已经具备 MVP 闭环，但其长期价值不应停留在：
+当前 `upm` 已具备 MVP 闭环，且 M1/M2/M3 已完成，但其长期价值不应停留在：
 
 - 改写 `uya.toml`
 - 拉取 git/path 依赖
