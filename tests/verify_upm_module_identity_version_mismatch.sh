@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
 COMPILER="${UYA_COMPILER:-$ROOT_DIR/bin/uya-upm-stage2}"
 TMP_DIR="$(mktemp -d /tmp/uya_upm_module_version_mismatch.XXXXXX)"
+TMP_HOME="$TMP_DIR/home"
 WORK_DIR="$TMP_DIR/app"
 LOG_FILE="$TMP_DIR/build.log"
 DEP_ONE="$TMP_DIR/foo_one"
@@ -62,7 +63,7 @@ export fn foo_value() i32 {
 EOF_DEP2_SRC
 
 set +e
-"$COMPILER" build "$WORK_DIR" --no-split-c >"$LOG_FILE" 2>&1
+HOME="$TMP_HOME" "$COMPILER" build "$WORK_DIR" --no-split-c >"$LOG_FILE" 2>&1
 STATUS=$?
 set -e
 
@@ -72,5 +73,8 @@ if [ "$STATUS" -eq 0 ]; then
     exit 1
 fi
 
-grep -q 'exact version 不匹配' "$LOG_FILE"
+if ! grep -q 'exact version 不匹配' "$LOG_FILE"; then
+    cat "$LOG_FILE"
+    exit 1
+fi
 echo "verify_upm_module_identity_version_mismatch: ok"

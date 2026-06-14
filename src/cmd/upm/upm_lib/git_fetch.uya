@@ -17,6 +17,7 @@ use std.runtime.saved_envp;
 use cmd.upm.upm_lib.types.UPM_PATH_MAX;
 use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
 use cmd.upm.upm_lib.types.UPMDependency;
+use cmd.upm.upm_lib.types.UPMDependencyKind;
 use cmd.upm.upm_lib.types.UPMManifest;
 use cmd.upm.upm_lib.types.UPMGitRefKind;
 use cmd.upm.upm_lib.path_utils.upm_bytes_copy;
@@ -312,4 +313,33 @@ export fn upm_git_prepare_checkout(
         return 1;
     }
     return upm_string_copy(checkout_dir_out, UPM_PATH_MAX, &repo_dir[0] as &byte);
+}
+
+/// Prepares a dependency source for package resolution.
+///
+/// Parameters:
+/// - `owner_manifest`: manifest that owns the dependency request.
+/// - `dep`: dependency to fetch.
+/// - `force_refresh`: non-zero refreshes mutable remote state.
+/// - `checkout_dir_out`: receives the prepared package directory.
+/// - `commit_out`: receives the resolved immutable commit when available.
+/// - `content_hash_out`: receives the prepared source content hash.
+///
+/// Returns: `0` on success, non-zero on unsupported source kind or fetch failure.
+export fn upm_fetch_prepare_checkout(
+    owner_manifest: &UPMManifest,
+    dep: &UPMDependency,
+    force_refresh: i32,
+    checkout_dir_out: &byte,
+    commit_out: &byte,
+    content_hash_out: &byte
+) i32 {
+    if dep == null {
+        return 1;
+    }
+    if dep.kind == UPMDependencyKind.UPM_DEP_GIT {
+        return upm_git_prepare_checkout(owner_manifest, dep, force_refresh, checkout_dir_out, commit_out, content_hash_out);
+    }
+    fprintf(libc.stderr, "错误: 不支持的 fetch source kind（alias=%s）\n" as *byte, &dep.alias[0] as *byte);
+    return 1;
 }

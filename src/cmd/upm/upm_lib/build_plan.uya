@@ -22,10 +22,10 @@ use cmd.upm.upm_lib.path_utils.upm_make_absolute_path;
 use cmd.upm.upm_lib.path_utils.upm_join_path;
 use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
 use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.path_utils.upm_path_exists;
 use cmd.upm.upm_lib.manifest.upm_parse_manifest;
 use cmd.upm.upm_lib.resolver.upm_resolve_manifest_path;
 use cmd.upm.upm_lib.resolver.upm_resolve_graph_into_plan;
-use cmd.upm.upm_lib.resolver.upm_source_root_contains_alias;
 use cmd.upm.upm_lib.lockfile.upm_write_lockfile;
 
 export fn upm_shell_quote(src: &byte, out: &byte, cap: usize) i32 {
@@ -137,6 +137,44 @@ export fn upm_shell_copy_tree(src_dir: &byte, dst_dir: &byte) i32 {
         return 1;
     }
     return upm_shell_run(&cmd[0] as &byte, "复制目录树" as &byte);
+}
+
+/// Checks whether a materialized root already contains a dependency alias.
+///
+/// Parameters:
+/// - `build_root`: root directory to inspect.
+/// - `alias`: dependency alias to check.
+///
+/// Returns: non-zero when an alias directory or top-level alias `.uya` file exists.
+export fn upm_build_root_contains_alias(build_root: &byte, alias: &byte) i32 {
+    var alias_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(build_root, alias, &alias_dir[0] as &byte, UPM_PATH_MAX) == 0 {
+        if upm_path_exists(&alias_dir[0] as &byte) != 0 {
+            return 1;
+        }
+    }
+    var alias_file: [byte: UPM_PATH_MAX] = [];
+    const written: i32 = snprintf(&alias_file[0] as *byte, UPM_PATH_MAX, "%s%s.uya" as *byte, build_root as *byte, alias as *byte);
+    if written > 0 && written < UPM_PATH_MAX {
+        if upm_path_exists(&alias_file[0] as &byte) != 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/// Checks whether a source root already contains a dependency alias.
+///
+/// Parameters:
+/// - `source_root`: package source root to inspect.
+/// - `alias`: dependency alias to check.
+///
+/// Returns: non-zero when the alias would conflict with source-root files.
+export fn upm_source_root_contains_alias(source_root: &byte, alias: &byte) i32 {
+    if source_root == null || alias == null {
+        return 0;
+    }
+    return upm_build_root_contains_alias(source_root, alias);
 }
 
 export fn upm_build_plan_cleanup(plan: &UPMPackageBuildPlan) i32 {

@@ -59,7 +59,7 @@
 
 ## 2. `src/cmd/upm/upm_lib/types.uya`
 
-**状态**：已创建，Phase 1 已落地；Phase 2 的 resolved graph 结构与 Phase 3 的 `UPMPackageContext` 已落地。
+**状态**：已创建，Phase 1 已落地；Phase 2 的 resolved graph 结构、Phase 3 的 `UPMPackageContext`、Phase 4 的 identity/checksum 字段已落地。
 
 ### 目标职责
 
@@ -69,52 +69,52 @@
 
 - [x] 新建文件
 - [x] 迁移常量：
-  - [ ] `UPM_PATH_MAX`
-  - [ ] `UPM_LINE_MAX`
-  - [ ] `UPM_CMD_MAX`
-  - [ ] `UPM_MAX_DEPS`
-  - [ ] `UPM_MAX_ALIAS_LEN`
-  - [ ] `UPM_MAX_NAME_LEN`
-  - [ ] `UPM_MAX_VERSION_LEN`
-  - [ ] `UYA_UPM_RUNTIME_VERSION`
-  - [ ] `UPM_MAX_META_LEN`
-  - [ ] `UPM_MAX_REF_LEN`
-  - [ ] `UPM_MAX_LOCK_ITEMS`
-  - [ ] `UPM_MAX_VISITED`
+  - [x] `UPM_PATH_MAX`
+  - [x] `UPM_LINE_MAX`
+  - [x] `UPM_CMD_MAX`
+  - [x] `UPM_MAX_DEPS`
+  - [x] `UPM_MAX_ALIAS_LEN`
+  - [x] `UPM_MAX_NAME_LEN`
+  - [x] `UPM_MAX_VERSION_LEN`
+  - [x] `UYA_UPM_RUNTIME_VERSION`
+  - [x] `UPM_MAX_META_LEN`
+  - [x] `UPM_MAX_REF_LEN`
+  - [x] `UPM_MAX_LOCK_ITEMS`
+  - [x] `UPM_MAX_VISITED`
 - [x] 迁移 enum：
-  - [ ] `UPMManifestSection`
-  - [ ] `UPMDependencyKind`
-  - [ ] `UPMGitRefKind`
-  - [ ] `UPMBuildArgValueMode`
+  - [x] `UPMManifestSection`
+  - [x] `UPMDependencyKind`
+  - [x] `UPMGitRefKind`
+  - [x] `UPMBuildArgValueMode`
 - [x] 迁移 struct：
-  - [ ] `UPMDependency`
-  - [ ] `UPMManifest`
-  - [ ] `UPMLockItem`
-  - [ ] `UPMPackageBuildPlan`
-  - [ ] `UPMAddArgs`
-  - [ ] `UPMRemoveArgs`
+  - [x] `UPMDependency`
+  - [x] `UPMManifest`
+  - [x] `UPMLockItem`
+  - [x] `UPMPackageBuildPlan`
+  - [x] `UPMAddArgs`
+  - [x] `UPMRemoveArgs`
 - [x] 迁移 init helper：
-  - [ ] `upm_manifest_init()`
-  - [ ] `upm_build_plan_init()`
+  - [x] `upm_manifest_init()`
+  - [x] `upm_build_plan_init()`
 - [x] Phase 2 新增：
   - [x] `UPMResolvedDep`
   - [x] `UPMResolvedGraph`
 - [x] Phase 3 新增：
   - [x] `UPMPackageContext`
-- [ ] Phase 4 扩展字段：
-  - [ ] `UPMManifest.module`
-  - [ ] `UPMLockItem.module`
-  - [ ] `UPMLockItem.resolved_version`
-  - [ ] `UPMLockItem.resolved_commit`
-  - [ ] `UPMLockItem.content_hash`
-  - [ ] `UPMResolvedDep.module`
-  - [ ] `UPMResolvedDep.requested_version`
-  - [ ] `UPMResolvedDep.resolved_version`
-  - [ ] `UPMResolvedDep.content_hash`
+- [x] Phase 4 扩展字段：
+  - [x] `UPMManifest.module`
+  - [x] `UPMLockItem.module`
+  - [x] `UPMLockItem.resolved_version`
+  - [x] `UPMLockItem.resolved_commit`
+  - [x] `UPMLockItem.content_hash`
+  - [x] `UPMResolvedDep.module`
+  - [x] `UPMResolvedDep.requested_version`
+  - [x] `UPMResolvedDep.resolved_version`
+  - [x] `UPMResolvedDep.content_hash`
 
 ### 完成定义
-- [ ] 所有 upm 共享模型集中在 `types.uya`
-- [ ] 后续新模块不再在各文件内重复定义共享结构
+- [x] 所有 upm 共享模型集中在 `types.uya`
+- [x] 后续新模块不再在各文件内重复定义共享结构
 
 ---
 
@@ -128,31 +128,31 @@
 
 - [x] 新建文件
 - [x] 迁移函数：
-  - [ ] `upm_ascii_is_space`
-  - [ ] `upm_is_path_sep`
-  - [ ] `upm_normalize_path`
-  - [ ] `upm_exit_code_from_system_status`
-  - [ ] `upm_string_copy`
-  - [ ] `upm_bytes_copy`
-  - [ ] `upm_trim_copy`
-  - [ ] `upm_strip_inline_comment`
-  - [ ] `upm_is_absolute_path`
-  - [ ] `upm_path_dirname`
-  - [ ] `upm_path_parent_dir`
-  - [ ] `upm_ensure_trailing_slash`
-  - [ ] `upm_join_path`
-  - [ ] `upm_make_absolute_path`
-  - [ ] `upm_realpath_or_copy`
-  - [ ] `upm_path_exists`
-  - [ ] `upm_is_directory`
-  - [ ] `upm_is_file`
-  - [ ] `upm_source_dir_is_safe`
-- [ ] 统一处理跨文件 import 依赖
-- [ ] 让 `manifest.uya` / `resolver.uya` / `build_plan.uya` 复用该文件
+  - [x] `upm_ascii_is_space`
+  - [x] `upm_is_path_sep`
+  - [x] `upm_normalize_path`
+  - [x] `upm_exit_code_from_system_status`
+  - [x] `upm_string_copy`
+  - [x] `upm_bytes_copy`
+  - [x] `upm_trim_copy`
+  - [x] `upm_strip_inline_comment`
+  - [x] `upm_is_absolute_path`
+  - [x] `upm_path_dirname`
+  - [x] `upm_path_parent_dir`
+  - [x] `upm_ensure_trailing_slash`
+  - [x] `upm_join_path`
+  - [x] `upm_make_absolute_path`
+  - [x] `upm_realpath_or_copy`
+  - [x] `upm_path_exists`
+  - [x] `upm_is_directory`
+  - [x] `upm_is_file`
+  - [x] `upm_source_dir_is_safe`
+- [x] 统一处理跨文件 import 依赖
+- [x] 让 `manifest.uya` / `resolver.uya` / `build_plan.uya` 复用该文件
 
 ### 完成定义
-- [ ] path 相关工具不再散落于 `main.uya`
-- [ ] 后续 resolver/build_plan 可稳定复用
+- [x] path 相关工具不再散落于 `main.uya`
+- [x] 后续 resolver/build_plan 可稳定复用
 
 ---
 
@@ -166,29 +166,30 @@
 
 - [x] 新建文件
 - [x] 迁移函数：
-  - [ ] `upm_dep_init`
-  - [ ] `upm_parse_manifest_string_value`
-  - [ ] `upm_parse_version_component`
-  - [ ] `upm_compare_semver_like`
-  - [ ] `upm_validate_uya_min_version`
-  - [ ] `upm_parse_dependency_inline_table`
-  - [ ] `upm_parse_manifest`
-- [ ] 确保 `[layout]` 兼容逻辑保持不变
-- [ ] 确保报错文本尽量保持不变
-- [ ] Phase 4 扩展：
-  - [ ] 支持 `[package].module`
-  - [ ] 支持 dependency 中的 `module + version`
-- [ ] 继续保持对旧 `path/git` manifest 的兼容
+  - [x] `upm_dep_init`
+  - [x] `upm_parse_manifest_string_value`
+  - [x] `upm_parse_version_component`
+  - [x] `upm_compare_semver_like`
+  - [x] `upm_validate_uya_min_version`
+  - [x] `upm_parse_dependency_inline_table`
+  - [x] `upm_parse_manifest`
+- [x] 确保 `[layout]` 兼容逻辑保持不变
+- [x] 确保报错文本尽量保持不变
+- [x] Phase 4 扩展：
+  - [x] 支持 `[package].module`
+  - [x] 支持 dependency 中解析 `module + version`
+- [x] 继续保持对旧 `path/git` manifest 的兼容
+- [x] 纯 `module + version` 依赖解析到真实来源（resolver 已从本地 `~/.uya/pkg/mod/<module>/<version>` 内容缓存解析）
 
 ### 完成定义
-- [ ] manifest 解析不再混入 CLI / build / git 逻辑
-- [ ] manifest 字段扩展有稳定落点
+- [x] manifest 解析不再混入 CLI / build / git 逻辑
+- [x] manifest 字段扩展有稳定落点
 
 ---
 
 ## 5. `src/cmd/upm/upm_lib/lockfile.uya`
 
-**状态**：已创建并投入使用；Phase 4 的 lockfile v2 扩展尚未开始。
+**状态**：已创建并投入使用；Phase 4 的扩展字段写回、显式 lockfile `version = 2` 头、完整 lock item 读取入口与旧字段兼容读取已落地。
 
 ### 目标职责
 
@@ -198,29 +199,29 @@
 
 - [x] 新建文件
 - [x] 迁移函数：
-  - [ ] `upm_lock_item_record`
-  - [ ] `upm_dependency_exact_ref`
-  - [ ] `upm_lock_item_matches_source`
-  - [ ] `upm_write_lockfile(...)`
-  - [ ] `upm_load_locked_git_commit(...)`
-- [ ] 保持 install/update 当前 lock 语义不变
-- [ ] Phase 4 扩展：
-  - [ ] 设计 lockfile v2
-  - [ ] 支持 `module`
-  - [ ] 支持 `resolved_version`
-  - [ ] 支持 `resolved_commit`
-  - [ ] 支持 `content_hash`
-- [ ] 提供旧 lockfile 兼容读取能力
+  - [x] `upm_lock_item_record`
+  - [x] `upm_dependency_exact_ref`
+  - [x] `upm_lock_item_matches_source`
+  - [x] `upm_write_lockfile(...)`
+  - [x] `upm_load_locked_git_commit(...)`
+- [x] 保持 install/update 当前 lock 语义不变
+- [x] Phase 4 扩展：
+  - [x] 写回 `module`
+  - [x] 写回 `resolved_version`
+  - [x] 写回 `resolved_commit`
+  - [x] 写回 `content_hash`
+- [x] 提供旧 lockfile `commit` 兼容读取能力
+- [x] 明确 lockfile version/v2 头部与完整 lock item 读取策略
 
 ### 完成定义
-- [ ] lockfile 逻辑不再散落在 `main.uya`
-- [ ] lockfile 成为 resolver/fetch/cache 的稳定边界
+- [x] lockfile 逻辑不再散落在 `main.uya`
+- [x] lockfile 成为 resolver/fetch/cache 的稳定边界
 
 ---
 
 ## 6. `src/cmd/upm/upm_lib/git_fetch.uya`
 
-**状态**：已创建并投入使用；当前仍基于项目内 `.uya/git-cache`，尚未接入全局 cache。
+**状态**：已创建并投入使用；当前 git clone/cache 已接入全局 `~/.uya/pkg/vcs/`，resolver 通过通用 fetch 边界调用 git checkout。
 
 ### 目标职责
 
@@ -230,30 +231,31 @@
 
 - [x] 新建文件
 - [x] 迁移函数：
-  - [ ] `upm_find_git_binary`
-  - [ ] `upm_exec_argv_wait`
-  - [ ] `upm_exec_argv_capture_first_line`
-  - [ ] `upm_git_checkout_ref`
-  - [ ] `upm_git_rev_parse_head`
-  - [ ] `upm_git_clone_into`
-  - [ ] `upm_git_prepare_checkout`
-- [ ] 保持 git 错误码与失败文本稳定
-- [ ] Phase 4 扩展：
-  - [ ] 与全局 cache 集成
-  - [ ] cache hit 优先
-  - [ ] cache miss 再 fetch
-- [ ] Phase 5 扩展：
-  - [ ] 为 fetcher 抽象保留边界
+  - [x] `upm_find_git_binary`
+  - [x] `upm_exec_argv_wait`
+  - [x] `upm_exec_argv_capture_first_line`
+  - [x] `upm_git_checkout_ref`
+  - [x] `upm_git_rev_parse_head`
+  - [x] `upm_git_clone_into`
+  - [x] `upm_git_prepare_checkout`
+- [x] 保持 git 错误码与失败文本稳定
+- [x] Phase 4 扩展：
+  - [x] 与全局 cache 集成
+  - [x] cache hit 优先
+  - [x] cache miss 再 fetch
+- [x] Phase 5 扩展：
+  - [x] 为 fetcher 抽象保留边界
 
 ### 完成定义
-- [ ] git 获取逻辑有独立边界
-- [ ] 后续 proxy/cache 改造不再影响 CLI/manifest 解析
+- [x] git 获取逻辑有独立边界
+- [x] cache 改造不再影响 CLI/manifest 解析
+- [x] 后续 proxy 改造不再影响 CLI/manifest 解析
 
 ---
 
 ## 7. `src/cmd/upm/upm_lib/resolver.uya`
 
-**状态**：已创建并投入使用；当前已具备 resolved graph 初始化、记录、plan-oriented 与 graph-oriented 双入口，仍保留过渡期 staging 耦合。
+**状态**：已创建并投入使用；当前已具备 resolved graph 初始化、记录、plan-oriented 与 graph-oriented 双入口，graph-only resolve 已不再物化 `.uya/deps` / staging root。
 
 ### 目标职责
 
@@ -266,16 +268,20 @@
   - [x] `upm_find_manifest_upwards`
   - [x] `upm_resolve_manifest_path`
   - [x] `upm_check_dependency_conflicts`
-- [ ] 拆分当前递归逻辑，避免“解析依赖图”和“直接落盘 staging root”继续耦合
+- [x] 拆分当前递归逻辑，避免“解析依赖图”和“直接落盘 staging root”继续耦合
 - [x] 将 recursive dependency resolve 收口到 resolver
 - [x] 输出 `UPMResolvedGraph`
 - [x] Phase 3 扩展：
   - [x] 提供 package discovery 给 `src/main.uya`
   - [x] 支持构造 `UPMPackageContext`
-- [ ] Phase 4 扩展：
-  - [ ] 以 `module identity` 为核心解析 graph
-  - [ ] 支持 exact version resolve
-  - [ ] 结合 cache/checksum 进行 graph resolve
+- [x] Phase 4 扩展：
+  - [x] path/git 依赖携带 `module identity` 时校验目标包 identity
+  - [x] path/git 依赖携带 `version` 时执行 exact version 校验
+  - [x] 结合 global git cache 与 checksum 记录/校验进行 graph resolve
+- [x] Phase 4 剩余：
+  - [x] 支持纯 `module + version`（无 path/git 来源）解析到真实来源
+  - [x] 将 `content_hash` 写入 `UPMResolvedGraph` 的 dep 条目
+  - [x] 彻底拆分递归解析与 staging 物化
 - [ ] Phase 5 扩展：
   - [ ] 支持 proxy/registry/workspace 场景下的 graph resolve
 
@@ -298,27 +304,28 @@
 
 - [x] 新建文件
 - [x] 迁移 shell 物化相关函数：
-  - [ ] `upm_shell_quote`
-  - [ ] `upm_shell_run`
-  - [ ] `upm_shell_remove_tree`
-  - [ ] `upm_shell_mkdir_p`
-  - [ ] `upm_shell_copy_tree`
-- [ ] 迁移函数：
-  - [ ] `upm_build_plan_cleanup`
-  - [ ] `upm_build_root_contains_alias`
-  - [ ] `upm_prepare_build_plan`
-  - [ ] `upm_prepare_build_plan_ex`
-- [ ] 保持 `/tmp/uya-upm-build-<pid>/root` 方案兼容
-- [ ] Phase 3：作为 package mode 过渡期物化层继续存在
+  - [x] `upm_shell_quote`
+  - [x] `upm_shell_run`
+  - [x] `upm_shell_remove_tree`
+  - [x] `upm_shell_mkdir_p`
+  - [x] `upm_shell_copy_tree`
+- [x] 迁移函数：
+  - [x] `upm_build_plan_cleanup`
+  - [x] `upm_prepare_build_plan`
+  - [x] `upm_prepare_build_plan_ex`
+- [x] 将 `upm_build_root_contains_alias` 从 `resolver.uya` 移到更合适的物化/路径边界，或明确保留在 resolver 的理由
+- [x] 保持 `/tmp/uya-upm-build-<pid>/root` 方案兼容
+- [x] Phase 3：作为 package mode 过渡期物化层继续存在
 - [ ] 后续逐步降低其对 package 语义的承载程度
 
 ### 完成定义
-- [ ] build_plan 仅负责物化构建输入
-- [ ] 不再承担依赖图主语义
+- [x] build_plan 主要负责物化构建输入
+- [x] 不再承担依赖图主语义
+- [ ] resolver 与 staging 物化彻底解耦
 
 ---
 
-## 9. `src/cmd/upm/upm_lib/cache.uya`（Phase 4 建议新增）
+## 9. `src/cmd/upm/upm_lib/cache.uya`
 
 ### 目标职责
 
@@ -326,20 +333,22 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 设计 `~/.uya/pkg/vcs/` 布局
-- [ ] 设计 `~/.uya/pkg/mod/` 布局
-- [ ] 提供 cache lookup API
-- [ ] 提供 cache write API
-- [ ] 让 `git_fetch.uya` / `resolver.uya` 复用
+- [x] 新建文件
+- [x] 设计 `~/.uya/pkg/vcs/` 布局
+- [x] 设计 `~/.uya/pkg/mod/` 布局
+- [x] 提供 VCS cache lookup/key API
+- [x] 让 `git_fetch.uya` 复用 VCS cache API
+- [x] 提供并接入 `~/.uya/pkg/mod/` 内容层 write API
+- [x] 让 `resolver.uya` 直接复用 module cache 内容层
 
 ### 完成定义
-- [ ] 全局缓存有明确模块边界
-- [ ] 不再把缓存逻辑塞回 git_fetch/main
+- [x] 全局缓存有明确模块边界
+- [x] 不再把缓存逻辑塞回 git_fetch/main
+- [x] `pkg/mod` 内容层可实际复用
 
 ---
 
-## 10. `src/cmd/upm/upm_lib/checksum.uya`（Phase 4 建议新增）
+## 10. `src/cmd/upm/upm_lib/checksum.uya`
 
 ### 目标职责
 
@@ -347,15 +356,16 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 定义源码树 hash 规则
-- [ ] 定义忽略文件/目录规则
-- [ ] 提供 checksum generate API
-- [ ] 提供 checksum verify API
-- [ ] 让 lockfile/install/build 复用
+- [x] 新建文件
+- [x] 定义源码树 hash 规则
+- [x] 定义忽略文件/目录规则
+- [x] 提供 checksum generate API
+- [x] 提供 checksum verify API
+- [x] 让 lockfile/install/build 复用
+- [x] path 依赖按旧 lockfile checksum 做强校验
 
 ### 完成定义
-- [ ] checksum 生成/校验不再散落于 resolver/build/install 路径中
+- [x] checksum 生成/校验不再散落于 resolver/build/install 路径中
 
 ---
 
@@ -469,18 +479,18 @@
 
 ### `tests/verify_upm_suite.sh` 及相关测试
 - [ ] 每个里程碑结束后执行完整回归
-- [ ] 增加 package mode 下 `uya build/check/run/test` 测试
-- [ ] 增加 module identity / cache / checksum / exact version 测试
+- [x] 增加 package mode 下 `uya build/check/run/test` 测试
+- [x] 增加 module identity / cache / checksum / exact version 测试
 - [ ] 增加 proxy / workspace / diagnostics 测试
 
 ### `docs/package_management.md`
-- [ ] 随实现推进同步“当前实现状态”
-- [ ] 保持 v1 draft 与长期演进设计边界清晰
+- [x] 随实现推进同步“当前实现状态”
+- [x] 保持 v1 draft 与长期演进设计边界清晰
 
 ### `docs/upm_evolution_design.md`
-- [ ] 随里程碑推进更新阶段状态
-- [ ] 同步文件映射和优先级变化
+- [x] 随里程碑推进更新阶段状态
+- [x] 同步文件映射和优先级变化
 
 ### `docs/upm_todolist.md`
-- [ ] 保持按里程碑 TODO 的总览视图
-- [ ] 与本文件保持一致
+- [x] 保持按里程碑 TODO 的总览视图
+- [x] 与本文件保持一致

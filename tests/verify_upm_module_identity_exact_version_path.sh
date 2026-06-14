@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
 COMPILER="${UYA_COMPILER:-$ROOT_DIR/bin/uya-upm-stage2}"
 TMP_DIR="$(mktemp -d /tmp/uya_upm_module_identity.XXXXXX)"
+TMP_HOME="$TMP_DIR/home"
 WORK_DIR="$TMP_DIR/app"
 LOG_FILE="$TMP_DIR/build.log"
 DEP_DIR="$TMP_DIR/foo_pkg"
@@ -49,8 +50,10 @@ export fn foo_value() i32 {
 }
 EOF_DEP_SRC
 
-"$COMPILER" build "$WORK_DIR" --no-split-c >"$LOG_FILE" 2>&1
+HOME="$TMP_HOME" "$COMPILER" build "$WORK_DIR" --no-split-c >"$LOG_FILE" 2>&1
 grep -q 'resolved_version = "1.2.3"' "$WORK_DIR/uya.lock"
 grep -q 'content_hash = "' "$WORK_DIR/uya.lock"
+test -f "$TMP_HOME/.uya/pkg/mod/uya.local/foo/1.2.3/uya.toml"
+test -f "$TMP_HOME/.uya/pkg/mod/uya.local/foo/1.2.3/src/file.uya"
 
 echo "verify_upm_module_identity_exact_version_path: ok"

@@ -81,13 +81,15 @@
    - `upm build` 是 package-aware
    - `uya build/check/run/test` 尚未统一原生 package-aware
 
-4. **依赖身份仍偏局部**
-   - 主要基于 alias / package_name / source/ref
-   - 缺少稳定 module identity
+4. **依赖身份已具备 module identity 基础**
+   - path/git 依赖可携带 `module + version` 做 identity 与 exact version 校验
+   - 纯 `module + version` 依赖可从本地 `~/.uya/pkg/mod/` 内容缓存解析
 
-5. **缓存与校验模型尚未系统化**
-   - 主要依赖项目内 `.uya/git-cache`
-   - lockfile 尚未承担 checksum 与稳定 identity 的职责
+5. **缓存与校验模型已进入可用状态**
+   - 当前 git 获取已接入全局 `~/.uya/pkg/vcs/`
+   - `~/.uya/pkg/mod/` 内容层已可写入并复用
+   - lockfile 已可写入 `module` / `resolved_version` / `resolved_commit` / `content_hash`
+   - checksum 覆盖 path/git 与本地 `pkg/mod` 内容缓存源码树；path/git 均会按旧 lockfile checksum 做校验
 
 ---
 
@@ -513,7 +515,7 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 #### 6.4.2 Global Cache
 
-从当前项目内：
+从早期/历史项目内：
 
 - `.uya/git-cache/`
 
@@ -521,6 +523,8 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 - `~/.uya/pkg/vcs/`
 - `~/.uya/pkg/mod/`
+
+当前代码已接入 `~/.uya/pkg/vcs/` 作为 git clone/cache；`~/.uya/pkg/mod/` 仍仅有目录布局 API，尚未作为模块内容层实际写入与复用。
 
 分层建议：
 
@@ -580,7 +584,8 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 ### 验收标准
 
 - 旧 path/git 项目继续可用
-- 新项目可使用 `module + version`
+- 新项目可在 path/git 依赖上携带 `module + version` 进行 identity 与 exact version 校验
+- 纯 `module + version`（无 path/git 来源）依赖解析完成
 - 同依赖跨项目可复用缓存
 - lockfile 可记录 identity + checksum
 
@@ -870,12 +875,12 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 ## 12. 实施优先级与里程碑表
 
-**当前状态（2026-06-12）**：
+**当前状态（2026-06-14）**：
 
 - M1：已完成
-- M2：接近完成（resolved graph 已落结构，resolver 已具备 plan-oriented 与 graph-oriented 双入口，仍保留过渡期 staging 耦合）
+- M2：主体已完成（resolved graph 已落结构，resolver 已具备 plan-oriented 与 graph-oriented 双入口；graph-only resolve 已不再物化 staging）
 - M3：已完成（主入口接入、alias-root 优先级与 package mode 专项测试已落地）
-- M4：未开始
+- M4：已完成（`package.module`、依赖 `module/version` 解析、path/git identity 校验、global git cache、`pkg/mod` 内容层、checksum、lockfile v2 头部、resolved graph hash 与 graph-only/staging 拆分已落地；registry/proxy/workspace 属于 M5）
 - M5：未开始
 
 本节用于把前文的阶段性设计压缩成更适合执行和排期的视图。
@@ -955,8 +960,10 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 - manifest 可表达稳定 module identity
 - lockfile 可表达 resolved identity + checksum
-- 同依赖可跨项目复用缓存
-- exact version 语义稳定可用
+- git 依赖可跨项目复用 `~/.uya/pkg/vcs/` 缓存
+- path/git 依赖携带 `module + version` 时，exact version 校验稳定可用
+- 纯 `module + version` 依赖可解析到真实来源
+- `~/.uya/pkg/mod/` 模块内容层可被实际写入与复用
 
 #### M5 完成定义
 
@@ -994,7 +1001,7 @@ foo = { module = "uya.io/foo", version = "1.2.3" }
 
 ## 13. 结论
 
-当前 `upm` 已具备 MVP 闭环，且 M1/M2/M3 已完成，但其长期价值不应停留在：
+当前 `upm` 已具备 MVP 闭环，M1/M2/M3 已完成，M4 中的 module identity、global git cache、`pkg/mod` 内容层、checksum 与 lockfile v2 扩展已部分落地，但其长期价值不应停留在：
 
 - 改写 `uya.toml`
 - 拉取 git/path 依赖

@@ -1,7 +1,7 @@
 # Uya Package Management v1 Draft
 
-**状态**: design draft, MVP prototype implemented in current branch
-**更新日期**: 2026-06-12
+**状态**: design draft, MVP prototype + partial M4 implementation in current branch
+**更新日期**: 2026-06-14
 **适用范围**: `uya.toml`、`uya.lock`、`uya upm`、带依赖的 `uya build/check/run/test`
 **相关文档**:
 
@@ -20,7 +20,7 @@
   - `uya build file.uya`
   - `uya build dir/`
   - `uya run/test/check ...`
-- 中央 registry、版本求解、多版本并存、workspace 和 publish 流程都还不是 v1 目标。
+- 中央 registry、纯 `module + version` 来源解析、版本求解、多版本并存、workspace 和 publish 流程都还不是 v1 目标。
 
 历史文档与当前源码之间还有几处需要明确拆开的漂移：
 
@@ -62,12 +62,13 @@
 
 依赖被解析并准备给编译器使用后的源码根。v1 对用户暴露 alias 和 import 规则，不要求用户直接引用内部 vendor 路径。
 
-### 2.6 install directory
+### 2.6 install directory / cache directory
 
-包管理器为当前 package root 写入依赖内容的本地目录。v1 采用隐藏目录：
+包管理器为当前 package root 写入依赖内容的本地目录，以及跨项目复用的全局缓存目录。当前实现采用：
 
 - `.uya/deps/`：已安装依赖
-- `.uya/git-cache/`：Git clone/cache
+- `~/.uya/pkg/vcs/`：全局 Git clone/cache
+- `~/.uya/pkg/mod/`：全局模块内容层目录，path/git 依赖带有 `package.module + package.version` 时会写入，纯 `module + version` 依赖可从这里复用
 
 ### 2.7 lockfile
 
@@ -95,7 +96,7 @@ v1 不承诺以下能力：
 - semver range / SAT solver / 版本回溯
 - workspaces / monorepo 统一锁定
 - 同一 import alias 的多版本并存
-- checksum / signature / registry mirror
+- signature / registry mirror
 - 二进制包和预编译缓存
 
 ---
@@ -206,6 +207,7 @@ v1 最小字段集合：
 ```toml
 [package]
 name = "hello"
+module = "uya.local/hello"
 version = "0.1.0"
 source-dir = "."
 description = "optional"
@@ -216,6 +218,7 @@ repository = "optional"
 字段规则：
 
 - `name`：必填；包名
+- `module`：可选；稳定模块身份，用于后续跨项目/生态级解析
 - `version`：必填；版本字符串
 - `source-dir`：可选；默认 `"."`
 - `description` / `license` / `repository`：可选元数据
@@ -267,12 +270,15 @@ v1 支持：
 http = { path = "../http" }
 json = { git = "https://example.com/json.git", tag = "v1.2.3" }
 util = { git = "ssh://git@example.com/util.git", commit = "abc123" }
+foo = { path = "../foo", module = "uya.local/foo", version = "1.2.3" }
 ```
 
 规则：
 
 - 一个依赖必须二选一：`path` 或 `git`
 - Git 依赖的 `tag` / `branch` / `commit` 三选一
+- 依赖可选携带 `module` 与 `version`，用于校验目标包的 `package.module` 与 exact `package.version`
+- 纯 `foo = { module = "...", version = "..." }` 当前会从 `~/.uya/pkg/mod/<module>/<version>` 内容缓存解析真实包；尚未接入 registry/proxy 自动发现来源
 - 不支持字符串 shorthand，如 `http = "../http"`
 - `path` 相对当前 manifest 所在目录解析
 - path 依赖与 git 依赖都要求目标包自身包含 `uya.toml`
@@ -292,19 +298,23 @@ util = { git = "ssh://git@example.com/util.git", commit = "abc123" }
 
 ### 6.1 文件格式
 
-`uya.lock` 采用 TOML，与 manifest 同风格，顶层包含锁文件版本：
+`uya.lock` 采用 TOML，与 manifest 同风格。当前实现写出顶层 `version = 2`，并兼容读取无显式版本头的旧 lockfile：
 
 ```toml
-version = 1
+version = 2
 
 [[package]]
 alias = "http"
 name = "http"
+module = "uya.local/http"
 source_kind = "git"
 git = "https://example.com/http.git"
 commit = "0123456789abcdef"
-source_dir = "."
-dependencies = ["util"]
+package_root = "/abs/cache/http/"
+source_root = "/abs/cache/http/src/"
+resolved_version = "1.2.3"
+resolved_commit = "0123456789abcdef"
+content_hash = "0123456789abcdef"
 ```
 
 ### 6.2 锁定内容
@@ -313,16 +323,21 @@ dependencies = ["util"]
 
 - `alias`
 - `name`
+- `module`（若依赖声明或目标包提供）
 - `source_kind`
 - 对 path：
   - 原始 manifest 相对路径
   - 规范化后的绝对 package root
-  - v1 不记录 manifest hash / mtime
+  - source root
+  - content hash
 - 对 git：
   - `git` URL
   - 精确 `commit`
-- `source_dir`
-- 直接依赖 alias 列表
+- `package_root`
+- `source_root`
+- `resolved_version`
+- `resolved_commit`
+- `content_hash`
 
 ### 6.3 分支和标签
 
@@ -340,7 +355,7 @@ v1 约定：
 
 - `upm install`：若 lockfile 缺失，则解析并生成
 - `upm update`：重新解析并刷新 lockfile
-- `upm add/remove`：当该命令进入 MVP 时，应同步重写 lockfile
+- `upm add/remove`：当前已进入 MVP；命令会改写 manifest，并通过一次依赖同步重写 lockfile
 - `uya build/check/run/test`：
   - 优先读取 lockfile
   - lockfile 缺失时允许按 manifest 解析，并生成 lockfile
@@ -351,7 +366,10 @@ v1 约定：
 - `uya.lock` 不应手动编辑
 - lockfile 保障的是“同一份解析结果可重现”
 - lockfile 不保证下载源永久可用
-- v1 不做 checksum / signature / registry mirror
+- 当前实现会写入源码树 `content_hash`
+- git 依赖在已有 lockfile checksum 时会校验，校验失败会阻止构建
+- path 依赖当前会生成并写入 checksum，但尚未按旧 lockfile checksum 做强校验
+- v1 不做 signature / registry mirror
 
 ---
 
@@ -417,11 +435,11 @@ v1 采用隐藏目录：
 ```text
 .uya/
   deps/
-  git-cache/
 ```
 
 - `.uya/deps/`：安装好的依赖内容
-- `.uya/git-cache/`：Git 下载缓存
+- `~/.uya/pkg/vcs/`：跨项目复用的 Git 下载缓存
+- `~/.uya/pkg/mod/`：模块内容层缓存目录；当前已可写入并复用
 - package mode 的临时 build root 当前放在 `TMPDIR` 或 `/tmp` 下，例如 `/tmp/uya-upm-build-<pid>/root/`
 
 ### 8.2 path 依赖安全规则
@@ -564,11 +582,24 @@ v1 至少要能稳定报出以下错误：
   - manifest/lock 子集解析
   - path 依赖安装与构建接入
   - git 依赖安装、lockfile 落地与 branch/update 行为
+  - `package.module` 解析
+  - path/git 依赖携带 `module + version` 时的 identity 与 exact version 校验
+  - 纯 `module + version` 依赖从 `~/.uya/pkg/mod/<module>/<version>` 解析
+  - 全局 git cache：`~/.uya/pkg/vcs/`
+  - 模块内容缓存：`~/.uya/pkg/mod/`
+  - lockfile v2 头部与完整 lock item 读取入口
+  - 源码树 `content_hash` 写入 lockfile
+  - git 依赖 lockfile checksum 校验
+  - path 依赖按旧 lockfile checksum 做强校验
+  - `content_hash` 写入 resolved graph 条目
+  - graph-only resolve 不再落盘 `.uya/deps` / staging root
   - `cmd/upm`
   - repo-local `bin/uya-upm-stage2` 调度与 package build 验证入口
-- 仍保留为第二批：
   - `upm add`
   - `upm remove`
+- 尚未实现：
+  - registry/proxy 自动发现纯 `module + version` 依赖来源
+  - workspace / publish / diagnostics 等 Phase 5 生态能力
 
 ### 12.3 后续演进与正式设计文档
 
@@ -581,7 +612,7 @@ v1 至少要能稳定报出以下错误：
 - `src/cmd/upm/upm_lib/main.uya` 的分层拆分方向
 - `resolver` / `build_plan` / `lockfile` / `git_fetch` 的目标边界
 - package mode 下沉到编译器主流程的路径
-- `module identity`、global cache、checksum 与版本模型的后续设计
+- `module identity`、global cache、checksum 与版本模型的当前实现边界和后续设计
 - proxy / registry / workspace / publish 的长期扩展路线
 
 ### 12.4 明确尚未承诺

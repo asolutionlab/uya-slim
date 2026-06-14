@@ -52,6 +52,7 @@ PY
 HOME="$TMP_HOME" "$COMPILER" build "$APP_DIR" -o "$OUT_BIN" --no-split-c >/dev/null 2>&1
 "$OUT_BIN" >"$RUN_LOG" 2>&1
 grep -q "git-v1" "$RUN_LOG"
+grep -q '^version = 2$' "$LOCK_FILE"
 if ! grep -q 'resolved_commit = "' "$LOCK_FILE"; then
     cat "$LOCK_FILE"
     exit 1

@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 COMPILER="${UYA_COMPILER:-$ROOT_DIR/bin/uya-upm-stage2}"
 CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
 TMP_DIR="$(mktemp -d /tmp/uya_upm_git_ref_conflict.XXXXXX)"
+TMP_HOME="$TMP_DIR/home"
 APP_TEMPLATE="$ROOT_DIR/tests/fixtures/upm/git_ref_conflict/app"
 REPO_SEED="$ROOT_DIR/tests/fixtures/upm/git_dep/repo_seed"
 REPO_DIR="$TMP_DIR/repo.git"
@@ -64,7 +65,7 @@ src.unlink()
 PY
 
 set +e
-"$COMPILER" build "$APP_DIR" -o "$OUT_BIN" --no-split-c >"$BUILD_LOG" 2>&1
+HOME="$TMP_HOME" "$COMPILER" build "$APP_DIR" -o "$OUT_BIN" --no-split-c >"$BUILD_LOG" 2>&1
 STATUS=$?
 set -e
 
@@ -74,7 +75,9 @@ if [ "$STATUS" -eq 0 ]; then
     exit 1
 fi
 
-grep -q "git_hello" "$BUILD_LOG"
-grep -q "ref" "$BUILD_LOG"
+if ! grep -q "git_hello" "$BUILD_LOG" || ! grep -q "ref" "$BUILD_LOG"; then
+    cat "$BUILD_LOG"
+    exit 1
+fi
 
 echo "verify_upm_git_ref_conflict: ok"

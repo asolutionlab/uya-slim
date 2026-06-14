@@ -7,6 +7,8 @@ use cmd.upm.upm_lib.path_utils.upm_string_copy;
 use cmd.upm.upm_lib.path_utils.upm_join_path;
 use cmd.upm.upm_lib.path_utils.upm_make_absolute_path;
 use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_source_dir_is_safe;
 
 export fn upm_cache_home_dir(out: &byte, cap: usize) i32 {
     if out == null || cap == 0usize {
@@ -105,4 +107,64 @@ export fn upm_cache_path_is_ready(path: &byte) i32 {
         return 0;
     }
     return upm_is_directory(&abs_path[0] as &byte);
+}
+
+fn upm_cache_version_segment_is_safe(version: &byte) i32 {
+    if version == null || version[0] == 0 as byte {
+        return 0;
+    }
+    var i: usize = 0usize;
+    while version[i] != 0 as byte {
+        if version[i] == 47 as byte || version[i] == 92 as byte {
+            return 0;
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}
+
+/// 计算 `~/.uya/pkg/mod/<module>/<version>` 的模块内容缓存目录。
+/// 参数说明：`module_name` 与 `version` 为 exact module identity；`out/cap` 接收路径。
+/// 返回值说明：成功返回 `0`，字段非法、HOME 缺失或路径过长返回非 `0`。
+export fn upm_cache_mod_package_dir(module_name: &byte, version: &byte, out: &byte, cap: usize) i32 {
+    if module_name == null || version == null || out == null || cap == 0usize {
+        return 1;
+    }
+    if upm_source_dir_is_safe(module_name) == 0 || upm_cache_version_segment_is_safe(version) == 0 {
+        return 1;
+    }
+    var mod_root: [byte: UPM_PATH_MAX] = [];
+    if upm_cache_mod_root(&mod_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var module_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&mod_root[0] as &byte, module_name, &module_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_join_path(&module_dir[0] as &byte, version, out, cap);
+}
+
+/// 计算模块内容缓存中的 `uya.toml` 路径。
+/// 参数说明：`module_name` 与 `version` 为 exact module identity；`out/cap` 接收 manifest 路径。
+/// 返回值说明：成功返回 `0`，字段非法、HOME 缺失或路径过长返回非 `0`。
+export fn upm_cache_mod_manifest_path(module_name: &byte, version: &byte, out: &byte, cap: usize) i32 {
+    if module_name == null || version == null || out == null || cap == 0usize {
+        return 1;
+    }
+    var package_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_cache_mod_package_dir(module_name, version, &package_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_join_path(&package_dir[0] as &byte, "uya.toml" as &byte, out, cap);
+}
+
+/// 判断 exact module identity 的内容缓存是否可用于解析依赖。
+/// 参数说明：`module_name` 与 `version` 为依赖声明中的 module 与 exact version。
+/// 返回值说明：存在可读 `uya.toml` 时返回 `1`，否则返回 `0`。
+export fn upm_cache_mod_is_ready(module_name: &byte, version: &byte) i32 {
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_cache_mod_manifest_path(module_name, version, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 0;
+    }
+    return upm_is_file(&manifest_path[0] as &byte);
 }

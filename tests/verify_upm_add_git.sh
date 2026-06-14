@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
 TMP_DIR="$(mktemp -d /tmp/uya_upm_add_git.XXXXXX)"
+TMP_HOME="$TMP_DIR/home"
 APP_DIR="$TMP_DIR/app"
 REPO_DIR="$TMP_DIR/repo.git"
 REPO_WORK_DIR="$TMP_DIR/repo-work"
@@ -54,7 +55,10 @@ git -C "$REPO_WORK_DIR" branch -M main
 git -C "$REPO_WORK_DIR" push origin main >/dev/null
 git --git-dir="$REPO_DIR" symbolic-ref HEAD refs/heads/main
 
-"$ROOT_DIR/bin/cmd/upm" add gui_uya --git "$REPO_DIR" --branch main --manifest-path "$APP_DIR/uya.toml" >"$INSTALL_LOG" 2>&1
+if ! HOME="$TMP_HOME" "$ROOT_DIR/bin/cmd/upm" add gui_uya --git "$REPO_DIR" --branch main --manifest-path "$APP_DIR/uya.toml" >"$INSTALL_LOG" 2>&1; then
+    cat "$INSTALL_LOG"
+    exit 1
+fi
 
 grep -q 'gui_uya = { git = "' "$APP_DIR/uya.toml"
 grep -q 'branch = "main"' "$APP_DIR/uya.toml"
@@ -62,7 +66,7 @@ test -f "$APP_DIR/uya.lock"
 grep -q 'source_kind = "git"' "$APP_DIR/uya.lock"
 
 set +e
-"$ROOT_DIR/bin/cmd/upm" add bad_dep --git "$REPO_DIR" --branch main --tag v1 --manifest-path "$APP_DIR/uya.toml" >"$PARAM_LOG" 2>&1
+HOME="$TMP_HOME" "$ROOT_DIR/bin/cmd/upm" add bad_dep --git "$REPO_DIR" --branch main --tag v1 --manifest-path "$APP_DIR/uya.toml" >"$PARAM_LOG" 2>&1
 STATUS=$?
 set -e
 
@@ -75,7 +79,7 @@ fi
 grep -q 'upm add 参数无效' "$PARAM_LOG"
 
 set +e
-"$ROOT_DIR/bin/cmd/upm" add dev_dep --dev --path "$REPO_DIR" --manifest-path "$APP_DIR/uya.toml" >"$PARAM_LOG" 2>&1
+HOME="$TMP_HOME" "$ROOT_DIR/bin/cmd/upm" add dev_dep --dev --path "$REPO_DIR" --manifest-path "$APP_DIR/uya.toml" >"$PARAM_LOG" 2>&1
 STATUS=$?
 set -e
 

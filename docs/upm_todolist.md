@@ -41,7 +41,7 @@
 
 ## P0 / M2：拆出核心子模块
 
-**状态**：接近完成（2026-06-12）
+**状态**：主体已完成（2026-06-12；resolver 与 staging 仍有过渡期耦合）
 
 ### 目标
 
@@ -84,7 +84,7 @@
 
 ## P1 / M3：将 package mode 下沉到编译器
 
-**状态**：进行中（2026-06-12）
+**状态**：已完成（2026-06-12）
 
 ### 目标
 
@@ -120,35 +120,46 @@
 
 ## P2 / M4：引入身份 / 缓存 / 校验 / 版本
 
+**状态**：已完成（2026-06-14）
+
 ### 目标
 
 把 `upm` 从“能拉依赖”升级为“能稳定标识、缓存、验证依赖”的模块系统。
 
 ### TODO
 
-- [ ] 在 `UPMManifest` 中增加 `module` 字段
-- [ ] 在 manifest 解析中支持 `[package].module`
-- [ ] 在 dependency 声明中支持 `module + version`
-- [ ] 保持旧 `path/git` 声明兼容
-- [ ] 在 `UPMLockItem` 中增加 `module / resolved_version / resolved_commit / content_hash`
-- [ ] 设计并实现 lockfile v2 读取与写回策略
-- [ ] 设计全局缓存目录布局：`~/.uya/pkg/vcs/` 与 `~/.uya/pkg/mod/`
-- [ ] 在 fetch 流程中优先查全局缓存
-- [ ] cache miss 时执行 fetch，并写入全局缓存
-- [ ] 新增 checksum 规则（源码树 hash）
-- [ ] install 时生成并写入 checksum
-- [ ] build/install 时校验 checksum
-- [ ] 在 `UPMResolvedDep` 中增加 `module / requested_version / resolved_version / content_hash`
-- [ ] 支持 exact version 模型
-- [ ] 保持旧 path/git 项目继续可用
-- [ ] 为 module identity / cache / checksum / exact version 增加测试
+- [x] 在 `UPMManifest` 中增加 `module` 字段
+- [x] 在 manifest 解析中支持 `[package].module`
+- [x] 在 dependency 声明中解析 `module + version`
+- [x] 支持 path/git 依赖携带 `module + version` 进行 identity 校验
+- [x] 支持纯 `module + version`（无 path/git 来源）解析到真实来源
+- [x] 保持旧 `path/git` 声明兼容
+- [x] 在 `UPMLockItem` 中增加 `module / resolved_version / resolved_commit / content_hash`
+- [x] 扩展 lockfile 写回字段并兼容读取旧 `commit`
+- [x] 明确 lockfile version/v2 头部与完整读取策略
+- [x] 设计全局缓存目录布局：`~/.uya/pkg/vcs/` 与 `~/.uya/pkg/mod/`
+- [x] 在 git fetch 流程中优先查 `~/.uya/pkg/vcs/`
+- [x] cache miss 时执行 git fetch，并写入全局 VCS 缓存
+- [x] 实际写入并复用 `~/.uya/pkg/mod/` 模块内容层
+- [x] 新增 checksum 规则（源码树 hash）
+- [x] install/build 时生成并写入 checksum
+- [x] git 依赖 build/install 时校验 lockfile checksum
+- [x] path 依赖按旧 lockfile checksum 做强校验
+- [x] 在 `UPMResolvedDep` 中增加 `module / requested_version / resolved_version / content_hash`
+- [x] 将 `content_hash` 写入 resolved graph 条目
+- [x] 支持 path/git 依赖的 exact version 校验模型
+- [x] 支持纯 `module + version` exact version resolve
+- [x] 保持旧 path/git 项目继续可用
+- [x] 为 module identity / cache / checksum / exact version 增加测试
 
 ### 完成定义
 
-- [ ] manifest 可表达稳定 module identity
-- [ ] lockfile 可表达 resolved identity + checksum
-- [ ] 同依赖可跨项目复用缓存
-- [ ] exact version 语义稳定可用
+- [x] manifest 可表达稳定 module identity
+- [x] lockfile 可表达 resolved identity + checksum
+- [x] git 依赖可跨项目复用全局 VCS 缓存
+- [x] path/git 依赖携带 `module + version` 时 exact version 语义稳定可用
+- [x] 纯 `module + version` 依赖可解析到真实来源
+- [x] `~/.uya/pkg/mod/` 模块内容层可实际复用
 
 ---
 
