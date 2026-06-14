@@ -2520,10 +2520,11 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
     // 消费 'use'
     parser_consume(parser);
     
-    // 解析模块路径（identifier { '.' identifier }）
+    // 解析模块路径（identifier { '.' identifier }），末尾允许 `.*` 通配导入。
     var path_segments: & & byte = null;
     var path_segment_count: i32 = 0;
     var path_segment_capacity: i32 = 0;
+    var is_wildcard_import: i32 = 0;
     
     // 至少需要一个标识符
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
@@ -2587,6 +2588,20 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
             break;
         }
         parser_consume(parser);
+        if parser_match(parser, TokenType.TOKEN_ASTERISK) != 0 {
+            is_wildcard_import = 1;
+            parser_consume(parser);
+            break;
+        }
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+            var filename_after_dot: &byte = "(unknown)" as *byte;
+            if parser.lexer != null && parser.lexer.filename != null {
+                filename_after_dot = parser.lexer.filename;
+            }
+            fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): '.' 后期望路径段或 '*'\n" as *byte,
+                    filename_after_dot, parser.current_token.line, parser.current_token.column);
+            return null;
+        }
     }
     
     // 创建 use 语句节点
@@ -2600,8 +2615,15 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
     use_stmt.use_stmt_item_name = null;
     use_stmt.use_stmt_alias = null;
     
+    if is_wildcard_import != 0 {
+        use_stmt.use_stmt_item_name = arena_strdup(parser.arena, "*" as *byte);
+        if use_stmt.use_stmt_item_name == null {
+            return null;
+        }
+    }
+    
     // 检查是否有特定项名称（use path.item;）
-    if parser_match(parser, TokenType.TOKEN_DOT) != 0 {
+    if is_wildcard_import == 0 && parser_match(parser, TokenType.TOKEN_DOT) != 0 {
         parser_consume(parser);
         if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
             var filename: &byte = "(unknown)" as *byte;

@@ -884,6 +884,88 @@ fn build_module_exports(checker: &TypeChecker, program: &ASTNode) void {
     }
 }
 
+fn checker_use_item_is_wildcard(item_name: &byte) i32 {
+    if item_name == null {
+        return 0;
+    }
+    return str_equals(item_name, "*" as *byte);
+}
+
+fn checker_insert_import_item(
+    checker: &TypeChecker,
+    local_name: &byte,
+    original_name: &byte,
+    module_name: &byte,
+    item_type: i32
+) i32 {
+    if checker == null || local_name == null || module_name == null {
+        return 0;
+    }
+
+    const import: &ImportedItem = compiler_arena_alloc(checker.arena, @size_of(ImportedItem)) as &ImportedItem;
+    if import == null {
+        return 0;
+    }
+    import.local_name = local_name;
+    import.original_name = original_name;
+    import.module_name = module_name;
+    import.item_type = item_type;
+
+    const import_hash: i32 = hash_string(import.local_name);
+    var import_index: i32 = import_hash & (IMPORT_TABLE_SIZE - 1);
+    var slot_i: i32 = 0;
+    while slot_i < IMPORT_TABLE_SIZE {
+        const slot: i32 = (import_index + slot_i) & (IMPORT_TABLE_SIZE - 1);
+        if checker.import_table.slots[slot] == null {
+            checker.import_table.slots[slot] = import;
+            checker.import_table.count = checker.import_table.count + 1;
+            return 1;
+        }
+        slot_i = slot_i + 1;
+    }
+    return 0;
+}
+
+fn checker_import_wildcard_exports(
+    checker: &TypeChecker,
+    node: &ASTNode,
+    module: &ModuleInfo,
+    module_name: &byte
+) i32 {
+    if checker == null || node == null || module == null || module_name == null {
+        return 0;
+    }
+    if node.use_stmt_alias != null {
+        checker_report_error(checker, node, "通配符导入不能使用 as 别名" as *byte);
+        return 0;
+    }
+
+    if module.exports == null || module.export_count == 0 {
+        return 1;
+    }
+
+    var k: i32 = 0;
+    while k < module.export_count {
+        const exported: ExportedItem = module.exports[k];
+        if exported.name != null {
+            if checker_insert_import_item(checker, exported.name, exported.name, module_name, exported.item_type) == 0 {
+                checker_report_error(checker, node, "导入表容量不足，无法展开通配符导入" as *byte);
+                return 0;
+            }
+            if exported.item_type == 1 && exported.decl_node != null && exported.decl_node.type == ASTNodeType.AST_FN_DECL {
+                if function_table_lookup(checker, exported.name) == null {
+                    if checker_register_fn_decl(checker, exported.decl_node) == 0 {
+                        return 0;
+                    }
+                }
+            }
+        }
+        k = k + 1;
+    }
+
+    return 1;
+}
+
 // 处理 use 语句（建立导入关系）
 fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
     if checker == null || node == null || node.type != ASTNodeType.AST_USE_STMT {
@@ -1348,6 +1430,10 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 }
             }
         }
+    }
+    
+    if checker_use_item_is_wildcard(item_name) != 0 {
+        return checker_import_wildcard_exports(checker, node, module, module_name);
     }
     
     // 处理导入项

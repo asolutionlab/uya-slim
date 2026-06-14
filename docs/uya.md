@@ -826,7 +826,7 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
 - 使用 `use` 关键字导入模块
 - 路径语法：`use math.utils;`、`use math.utils.add;` 或 `use math.utils.file.add;`
 - 支持别名：`use math.utils as math_utils;`
-- **限制**：不支持通配符导入（`use math.*;`），避免命名污染和可读性下降
+- **通配导入**：`use math.*;` 会导入模块 `math` 的所有导出项，便于测试和包级公共 API 聚合；库代码仍建议优先使用显式导入以保持可读性
 - **模块间引用规则**：
   - 根目录模块（main）可以引用子目录模块：`use std.io;`
   - 子目录模块可以引用其他子目录模块：`use std.io;`

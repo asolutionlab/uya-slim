@@ -599,6 +599,10 @@ fn format_use_stmt(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize) 
             si = si + 1;
         }
     }
+    if node.use_stmt_item_name != null {
+        write_byte(out, out_pos, out_cap, '.' as byte);
+        write_str(out, out_pos, out_cap, node.use_stmt_item_name);
+    }
 
     write_byte(out, out_pos, out_cap, ';' as byte);
     write_byte(out, out_pos, out_cap, '\n' as byte);

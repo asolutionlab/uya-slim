@@ -1,0 +1,7 @@
+use std.testing.assert_eq_i32;
+use file_module.*;
+
+test "use wildcard module path imports exported names" {
+    const got: i32 = add_one(40);
+    try assert_eq_i32(got, 41);
+}
