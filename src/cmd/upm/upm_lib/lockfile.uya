@@ -74,6 +74,18 @@ export fn upm_lock_item_matches_source(item: &UPMLockItem, manifest: &UPMManifes
     if item == null || manifest == null || dep == null {
         return 0;
     }
+    if dep.module[0] != 0 as byte {
+        if item.module[0] == 0 as byte {
+            return 0;
+        }
+        if strcmp(&item.module[0] as *byte, &dep.module[0] as *byte) != 0 {
+            return 0;
+        }
+        if dep.version[0] != 0 as byte && strcmp(&item.resolved_version[0] as *byte, &dep.version[0] as *byte) != 0 {
+            return 0;
+        }
+        return 1;
+    }
     if item.kind != dep.kind {
         return 0;
     }

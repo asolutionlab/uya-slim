@@ -130,6 +130,61 @@ export fn upm_resolve_manifest_path(input_path: &byte, manifest_override: &byte,
     return upm_find_manifest_upwards(input_path, out_manifest_path);
 }
 
+export fn upm_dependency_identity_matches_manifest(dep: &UPMDependency, manifest: &UPMManifest) i32 {
+    if dep == null || manifest == null {
+        return 0;
+    }
+    if dep.module[0] != 0 as byte {
+        if manifest.module[0] == 0 as byte {
+            fprintf(libc.stderr, "错误: module+version 依赖要求目标包声明 module（alias=%s, module=%s）\n" as *byte,
+                &dep.alias[0] as *byte,
+                &dep.module[0] as *byte);
+            return -1;
+        }
+        if strcmp(&dep.module[0] as *byte, &manifest.module[0] as *byte) != 0 {
+            fprintf(libc.stderr, "错误: 依赖 module identity 不匹配（alias=%s, expected_module=%s, actual_module=%s）\n" as *byte,
+                &dep.alias[0] as *byte,
+                &dep.module[0] as *byte,
+                &manifest.module[0] as *byte);
+            return -1;
+        }
+        if dep.version[0] != 0 as byte && strcmp(&dep.version[0] as *byte, &manifest.version[0] as *byte) != 0 {
+            fprintf(libc.stderr, "错误: exact version 不匹配（alias=%s, module=%s, expected_version=%s, actual_version=%s）\n" as *byte,
+                &dep.alias[0] as *byte,
+                &dep.module[0] as *byte,
+                &dep.version[0] as *byte,
+                &manifest.version[0] as *byte);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+export fn upm_check_module_identity_conflicts(plan: &UPMPackageBuildPlan, manifest: &UPMManifest, dep: &UPMDependency) i32 {
+    if plan == null || manifest == null || dep == null {
+        return -1;
+    }
+    if dep.module[0] == 0 as byte {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < plan.resolved_graph.dep_count {
+        const existing: &UPMResolvedDep = &plan.resolved_graph.deps[i];
+        if existing.module[0] != 0 as byte && strcmp(&existing.module[0] as *byte, &dep.module[0] as *byte) == 0 {
+            if strcmp(&existing.resolved_version[0] as *byte, &manifest.version[0] as *byte) == 0 {
+                return 0;
+            }
+            fprintf(libc.stderr, "错误: 同一 module 要求不同 exact version（module=%s, existing_version=%s, new_version=%s）\n" as *byte,
+                &dep.module[0] as *byte,
+                &existing.resolved_version[0] as *byte,
+                &manifest.version[0] as *byte);
+            return -1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 export fn upm_check_dependency_conflicts(plan: &UPMPackageBuildPlan, manifest: &UPMManifest, dep: &UPMDependency, resolved_commit: &byte) i32 {
     if plan == null || manifest == null || dep == null {
         return -1;
@@ -262,6 +317,14 @@ export fn upm_stage_dependency_recursive(
         if upm_checksum_generate(&dep_manifest.source_root[0] as &byte, &content_hash[0] as &byte, UPM_MAX_REF_LEN) != 0 {
             return 1;
         }
+    }
+    const identity_check: i32 = upm_dependency_identity_matches_manifest(dep, &dep_manifest);
+    if identity_check != 0 {
+        return 1;
+    }
+    const module_conflict_check: i32 = upm_check_module_identity_conflicts(plan, &dep_manifest, dep);
+    if module_conflict_check != 0 {
+        return 1;
     }
 
     const conflict_check: i32 = upm_check_dependency_conflicts(plan, &dep_manifest, dep, &resolved_commit[0] as &byte);

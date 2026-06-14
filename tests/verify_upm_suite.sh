@@ -36,6 +36,8 @@ SCRIPTS=(
     "$ROOT_DIR/tests/verify_upm_layout_manifest.sh"
     "$ROOT_DIR/tests/verify_upm_add_git.sh"
     "$ROOT_DIR/tests/verify_upm_module_manifest_parse.sh"
+    "$ROOT_DIR/tests/verify_upm_module_identity_exact_version_path.sh"
+    "$ROOT_DIR/tests/verify_upm_module_identity_version_mismatch.sh"
     "$ROOT_DIR/tests/verify_upm_remove.sh"
     "$ROOT_DIR/tests/verify_upm_add_remove_e2e.sh"
 )
