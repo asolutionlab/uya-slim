@@ -634,6 +634,17 @@ fn preregister_err_union_from_mono_signature(codegen: &C99CodeGenerator, fn_decl
         const ret_c: &byte = c99_mono_type_to_c(codegen, fn_decl.fn_decl_return_type);
         if ret_c != null {}
     }
+    if fn_decl.fn_decl_params != null && fn_decl.fn_decl_param_count > 0 {
+        var pi: i32 = 0;
+        while pi < fn_decl.fn_decl_param_count {
+            const param: &ASTNode = fn_decl.fn_decl_params[pi];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                const param_c: &byte = c99_mono_type_to_c(codegen, param.var_decl_type);
+                if param_c != null {}
+            }
+            pi = pi + 1;
+        }
+    }
     codegen.current_type_params = saved_type_params;
     codegen.current_type_param_count = saved_type_param_count;
     codegen.current_type_args = saved_type_args;
@@ -1377,6 +1388,9 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
         return;
     }
     if node.type == ASTNodeType.AST_FN_DECL {
+        if is_generic_function_c99(node) != 0 {
+            return;
+        }
         if node.fn_decl_return_type != null {
             if node.fn_decl_return_type.type == ASTNodeType.AST_TYPE_SLICE || node.fn_decl_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION ||
                 node.fn_decl_return_type.type == ASTNodeType.AST_TYPE_VECTOR || node.fn_decl_return_type.type == ASTNodeType.AST_TYPE_MASK {
@@ -1471,6 +1485,9 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
         return;
     }
     if node.type == ASTNodeType.AST_STRUCT_DECL && node.struct_decl_fields != null {
+        if is_generic_struct_c99(node) != 0 {
+            return;
+        }
         var i: i32 = 0;
         while i < node.struct_decl_field_count {
             const field: &ASTNode = node.struct_decl_fields[i];
@@ -1486,11 +1503,27 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
         return;
     }
     if node.type == ASTNodeType.AST_METHOD_BLOCK {
+        if node.method_block_struct_name != null {
+            const owner_struct_decl: &ASTNode = find_struct_decl_c99(codegen, node.method_block_struct_name);
+            if owner_struct_decl != null && is_generic_struct_c99(owner_struct_decl) != 0 {
+                return;
+            }
+        }
+        if node.method_block_union_name != null {
+            const owner_union_decl: &ASTNode = find_union_decl_c99(codegen, node.method_block_union_name);
+            if owner_union_decl != null && is_generic_union_c99(owner_union_decl) != 0 {
+                return;
+            }
+        }
         // 方法块：遍历所有方法
         var i: i32 = 0;
         while i < node.method_block_method_count {
             const m: &ASTNode = node.method_block_methods[i];
             if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                if m.fn_decl_type_param_count > 0 {
+                    i = i + 1;
+                    continue;
+                }
                 // 收集返回类型
                 if m.fn_decl_return_type != null {
                     if m.fn_decl_return_type.type == ASTNodeType.AST_TYPE_SLICE || m.fn_decl_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION ||
@@ -3325,6 +3358,32 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, input_ast: &ASTNode, output_
         }
         i = i + 1;
     }
+    // 第六步 b1.6：提前登记已收集到的单态化泛型函数签名中的 !T / 泛型 struct。
+    // 否则 empty<f64>/storage_new<f64> 这类实例会等到函数体阶段才暴露，赶不上本轮 struct 定义输出。
+    {
+        var mono_i: i32 = 0;
+        while mono_i < codegen.mono_instance_count && mono_i < @len(codegen.mono_instances) {
+            if codegen.mono_instances[mono_i].generic_name != null && codegen.mono_instances[mono_i].is_function != 0 {
+                var decl_i: i32 = 0;
+                while decl_i < decl_count {
+                    const mono_decl: &ASTNode = ast.program_decls[decl_i];
+                    if mono_decl != null && mono_decl.type == ASTNodeType.AST_FN_DECL &&
+                        c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[mono_i].generic_name, mono_decl) != 0 &&
+                        has_unresolved_mono_type_args(mono_decl,
+                            codegen.mono_instances[mono_i].type_args,
+                            codegen.mono_instances[mono_i].type_arg_count) == 0 {
+                        preregister_err_union_from_mono_signature(codegen, mono_decl,
+                            codegen.mono_instances[mono_i].type_args,
+                            codegen.mono_instances[mono_i].type_arg_count);
+                        decl_i = decl_count;
+                    } else {
+                        decl_i = decl_i + 1;
+                    }
+                }
+            }
+            mono_i = mono_i + 1;
+        }
+    }
     // 第六步 b2：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
@@ -4290,18 +4349,22 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, input_ast: &ASTNode, output_
             // 跳过泛型结构体模板的内部方法，为单态化实例生成方法原型
             if is_generic_struct_c99(decl) != 0 {
                 var k: i32 = 0;
-                while k < codegen.mono_instance_count && k < @len(codegen.mono_instances) {
-                    if codegen.mono_instances[k].generic_name != null &&
-                        strcmp(codegen.mono_instances[k].generic_name as *byte, struct_name as *byte) == 0 &&
-                        codegen.mono_instances[k].is_function == 0 {
+                while k < codegen.mono_instance_count {
+                    const mono_inst_k: &MonoInstanceCodegen = c99_mono_instance_codegen_at(codegen, k);
+                    if mono_inst_k == null {
+                        break;
+                    }
+                    if mono_inst_k.generic_name != null &&
+                        strcmp(mono_inst_k.generic_name as *byte, struct_name as *byte) == 0 &&
+                        mono_inst_k.is_function == 0 {
                         // 跳过包含未解析类型参数的实例
                         if has_unresolved_mono_type_args(decl,
-                            codegen.mono_instances[k].type_args,
-                            codegen.mono_instances[k].type_arg_count) == 0 {
+                            mono_inst_k.type_args,
+                            mono_inst_k.type_arg_count) == 0 {
                             // 为该单态化实例生成方法原型
                             const mono_name: &byte = get_mono_struct_name(codegen, struct_name,
-                                codegen.mono_instances[k].type_args,
-                                codegen.mono_instances[k].type_arg_count);
+                                mono_inst_k.type_args,
+                                mono_inst_k.type_arg_count);
                             // 设置结构体的类型参数上下文（用于二级查找）
                             const saved_stp: &TypeParam = codegen.struct_type_params;
                             const saved_stpc: i32 = codegen.struct_type_param_count;
@@ -4309,8 +4372,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, input_ast: &ASTNode, output_
                             const saved_stac: i32 = codegen.struct_type_arg_count;
                             codegen.struct_type_params = decl.struct_decl_type_params;
                             codegen.struct_type_param_count = decl.struct_decl_type_param_count;
-                            codegen.struct_type_args = codegen.mono_instances[k].type_args;
-                            codegen.struct_type_arg_count = codegen.mono_instances[k].type_arg_count;
+                            codegen.struct_type_args = mono_inst_k.type_args;
+                            codegen.struct_type_arg_count = mono_inst_k.type_arg_count;
                             
                             var j: i32 = 0;
                             while j < decl.struct_decl_method_count {

@@ -2865,6 +2865,51 @@ fn get_mono_union_name(codegen: &C99CodeGenerator, generic_name: &byte, type_arg
     return mono_name;
 }
 
+fn c99_codegen_ensure_mono_struct(codegen: &C99CodeGenerator, generic_name: &byte,
+    type_args: & &ASTNode, type_arg_count: i32) void {
+    if codegen == null || generic_name == null || type_args == null || type_arg_count <= 0 {
+        return;
+    }
+    const resolved_args: & & ASTNode = compiler_arena_alloc(codegen.arena,
+        (@size_of(&ASTNode) * (type_arg_count as usize))) as & & ASTNode;
+    if resolved_args == null {
+        return;
+    }
+    var ai: i32 = 0;
+    while ai < type_arg_count {
+        resolved_args[ai] = substitute_type_arg(codegen, type_args[ai]);
+        ai = ai + 1;
+    }
+    const wanted_mono_name: &byte = get_mono_struct_name(codegen, generic_name, resolved_args, type_arg_count);
+    var i: i32 = 0;
+    while i < codegen.mono_instance_count {
+        const inst: MonoInstanceCodegen = codegen.mono_instances[i];
+        if inst.is_function == 0 && inst.generic_name != null &&
+            strcmp(inst.generic_name as *byte, generic_name as *byte) == 0 &&
+            inst.type_arg_count == type_arg_count && inst.type_args != null {
+            const inst_mono_name: &byte = get_mono_struct_name(codegen, inst.generic_name,
+                inst.type_args, inst.type_arg_count);
+            if inst_mono_name != null && wanted_mono_name != null &&
+                strcmp(inst_mono_name as *byte, wanted_mono_name as *byte) == 0 {
+                return;
+            }
+        }
+        i = i + 1;
+    }
+    if codegen.mono_instance_count >= C99_MAX_MONO_INSTANCES {
+        return;
+    }
+    const idx_u: usize = codegen.mono_instance_count as usize;
+    if idx_u >= C99_MAX_MONO_INSTANCES as usize {
+        return;
+    }
+    codegen.mono_instances[idx_u].generic_name = generic_name;
+    codegen.mono_instances[idx_u].is_function = 0;
+    codegen.mono_instances[idx_u].type_arg_count = type_arg_count;
+    codegen.mono_instances[idx_u].type_args = resolved_args;
+    codegen.mono_instance_count = codegen.mono_instance_count + 1;
+}
+
 // 从已去掉 leading `const ` 的 C 类型串提取首个 typedef 标识符（遇空格、制表、* 结束）。
 // 若以 `struct ` 开头则返回 0，由调用方走 struct 前缀分支。
 fn c99_extract_first_typedef_ident(type_c: &byte, out: &byte, out_max: i32) i32 {

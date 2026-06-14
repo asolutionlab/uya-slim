@@ -15,6 +15,8 @@ extern fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &
 extern fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename: &byte) &byte;
 extern fn is_struct_in_table(codegen: &C99CodeGenerator, struct_name: &byte) i32;
 extern fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void;
+extern fn c99_codegen_ensure_mono_struct(codegen: &C99CodeGenerator, generic_name: &byte,
+    type_args: & & ASTNode, type_arg_count: i32) void;
 
 fn c99_write_byte_at(buf: &byte, idx: i32, limit: i32, value: byte) i32 {
     if buf == null {
@@ -403,6 +405,24 @@ fn c99_type_to_c_cache_store(codegen: &C99CodeGenerator, type_node: &ASTNode, re
     g_c99_type_to_c_cache_struct_arg_counts[slot] = codegen.struct_type_arg_count;
 }
 
+fn c99_resolve_type_args_for_current_context(codegen: &C99CodeGenerator,
+    type_args: & & ASTNode, type_arg_count: i32) & & ASTNode {
+    if codegen == null || type_args == null || type_arg_count <= 0 {
+        return type_args;
+    }
+    const resolved: & & ASTNode = compiler_arena_alloc(codegen.arena,
+        (@size_of(&ASTNode) * (type_arg_count as usize))) as & & ASTNode;
+    if resolved == null {
+        return type_args;
+    }
+    var i: i32 = 0;
+    while i < type_arg_count {
+        resolved[i] = substitute_type_arg(codegen, type_args[i]);
+        i = i + 1;
+    }
+    return resolved;
+}
+
 fn c99_make_simd_name_suffix(codegen: &C99CodeGenerator, type_c: &byte) &byte {
     if codegen == null || type_c == null {
         return null;
@@ -738,12 +758,14 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
         
         // 检查是否有类型实参（泛型结构体/联合体实例化）
         if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
+            const named_type_args: & & ASTNode = c99_resolve_type_args_for_current_context(codegen,
+                type_node.type_named_type_args, type_node.type_named_type_arg_count);
             // 泛型接口实例：Future<i32> 等 -> struct uya_interface_Future_i32
             // 说明：接口与结构体可能同名（如 std.async 的 Future），这里优先接口以匹配 checker/type_from_ast 的行为。
             const iface_decl: &ASTNode = find_interface_decl_c99(codegen, name);
             if iface_decl != null && iface_decl.interface_decl_type_param_count > 0 {
                 const mono_name_i: &byte = get_mono_struct_name(codegen, name,
-                    type_node.type_named_type_args,
+                    named_type_args,
                     type_node.type_named_type_arg_count);
                 const mn_len_i: i32 = (strlen(mono_name_i as *byte) as i32) + 24;
                 const buf_i: &byte = compiler_arena_alloc(codegen.arena, mn_len_i as usize) as &byte;
@@ -756,7 +778,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             const ud: &ASTNode = find_union_decl_c99(codegen, name);
             if ud != null && is_generic_union_c99(ud) != 0 {
                 const mono_name: &byte = get_mono_union_name(codegen, name,
-                    type_node.type_named_type_args,
+                    named_type_args,
                     type_node.type_named_type_arg_count);
                 const mn_len: i32 = (strlen(mono_name as *byte) as i32) + 24;
                 const buf: &byte = compiler_arena_alloc(codegen.arena, mn_len as usize) as &byte;
@@ -766,8 +788,12 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 }
                 return ("void" as *byte) as &byte;
             }
+            const generic_struct_decl: &ASTNode = find_struct_decl_c99(codegen, name);
+            if generic_struct_decl != null && is_generic_struct_c99(generic_struct_decl) != 0 {
+                c99_codegen_ensure_mono_struct(codegen, name, named_type_args, type_node.type_named_type_arg_count);
+            }
             const mono_name: &byte = get_mono_struct_name(codegen, name,
-                type_node.type_named_type_args,
+                named_type_args,
                 type_node.type_named_type_arg_count);
             const mn_len: i32 = (strlen(mono_name as *byte) as i32) + 8;  // "struct " + name + '\0'
             const buf: &byte = compiler_arena_alloc(codegen.arena, mn_len as usize) as &byte;
@@ -7471,6 +7497,24 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                                 const fn_decl: &ASTNode = mod.exports[ei].decl_node;
                                 if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL &&
                                     fn_decl.fn_decl_return_type != null {
+                                    if type_args != null && type_arg_count > 0 {
+                                        const resolved_type_args: & & ASTNode = c99_resolve_type_args_for_current_context(codegen,
+                                            type_args, type_arg_count);
+                                        const saved_type_params: &TypeParam = codegen.current_type_params;
+                                        const saved_type_param_count: i32 = codegen.current_type_param_count;
+                                        const saved_type_args: & & ASTNode = codegen.current_type_args;
+                                        const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+                                        codegen.current_type_params = fn_decl.fn_decl_type_params;
+                                        codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
+                                        codegen.current_type_args = resolved_type_args;
+                                        codegen.current_type_arg_count = type_arg_count;
+                                        const mono_ret_c: &byte = c99_mono_type_to_c(codegen, fn_decl.fn_decl_return_type);
+                                        codegen.current_type_params = saved_type_params;
+                                        codegen.current_type_param_count = saved_type_param_count;
+                                        codegen.current_type_args = saved_type_args;
+                                        codegen.current_type_arg_count = saved_type_arg_count;
+                                        return mono_ret_c;
+                                    }
                                     return c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
                                 }
                                 break;
@@ -7483,7 +7527,8 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                 i3 = i3 + 1;
             }
         }
-        if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+        if codegen.checker != null && callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+            !(type_args != null && type_arg_count > 0) {
             const inferred_call: Type = checker_infer_type(codegen.checker, expr);
             if inferred_call.kind != TypeKind.TYPE_VOID {
                 const inferred_c: &byte = c99_type_to_c_from_inferred_type(codegen, inferred_call, expr.line, expr.column, expr.filename);
@@ -7517,31 +7562,22 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                     if method_fn != null && method_fn.type == ASTNodeType.AST_FN_DECL {
                         const return_type: &ASTNode = method_fn.fn_decl_return_type;
                         if return_type != null {
-                            // 在单态化上下文中替换类型参数
-                            if codegen.current_type_params != null && codegen.current_type_param_count > 0 {
-                                // 已在单态化上下文中，使用现有的替换
-                                return c99_mono_type_to_c(codegen, return_type);
-                            } else {
-                                // 需要临时设置单态化上下文
-                                const saved_type_params: &TypeParam = codegen.current_type_params;
-                                const saved_type_param_count: i32 = codegen.current_type_param_count;
-                                const saved_type_args: & & ASTNode = codegen.current_type_args;
-                                const saved_type_arg_count: i32 = codegen.current_type_arg_count;
-                                
-                                codegen.current_type_params = method_fn.fn_decl_type_params;
-                                codegen.current_type_param_count = method_fn.fn_decl_type_param_count;
-                                codegen.current_type_args = type_args;
-                                codegen.current_type_arg_count = type_arg_count;
-                                
-                                const result: &byte = c99_mono_type_to_c(codegen, return_type);
-                                
-                                codegen.current_type_params = saved_type_params;
-                                codegen.current_type_param_count = saved_type_param_count;
-                                codegen.current_type_args = saved_type_args;
-                                codegen.current_type_arg_count = saved_type_arg_count;
-                                
-                                return result;
-                            }
+                            const resolved_type_args: & & ASTNode = c99_resolve_type_args_for_current_context(codegen,
+                                type_args, type_arg_count);
+                            const saved_type_params: &TypeParam = codegen.current_type_params;
+                            const saved_type_param_count: i32 = codegen.current_type_param_count;
+                            const saved_type_args: & & ASTNode = codegen.current_type_args;
+                            const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+                            codegen.current_type_params = method_fn.fn_decl_type_params;
+                            codegen.current_type_param_count = method_fn.fn_decl_type_param_count;
+                            codegen.current_type_args = resolved_type_args;
+                            codegen.current_type_arg_count = type_arg_count;
+                            const result: &byte = c99_mono_type_to_c(codegen, return_type);
+                            codegen.current_type_params = saved_type_params;
+                            codegen.current_type_param_count = saved_type_param_count;
+                            codegen.current_type_args = saved_type_args;
+                            codegen.current_type_arg_count = saved_type_arg_count;
+                            return result;
                         }
                     }
                 }
@@ -7602,6 +7638,8 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                     if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
                         const return_type: &ASTNode = fn_decl.fn_decl_return_type;
                         if return_type != null {
+                            const resolved_type_args: & & ASTNode = c99_resolve_type_args_for_current_context(codegen,
+                                type_args, type_arg_count);
                             // 临时设置单态化上下文
                             const saved_type_params: &TypeParam = codegen.current_type_params;
                             const saved_type_param_count: i32 = codegen.current_type_param_count;
@@ -7610,7 +7648,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                             
                             codegen.current_type_params = fn_decl.fn_decl_type_params;
                             codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
-                            codegen.current_type_args = type_args;
+                            codegen.current_type_args = resolved_type_args;
                             codegen.current_type_arg_count = type_arg_count;
                             
                             const result: &byte = c99_mono_type_to_c(codegen, return_type);

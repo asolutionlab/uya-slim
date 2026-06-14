@@ -6781,6 +6781,59 @@ fn c99_mono_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
     return r;
 }
 
+fn c99_emit_mono_value_type_deps_for_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if codegen == null || node == null {
+        return;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        if node.var_decl_type != null {
+            const resolved_var_type: &ASTNode = substitute_type_arg(codegen, node.var_decl_type);
+            ensure_value_type_deps_emitted(codegen, resolved_var_type);
+        }
+        if node.var_decl_init != null {
+            c99_emit_mono_value_type_deps_for_node(codegen, node.var_decl_init);
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            c99_emit_mono_value_type_deps_for_node(codegen, node.block_stmts[bi]);
+            bi = bi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        c99_emit_mono_value_type_deps_for_node(codegen, node.if_stmt_then_branch);
+        c99_emit_mono_value_type_deps_for_node(codegen, node.if_stmt_else_branch);
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        c99_emit_mono_value_type_deps_for_node(codegen, node.while_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        c99_emit_mono_value_type_deps_for_node(codegen, node.for_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR && node.match_expr_arms != null {
+        var mi: i32 = 0;
+        while mi < node.match_expr_arm_count {
+            c99_emit_mono_value_type_deps_for_node(codegen, node.match_expr_arms[mi].result_expr);
+            mi = mi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_TEST_STMT {
+        c99_emit_mono_value_type_deps_for_node(codegen, node.test_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        c99_emit_mono_value_type_deps_for_node(codegen, node.catch_expr_operand);
+        c99_emit_mono_value_type_deps_for_node(codegen, node.catch_expr_catch_block);
+    }
+}
+
 // 在输出函数原型/定义的形参列表之前：遍历返回类型与各形参，令 c99_type_to_c 登记所有 uya_slice_*，
 // 再一次性 emit_pending_slice_structs。禁止在已向 emit_stream 写出 `foo(` 之后调用 emit_pending，
 // 否则完整 struct 定义会插入参数表中间，破坏 C 语法。
@@ -7146,6 +7199,8 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
             return;
         }
     }
+
+    c99_emit_mono_value_type_deps_for_node(codegen, body_to_gen);
     
     // 生成 #line 指令
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
