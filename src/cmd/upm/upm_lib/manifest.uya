@@ -252,6 +252,11 @@ fn upm_parse_dependency_inline_table(line: &byte, dep_out: &UPMDependency) i32 {
             if upm_string_copy(&dep_out.ref_value[0] as &byte, UPM_MAX_REF_LEN, &value_tmp[0] as &byte) != 0 {
                 return 1;
             }
+        } else if strcmp(&key_tmp[0] as *byte, "commit" as *byte) == 0 {
+            dep_out.ref_kind = UPMGitRefKind.UPM_GIT_REF_COMMIT;
+            if upm_string_copy(&dep_out.ref_value[0] as &byte, UPM_MAX_REF_LEN, &value_tmp[0] as &byte) != 0 {
+                return 1;
+            }
         } else if strcmp(&key_tmp[0] as *byte, "module" as *byte) == 0 {
             if upm_string_copy(&dep_out.module[0] as &byte, UPM_MAX_META_LEN, &value_tmp[0] as &byte) != 0 {
                 return 1;
