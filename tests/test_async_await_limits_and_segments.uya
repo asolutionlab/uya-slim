@@ -13,6 +13,14 @@ fn ready(v: i32) Future<!i32> {
     return Future<!i32>{ state: p };
 }
 
+struct PreAwaitCtx {
+    value: i32,
+}
+
+fn preawait_init(ctx: &PreAwaitCtx, value: i32) void {
+    ctx.value = value;
+}
+
 @async_fn
 fn await_side_effect_gap() Future<!i32> {
     const a0: i32 = try @await ready(1);
@@ -66,6 +74,17 @@ fn await_more_than_32_bindings() Future<!i32> {
     return a39;
 }
 
+@async_fn
+fn preawait_init_kept() Future<!i32> {
+    var ctx: PreAwaitCtx = PreAwaitCtx{ value: 0 };
+    preawait_init(&ctx, 42);
+    const got: i32 = try @await ready(7);
+    if ctx.value != 42 {
+        return 1000 + ctx.value;
+    }
+    return got;
+}
+
 test "async_gap_side_effect_kept_between_awaits" {
     g_gap_side_effect = 0;
     const f: Future<!i32> = await_side_effect_gap();
@@ -80,4 +99,11 @@ test "async_more_than_32_bindings_keep_mapping" {
     const bo: !i32 = block_on<i32>(f);
     const v: i32 = bo catch { 0 - 1; };
     try assert_eq_i32(v, 39);
+}
+
+test "async_preawait_init_helper_kept_before_first_await" {
+    const f: Future<!i32> = preawait_init_kept();
+    const bo: !i32 = block_on<i32>(f);
+    const v: i32 = bo catch { 0 - 1; };
+    try assert_eq_i32(v, 7);
 }
