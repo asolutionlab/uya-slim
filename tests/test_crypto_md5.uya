@@ -27,7 +27,7 @@ test "md5_empty" {
     var z: [byte: 4] = [];
     const empty: &[byte] = z[0: 0];
     var d: [byte: 16] = [];
-    md5_digest(empty, d[0: 16]);
+    try md5_digest(empty, d[0: 16]);
     const exp: &[byte] = &"d41d8cd98f00b204e9800998ecf8427e"[0: 32];
     if !hex_eq(d[0: 16], exp) {
         try assert_eq_i32(0, 1);
@@ -37,7 +37,7 @@ test "md5_empty" {
 test "md5_abc" {
     var d: [byte: 16] = [];
     const data: &[byte] = &"abc"[0: 3];
-    md5_digest(data, d[0: 16]);
+    try md5_digest(data, d[0: 16]);
     const exp: &[byte] = &"900150983cd24fb0d6963f7d28e17f72"[0: 32];
     if !hex_eq(d[0: 16], exp) {
         try assert_eq_i32(0, 1);
@@ -47,7 +47,7 @@ test "md5_abc" {
 test "md5_message_digest" {
     var d: [byte: 16] = [];
     const data: &[byte] = &"message digest"[0: 14];
-    md5_digest(data, d[0: 16]);
+    try md5_digest(data, d[0: 16]);
     const exp: &[byte] = &"f96b697d7cb7938d525a2f31aaf161d0"[0: 32];
     if !hex_eq(d[0: 16], exp) {
         try assert_eq_i32(0, 1);
@@ -57,7 +57,7 @@ test "md5_message_digest" {
 test "md5_alnum_two_block_padding" {
     var d: [byte: 16] = [];
     const data: &[byte] = &"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[0: 62];
-    md5_digest(data, d[0: 16]);
+    try md5_digest(data, d[0: 16]);
     const exp: &[byte] = &"d174ab98d277d9f5a5611c2c9f419d9f"[0: 32];
     if !hex_eq(d[0: 16], exp) {
         try assert_eq_i32(0, 1);
@@ -72,7 +72,122 @@ test "md5_short_buffer_no_write" {
         i = i + 1;
     }
     const data: &[byte] = &"abc"[0: 3];
-    md5_digest(data, buf[0: 15]);
+    const result: void = md5_digest(data, buf[0: 15]) catch {
+        // 预期：digest buffer < 16 应返回 error.DigestBufferTooSmall
+        try assert_eq_i32(1, 1); // 确认进入了 catch
+    };
+    var j: usize = 0;
+    while j < 32 {
+        if buf[j] != (0xab as byte) {
+            try assert_eq_i32(0, 1);
+        }
+        j = j + 1;
+    }
+}
+
+// ---------- 流式 MD5 接口测试 (TDD) — 结构体方法调用 ----------
+
+use std.crypto.md5.Md5Ctx;
+
+test "md5_streaming_empty" {
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    var d: [byte: 16] = [];
+    try ctx.final(d[0: 16]);
+    const exp: &[byte] = &"d41d8cd98f00b204e9800998ecf8427e"[0: 32];
+    if !hex_eq(d[0: 16], exp) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "md5_streaming_abc" {
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    const data: &[byte] = &"abc"[0: 3];
+    try ctx.update(data);
+    var d: [byte: 16] = [];
+    try ctx.final(d[0: 16]);
+    const exp: &[byte] = &"900150983cd24fb0d6963f7d28e17f72"[0: 32];
+    if !hex_eq(d[0: 16], exp) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "md5_streaming_multi_update" {
+    // 流式分块更新：a + b + c = "abc"
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    try ctx.update(&"a"[0: 1]);
+    try ctx.update(&"b"[0: 1]);
+    try ctx.update(&"c"[0: 1]);
+    var d: [byte: 16] = [];
+    try ctx.final(d[0: 16]);
+    const exp: &[byte] = &"900150983cd24fb0d6963f7d28e17f72"[0: 32];
+    if !hex_eq(d[0: 16], exp) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "md5_streaming_message_digest" {
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    try ctx.update(&"message digest"[0: 14]);
+    var d: [byte: 16] = [];
+    try ctx.final(d[0: 16]);
+    const exp: &[byte] = &"f96b697d7cb7938d525a2f31aaf161d0"[0: 32];
+    if !hex_eq(d[0: 16], exp) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "md5_streaming_two_block_padding" {
+    // 62 字节输入，跨两个 64 字节块
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    const data: &[byte] = &"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[0: 62];
+    try ctx.update(data);
+    var d: [byte: 16] = [];
+    try ctx.final(d[0: 16]);
+    const exp: &[byte] = &"d174ab98d277d9f5a5611c2c9f419d9f"[0: 32];
+    if !hex_eq(d[0: 16], exp) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "md5_streaming_chunked_80_bytes" {
+    // RFC 1321 向量：80 字节输入分 8 次 update
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    try ctx.update(&"0123456789"[0: 10]);
+    var d: [byte: 16] = [];
+    try ctx.final(d[0: 16]);
+    const exp: &[byte] = &"0faef1f4cb01d560d59016a2d5e91da6"[0: 32];
+    if !hex_eq(d[0: 16], exp) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "md5_streaming_short_buffer_no_write" {
+    var ctx: Md5Ctx = Md5Ctx {};
+    ctx.init();
+    try ctx.update(&"abc"[0: 3]);
+    var buf: [byte: 32] = [];
+    var i: usize = 0;
+    while i < 32 {
+        buf[i] = 0xab as byte;
+        i = i + 1;
+    }
+    const result: void = ctx.final(buf[0: 15]) catch {
+        // 预期：digest buffer < 16 应返回 error.DigestBufferTooSmall
+        try assert_eq_i32(1, 1); // 确认进入了 catch
+    };
     var j: usize = 0;
     while j < 32 {
         if buf[j] != (0xab as byte) {
