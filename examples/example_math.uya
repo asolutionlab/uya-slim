@@ -1,102 +1,62 @@
 // example_math.uya - 数学运算示例
-// 展示如何使用 @asm 实现高性能数学运算
 
-extern printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 // ===== 基本运算 =====
 
 // 加法
 fn asm_add(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, b, -> result);
-    }
-    return result;
+    return a + b;
 }
 
 // 减法
 fn asm_sub(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, b, -> result);
-    }
-    return result;
+    return a - b;
 }
 
 // 乘法
 fn asm_mul(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, b, -> result);
-    }
-    return result;
+    return a * b;
 }
 
 // 除法
 fn asm_div(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    if b != 0 {
-        @asm {
-            "nop" (a, b, -> result);
-        }
+    if b == 0 {
+        return 0;
     }
-    return result;
+    return a / b;
 }
 
 // ===== 位运算 =====
 
 // 按位与
 fn asm_and(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, b, -> result);
-    }
-    return result;
+    return a & b;
 }
 
 // 按位或
 fn asm_or(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, b, -> result);
-    }
-    return result;
+    return a | b;
 }
 
 // 按位异或
 fn asm_xor(a: i32, b: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, b, -> result);
-    }
-    return result;
+    return a ^ b;
 }
 
 // 按位取反
 fn asm_not(a: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, -> result);
-    }
-    return result;
+    return ~a;
 }
 
 // 左移
 fn asm_shl(a: i32, n: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, n, -> result);
-    }
-    return result;
+    return a << n;
 }
 
 // 右移
 fn asm_shr(a: i32, n: i32) i32 {
-    var result: i32 = 0;
-    @asm {
-        "nop" (a, n, -> result);
-    }
-    return result;
+    return a >> n;
 }
 
 // ===== 高级运算 =====
@@ -108,20 +68,10 @@ fn asm_pow(base: i32, exp: i32) i32 {
     var e: i32 = exp;
     
     while e > 0 {
-        var temp: i32 = 0;
-        @asm {
-            "nop" (e, -> temp);
+        if (e & 1) != 0 {
+            result = result * b;
         }
-        
-        if temp == 1 {
-            @asm {
-                "nop" (result, b, -> result);
-            }
-        }
-        
-        @asm {
-            "nop" (b, b, -> b);
-        }
+        b = b * b;
         e = e >> 1;
     }
     
@@ -134,10 +84,7 @@ fn asm_gcd(a: i32, b: i32) i32 {
     var y: i32 = b;
     
     while y != 0 {
-        var temp: i32 = 0;
-        @asm {
-            "nop" (x, y, -> temp);
-        }
+        const temp: i32 = x % y;
         x = y;
         y = temp;
     }
@@ -147,13 +94,10 @@ fn asm_gcd(a: i32, b: i32) i32 {
 
 // 绝对值
 fn asm_abs(a: i32) i32 {
-    var result: i32 = a;
     if a < 0 {
-        @asm {
-            "nop" (a, -> result);
-        }
+        return 0 - a;
     }
-    return result;
+    return a;
 }
 
 // 符号函数

@@ -1,66 +1,45 @@
-// 预定义错误（可选）
 error FileError;
 error ParseError;
 
-extern fn open(path: *byte, flags: i32) i32;  // 简化示例，实际 C 函数需要 flags 参数
-extern fn close(fd: i32) i32;
-extern fn read(fd: i32, buf: *byte, size: i32) i32;
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
-struct File {
-    fd: i32
+struct ParsedFile {
+    size: i32
 }
 
-fn open_file(path: *byte) !File {
-    const fd: i32 = open(path, 0);  // 0 是只读标志（简化示例）
-    if fd < 0 {
-        return error.FileError;  // 使用预定义错误
+fn read_virtual_file(name: &[byte]) !ParsedFile {
+    if name.len == 0 {
+        return error.FileError;
     }
-    return File{ fd: fd };
-}
-
-fn read_file_runtime(path: *byte) !i32 {
-    const fd: i32 = open(path, 0);
-    if fd < 0 {
-        return error.FileNotFound;  // 运行时错误，无需预定义
+    if name.ptr[0] == 33 as byte {
+        return error.ParseError;
     }
-    return fd;
+    return ParsedFile{ size: 128 };
 }
 
-fn drop(self: File) void {
-    if self.fd >= 0 {
-        close(self.fd);
-    }
-}
-
-fn read_file(path: *byte) !i32 {
-    const file: File = try open_file(path);
+fn read_file(name: &[byte]) !i32 {
     defer {
         printf("File operation completed\n");
     }
     errdefer {
         printf("Error occurred, cleaning up\n");
     }
-    
-    var buf: [byte: 1024] = [];
-    const n: i32 = read(file.fd, &buf[0], 1024);
-    if n < 0 {
-        return error.FileError;
-    }
-    
-    return n;
+
+    const parsed: ParsedFile = try read_virtual_file(name);
+    return parsed.size;
 }
 
 fn main() i32 {
-    const result: i32 = read_file("test.txt") catch |err| {
-        // err 是 Error 类型，支持相等性比较
+    const input: &[byte] = &"demo.txt"[0: 8];
+    const result: i32 = read_file(input) catch |err| {
         if err == error.FileError {
             printf("File error occurred\n");
+        } else if err == error.ParseError {
+            printf("Parse error occurred\n");
         }
-        // 使用 return 提前返回函数（退出 main 函数）
         return 1;
     };
-    
+
     printf("Read %d bytes\n", result);
     return 0;
 }

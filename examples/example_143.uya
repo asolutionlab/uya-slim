@@ -12,20 +12,29 @@ fn max<T: Ord>(a: T, b: T) T {
 // const x: i32 = max<i32>(10, 20);  // 返回 20
 // const y: f64 = max<f64>(3.14, 2.71);  // 返回 3.14
 
-// 多约束泛型函数：克隆并比较
-fn clone_and_compare<T: Clone + Ord>(a: T, b: T) bool {
-    const cloned = a.clone();
-    return cloned > b;
+// 多约束泛型函数：创建默认值并比较
+fn default_less_than<T: Default + Ord>(value: T) bool {
+    const base: T = T.default();
+    return base < value;
 }
 
 // 泛型函数：交换两个值
 fn swap<T>(a: &T, b: &T) void {
-    const temp: T = *a;
-    *a = *b;
-    *b = temp;
+    const temp: T = a[0];
+    a[0] = b[0];
+    b[0] = temp;
 }
 
 fn main() i32 {
-    return 0;
+  var left: i32 = 10;
+  var right: i32 = 20;
+  swap<i32>(&left, &right);
+  if left != 20 as i32 || right != 10 as i32 {
+    return 1;
+  }
+  const bigger: i32 = max<i32>(20 as i32, 10 as i32);
+  if bigger != 20 as i32 {
+    return 2;
+  }
+  return 0;
 }
-

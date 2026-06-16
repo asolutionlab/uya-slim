@@ -1,26 +1,28 @@
-struct Counter : IIncrement {
-    value: atomic i32
-}
-
 interface IIncrement {
   fn inc(self: &Self) i32;
 }
 
-Counter : IIncrement {
+struct Counter : IIncrement {
+  value: atomic i32,
+
   fn inc(self: &Self) i32 {
-    self.value += 1;                           // 自动原子 fetch_add
-    return self.value;                         // 自动原子 load
+    self.value += 1;
+    return self.value;
   }
 }
 
 fn main() i32 {
-  const counter: Counter = Counter{ value: 0 };
-  // 多线程并发递增，零数据竞争
-  // 所有操作自动原子化，无需锁
+  var counter: Counter = Counter{ value: 0 };
+  const incrementer: IIncrement = counter;
+  const value: i32 = incrementer.inc();
+  if value != 1 {
+    return 1;
+  }
+  if counter.value != 1 {
+    return 2;
+  }
   return 0;
 }
-
-
 
 
 

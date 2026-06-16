@@ -10,12 +10,27 @@
 
 use tls.https;
 use tls.x509.cert;
+use tls.x509.store;
 use tls.crypto.rsa;
 use std.async;
 use std.http.websocket_async;
 use std.http.websocket_tls;
 use std.http.websocket_types;
 use std.testing.assert_true;
+use libc.syscall;
+
+fn load_demo_cert(path: &const byte, buf: &byte, buf_max: usize, cert_out: &Cert) !void {
+    const fd: i32 = try sys_open(path, O_RDONLY as i32, 0);
+    const n: isize = sys_read(fd, buf, buf_max) catch {
+        _ = sys_close(fd) catch {};
+        return error.TlsBadInput;
+    };
+    _ = sys_close(fd) catch {};
+    if n <= 0 {
+        return error.TlsDecodeError;
+    }
+    try cert_parse(buf, (n as! usize).value, cert_out);
+}
 
 fn run_with_loop_usize(f: Future<!usize>) !usize {
     const result: !usize = block_on<usize>(f);
@@ -27,8 +42,13 @@ fn run_wss_echo_demo() !i32 {
     var srv: HttpsServer = try https_server_listen(&host[0], 9, 8771);
     defer { https_server_close(&srv); }
 
+    var cert_path: [byte: 35] = [101, 120, 97, 109, 112, 108, 101, 115, 47, 104, 116, 116, 112, 115, 95, 115, 101, 114, 118, 101, 114, 95, 111, 110, 99, 101, 95, 99, 101, 114, 116, 46, 100, 101, 114];
+    var key_path: [byte: 34] = [101, 120, 97, 109, 112, 108, 101, 115, 47, 104, 116, 116, 112, 115, 95, 115, 101, 114, 118, 101, 114, 95, 111, 110, 99, 101, 95, 107, 101, 121, 46, 100, 101, 114];
+    var cert_buf: [byte: 1024] = [0:1024];
     var leaf: Cert = Cert{};
+    try load_demo_cert(&cert_path[0], &cert_buf[0], 1024, &leaf);
     var key: RsaPrivateKey = RsaPrivateKey{};
+    try rsa_private_key_load_pkcs1_file(&key_path[0], &key);
     https_server_set_rsa_identity(&srv, &host[0], 9, &host[0], 9, &host[0], 9, &leaf, &key);
     @println("wss echo demo listening on wss://localhost:8771/ws");
     @println("accepting one websocket message and then exiting");

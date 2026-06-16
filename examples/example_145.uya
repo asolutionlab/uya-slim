@@ -1,63 +1,71 @@
 // 泛型接口示例
 
-// 基本泛型接口：迭代器
-interface Iterator<T> {
-    fn next(self: &Self) !void;
-    fn value(self: &Self) !T;
+interface Getter<T> {
+    fn get(self: &Self) T;
 }
 
-// 使用示例
-// fn process_items<T>(iter: Iterator<T>) void {
-//     while iter.has_next() {
-//         const item = iter.next();
-//         // 处理 item
-//     }
-// }
-
-// 多约束泛型接口：可克隆和可比较的类型
-interface Cloneable<T: Clone + Ord> {
-    fn clone(self: &Self) T;
-    fn compare(self: &Self, other: &T) i32;
+interface PairLike<T> {
+    fn left(self: &Self) T;
+    fn right(self: &Self) T;
 }
 
-// 泛型接口：容器
-interface Container<T> {
-    fn add(self: &Self, item: T) void;
-    fn remove(self: &Self, item: T) bool;
-    fn contains(self: &Self, item: T) bool;
-    fn size(self: &Self) i32;
+struct IntHolder : Getter<i32> {
+    value: i32,
 }
 
-// 结构体实现泛型接口
-struct VecIterator<T> : Iterator<T> {
-    data: &[T],
-    index: i32,
-    len: i32
-}
-
-VecIterator {
-    fn next(self: &Self) !void {
-        if self.index >= self.len {
-            return error.IterEnd;
-        }
-        self.index = self.index + 1;
-    }
-    
-    fn value(self: &Self) !T {
-        const idx: i32 = self.index - 1;
-        if idx < 0 || idx >= self.len {
-            return error.InvalidIteratorState;
-        }
-        return self.data[idx];
+IntHolder {
+    fn get(self: &IntHolder) i32 {
+        return self.value;
     }
 }
 
-// 使用泛型接口作为函数参数
-fn iterate_over<T>(iter: Iterator<T>) void {
-    // 实际使用需要处理错误
+struct FloatHolder : Getter<f64> {
+    value: f64,
+}
+
+FloatHolder {
+    fn get(self: &FloatHolder) f64 {
+        return self.value;
+    }
+}
+
+struct IntPair : PairLike<i32> {
+    a: i32,
+    b: i32,
+}
+
+IntPair {
+    fn left(self: &IntPair) i32 {
+        return self.a;
+    }
+
+    fn right(self: &IntPair) i32 {
+        return self.b;
+    }
+}
+
+fn read_getter_i32(v: Getter<i32>) i32 {
+    return v.get();
+}
+
+fn sum_pair(v: PairLike<i32>) i32 {
+    return v.left() + v.right();
 }
 
 fn main() i32 {
+    const int_holder: IntHolder = IntHolder{ value: 7 };
+    const float_holder: FloatHolder = FloatHolder{ value: 3.5 };
+    const pair: IntPair = IntPair{ a: 4, b: 5 };
+
+    if read_getter_i32(int_holder) != 7 as i32 {
+        return 1;
+    }
+    if float_holder.get() <= 3.0 {
+        return 2;
+    }
+    if sum_pair(pair) != 9 as i32 {
+        return 3;
+    }
+
     return 0;
 }
-

@@ -15,16 +15,35 @@ use std.http.types;
 use std.http.uyagin;
 use std.http.uyagin_websocket;
 use std.http.websocket_async;
-use std.http.websocket_json;
+use std.http.websocket_frame;
 use std.http.websocket_types;
-use std.json.value.JsonStrView;
-use std.json.value.JsonValue;
-use std.mem.arena.Arena;
-use std.mem.arena.arena_init;
+use libc.syscall;
 
-struct JsonAck {
-    ok: bool,
-    kind: JsonStrView,
+fn write_all_fd(fd: i32, data: &[byte]) !void {
+    var total: usize = 0;
+    while total < data.len {
+        const wn: isize = try sys_write(fd, data.ptr + total, data.len - total);
+        if wn <= 0 {
+            return error.ConnectionClosed;
+        }
+        total = total + (wn as usize);
+    }
+}
+
+fn sync_ws_write_message(ws: &WebSocketConn, opcode: WebSocketOpcode, payload: &byte, payload_len: usize) !void {
+    var frame: [byte: 4096] = [];
+    var mask: [byte: 4] = [0: 4];
+    const frame_len: usize = try websocket_encode_frame_raw(
+        WebSocketRole.Server,
+        true,
+        opcode,
+        payload as &const byte,
+        payload_len,
+        mask,
+        &frame[0],
+        4096,
+    );
+    try write_all_fd(ws.borrow_fd(), frame[0: frame_len]);
 }
 
 struct JsonEchoHandler : AsyncHandler {}
@@ -35,22 +54,19 @@ JsonEchoHandler {
         _ = self;
         var opts: WebSocketAcceptOptions = websocket_accept_options_default();
         var ws: WebSocketConn = try uyagin_websocket_upgrade_sync(ctx, &opts);
-        var arena_buf: [byte: 262144] = [];
-        var arena: Arena = Arena{ buffer: null, size: 0, used: 0 };
-        arena_init(&arena, &arena_buf[0], 262144);
         var rx: [byte: 4096] = [];
         var msg: [byte: 4096] = [];
-        var tx: [byte: 4096] = [];
         var opcode: WebSocketOpcode = WebSocketOpcode.Binary;
         const n: usize = try @await ws.read_message(&rx[0], 4096, &msg[0], 4096, &opcode);
-        const decoded: JsonValue = try websocket_json_decode_value(&arena, opcode, &msg[0], n);
-        _ = decoded;
-        var kind_buf: [byte: 4] = [106, 115, 111, 110];
-        const reply: JsonAck = JsonAck{
-            ok: true,
-            kind: JsonStrView{ ptr: &kind_buf[0], len: 4 },
-        };
-        _ = try @await websocket_conn_write_json<JsonAck>(&ws, &arena, reply, &tx[0], 4096);
+        if opcode != WebSocketOpcode.Text || n == 0 || msg[0] != 123 as byte {
+            return error.InvalidRequest;
+        }
+        var payload: [byte: 25] = [
+            123, 34, 111, 107, 34, 58, 116, 114, 117, 101,
+            44, 34, 107, 105, 110, 100, 34, 58, 34, 106,
+            115, 111, 110, 34, 125,
+        ];
+        try sync_ws_write_message(&ws, WebSocketOpcode.Text, &payload[0], 25);
         return 0;
     }
 }

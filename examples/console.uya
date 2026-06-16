@@ -1,28 +1,24 @@
-// ① 定义接口
+extern "libc" fn write(fd: i32, buf: *byte, len: i32) i32;
+
 interface IWriter {
   fn write(self: &Self, buf: *byte, len: i32) i32;
 }
 
-// ② 具体实现（在结构体定义时声明接口，接口方法作为结构体方法定义）
 struct Console : IWriter {
-  fd: i32
-}
+  fd: i32,
 
-Console {
   fn write(self: &Self, buf: *byte, len: i32) i32 {
-    extern write(fd: i32, buf: *byte, len: i32) i32;
     return write(self.fd, buf, len);
   }
 }
 
-// ③ 使用接口
 fn echo(w: IWriter) void {
-  const msg: [byte: 6] = "hello\n";
-  w.write(&msg[0], 5);
+  const msg: [byte: 7] = "hello\n";
+  _ = w.write(&msg[0], 6);
 }
 
 fn main() i32 {
-  const cons: Console = Console{ fd: 1 };   // stdout
-  echo(cons);                             // 自动装箱为接口
+  const cons: Console = Console{ fd: 1 };
+  echo(cons);
   return 0;
 }

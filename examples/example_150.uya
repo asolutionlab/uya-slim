@@ -1,107 +1,91 @@
-// 异步编程基础示例
+use std.async;
 
-// ============================================
-// 1. 基本异步函数
-// ============================================
+error OperationFailed;
 
-// 异步函数：必须返回 !Future<T>
 @async_fn
-fn fetch_data() !Future<&[i8]> {
-    // @await 挂起点：等待异步操作完成
-    // const result = try @await http_get("https://example.com");
-    // return result;
-    
-    // 示例：返回错误（实际使用时需要真实的异步操作）
-    return error.NotImplemented;
+fn fetch_size() Future<!usize> {
+    return 5usize;
 }
 
-// 异步函数：带参数
 @async_fn
-fn process_url(url: &[i8]) !Future<i32> {
-    // 调用其他异步函数
-    const data = try @await fetch_data();
-    // 处理数据
-    return 0;
+fn process_url(url: &[byte]) Future<!i32> {
+    _ = url;
+    const size: usize = try @await fetch_size();
+    return size as i32;
 }
 
-// ============================================
-// 2. @await 使用
-// ============================================
-
 @async_fn
-fn async_operation() !Future<i32> {
-    // @await 是唯一显式挂起点
-    // 可以连续使用多个 @await
-    // const value = try @await some_async_task();
-    // const another = try @await another_async_task();
-    // return value + another;
-    
-    // 示例：返回固定值
+fn async_operation() Future<!i32> {
     return 42;
 }
 
-// ============================================
-// 3. 错误处理
-// ============================================
-
 @async_fn
-fn may_fail() !Future<i32> {
-    // 异步操作可能失败
-    // const result = try @await risky_operation();
-    // if result < 0 {
-    //     return error.OperationFailed;
-    // }
-    // return result;
-    
-    // 示例：返回错误
-    // 注意：!Future<T> 是错误联合类型，成功时返回 Future<T>，失败时直接返回 error
-    // 所以这里直接返回 error.OperationFailed，而不是 Future<error.OperationFailed>
-    return error.OperationFailed;
+fn may_fail(should_fail: bool) Future<!i32> {
+    if should_fail {
+        return error.OperationFailed;
+    }
+    return 7;
 }
 
-// ============================================
-// 4. 嵌套异步调用
-// ============================================
-
 @async_fn
-fn nested_async() !Future<&[i8]> {
-    // 嵌套异步调用：一个异步函数调用另一个异步函数
-    // const data1 = try @await fetch_data();
-    // const data2 = try @await fetch_data();
-    // 处理多个异步结果
-    // return data1;
-    
-    // 示例：返回错误
-    return error.NotImplemented;
+fn nested_async() Future<!i32> {
+    const left: i32 = try @await async_operation();
+    const right: i32 = try @await may_fail(false);
+    return left + right;
 }
-
-// ============================================
-// 5. 结构体返回（自动包装）
-// ============================================
 
 struct User {
     id: i32,
-    name: &[i8]
+    name: &[byte]
 }
 
 @async_fn
-fn get_user() !Future<User> {
-    // 结构体可以自动包装为 Future<User>
-    // 注意：return User{ ... }; 会自动包装为 Future<User>，作为 !Future<User> 的成功分支
-    return User{ id: 1, name: "Alice" };
+fn get_user() Future<!User> {
+    return User{ id: 1, name: &"Alice"[0: 5] };
 }
 
 @async_fn
-fn get_user_with_await() !Future<User> {
-    // 即使有 @await 点，结构体返回也会自动包装
-    // const user_id = try @await fetch_user_id();
-    // return User{ id: user_id, name: "Bob" };
-    
-    // 示例：直接返回
-    return User{ id: 2, name: "Bob" };
+fn get_user_with_await() Future<!User> {
+    const id: i32 = try @await may_fail(false);
+    return User{ id: id, name: &"Bob"[0: 3] };
 }
 
 fn main() i32 {
+    const url_score: i32 = block_on<i32>(process_url(&"https://uya"[0: 11])) catch {
+        return 1;
+    };
+    const answer: i32 = block_on<i32>(async_operation()) catch {
+        return 2;
+    };
+    const nested: i32 = block_on<i32>(nested_async()) catch {
+        return 3;
+    };
+    const user: User = block_on<User>(get_user()) catch {
+        return 4;
+    };
+    const user2: User = block_on<User>(get_user_with_await()) catch {
+        return 5;
+    };
+    const fail_result: !i32 = block_on<i32>(may_fail(true));
+
+    if url_score != 5 {
+        return 6;
+    }
+    if answer != 42 {
+        return 7;
+    }
+    if nested != 49 {
+        return 8;
+    }
+    if user.id != 1 || user.name.len != 5 {
+        return 9;
+    }
+    if user2.id != 7 || user2.name.len != 3 {
+        return 10;
+    }
+    if fail_result.error_id == 0u32 {
+        return 11;
+    }
+
     return 0;
 }
-

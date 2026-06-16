@@ -12,7 +12,10 @@ use libc.syscall;
 fn https_get_example_run() !i32 {
     var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
     var nl: [byte: 1] = [10];
-    const resp: HttpsResponse = try https_get(&host[0], 11, 443, &"/"[0: 1]);
+    const resp: HttpsResponse = try https_get_insecure(&host[0], 11, 443, &"/"[0: 1]);
+    if resp.status <= 0 {
+        return 1;
+    }
     @println("status:");
     @println(resp.status);
     _ = sys_write(1, &resp.response[0], resp.response_len) catch {};

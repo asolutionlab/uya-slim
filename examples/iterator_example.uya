@@ -1,4 +1,4 @@
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 // 迭代器接口定义（需要先定义接口，然后定义结构体）
 interface IIteratorI32 {
@@ -84,7 +84,7 @@ fn main() i32 {
     // 示例5：丢弃元素，只循环次数
     printf("\nLoop count only:\n");
     var count: i32 = 0;
-    for arr {
+    for arr |_| {
         count = count + 1;
     }
     printf("Array length: %d\n", count);
@@ -92,14 +92,13 @@ fn main() i32 {
     // 示例6：整数范围，丢弃元素
     printf("\nInteger range, discard element:\n");
     var loop_count: i32 = 0;
-    for 0..10 {
+    for 0..10 |_| {
         loop_count = loop_count + 1;
     }
     printf("Loop count: %d\n", loop_count);
     
     return 0;
 }
-
 
 
 

@@ -2,14 +2,16 @@
 
 // 1. 泛型函数：查找最大值
 fn find_max<T: Ord>(items: &[T]) !T {
-    if @len(items) == 0 {
+    if items.len == 0 {
         return error.EmptyArray;
     }
-    var max_val: T = items[0];
-    for items |&item| {
-        if *item > max_val {
-            max_val = *item;
+    var max_val: T = items.ptr[0];
+    var i: usize = 1;
+    while i < items.len {
+        if items.ptr[i] > max_val {
+            max_val = items.ptr[i];
         }
+        i = i + 1;
     }
     return max_val;
 }
@@ -62,8 +64,9 @@ struct Point : Comparable<Point> {
     }
 }
 
-// 5. 泛型函数使用接口约束
-fn sort<T: Comparable<T> + Clone>(items: &[T]) void {
+// 5. 泛型函数使用约束
+fn sort<T: Ord + Clone>(items: &[T]) void {
+    _ = items;
     // 排序逻辑
 }
 
@@ -79,22 +82,34 @@ struct Pair<K, V> {
 }
 
 // 使用示例
-fn main() i32 {
-    // 泛型栈使用
-    // var stack: Stack<i32> = Stack<i32>{ items: [0: 100], top: 0 };
-    // stack.push(10);
-    // stack.push(20);
-    // const value = try stack.pop();  // 返回 20
-    
-    // 泛型函数使用
-    // const arr: [i32: 5] = [1, 5, 3, 9, 2];
-    // const max_val = try find_max<i32>(&arr);  // 返回 9
-    
-    // 泛型接口使用
-    // const p1: Point = Point{ x: 1, y: 2 };
-    // const p2: Point = Point{ x: 3, y: 4 };
-    // const cmp: i32 = p1.compare(&p2);
-    
+fn run_demo() !i32 {
+    var stack: Stack<i32> = Stack<i32>{ items: [0: 100], top: 0 };
+    try stack.push(10);
+    try stack.push(20);
+    const value: i32 = try stack.pop();
+
+    const arr: [i32: 5] = [1, 5, 3, 9, 2];
+    const max_val: i32 = try find_max<i32>(arr[0: 5]);
+
+    const p1: Point = Point{ x: 1, y: 2 };
+    const p2: Point = Point{ x: 3, y: 4 };
+    const cmp: i32 = p1.compare(&p2);
+
+    if value != 20 {
+        return 1;
+    }
+    if max_val != 9 {
+        return 2;
+    }
+    if cmp >= 0 {
+        return 3;
+    }
+
     return 0;
 }
 
+fn main() i32 {
+    return run_demo() catch {
+        return 4;
+    };
+}

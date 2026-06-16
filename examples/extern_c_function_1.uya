@@ -1,5 +1,6 @@
-extern fn printf(fmt: *byte, ...) i32;
-extern fn sin(x: f64) f64;
+use libc.math;
+
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 const pi: f64 = 3.1415926;
 

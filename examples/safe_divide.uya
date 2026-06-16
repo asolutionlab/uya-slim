@@ -1,4 +1,4 @@
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 // ✅ 使用错误联合类型处理可预测错误
 fn safe_divide(a: i32, b: i32) !i32 {
@@ -19,24 +19,30 @@ fn safe_divide_runtime(a: i32, b: i32) !i32 {
     return a / b;
 }
 
-// ✅ 使用 catch 捕获错误
 fn main() i32 {
+    var saw_div_zero: bool = false;
     const result: i32 = safe_divide(10, 0) catch |err| {
         if err == error.DivisionByZero {
             printf("Division by zero\n");
+            saw_div_zero = true;
         }
-        return 1;  // 提前返回函数
+        return 0;
     };
-    printf("Result: %d\n", result);
+    if !saw_div_zero || result != 0 {
+        return 1;
+    }
 
-    // 使用运行时错误
+    var saw_negative_input: bool = false;
     const result2: i32 = safe_divide_runtime(-5, 2) catch |err| {
         if err == error.NegativeInput {
             printf("Negative input not allowed\n");
+            saw_negative_input = true;
         }
-        return 1;
+        return 0;
     };
-    printf("Result2: %d\n", result2);
+    if !saw_negative_input || result2 != 0 {
+        return 2;
+    }
 
     return 0;
 }
