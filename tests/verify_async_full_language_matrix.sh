@@ -38,6 +38,31 @@ expect_check_fail() {
     rm -f "$log"
 }
 
+expect_compile_fail() {
+    local rel="$1"
+    local pattern="$2"
+    local work_dir
+    local log
+    work_dir="$(mktemp -d)"
+    log="$(mktemp)"
+    if (cd "$work_dir" && UYA_ROOT="$UYA_ROOT" "$COMPILER" --c99 --safety-proof "$REPO_ROOT/$rel") >"$log" 2>&1; then
+        echo "expected compile failure but succeeded: $rel"
+        cat "$log"
+        rm -rf "$work_dir"
+        rm -f "$log"
+        exit 1
+    fi
+    if ! grep -Fq "$pattern" "$log"; then
+        echo "missing expected compile diagnostic for $rel: $pattern"
+        cat "$log"
+        rm -rf "$work_dir"
+        rm -f "$log"
+        exit 1
+    fi
+    rm -rf "$work_dir"
+    rm -f "$log"
+}
+
 # 当前已存在、且对 async 语法主链路最有代表性的回归。
 # 这组通过只能证明“当前已覆盖的子集仍成立”，不能证明完整语法已完成。
 baseline_tests=(
@@ -76,5 +101,7 @@ done
 expect_check_fail "tests/error_await_outside_async.uya" "@await 只能在 @async_fn 函数内使用"
 expect_check_fail "tests/error_async_await_in_while_cond.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机结构验证失败"
+expect_compile_fail "tests/error_async_for_iterator_interface_await.uya" "for 循环需要数组类型或实现了迭代器接口的结构体，但无法推断表达式类型"
+expect_compile_fail "tests/error_async_for_iterator_ref_await.uya" "错误: @async_fn 中 for 数组迭代若为迭代器接口形式，@await 尚未支持"
 
-echo "verify_async_full_language_matrix: positive matrix and forbidden @await positions passed"
+echo "verify_async_full_language_matrix: positive matrix, iterator for boundaries, and forbidden @await positions passed"

@@ -12,7 +12,7 @@
 
 - **已落地**：`emit_async_segment` / `emit_async_continuation` 路径下的通用 lowering；`while` / `if` 内含 `try @await`；**范围 `for`** 与**定长数组 `for`** 内含 `try @await`（状态字段保存循环变量/索引/上界等，resume 后回跳或退出与 `while` 对称）；复合表达式中的 `try @await`（赋值 RHS / return 表达式）也已接入回放/替换路径。
 - **回归测试**：`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya`、`tests/test_async_compound_try_await.uya` 等。
-- **仍不支持或需 checker/codegen 明确报错**：迭代器形式 `for obj |v|` 与 `@await` 组合；`for |&x|` 与 `@await` 组合（与同步 `for` 能力对齐后再扩展）。
+- **仍不支持或需 checker/codegen 明确报错**：`@async_fn` 中带 `@await` 的迭代器 `for` 目前只支持**具体 struct 的值绑定** `for iter |v|`；**接口值迭代** 与 **`for iter |&x|` 引用绑定** 需继续报错，避免退回旧的 codegen fallback。
 - **历史备注**：await 循环之间的同步语句（原 Bug B）已由 `tests/test_async_bug_b_sync_between.uya` 复核通过并转正；后续若扩展新的循环形态，可继续对照 [todo_async_loop_await.md](todo_async_loop_await.md)。
 
 ---
@@ -192,7 +192,7 @@ if (cond) {  // 回跳
 1. **Bug A**：`tests/test_async_bug_a_two_while.uya` 通过
 2. **Bug B**：`tests/test_async_bug_b_sync_between.uya` 通过
 3. **Bug C**：`tests/test_async_bug_c_tail_await.uya` 通过
-4. **`for` + await**：`tests/test_async_for_await.uya`（范围 + 定长数组）
+4. **`for` + await**：`tests/test_async_for_await.uya`（范围 + 定长数组 + 定长数组引用 + 具体 struct 迭代器值绑定），以及 `tests/error_async_for_iterator_interface_await.uya` / `tests/error_async_for_iterator_ref_await.uya`（明确失败边界）
 5. **复合表达式 `try @await`**：`tests/test_async_compound_try_await.uya`（赋值 RHS / return 表达式）
 6. **现有 async 测试**：`test_async_while_multi_await.uya`、`test_async_copy.uya` 等不回归
 7. **全量回归**：`make check` / `make tests` 通过

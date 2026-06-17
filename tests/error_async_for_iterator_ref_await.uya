@@ -1,0 +1,63 @@
+// error_async_for_iterator_ref_await.uya
+// 预期：编译失败，@async_fn 中带 @await 的迭代器 for 当前不支持 |&item| 引用绑定
+
+use std.async;
+
+error IterEnd;
+
+interface AsyncI32Iterator {
+    fn next(self: &Self) !void;
+    fn value(self: &Self) i32;
+}
+
+struct AsyncRangeIterator : AsyncI32Iterator {
+    current: i32,
+    end_val: i32,
+    started: i32
+}
+
+AsyncRangeIterator {
+    fn next(self: &Self) !void {
+        if self.started == 0 {
+            self.started = 1;
+        } else {
+            self.current = self.current + 1;
+        }
+        if self.current >= self.end_val {
+            return error.IterEnd;
+        }
+    }
+
+    fn value(self: &Self) i32 {
+        return self.current;
+    }
+}
+
+fn make_async_range(start: i32, end_val: i32) AsyncRangeIterator {
+    return AsyncRangeIterator{ current: start, end_val: end_val, started: 0 };
+}
+
+fn ready_1() Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(1));
+    return Future<!i32>{ state: p };
+}
+
+@async_fn
+fn fail_iterator_ref_with_await() Future<!i32> {
+    var iter: AsyncRangeIterator = make_async_range(0, 2);
+    var total: i32 = 0;
+    for iter |&item| {
+        const x: i32 = try @await ready_1();
+        total = total + *item + x;
+    }
+    return total;
+}
+
+fn main() i32 {
+    const fut: Future<!i32> = fail_iterator_ref_with_await();
+    const result: !i32 = block_on<i32>(fut);
+    const value: i32 = result catch {
+        return 1;
+    };
+    return value;
+}

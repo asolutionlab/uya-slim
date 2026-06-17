@@ -97,3 +97,16 @@
         - `./tests/run_programs_parallel.sh --uya --c99 tests/test_async_await_limits_and_segments.uya`：通过
         - `./tests/verify_async_nested_future_boundary.sh`：通过（保留 dedicated 显式失败边界覆盖）
         - `make tests-uya`：通过（1005/1005，默认套件排除 `test_async_nested_future_poll.uya`）
+
+## 目标路径
+- `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+- `根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。`
+- [x] 审计并收口 async `for` 对迭代器 interface/ref 形式的真实支持边界。
+  - 验证：`./bin/uya test tests/test_async_for_await.uya`
+  - 结果：通过；`for 0..n`、`for arr |e|`、`for arr |&x|` 与具体 struct 迭代器值绑定 `for iter |v|` 的 async 回归仍全部通过。
+  - 验证：`./bin/uya test tests/test_async_sync_body_matrix.uya`
+  - 结果：通过；sync/async body matrix 仍覆盖数组引用迭代与具体 struct 迭代器值绑定主链路。
+  - 验证：`bash tests/verify_async_full_language_matrix.sh`
+  - 结果：通过；新增 `tests/error_async_for_iterator_interface_await.uya`（checker 失败）与 `tests/error_async_for_iterator_ref_await.uya`（命中既有 codegen 诊断并在宿主 C 编译阶段失败）两条负回归，明确证明 iterator interface/ref 边界。
+  - 验证：`make tests-uya`
+  - 结果：通过；1007 个测试任务全部通过，后续 `uya` 自举编译与 UPM 验证套件也通过。

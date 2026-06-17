@@ -417,6 +417,38 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
 
 // 检查 for 循环节点
 // 参数：checker - TypeChecker 指针，node - for 循环节点
+fn checker_async_for_body_has_await(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null || node.type != ASTNodeType.AST_FOR_STMT {
+        return 0;
+    }
+    if checker.current_function_decl == null || checker.current_function_decl.fn_decl_is_async == 0 {
+        return 0;
+    }
+    if node.for_stmt_body == null {
+        return 0;
+    }
+    return has_await_in_expr(node.for_stmt_body);
+}
+
+fn checker_is_iterator_interface_type(checker: &TypeChecker, expr_type: &Type) i32 {
+    if checker == null || expr_type == null || checker.program_node == null {
+        return 0;
+    }
+    if expr_type.kind != TypeKind.TYPE_INTERFACE || expr_type.interface_name == null {
+        return 0;
+    }
+    const next_method: &ASTNode = find_interface_method_sig(checker.program_node, expr_type.interface_name, "next" as *byte);
+    const value_method: &ASTNode = find_interface_method_sig(checker.program_node, expr_type.interface_name, "value" as *byte);
+    if next_method == null || value_method == null || next_method.fn_decl_return_type == null {
+        return 0;
+    }
+    const next_return_type: Type = type_from_ast(checker, next_method.fn_decl_return_type);
+    if next_return_type.kind != TypeKind.TYPE_ERROR_UNION {
+        return 0;
+    }
+    return 1;
+}
+
 // 返回：1 表示检查通过，0 表示检查失败
 fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
     if node.for_stmt_is_range != 0 {
@@ -503,6 +535,8 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
     
+    const async_for_has_await: i32 = checker_async_for_body_has_await(checker, node);
+
     // 如果不是数组类型，尝试作为接口迭代器处理
     if array_type.kind != TypeKind.TYPE_ARRAY || array_type.element_type == null {
         // 检查是否是结构体类型，且实现了迭代器接口（有 next 和 value 方法）
@@ -515,6 +549,11 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 // 检查 next 方法签名：next(self: &Self) !void
                 const next_return_type: Type = type_from_ast(checker, next_method.fn_decl_return_type);
                 if next_return_type.kind == TypeKind.TYPE_ERROR_UNION {
+                    if async_for_has_await != 0 && node.for_stmt_is_ref != 0 {
+                        checker_report_error(checker, node,
+                            "@async_fn 中带 @await 的迭代器 for 目前只支持具体 struct 的值绑定 `for iter |v|`；`for iter |&item|` 引用绑定尚未支持" as *byte);
+                        return 1;
+                    }
                     // 检查 value 方法返回类型，作为循环变量类型
                     const value_return_type: Type = type_from_ast(checker, value_method.fn_decl_return_type);
                     
@@ -557,6 +596,30 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     checker_report_error(checker, node, "迭代器的 next 方法必须返回 !void" as *byte);
                 }
             }
+        }
+
+        var is_async_iterator_interface: i32 = 0;
+        if async_for_has_await != 0 {
+            is_async_iterator_interface = checker_is_iterator_interface_type(checker, &expr_type);
+            if is_async_iterator_interface == 0 && node.for_stmt_array != null &&
+                node.for_stmt_array.type == ASTNodeType.AST_IDENTIFIER &&
+                node.for_stmt_array.identifier_name != null {
+                const iter_symbol: &Symbol = symbol_table_lookup(checker, node.for_stmt_array.identifier_name);
+                if iter_symbol != null {
+                    is_async_iterator_interface = checker_is_iterator_interface_type(checker, &iter_symbol.type);
+                    if is_async_iterator_interface == 0 && iter_symbol.decl_node != null &&
+                        iter_symbol.decl_node.type == ASTNodeType.AST_VAR_DECL &&
+                        iter_symbol.decl_node.var_decl_type != null {
+                        const declared_iter_type: Type = type_from_ast(checker, iter_symbol.decl_node.var_decl_type);
+                        is_async_iterator_interface = checker_is_iterator_interface_type(checker, &declared_iter_type);
+                    }
+                }
+            }
+        }
+        if is_async_iterator_interface != 0 {
+            checker_report_error(checker, node,
+                "@async_fn 中带 @await 的迭代器 for 目前只支持具体 struct 的值绑定 `for iter |v|`；接口值迭代尚未支持" as *byte);
+            return 1;
         }
         
         // 既不是数组类型，也不是实现了迭代器接口的结构体
