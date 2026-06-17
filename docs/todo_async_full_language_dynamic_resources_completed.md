@@ -52,3 +52,22 @@
   - 结果：通过。
   - 验证：`make backup-all`
   - 结果：通过（含 proof optimization、默认顶层函数发射、UPM、exec vm、microapp、SIMD/@syscall/http_bench 与 seed/backup 刷新）。
+
+## 目标
+
+- [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+  - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
+    - [x] 校准权威矩阵与历史“已完成”口径到当前源码/测试真相。
+      - 验证：`make uya`
+      - 结果：通过，`bin/uya` 已按当前 `src/main.uya` 重建。
+      - 验证：`./tests/verify_async_full_language_matrix.sh`
+      - 结果：通过，输出 `verify_async_full_language_matrix: positive matrix and forbidden @await positions passed`。
+      - 验证：`./bin/uya test tests/test_async_macro_expand.uya`
+      - 结果：通过，`async_expr_macro_block_keeps_preawait_eval_once` 1/1 通过。
+      - 验证：`./bin/uya run tests/programs/test_ai_prompt_async_macro_combo.uya`
+      - 结果：通过，输出 `加法异步结果 50` / `除法异步结果 5`。
+      - 验证：`python3 /home/winger/.codex/skills/goal-task-runner/scripts/check_todo.py docs/todo_async_full_language_dynamic_resources.md`
+      - 结果：通过，归档前主 todo 只有 1 个 active 任务。
+      - 验证：`git diff --check`
+      - 结果：通过。
+      - 结果：权威 todo 已不再把 `for arr |&x|`、`for iter |v|`、expr 宏 async 组合和 `tests/verify_async_full_language_matrix.sh` 误写成缺口，并把剩余真实边界改为 nested future / 动态容量 / 迭代器 interface/ref。
