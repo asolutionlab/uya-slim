@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
+import pty
 import re
+import select
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -178,6 +181,14 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=240,
         help="Maximum characters per numbered todo excerpt line.",
+    )
+    parser.add_argument(
+        "--pty",
+        action="store_true",
+        help=(
+            "Allocate a pseudo-terminal (PTY) for the codex subprocess. "
+            "Required for commands like `deepcode` that check isatty()."
+        ),
     )
     return parser.parse_args()
 
@@ -594,9 +605,60 @@ def validate_status(status: TodoStatus) -> int:
     return 0
 
 
-def run_codex_round(cmd: list[str], prompt: str) -> int:
-    completed = subprocess.run(cmd, input=prompt, text=True, check=False)
-    return completed.returncode
+def run_codex_round(cmd: list[str], prompt: str, *, use_pty: bool = False) -> int:
+    if not use_pty:
+        completed = subprocess.run(cmd, input=prompt, text=True, check=False)
+        return completed.returncode
+
+    master_fd, slave_fd = pty.openpty()
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+
+        # Feed prompt through the PTY master so the child sees it on its stdin.
+        os.write(master_fd, prompt.encode())
+
+        # Read and forward output until the process exits.
+        while proc.poll() is None:
+            try:
+                r, _, _ = select.select([master_fd], [], [], 0.5)
+                if r:
+                    data = os.read(master_fd, 4096)
+                    if not data:
+                        break
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+
+        # Drain any remaining output.
+        while True:
+            try:
+                r, _, _ = select.select([master_fd], [], [], 0.5)
+                if r:
+                    data = os.read(master_fd, 4096)
+                    if not data:
+                        break
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+                else:
+                    break
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+
+        return proc.returncode
+    finally:
+        os.close(master_fd)
 
 
 def main() -> int:
@@ -685,7 +747,7 @@ def main() -> int:
                 ),
                 flush=True,
             )
-        returncode = run_codex_round(cmd, prompt)
+        returncode = run_codex_round(cmd, prompt, use_pty=args.pty)
         if returncode != 0:
             print(f"error: codex round {rounds} exited with {returncode}", file=sys.stderr)
             return returncode
