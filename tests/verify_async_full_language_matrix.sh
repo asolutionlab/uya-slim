@@ -18,6 +18,26 @@ run_uya_test() {
     "$COMPILER" test "$REPO_ROOT/$rel" >/dev/null
 }
 
+expect_check_fail() {
+    local rel="$1"
+    local pattern="$2"
+    local log
+    log="$(mktemp)"
+    if "$COMPILER" check "$REPO_ROOT/$rel" >"$log" 2>&1; then
+        echo "expected checker failure but succeeded: $rel"
+        cat "$log"
+        rm -f "$log"
+        exit 1
+    fi
+    if ! grep -Fq "$pattern" "$log"; then
+        echo "missing expected diagnostic for $rel: $pattern"
+        cat "$log"
+        rm -f "$log"
+        exit 1
+    fi
+    rm -f "$log"
+}
+
 # 当前已存在、且对 async 语法主链路最有代表性的回归。
 # 这组通过只能证明“当前已覆盖的子集仍成立”，不能证明完整语法已完成。
 baseline_tests=(
@@ -36,6 +56,7 @@ baseline_tests=(
     "tests/test_async_compound_try_await.uya"
     "tests/test_async_fn_multi_segment_unwrap.uya"
     "tests/test_async_await_limits_and_segments.uya"
+    "tests/test_async_sync_body_matrix.uya"
     "tests/test_async_method_interface.uya"
     "tests/test_async_local_interface_await.uya"
     "tests/test_async_frame_inline_temp.uya"
@@ -51,45 +72,9 @@ for test_file in "${baseline_tests[@]}"; do
     run_uya_test "$test_file"
 done
 
-# 这些测试对应权威 TODO 中仍然缺失或计划新增的“完整语法”覆盖。
-# 如果文件还不存在，本脚本应显式失败，提醒矩阵尚未完整。
-required_future_tests=(
-    "tests/test_async_match_await.uya"
-    "tests/test_async_catch_await.uya"
-    "tests/test_async_defer_errdefer.uya"
-    "tests/test_async_iterator_for_await.uya"
-    "tests/test_async_array_ref_for_await.uya"
-    "tests/test_async_macro_expand.uya"
-    "tests/test_async_nested_future_poll.uya"
-    "tests/test_async_large_state_machine_syntax.uya"
-)
+# 规范明确禁止的 @await 位置，必须继续保持失败。
+expect_check_fail "tests/error_await_outside_async.uya" "@await 只能在 @async_fn 函数内使用"
+expect_check_fail "tests/error_async_await_in_while_cond.uya" "@async_fn 状态机结构验证失败"
+expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机结构验证失败"
 
-missing_tests=()
-present_future_tests=()
-for test_file in "${required_future_tests[@]}"; do
-    if [ -f "$REPO_ROOT/$test_file" ]; then
-        present_future_tests+=("$test_file")
-    else
-        missing_tests+=("$test_file")
-    fi
-done
-
-for test_file in "${present_future_tests[@]}"; do
-    run_uya_test "$test_file"
-done
-
-if [ "${#missing_tests[@]}" -ne 0 ]; then
-    echo
-    echo "async full-language matrix is still incomplete"
-    echo "missing dedicated tests:"
-    for test_file in "${missing_tests[@]}"; do
-        echo "  - $test_file"
-    done
-    echo
-    echo "note: legacy limit probes such as tests/error_async_too_many_awaits.uya"
-    echo "and tests/error_async_too_many_params.uya are not accepted as proof of"
-    echo "the target state, because they encode the old fixed-cap behavior."
-    exit 2
-fi
-
-echo "verify_async_full_language_matrix: current matrix files present and baseline passed"
+echo "verify_async_full_language_matrix: positive matrix and forbidden @await positions passed"

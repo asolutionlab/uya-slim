@@ -2537,6 +2537,8 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
     const saved_async_state_size: i32 = codegen.async_state_size;
     const saved_async_local_count: i32 = codegen.async_local_count;
     const saved_async_inline_temp_var_count: i32 = codegen.async_inline_temp_var_count;
+    const saved_defer_stack_depth_child: i32 = codegen.defer_stack_depth;
+    const saved_current_drop_scope_child: i32 = codegen.current_drop_scope;
 
     var saved_collect_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
     var saved_collect_names: [&byte: C99_ASYNC_MAX_AWAITS] = [];
@@ -2549,6 +2551,12 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
     var saved_async_local_types: [&ASTNode: 32] = [];
     var saved_async_local_inits: [&ASTNode: 32] = [];
     var saved_async_inline_temp_var_names: [&byte: 32] = [];
+    var saved_defer_counts_child: [i32: C99_MAX_DEFER_STACK] = [];
+    var saved_errdefer_counts_child: [i32: C99_MAX_DEFER_STACK] = [];
+    var saved_drop_counts_child: [i32: C99_MAX_DEFER_STACK] = [];
+    var saved_defer_nodes_child: [&ASTNode: C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK] = [];
+    var saved_errdefer_nodes_child: [&ASTNode: C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK] = [];
+    var saved_drop_vars_child: [&byte: C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK] = [];
 
     var save_i: i32 = 0;
     while save_i < C99_ASYNC_MAX_AWAITS {
@@ -2569,6 +2577,24 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
         saved_async_inline_temp_var_names[save_i] = codegen.async_inline_temp_var_names[save_i];
         save_i = save_i + 1;
     }
+    save_i = 0;
+    while save_i < C99_MAX_DEFER_STACK {
+        saved_defer_counts_child[save_i] = codegen.defer_count[save_i];
+        saved_errdefer_counts_child[save_i] = codegen.errdefer_count[save_i];
+        saved_drop_counts_child[save_i] = codegen.drop_var_count[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK {
+        saved_defer_nodes_child[save_i] = codegen.defer_stack[save_i];
+        saved_errdefer_nodes_child[save_i] = codegen.errdefer_stack[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+        saved_drop_vars_child[save_i] = codegen.drop_var_safe[save_i];
+        save_i = save_i + 1;
+    }
 
     gen_async_function_stage_b(codegen, child_decl, child_func_c_name, child_decl.fn_decl_return_type, child_effective_return_type, 1);
     codegen.emit_stream = saved_emit_stream_predef;
@@ -2579,6 +2605,8 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
     codegen.async_state_size = saved_async_state_size;
     codegen.async_local_count = saved_async_local_count;
     codegen.async_inline_temp_var_count = saved_async_inline_temp_var_count;
+    codegen.defer_stack_depth = saved_defer_stack_depth_child;
+    codegen.current_drop_scope = saved_current_drop_scope_child;
 
     save_i = 0;
     while save_i < C99_ASYNC_MAX_AWAITS {
@@ -2597,6 +2625,24 @@ fn c99_async_emit_inline_child_predefs(codegen: &C99CodeGenerator, current_fn_de
         codegen.async_local_types[save_i] = saved_async_local_types[save_i];
         codegen.async_local_inits[save_i] = saved_async_local_inits[save_i];
         codegen.async_inline_temp_var_names[save_i] = saved_async_inline_temp_var_names[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < C99_MAX_DEFER_STACK {
+        codegen.defer_count[save_i] = saved_defer_counts_child[save_i];
+        codegen.errdefer_count[save_i] = saved_errdefer_counts_child[save_i];
+        codegen.drop_var_count[save_i] = saved_drop_counts_child[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK {
+        codegen.defer_stack[save_i] = saved_defer_nodes_child[save_i];
+        codegen.errdefer_stack[save_i] = saved_errdefer_nodes_child[save_i];
+        save_i = save_i + 1;
+    }
+    save_i = 0;
+    while save_i < C99_MAX_DEFER_STACK * C99_MAX_DROP_VARS_PER_BLOCK {
+        codegen.drop_var_safe[save_i] = saved_drop_vars_child[save_i];
         save_i = save_i + 1;
     }
 }
@@ -4952,6 +4998,7 @@ fn emit_async_no_await_ready_return(
                 }
                 codegen.current_function_return_type = null;
                 fputs(" };\n" as *byte, codegen.emit_stream as *void);
+                emit_all_active_scope_cleanup(codegen, 0);
                 if no_await_is_future_literal != 0 {
                     fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = ok.value } };\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
                 } else {
@@ -4978,6 +5025,7 @@ fn emit_async_no_await_ready_return(
             }
             fputs(" };\n" as *byte, codegen.emit_stream as *void);
         }
+        emit_all_active_scope_cleanup(codegen, 0);
         fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = ok } };\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
         return;
     }
@@ -5010,8 +5058,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         return;
     }
     const saved_current_function_decl_stage_b: &ASTNode = codegen.current_function_decl;
+    const saved_defer_stack_depth_stage_b: i32 = codegen.defer_stack_depth;
+    const saved_current_drop_scope_stage_b: i32 = codegen.current_drop_scope;
     codegen.current_function_decl = fn_decl;
+    codegen.defer_stack_depth = 0;
+    codegen.current_drop_scope = -1;
     defer {
+        codegen.defer_stack_depth = saved_defer_stack_depth_stage_b;
+        codegen.current_drop_scope = saved_current_drop_scope_stage_b;
         codegen.current_function_decl = saved_current_function_decl_stage_b;
     }
     if effective_return_type.type != ASTNodeType.AST_TYPE_NAMED || effective_return_type.type_named_name == null ||
@@ -5095,6 +5149,34 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 提取所有 await 点（支持递归进入 while/if/for/block）
     const body: &ASTNode = fn_decl.fn_decl_body;
+    var async_top_defer_scope_pushed: i32 = 0;
+    if body != null && body.type == ASTNodeType.AST_BLOCK && body.block_stmts != null &&
+        codegen.defer_stack_depth >= 0 && codegen.defer_stack_depth < C99_MAX_DEFER_STACK {
+        const d_async: i32 = codegen.defer_stack_depth;
+        c99_defer_count_set(codegen, d_async, 0, 0);
+        c99_defer_count_set(codegen, d_async, 1, 0);
+        c99_drop_var_count_set(codegen, d_async, 0);
+        codegen.defer_stack_depth = codegen.defer_stack_depth + 1;
+        async_top_defer_scope_pushed = 1;
+        var ds_async: i32 = 0;
+        while ds_async < body.block_stmt_count {
+            const s_async: &ASTNode = body.block_stmts[ds_async];
+            if s_async != null && s_async.type == ASTNodeType.AST_DEFER_STMT {
+                const nd_async: i32 = c99_defer_count_at(codegen, d_async, 0);
+                if nd_async >= 0 && nd_async < C99_MAX_DEFERS_PER_BLOCK {
+                    codegen.defer_stack[d_async * C99_MAX_DEFERS_PER_BLOCK + nd_async] = s_async;
+                    c99_defer_count_set(codegen, d_async, 0, nd_async + 1);
+                }
+            } else if s_async != null && s_async.type == ASTNodeType.AST_ERRDEFER_STMT {
+                const ne_async: i32 = c99_defer_count_at(codegen, d_async, 1);
+                if ne_async >= 0 && ne_async < C99_MAX_DEFERS_PER_BLOCK {
+                    codegen.errdefer_stack[d_async * C99_MAX_DEFERS_PER_BLOCK + ne_async] = s_async;
+                    c99_defer_count_set(codegen, d_async, 1, ne_async + 1);
+                }
+            }
+            ds_async = ds_async + 1;
+        }
+    }
     const MAX_AWAITS: i32 = C99_ASYNC_MAX_AWAITS;
     var await_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS] = [];
     var await_bind_names: [&byte: C99_ASYNC_MAX_AWAITS] = [];
@@ -5930,11 +6012,15 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     }
                 }
                 if direct_return_await != 0 {
+                    emit_all_active_scope_cleanup(codegen, 0);
                     fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = r } };\n" as *byte,
                         poll_ret_c as *byte, poll_union_c as *byte);
                 } else {
-                    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = r.value } } };\n" as *byte,
-                        poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                    fprintf(codegen.emit_stream as *void, "        %s _uya_async_cont_ok = (%s){ .error_id = 0, .value = r.value };\n" as *byte,
+                        ready_payload_c as *byte, ready_payload_c as *byte);
+                    emit_all_active_scope_cleanup(codegen, 0);
+                    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = _uya_async_cont_ok } };\n" as *byte,
+                        poll_ret_c as *byte, poll_union_c as *byte);
                 }
                 fputs("    }\n" as *byte, codegen.emit_stream as *void);
                 state_k = state_k + 1;
@@ -5955,10 +6041,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 }
                 if cont_r != 0 && ret_expr != null && skip_ret_expr_emit == 0 {
                     codegen.current_function_return_type = effective_return_type;
-                    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = " as *byte,
-                        poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                    fprintf(codegen.emit_stream as *void, "        %s _uya_async_cont_ret = (%s){ .error_id = 0, .value = " as *byte,
+                        ready_payload_c as *byte, ready_payload_c as *byte);
                     gen_expr(codegen, ret_expr);
-                    fputs(" } } };\n" as *byte, codegen.emit_stream as *void);
+                    fputs(" };\n" as *byte, codegen.emit_stream as *void);
+                    emit_all_active_scope_cleanup(codegen, 0);
+                    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = _uya_async_cont_ret } };\n" as *byte,
+                        poll_ret_c as *byte, poll_union_c as *byte);
                     codegen.current_function_return_type = null;
                 }
             }
@@ -6105,6 +6194,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     codegen.async_full_return_type = null;
     codegen.async_concrete_future_safe = null;
     codegen.async_state_slot_iface_c = null;
+    if async_top_defer_scope_pushed != 0 && codegen.defer_stack_depth > 0 {
+        codegen.defer_stack_depth = codegen.defer_stack_depth - 1;
+    }
     pi = 0;
     while pi < 16 {
         codegen.async_param_names[pi] = null;

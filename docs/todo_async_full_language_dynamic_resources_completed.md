@@ -38,3 +38,17 @@
     - 验证：`./bin/uya build tests/programs/test_ai_prompt_async_macro_combo.uya`
     - 完成条件：示例可编译运行，宏展开后的局部绑定与同步函数体一致。
     - 本轮验证：`./bin/uya test tests/test_async_macro_expand.uya` 通过；`./bin/uya run tests/programs/test_ai_prompt_async_macro_combo.uya` 通过，输出 `加法异步结果 50` / `除法异步结果 5`；`./bin/uya build tests/programs/test_ai_prompt_async_macro_combo.uya` 通过；`./bin/uya test tests/test_async_compound_try_await.uya` 通过；`./bin/uya test tests/test_async_codegen_edge_paths.uya` 通过。
+
+## 2026-06-17
+
+父级路径：`@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。`
+
+- [x] 建立 `@async_fn` / 同步函数体语法对齐回归矩阵，并保留规范明确禁止的 `@await` 位置错误测试。
+  - 验证：`./tests/verify_async_full_language_matrix.sh`
+  - 结果：通过。新增 `tests/test_async_sync_body_matrix.uya`，并继续约束 `tests/error_await_outside_async.uya`、`tests/error_async_await_in_while_cond.uya`、`tests/error_async_await_in_return.uya`。
+  - 验证：`make tests-uya`
+  - 结果：通过（1005/1005，含 `upm-check`）。
+  - 验证：`make clean`
+  - 结果：通过。
+  - 验证：`make backup-all`
+  - 结果：通过（含 proof optimization、默认顶层函数发射、UPM、exec vm、microapp、SIMD/@syscall/http_bench 与 seed/backup 刷新）。

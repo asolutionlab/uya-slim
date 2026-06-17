@@ -730,8 +730,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         return 1;
     } else if node.type == ASTNodeType.AST_ERRDEFER_STMT {
-        if checker.in_function == 0 || checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
-            checker_report_error(checker, node, "errdefer 只能在返回错误联合类型 !T 的函数中使用" as *byte);
+        if checker.in_function == 0 ||
+            (checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION &&
+             checker_type_is_future_error_union(&checker.current_return_type) == 0) {
+            checker_report_error(checker, node, "errdefer 只能在返回错误联合类型 !T 或 Future<!T> 的函数中使用" as *byte);
             return 0;
         }
         if node.errdefer_stmt_body != null {

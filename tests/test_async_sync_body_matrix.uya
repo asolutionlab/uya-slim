@@ -1,0 +1,322 @@
+// test_async_sync_body_matrix.uya
+// 用同步 / async 成对断言，集中覆盖 async 函数体里此前缺少 dedicated 回归的语法组合。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+error MatrixFail;
+error IterEnd;
+
+var g_sync_body_trace: i32 = 0;
+var g_async_body_trace: i32 = 0;
+var g_sync_cleanup_trace: i32 = 0;
+var g_async_cleanup_trace: i32 = 0;
+
+union MatrixOp {
+    add: i32,
+    mul: i32,
+    skip: void,
+}
+
+interface MatrixIterator {
+    fn next(self: &Self) !void;
+    fn value(self: &Self) i32;
+}
+
+struct MatrixRangeIterator : MatrixIterator {
+    current: i32,
+    end_val: i32,
+    started: i32,
+}
+
+MatrixRangeIterator {
+    fn next(self: &Self) !void {
+        if self.started == 0 {
+            self.started = 1;
+        } else {
+            self.current = self.current + 1;
+        }
+        if self.current >= self.end_val {
+            return error.IterEnd;
+        }
+    }
+
+    fn value(self: &Self) i32 {
+        return self.current;
+    }
+}
+
+struct FlipPendingI32 : Future<!i32> {
+    value: i32,
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn make_matrix_range(start: i32, end_val: i32) MatrixRangeIterator {
+    return MatrixRangeIterator{ current: start, end_val: end_val, started: 0 };
+}
+
+fn direct_i32(v: i32) i32 {
+    return v;
+}
+
+fn flip_pending_i32(v: i32) Future<!i32> {
+    return FlipPendingI32{ value: v, polled: 0 };
+}
+
+fn choose_matrix_op(seed: i32) MatrixOp {
+    if seed % 2 == 0 {
+        return MatrixOp.add(seed + 3);
+    }
+    if seed > 0 {
+        return MatrixOp.mul(2);
+    }
+    return MatrixOp.skip({});
+}
+
+fn maybe_bonus(flag: i32, value: i32) !i32 {
+    if flag != 0 {
+        return error.MatrixFail;
+    }
+    return value + 4;
+}
+
+fn sync_body_matrix(seed: i32, catch_flag: i32) i32 {
+    defer { g_sync_body_trace = g_sync_body_trace * 10 + 1; }
+
+    if seed < 0 {
+        return 100 - seed;
+    }
+
+    var total: i32 = 0;
+    var idx: i32 = 0;
+    var arr: [i32: 3] = [seed, seed + 1, seed + 2];
+    var iter: MatrixRangeIterator = make_matrix_range(0, 3);
+
+    while idx < 2 {
+        const step_seed: i32 = direct_i32(seed + idx);
+        if idx == 0 {
+            total = total + step_seed;
+        } else if idx == 1 {
+            total = total + step_seed;
+        } else {
+            total = total - 99;
+        }
+        idx = idx + 1;
+    }
+
+    for 0..2 |k| {
+        const bump: i32 = direct_i32(k as i32);
+        total = total + bump;
+    }
+
+    for arr |value| {
+        const add: i32 = direct_i32(value);
+        total = total + add;
+    }
+
+    for arr |&item| {
+        const bump_ref: i32 = direct_i32(1);
+        *item = *item + bump_ref;
+        total = total + *item;
+    }
+
+    for iter |v| {
+        const add_iter: i32 = direct_i32(v);
+        total = total + add_iter;
+    }
+
+    const op_seed: i32 = direct_i32(seed);
+    const op_bonus: i32 = match choose_matrix_op(op_seed) {
+        .add(n) => n,
+        .mul(n) => op_seed * n,
+        .skip(_) => 5,
+    };
+    total = total + op_bonus;
+
+    const ready_total: i32 = direct_i32(total);
+    const bonus: i32 = maybe_bonus(catch_flag, ready_total) catch |err| {
+        _ = err;
+        total = total + 50;
+        total;
+    };
+    total = (bonus * 2) - seed;
+    return total;
+}
+
+@async_fn
+fn async_body_matrix(seed: i32, catch_flag: i32) Future<!i32> {
+    defer { g_async_body_trace = g_async_body_trace * 10 + 1; }
+
+    if seed < 0 {
+        return 100 - seed;
+    }
+
+    var total: i32 = 0;
+    var idx: i32 = 0;
+    var arr: [i32: 3] = [seed, seed + 1, seed + 2];
+    var iter: MatrixRangeIterator = make_matrix_range(0, 3);
+
+    while idx < 2 {
+        const step_seed: i32 = try @await flip_pending_i32(seed + idx);
+        if idx == 0 {
+            total = total + step_seed;
+        } else if idx == 1 {
+            total = total + step_seed;
+        } else {
+            total = total - 99;
+        }
+        idx = idx + 1;
+    }
+
+    for 0..2 |k| {
+        const bump: i32 = try @await flip_pending_i32(k as i32);
+        total = total + bump;
+    }
+
+    for arr |value| {
+        const add: i32 = try @await flip_pending_i32(value);
+        total = total + add;
+    }
+
+    for arr |&item| {
+        const bump_ref: i32 = try @await flip_pending_i32(1);
+        *item = *item + bump_ref;
+        total = total + *item;
+    }
+
+    for iter |v| {
+        const add_iter: i32 = try @await flip_pending_i32(v);
+        total = total + add_iter;
+    }
+
+    const op_seed: i32 = try @await flip_pending_i32(seed);
+    const op_bonus: i32 = match choose_matrix_op(op_seed) {
+        .add(n) => n,
+        .mul(n) => op_seed * n,
+        .skip(_) => 5,
+    };
+    total = total + op_bonus;
+
+    const ready_total: i32 = try @await flip_pending_i32(total);
+    const bonus: i32 = maybe_bonus(catch_flag, ready_total) catch |err| {
+        _ = err;
+        total = total + 50;
+        total;
+    };
+    total = (bonus * 2) - seed;
+    return total;
+}
+
+fn sync_cleanup_matrix(fail: i32) !i32 {
+    errdefer { g_sync_cleanup_trace = g_sync_cleanup_trace * 10 + 2; }
+    defer { g_sync_cleanup_trace = g_sync_cleanup_trace * 10 + 3; }
+
+    const gate: i32 = direct_i32(7);
+    if fail != 0 {
+        return error.MatrixFail;
+    }
+    return gate;
+}
+
+@async_fn
+fn async_cleanup_matrix(fail: i32) Future<!i32> {
+    errdefer { g_async_cleanup_trace = g_async_cleanup_trace * 10 + 2; }
+    defer { g_async_cleanup_trace = g_async_cleanup_trace * 10 + 3; }
+
+    const gate: i32 = try @await flip_pending_i32(7);
+    if fail != 0 {
+        return error.MatrixFail;
+    }
+    return gate;
+}
+
+test "async_body_matrix_matches_sync_success" {
+    g_sync_body_trace = 0;
+    g_async_body_trace = 0;
+
+    const sync_value: i32 = sync_body_matrix(4, 0);
+    const async_result: !i32 = block_on<i32>(async_body_matrix(4, 0));
+    const async_value: i32 = async_result catch { -1; };
+
+    try assert_eq_i32(sync_value, 110);
+    try assert_eq_i32(async_value, 110);
+    try assert_eq_i32(g_sync_body_trace, 1);
+    try assert_eq_i32(g_async_body_trace, 1);
+}
+
+test "async_body_matrix_matches_sync_catch_recovery" {
+    g_sync_body_trace = 0;
+    g_async_body_trace = 0;
+
+    const sync_value: i32 = sync_body_matrix(4, 1);
+    const async_result: !i32 = block_on<i32>(async_body_matrix(4, 1));
+    const async_value: i32 = async_result catch { -1; };
+
+    try assert_eq_i32(sync_value, 202);
+    try assert_eq_i32(async_value, 202);
+    try assert_eq_i32(g_sync_body_trace, 1);
+    try assert_eq_i32(g_async_body_trace, 1);
+}
+
+test "async_body_matrix_matches_sync_early_return" {
+    g_sync_body_trace = 0;
+    g_async_body_trace = 0;
+
+    const sync_value: i32 = sync_body_matrix(-3, 0);
+    const async_result: !i32 = block_on<i32>(async_body_matrix(-3, 0));
+    const async_value: i32 = async_result catch { -1; };
+
+    try assert_eq_i32(sync_value, 103);
+    try assert_eq_i32(async_value, 103);
+    try assert_eq_i32(g_sync_body_trace, 1);
+    try assert_eq_i32(g_async_body_trace, 1);
+}
+
+test "async_cleanup_matrix_matches_sync_cleanup_order" {
+    g_sync_cleanup_trace = 0;
+    g_async_cleanup_trace = 0;
+
+    const sync_ok: i32 = sync_cleanup_matrix(0) catch { 0 - 1; };
+    const async_ok_result: !i32 = block_on<i32>(async_cleanup_matrix(0));
+    const async_ok: i32 = async_ok_result catch { -1; };
+
+    try assert_eq_i32(sync_ok, 7);
+    try assert_eq_i32(async_ok, 7);
+    try assert_eq_i32(g_sync_cleanup_trace, 3);
+    try assert_eq_i32(g_async_cleanup_trace, 3);
+
+    g_sync_cleanup_trace = 0;
+    g_async_cleanup_trace = 0;
+
+    var sync_err_seen: i32 = 0;
+    const sync_err_result: !i32 = sync_cleanup_matrix(1);
+    match sync_err_result {
+        error.MatrixFail => { sync_err_seen = 1; },
+        else => { sync_err_seen = 0; },
+    };
+
+    var async_err_seen: i32 = 0;
+    const async_err_result: !i32 = block_on<i32>(async_cleanup_matrix(1));
+    match async_err_result {
+        error.MatrixFail => { async_err_seen = 1; },
+        else => { async_err_seen = 0; },
+    };
+
+    try assert_eq_i32(sync_err_seen, 1);
+    try assert_eq_i32(async_err_seen, 1);
+    try assert_eq_i32(g_sync_cleanup_trace, 23);
+    try assert_eq_i32(g_async_cleanup_trace, 23);
+}

@@ -7,9 +7,9 @@
 ## 目标
 
 - [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
-  - [ ] 建立 `@async_fn` / 同步函数体语法对齐回归矩阵，并保留规范明确禁止的 `@await` 位置错误测试。
+  - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
-    - 完成条件：同步合法而 async 先前缺失的函数体语法都有正向回归，明确禁止项仍有负向测试约束。
+    - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
@@ -110,16 +110,15 @@
 | direct err-union await / 直接 `return error.X` | `tests/test_async_await_direct_err_union.uya`、`tests/test_async_return_error_direct.uya` | 已有覆盖 | 证明部分错误传播形态已打通 |
 | `if / else / else if` + `@await` | `tests/test_async_if_await.uya`、`tests/test_async_else_if_await.uya` | 已有覆盖 | 仍只覆盖常见形态，不等于所有分支语法 |
 | `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |
-| `for range` / 定长数组值迭代 + `@await` | `tests/test_async_for_await.uya` | 仅部分覆盖 | 只覆盖 `for 0..n` 和 `for arr |e|`；不含迭代器 `for obj |v|` 与 `for |&x|` |
+| `for range` / 定长数组值迭代 / 定长数组引用迭代 / 迭代器 `for` + `@await` | `tests/test_async_for_await.uya` | 已有覆盖 | 已覆盖 `for 0..n`、`for arr |e|`、`for arr |&x|` 与 `for iter |v|` 的 async 体回归 |
 | 复合表达式 / await 绑定跨段重放 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya` | 已有覆盖 | 覆盖 RHS/return 表达式与多段 bind 依赖 |
 | 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
 | caller-owned inline / frame / 局部定长数组 | `tests/test_async_frame_inline_temp.uya`、`tests/test_async_frame_inline_temp2.uya`、`tests/test_async_fn_local_fixed_array.uya`、`tests/test_async_frame_type.uya` | 已有覆盖 | 更偏 codegen/frame correctness，不等于完整语法 |
 | runtime / scheduler / real client 集成 | `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_http1_async_client.uya` | 已有覆盖 | 是“真实使用链路”证据，但不覆盖全部语法 |
-| async 体内 `match` | 未见 dedicated async-body regression | 缺口 | 当前只看到 async 外围 `match p` 的测试，不足以证明 `@async_fn` 体内 `match` + `@await` |
-| async 体内 `catch` 与 `@await` 组合 | `tests/test_async_codegen_edge_paths.uya` 仅覆盖 catch codegen 边路径 | 缺口 | 还没有 dedicated `@async_fn` + `try/@await` + `catch` 语义回归 |
-| async 体内 `defer / errdefer` | 未见 dedicated async-body regression | 缺口 | 这是当前最明确的空洞之一 |
-| 迭代器 `for obj |v|` + `@await` | `src/codegen/c99/function.uya` 明确报“尚未支持” | 明确未支持 | 需要先补红测，再实现 |
-| `for arr |&x|` + `@await` | `src/codegen/c99/function.uya` 明确报“尚未支持” | 明确未支持 | 需要指针/引用语义与状态机字段模型一起收口 |
+| sync/async 函数体对齐矩阵 | `tests/test_async_sync_body_matrix.uya`、`tests/verify_async_full_language_matrix.sh` | 已有覆盖 | 用同步/async 成对断言覆盖局部变量、提前 return、分支、循环、`match`、`catch`、`defer/errdefer` 等组合语法 |
+| async 体内 `match` | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已比较同步/async 的 `match` 表达式语义 |
+| async 体内 `catch` 与 `@await` 组合 | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 `try/@await` 后接 `catch` 恢复路径 |
+| async 体内 `defer / errdefer` | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 success/error 两条清理顺序 |
 | 宏展开后的 expr / stmt 进入 async lowering | `tests/programs/test_ai_prompt_async_macro_combo.uya` 顶部注释明确规避 | 已知限制 | 当前不能把它当作已支持 |
 | `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya` 顶部注释与 `docs/std_async_design.md` | 已知限制 | 当前仍不能宣称已收口 |
 | 大状态机 / 大量 await / 参数与 meta 动态扩容 | `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya` | 与目标冲突 | 这些旧测试本身就是“仍有固定上限”的证据 |
