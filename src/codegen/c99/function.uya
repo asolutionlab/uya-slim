@@ -3648,6 +3648,20 @@ fn c99_async_try_append_hoist_local(codegen: &C99CodeGenerator, name: &byte, typ
     codegen.async_local_count = codegen.async_local_count + 1;
 }
 
+fn c99_async_make_mut_ref_type(codegen: &C99CodeGenerator, owner: &ASTNode, pointed_type: &ASTNode) &ASTNode {
+    if codegen == null || owner == null || pointed_type == null {
+        return null;
+    }
+    const ptr_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_POINTER, owner.line, owner.column, codegen.arena, owner.filename);
+    if ptr_type == null {
+        return null;
+    }
+    ptr_type.type_pointer_pointed_type = pointed_type;
+    ptr_type.type_pointer_is_ffi_pointer = 0;
+    ptr_type.type_pointer_is_const = 0;
+    return ptr_type;
+}
+
 fn c99_async_hoist_one_for_with_await(codegen: &C99CodeGenerator, fn_decl: &ASTNode, for_n: &ASTNode) void {
     if codegen == null || for_n == null || codegen.checker == null || fn_decl == null {
         return;
@@ -3717,7 +3731,13 @@ fn c99_async_hoist_one_for_with_await(codegen: &C99CodeGenerator, fn_decl: &ASTN
         c99_async_try_append_hoist_local(codegen, i_nm[0], usz, 0);
     }
     if for_n.for_stmt_var_name != null {
-        c99_async_try_append_hoist_local(codegen, for_n.for_stmt_var_name, elt_from_ast, 0);
+        var iter_type: &ASTNode = elt_from_ast;
+        if for_n.for_stmt_is_ref != 0 {
+            iter_type = c99_async_make_mut_ref_type(codegen, for_n, elt_from_ast);
+        }
+        if iter_type != null {
+            c99_async_try_append_hoist_local(codegen, for_n.for_stmt_var_name, iter_type, 0);
+        }
     }
 }
 
@@ -4036,8 +4056,14 @@ fn c99_emit_async_for_array_iter_bind_indexed(codegen: &C99CodeGenerator, for_st
     if var_name2 == null || codegen.async_state_var == null {
         return;
     }
-    // 按引用 for |&x| 跨 await 需指针字段语义，另日完善
     if for_stmt.for_stmt_is_ref != 0 {
+        fputs("        " as *byte, codegen.emit_stream as *void);
+        fprintf(codegen.emit_stream as *void, "%s->_uya_loc_%s = &" as *byte,
+            codegen.async_state_var as *byte, var_name2 as *byte);
+        gen_expr(codegen, array);
+        fputs("[" as *byte, codegen.emit_stream as *void);
+        fputs(idx_c_safe as *byte, codegen.emit_stream as *void);
+        fputs("];\n" as *byte, codegen.emit_stream as *void);
         return;
     }
     const bracket2: *byte = strchr(elem_type_c as *byte, 91);  // '['
@@ -4239,14 +4265,6 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
                     emit_async_segment_with_control(codegen, fbody, 0, fbody.block_stmt_count, null, for_stmt);
                 }
             }
-        }
-        return;
-    }
-    if for_stmt.for_stmt_is_ref != 0 {
-        fprintf(stderr as *void, "错误: @async_fn 中 for |&x| 数组迭代与 @await 尚未支持\n" as *byte);
-        const r_ref: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
-        if r_ref != 0 {
-            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
         }
         return;
     }

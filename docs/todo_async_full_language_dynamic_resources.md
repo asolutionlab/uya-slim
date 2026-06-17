@@ -7,6 +7,15 @@
 ## 目标
 
 - [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+  - [ ] 支持迭代器形式 `for iter |v|` 在 `@async_fn` 中跨 `@await` 正常 lowering。
+    - 验证：`./bin/uya test tests/test_async_for_await.uya`
+    - 完成条件：新增迭代器 async for 回归通过，且不再触发当前“迭代器接口形式尚未支持”报错。
+  - [ ] 修复 expr 宏展开后局部绑定/求值在 `@async_fn` 中丢失的问题，并解除对应示例注释限制。
+    - 验证：`./bin/uya build tests/programs/test_ai_prompt_async_macro_combo.uya`
+    - 完成条件：示例可编译运行，宏展开后的局部绑定与同步函数体一致。
+  - [ ] 建立 `@async_fn` / 同步函数体语法对齐回归矩阵，并保留规范明确禁止的 `@await` 位置错误测试。
+    - 验证：`make tests-uya`
+    - 完成条件：同步合法而 async 先前缺失的函数体语法都有正向回归，明确禁止项仍有负向测试约束。
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。

@@ -44,3 +44,23 @@ test "async_for_array_with_await" {
     // (1+7)+(2+7)+(3+7) = 27
     try assert_eq_i32(got2, 27);
 }
+
+@async_fn
+fn mutate_array_for_ref_with_await() Future<!i32> {
+    var a: [i32: 3] = [1, 2, 3];
+    var t: i32 = 0;
+    for a |&item| {
+        const x: i32 = try @await ready_7();
+        *item = *item + x;
+        t = t + *item;
+    }
+    return t + a[0] + a[1] + a[2];
+}
+
+test "async_for_array_ref_with_await" {
+    const f3: Future<!i32> = mutate_array_for_ref_with_await();
+    const v3: !i32 = block_on<i32>(f3);
+    const got3: i32 = v3 catch { 0 - 1; };
+    // 数组变为 [8, 9, 10]，循环累计 27，返回 27 + 27 = 54
+    try assert_eq_i32(got3, 54);
+}
