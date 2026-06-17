@@ -10,7 +10,6 @@
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
     - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
-    - [ ] 验证 `tests/test_async_catch_await.uya` 全路线通过（native / --c99 / --uya --c99）
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。

@@ -217,3 +217,16 @@
 3. --uya --c99: `./tests/run_programs_parallel.sh --uya --c99 test_async_match_await.uya` → 1/1 通过
 
 **结论**：`@async_fn` 体内 match 表达式与 `@await` 的各种组合（match after await, match before await, multi-match interleaved with await, purely match without await）在三条路线上均正确编译和运行。
+
+---
+
+## 2026-06-18
+
+### 来自: ## 目标 > `@async_fn` 体内支持完整 Uya 函数体语法 > 根据矩阵补齐剩余 async 函数体语法/语义缺口
+
+- [x] 验证 `tests/test_async_catch_await.uya` 全路线通过（native / --c99 / --uya --c99）
+  - 验证命令：
+    1. `../uya/bin/uya test tests/test_async_catch_await.uya` — native 后端：5/5 测试，5/5 断言通过
+    2. `../uya/bin/uya test tests/test_async_catch_await.uya --c99` — C99 后端：5/5 测试，5/5 断言通过
+    3. `./tests/run_programs_parallel.sh --uya --c99 tests/test_async_catch_await.uya` — 自举编译器 + C99：1/1 文件通过
+  - 覆盖场景：try @await 成功路径、同步 catch 在 async 体内（成功/错误恢复）、多段 try @await 组合、@await 后对 !i32 做 match
