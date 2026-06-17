@@ -1,34 +1,28 @@
 #!/usr/bin/env python3
-"""Run Codex with an embedded default workflow until a todo file is done."""
+"""Run an agent CLI with an embedded default workflow until a todo file is done."""
 
 from __future__ import annotations
 
 import argparse
-import errno
 import os
-import pty
 import re
-import select
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-import json
-import time
-import shutil
-import shlex
 
 
-CHECKBOX_RE = re.compile(r"^(?P<prefix>\s*[-*]\s*)\[(?P<state>[^\]])\](?P<rest>.*)$")
+CHECKBOX_RE = re.compile(r"^(?P<prefix>\s*[-*]\s*)\[(?P<state>[^\]]*)\](?P<rest>.*)$")
 HEADING_RE = re.compile(r"^(?P<marks>#{1,6})\s+(?P<title>.*)$")
 VALID_STATES = {" ", "x", "~", "f"}
 DEFAULT_SKILL_NAME = "goal-task-runner"
 DEFAULT_SKILL_SOURCE = ".agents/skills/goal-task-runner/SKILL.md"
-DEEPCODE_SETTINGS_DIRNAME = ".deepcode"
-DEEPCODE_SETTINGS_FILENAME = "settings.json"
-DEEPCODE_NOTIFY_SCRIPT_NAME = "notify-loop-signal.sh"
-DEEPCODE_DEFAULT_TIMEOUT = int(os.environ.get("DEEPCODE_LOOP_TIMEOUT", "600"))
-DEEPCODE_STARTUP_DELAY = float(os.environ.get("DEEPCODE_STARTUP_DELAY", "1.0"))
+DEFAULT_KIMI_CMD = "/home/winger/.kimi-code/bin/kimi"
+DEFAULT_KIMI_SYSTEM_PROMPT = (
+    "你的所有思考过程、推理步骤和内部独白必须使用中文。"
+    "即使分析英文代码或文档，思考链也要用中文表达。"
+)
 DEFAULT_GOAL_TASK_RUNNER_SKILL = r"""---
 name: goal-task-runner
 description: 按顺序执行目标导向的长任务 todo，使用 TDD、诚实进度跟踪、任务拆分、性能优先实现、git 提交和推送。适用于 Codex 被要求接收 todo 文件或 todo 列表并依次完成任务的场景。
@@ -74,6 +68,16 @@ description: 按顺序执行目标导向的长任务 todo，使用 TDD、诚实�
 
 
 @dataclass(frozen=True)
+class AgentInvocation:
+    label: str
+    argv: tuple[str, ...]
+    cwd: Path | None
+    prompt_mode: str
+    prompt_option: str
+    prompt_prelude: str = ""
+
+
+@dataclass(frozen=True)
 class TodoStatus:
     pending: int
     active: int
@@ -89,6 +93,10 @@ class TodoStatus:
     @property
     def runnable(self) -> int:
         return self.pending + self.active
+
+    @property
+    def needs_cleanup(self) -> int:
+        return self.done + self.failed
 
 
 @dataclass(frozen=True)
@@ -110,12 +118,18 @@ class TodoContext:
     excerpt_end: int
 
 
+class AgentStartError(RuntimeError):
+    def __init__(self, message: str, exit_code: int) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Use `codex exec` to repeatedly execute one todo round, then stop "
-            "when no unfinished checkbox remains. By default, the "
-            "goal-task-runner workflow is embedded in the prompt."
+            "Use an agent CLI to repeatedly execute one todo round, then stop "
+            "when no unfinished checkbox remains. By default, the goal-task-runner "
+            "workflow is embedded in the prompt."
         )
     )
     parser.add_argument(
@@ -128,7 +142,7 @@ def parse_args() -> argparse.Namespace:
         "--skill",
         default="",
         help=(
-            "Optional Codex skill name to request, with or without a leading "
+            "Optional skill name to request, with or without a leading "
             "'$'. If omitted, use the embedded goal-task-runner workflow so "
             "loop.py works as a single file."
         ),
@@ -136,7 +150,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         default=".",
-        help="Repository root passed to `codex exec -C`. Default: current directory.",
+        help=(
+            "Repository root. Codex receives it via `codex exec -C`; Kimi runs "
+            "with this directory as cwd. Default: current directory."
+        ),
+    )
+    parser.add_argument(
+        "--runner",
+        default=os.environ.get("LOOP_RUNNER", "codex"),
+        choices=("codex", "kimi", "deepcode"),
+        help="Agent CLI runner. Default: LOOP_RUNNER or `codex`.",
+    )
+    parser.add_argument(
+        "--kimi",
+        dest="runner",
+        action="store_const",
+        const="kimi",
+        help="Shortcut for `--runner kimi`.",
+    )
+    parser.add_argument(
+        "--codex",
+        dest="runner",
+        action="store_const",
+        const="codex",
+        help="Shortcut for `--runner codex`.",
+    )
+    parser.add_argument(
+        "--deepcode",
+        dest="runner",
+        action="store_const",
+        const="deepcode",
+        help="Shortcut for `--runner deepcode`.",
     )
     parser.add_argument(
         "--codex-cmd",
@@ -144,9 +188,32 @@ def parse_args() -> argparse.Namespace:
         help="Codex executable. Default: CODEX_CMD or `codex`.",
     )
     parser.add_argument(
+        "--deepcode-cmd",
+        default=os.environ.get("DEEPCODE_CMD", "deepcode"),
+        help="DeepCode executable. Default: DEEPCODE_CMD or `deepcode`.",
+    )
+    parser.add_argument(
+        "--kimi-cmd",
+        default=os.environ.get("KIMI_CMD", DEFAULT_KIMI_CMD),
+        help=f"Kimi executable. Default: KIMI_CMD or `{DEFAULT_KIMI_CMD}`.",
+    )
+    parser.add_argument(
+        "--kimi-system-prompt",
+        default=os.environ.get("KIMI_SYSTEM_PROMPT", DEFAULT_KIMI_SYSTEM_PROMPT),
+        help=(
+            "Kimi-only prompt prelude. Current Kimi CLI does not support "
+            "`--system-prompt`, so loop.py injects this text at the top of "
+            "the prompt. Set to empty to omit it. Default: KIMI_SYSTEM_PROMPT "
+            "or the built-in Chinese reasoning-language instruction."
+        ),
+    )
+    parser.add_argument(
         "--model",
-        default=os.environ.get("CODEX_MODEL", "gpt-5.5"),
-        help="Optional model passed to `codex exec --model`.",
+        default=None,
+        help=(
+            "Optional model passed to the selected runner. Codex defaults to "
+            "CODEX_MODEL or `gpt-5.5`; Kimi defaults to KIMI_MODEL or its config."
+        ),
     )
     parser.add_argument(
         "--reasoning-effort",
@@ -164,20 +231,43 @@ def parse_args() -> argparse.Namespace:
         help="Sandbox passed to `codex exec --sandbox`.",
     )
     parser.add_argument(
+        "--kimi-permission-mode",
+        default=os.environ.get("KIMI_PERMISSION_MODE", ""),
+        choices=("", "auto", "yolo"),
+        help=(
+            "Kimi interactive permission mode: `auto` starts auto permission "
+            "mode; `yolo` automatically approves all actions. Both are invalid "
+            "with Kimi `--prompt`, which loop.py uses and which defaults to "
+            "Kimi's auto permission policy. Empty is recommended. Default: "
+            "KIMI_PERMISSION_MODE or empty."
+        ),
+    )
+    parser.add_argument(
+        "--kimi-continue",
+        action="store_true",
+        help="Pass `--continue` to Kimi to continue the previous session for the repo.",
+    )
+    parser.add_argument(
+        "--kimi-output-format",
+        default=os.environ.get("KIMI_OUTPUT_FORMAT", ""),
+        choices=("", "text", "stream-json"),
+        help="Optional Kimi prompt output format.",
+    )
+    parser.add_argument(
         "--max-rounds",
         type=int,
         default=0,
-        help="Maximum Codex rounds. 0 means no limit.",
+        help="Maximum agent rounds. 0 means no limit.",
     )
     parser.add_argument(
         "--continue-after-failed",
         action="store_true",
-        help="Continue while [f] tasks exist if there are still [ ] or [~] tasks.",
+        help="After archiving [f] tasks, continue if there are still [ ] or [~] tasks.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the first Codex command and prompt without running it.",
+        help="Print the first agent command and prompt without running it.",
     )
     parser.add_argument(
         "--context-lines",
@@ -190,32 +280,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=240,
         help="Maximum characters per numbered todo excerpt line.",
-    )
-    parser.add_argument(
-        "--pty",
-        action="store_true",
-        help=(
-            "Allocate a pseudo-terminal (PTY) for the codex subprocess. "
-            "Required for commands like `deepcode` that check isatty()."
-        ),
-    )
-    parser.add_argument(
-        "--deepcode",
-        action="store_true",
-        default=False,
-        help=(
-            "Use deepcode-specific PTY interaction mode. "
-            "Auto-detected when --codex-cmd contains 'deepcode'."
-        ),
-    )
-    parser.add_argument(
-        "--deepcode-timeout",
-        type=int,
-        default=DEEPCODE_DEFAULT_TIMEOUT,
-        help=(
-            "Maximum seconds to wait for deepcode to signal completion "
-            f"via notify script. Default: {DEEPCODE_DEFAULT_TIMEOUT}."
-        ),
     )
     return parser.parse_args()
 
@@ -279,11 +343,15 @@ def parse_todo_items(lines: list[str]) -> tuple[TodoItem, ...]:
         if not match:
             continue
 
+        state = match.group("state").lower()
+        if state not in VALID_STATES:
+            continue
+
         raw_items.append(
             TodoItem(
                 lineno=lineno,
                 indent=todo_indent(match.group("prefix")),
-                state=match.group("state").lower(),
+                state=state,
                 text=match.group("rest").strip(),
                 is_leaf=True,
             )
@@ -333,13 +401,16 @@ def first_descendant(
 
 
 def select_next_item(items: tuple[TodoItem, ...]) -> TodoItem | None:
-    for item in items:
-        if item.state == "~" and item.is_leaf:
-            return item
-
     for index, item in enumerate(items):
         if item.state != "~":
             continue
+
+        if item.is_leaf:
+            return item
+
+        active_leaf = first_descendant(items, index, "~", True)
+        if active_leaf is not None:
+            return active_leaf
 
         pending_leaf = first_descendant(items, index, " ", True)
         if pending_leaf is not None:
@@ -359,6 +430,13 @@ def select_next_item(items: tuple[TodoItem, ...]) -> TodoItem | None:
         if item.state == " ":
             return item
 
+    return None
+
+
+def select_cleanup_item(items: tuple[TodoItem, ...]) -> TodoItem | None:
+    for item in items:
+        if item.state == "x" or item.state == "f":
+            return item
     return None
 
 
@@ -422,9 +500,13 @@ def build_todo_context(
     lines: list[str],
     context_lines: int,
     max_line_chars: int,
+    cleanup_only: bool = False,
 ) -> TodoContext:
     items = parse_todo_items(lines)
-    item = select_next_item(items)
+    if cleanup_only:
+        item = select_cleanup_item(items)
+    else:
+        item = select_next_item(items)
     if item is None:
         return TodoContext(
             item=None,
@@ -494,14 +576,23 @@ def build_runner_contract_block(
     archive_display: str,
     failed_archive_display: str,
     range_hint: str,
+    cleanup_only: bool,
 ) -> str:
+    if cleanup_only:
+        round_scope = """- 本轮是归档清理轮：只移动主 todo 中遗留的 `[x]` / `[f]` 可归档任务块到对应归档，不启动、不继续、不拆分任何 `[ ]` / `[~]` 任务。
+- 归档完成后直接停止；外层 `loop.py` 会重新检查 todo 状态。"""
+    else:
+        round_scope = """- 本轮只推进一个叶子任务：优先继续已有 `[~]` 叶子；如果已有 `[~]` 是父级/过大任务，先把父级改回 `[ ]`，拆成有顺序的小型 `[ ]` 叶子子任务，并只把第一个可执行叶子标成 `[~]`。
+- 如果发现多个 `[~]`，先用中文报告异常；若是父子同时 `[~]`，保留文档顺序中第一个可执行叶子 `[~]` 并把父级改回 `[ ]`，否则按文档顺序只处理第一个 `[~]`；不要重排或吞掉其他任务。
+- 如果任务过大或含糊，先在 todo 中拆成可执行的叶子子任务；父级保持 `[ ]` 作为分组，子任务写清单一交付物、最小验证命令和完成条件，只启动第一个子任务。"""
+
     return f"""本轮硬约束（不依赖 skill，若与 skill 冲突以这里为准）：
 - 只读取并遵守当前 `--root` 仓库内的 `AGENTS.md`；不要向上级目录查找或应用 `AGENTS.md`。
+- 全程使用中文进行内部规划、自检和对外沟通；过程更新、失败说明、验证结果和最终回复都用中文。代码、命令、错误日志和项目内既有英文术语可以保留原文。
+- 本项目所有 Uya 验证、构建、测试、运行和 UPM 操作都必须使用项目根目录相对路径 `../uya/bin/uya`；不要使用 PATH 上的 `uya`、系统安装的 Uya、其他相邻目录中的编译器，或 `UYA_BIN`/`--uya-bin` 等覆盖方式，除非用户明确改这条约束。
 - Checkbox 状态只使用 `[ ]` 待执行、`[~]` 正在执行、`[x]` 已完成并已验证、`[f]` 已失败且写明原因。
-- 本轮只推进一个叶子任务：优先继续已有 `[~]` 叶子；如果已有 `[~]` 是父级/过大任务，先把父级改回 `[ ]`，拆成有顺序的小型 `[ ]` 叶子子任务，并只把第一个可执行叶子标成 `[~]`。
-- 如果发现多个 `[~]`，先用中文报告异常；若是父子同时 `[~]`，保留文档顺序中第一个可执行叶子 `[~]` 并把父级改回 `[ ]`，否则按文档顺序只处理第一个 `[~]`；不要重排或吞掉其他任务。
+{round_scope}
 - 开始实现前，先按归档规则移动主 todo 中遗留的 `[x]` / `[f]` 可归档任务块。
-- 如果任务过大或含糊，先在 todo 中拆成可执行的叶子子任务；父级保持 `[ ]` 作为分组，子任务写清单一交付物、最小验证命令和完成条件，只启动第一个子任务。
 - 优先围绕上面的目标行工作；读取 todo 时使用小范围命令，例如 `sed -n '{range_hint}p' {todo_display}`，避免打印整份 todo 历史。
 - 不要读取 `loop.log`；如确需排错，只读取短尾部，例如 `tail -n 200 loop.log`。
 - 完成后写入真实验证命令和结果，再把任务标成 `[x]`，并将本轮完成的 `[x]` 任务及其验证记录移动到完成归档 `{archive_display}`。
@@ -541,16 +632,34 @@ def failed_archive_path(todo_display: str) -> str:
     return todo_archive_path(todo_display, "failed")
 
 
+def resolve_todo_path(root: Path, todo: str) -> tuple[Path, str]:
+    todo_path = Path(todo)
+    if not todo_path.is_absolute():
+        todo_path = root / todo_path
+
+    resolved = todo_path.resolve()
+    try:
+        display = str(resolved.relative_to(root))
+    except ValueError as exc:
+        raise ValueError(f"todo file must be inside --root: {resolved}") from exc
+
+    return resolved, display
+
+
 def build_prompt(
     todo_display: str,
     skill: str,
     status: TodoStatus,
     context: TodoContext,
+    cleanup_only: bool = False,
 ) -> str:
     archive_display = completed_archive_path(todo_display)
     failed_archive_display = failed_archive_path(todo_display)
     if context.item is None:
-        target = "未找到可执行 `[~]` 或 `[ ]` 项。"
+        if cleanup_only:
+            target = "未找到遗留 `[x]` 或 `[f]` 可归档项。"
+        else:
+            target = "未找到可执行 `[~]` 或 `[ ]` 项。"
         leaf = "unknown"
         range_hint = "无"
     else:
@@ -559,6 +668,7 @@ def build_prompt(
         range_hint = f"{context.excerpt_start},{context.excerpt_end}"
 
     ancestors = tuple(format_item_for_prompt(item) for item in context.ancestors)
+    round_mode = "归档清理" if cleanup_only else "任务执行"
     return f"""{build_prompt_opening(skill)}
 
 {build_rule_source_block(skill)}
@@ -567,7 +677,8 @@ def build_prompt(
 Todo 文件：`{todo_display}`
 完成归档：`{archive_display}`
 失败归档：`{failed_archive_display}`
-当前状态：pending={status.pending} active={status.active} done={status.done} failed={status.failed} unfinished={status.unfinished}
+当前状态：pending={status.pending} active={status.active} done={status.done} failed={status.failed} runnable={status.runnable} cleanup={status.needs_cleanup} unfinished={status.unfinished}
+本轮模式：{round_mode}
 
 本轮定位：
 - 目标：{target}
@@ -582,11 +693,23 @@ Todo 文件：`{todo_display}`
 {format_prompt_lines(context.excerpt, "  (无摘录)")}
 ```
 
-{build_runner_contract_block(todo_display, archive_display, failed_archive_display, range_hint)}
+{build_runner_contract_block(todo_display, archive_display, failed_archive_display, range_hint, cleanup_only)}
 """
 
 
-def build_codex_command(args: argparse.Namespace, root: Path) -> list[str]:
+def selected_model(args: argparse.Namespace, runner: str) -> str:
+    if args.model is not None:
+        return args.model.strip()
+    if runner == "codex":
+        return os.environ.get("CODEX_MODEL", "gpt-5.5").strip()
+    if runner == "kimi":
+        return os.environ.get("KIMI_MODEL", "").strip()
+    if runner == "deepcode":
+        return os.environ.get("DEEPCODE_MODEL", "").strip()
+    raise ValueError(f"unsupported runner: {runner}")
+
+
+def build_codex_invocation(args: argparse.Namespace, root: Path) -> AgentInvocation:
     cmd = [
         args.codex_cmd,
         "exec",
@@ -595,23 +718,110 @@ def build_codex_command(args: argparse.Namespace, root: Path) -> list[str]:
         "--sandbox",
         args.sandbox,
     ]
-    if args.model.strip():
-        cmd.extend(["--model", args.model.strip()])
+    model = selected_model(args, "codex")
+    if model:
+        cmd.extend(["--model", model])
     if args.reasoning_effort.strip():
         effort = args.reasoning_effort.strip()
         cmd.extend(["--config", f'model_reasoning_effort="{effort}"'])
     cmd.append("-")
-    return cmd
+    return AgentInvocation(
+        label="codex",
+        argv=tuple(cmd),
+        cwd=None,
+        prompt_mode="stdin",
+        prompt_option="",
+    )
+
+
+def format_kimi_prompt_prelude(system_prompt: str) -> str:
+    stripped = system_prompt.strip()
+    if not stripped:
+        return ""
+    return (
+        "Kimi 顶部约束：当前 Kimi CLI 不支持 `--system-prompt`，"
+        "因此以下内容作为本轮 prompt 顶部约束注入。\n"
+        f"{stripped}"
+    )
+
+
+def build_kimi_invocation(args: argparse.Namespace, root: Path) -> AgentInvocation:
+    cmd = [args.kimi_cmd]
+
+    if args.kimi_continue:
+        cmd.append("--continue")
+
+    model = selected_model(args, "kimi")
+    if model:
+        cmd.extend(["--model", model])
+
+    output_format = args.kimi_output_format.strip()
+    if output_format:
+        cmd.extend(["--output-format", output_format])
+
+    return AgentInvocation(
+        label="kimi",
+        argv=tuple(cmd),
+        cwd=root,
+        prompt_mode="option",
+        prompt_option="--prompt",
+        prompt_prelude=format_kimi_prompt_prelude(args.kimi_system_prompt),
+    )
+
+
+def build_deepcode_invocation(args: argparse.Namespace, root: Path) -> AgentInvocation:
+    cmd = [args.deepcode_cmd]
+
+    model = selected_model(args, "deepcode")
+    if model:
+        cmd.extend(["--model", model])
+
+    return AgentInvocation(
+        label="deepcode",
+        argv=tuple(cmd),
+        cwd=root,
+        prompt_mode="option",
+        prompt_option="-p",
+    )
+
+
+def build_agent_invocation(args: argparse.Namespace, root: Path) -> AgentInvocation:
+    if args.runner == "codex":
+        return build_codex_invocation(args, root)
+    if args.runner == "kimi":
+        return build_kimi_invocation(args, root)
+    if args.runner == "deepcode":
+        return build_deepcode_invocation(args, root)
+    raise ValueError(f"unsupported runner: {args.runner}")
+
+
+def format_command(invocation: AgentInvocation, include_prompt_placeholder: bool = True) -> str:
+    argv = list(invocation.argv)
+    if invocation.prompt_mode == "option" and include_prompt_placeholder:
+        argv.extend([invocation.prompt_option, "<prompt>"])
+    rendered = " ".join(shlex.quote(part) for part in argv)
+    if invocation.cwd is not None:
+        return f"(cd {shlex.quote(str(invocation.cwd))} && {rendered})"
+    return rendered
+
+
+def prepare_prompt(invocation: AgentInvocation, prompt: str) -> str:
+    prelude = invocation.prompt_prelude.strip()
+    if not prelude:
+        return prompt
+    return f"{prelude}\n\n{prompt}"
 
 
 def print_status(prefix: str, status: TodoStatus) -> None:
     print(
-        "{} pending={} active={} done={} failed={} unfinished={}".format(
+        "{} pending={} active={} done={} failed={} runnable={} cleanup={} unfinished={}".format(
             prefix,
             status.pending,
             status.active,
             status.done,
             status.failed,
+            status.runnable,
+            status.needs_cleanup,
             status.unfinished,
         ),
         flush=True,
@@ -632,321 +842,96 @@ def validate_status(status: TodoStatus) -> int:
     return 0
 
 
-def run_codex_round(cmd: list[str], prompt: str, *, use_pty: bool = False) -> int:
-    if not use_pty:
-        completed = subprocess.run(cmd, input=prompt, text=True, check=False)
-        return completed.returncode
-
-    master_fd, slave_fd = pty.openpty()
+def run_agent_round(invocation: AgentInvocation, prompt: str) -> int:
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-
-        # Feed prompt through the PTY master so the child sees it on its stdin.
-        os.write(master_fd, prompt.encode())
-
-        # Read and forward output until the process exits.
-        while proc.poll() is None:
-            try:
-                r, _, _ = select.select([master_fd], [], [], 0.5)
-                if r:
-                    data = os.read(master_fd, 4096)
-                    if not data:
-                        break
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.buffer.flush()
-            except OSError as exc:
-                if exc.errno != errno.EIO:
-                    raise
-                break
-
-        # Drain any remaining output.
-        while True:
-            try:
-                r, _, _ = select.select([master_fd], [], [], 0.5)
-                if r:
-                    data = os.read(master_fd, 4096)
-                    if not data:
-                        break
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.buffer.flush()
-                else:
-                    break
-            except OSError as exc:
-                if exc.errno != errno.EIO:
-                    raise
-                break
-
-        return proc.returncode
-    finally:
-        os.close(master_fd)
-
-
-def is_deepcode_mode(args: argparse.Namespace) -> bool:
-    """Return True when deepcode-specific interaction should be used."""
-    if args.deepcode:
-        return True
-    cmd_name = os.path.basename(args.codex_cmd)
-    return "deepcode" in cmd_name.lower()
-
-
-def _deepcode_settings_path(root: Path) -> Path:
-    return root / DEEPCODE_SETTINGS_DIRNAME / DEEPCODE_SETTINGS_FILENAME
-
-
-def _deepcode_notify_script_content(signal_path: str) -> str:
-    """Return a minimal shell script that touches *signal_path* when invoked."""
-    return (
-        "#!/bin/sh\n"
-        f"echo 'done' > {shlex.quote(signal_path)}\n"
-    )
-
-
-def setup_deepcode_round(root: Path, signal_path: str):
-    """Prepare a notify script and inject it into the project settings.
-
-    Returns a cleanup callable that restores the original settings file (or
-    removes the one we created).
-    """
-    settings_dir = root / DEEPCODE_SETTINGS_DIRNAME
-    settings_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write the signal script.
-    script_path = settings_dir / DEEPCODE_NOTIFY_SCRIPT_NAME
-    script_path.write_text(_deepcode_notify_script_content(signal_path))
-    script_path.chmod(0o755)
-
-    settings_file = _deepcode_settings_path(root)
-    backup_path = settings_file.with_suffix(".json.bak")
-
-    # Read existing settings or start fresh.
-    if settings_file.exists():
-        original_text = settings_file.read_text(encoding="utf-8")
-        try:
-            settings = json.loads(original_text)
-        except json.JSONDecodeError:
-            settings = {}
-        # Backup the original.
-        shutil.copy2(settings_file, backup_path)
-    else:
-        original_text = None
-        settings = {}
-
-    # Merge our mandatory keys.
-    settings["notify"] = str(script_path)
-    settings.setdefault("permissions", {})
-    settings["permissions"]["defaultMode"] = "allowAll"
-
-    settings_file.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
-
-    def cleanup():
-        # Remove the notify script.
-        try:
-            script_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        # Restore or remove settings.
-        if original_text is not None:
-            settings_file.write_text(original_text, encoding="utf-8")
-            try:
-                backup_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        else:
-            try:
-                settings_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-    return cleanup
-
-
-def run_deepcode_round(
-    cmd: list[str],
-    prompt: str,
-    root: Path,
-    timeout: int,
-) -> int:
-    """Execute one deepcode round via PTY.
-
-    1. Launches ``deepcode -p "<prompt>"`` in a PTY.
-    2. Sends Enter to submit the pre-filled prompt.
-    3. Waits for the notify signal file (or timeout).
-    4. Exits the TUI (``/exit``), drains output, and returns an exit code.
-
-    Returns 0 when the deepcode turn completed (notify signal received), even
-    if the process had to be forcibly terminated to exit.  Returns non‑zero
-    on timeout or unexpected process failure.
-    """
-
-    signal_path = f"/tmp/deepcode_loop_signal_{os.getpid()}_{int(time.time())}"
-
-    # Ensure any stale signal is gone.
-    try:
-        os.remove(signal_path)
-    except OSError:
-        pass
-
-    cleanup = setup_deepcode_round(root, signal_path)
-    try:
-        master_fd, slave_fd = pty.openpty()
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=slave_fd,
-                stdout=slave_fd,
-                stderr=slave_fd,
-                cwd=str(root),
-                close_fds=True,
+        if invocation.prompt_mode == "stdin":
+            completed = subprocess.run(
+                list(invocation.argv),
+                input=prompt,
+                text=True,
+                check=False,
+                cwd=invocation.cwd,
             )
-            os.close(slave_fd)
-
-            # Give the TUI a moment to initialise, then submit the prompt.
-            time.sleep(DEEPCODE_STARTUP_DELAY)
-            try:
-                os.write(master_fd, b"\r")
-            except OSError:
-                pass
-
-            deadline = time.time() + timeout
-            signalled = False
-
-            # Read output and wait for signal or timeout.
-            while time.time() < deadline and proc.poll() is None:
-                r, _, _ = select.select([master_fd], [], [], 0.5)
-                if r:
-                    data = os.read(master_fd, 4096)
-                    if not data:
-                        break
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.buffer.flush()
-                if os.path.exists(signal_path):
-                    signalled = True
-                    break
-
-            # --- exit phase ---
-            if not signalled and proc.poll() is None:
-                print(
-                    f"\n[loop.py] deepcode notify timeout after {timeout}s; "
-                    "sending esc + /exit",
-                    flush=True,
-                )
-                # Interrupt any in‑flight model generation so that the TUI
-                # returns to command mode and can process ``/exit``.
-                try:
-                    os.write(master_fd, b"\x1b")
-                except OSError:
-                    pass
-                time.sleep(0.5)
-
-            # Send /exit to quit the TUI gracefully.
-            try:
-                os.write(master_fd, b"/exit\r")
-            except OSError:
-                pass
-
-            # Drain remaining output (with a hard deadline).
-            _drain_pty(master_fd, proc, timeout=10.0)
-
-            # Finished cleanly: notify signal was received.
-            if signalled:
-                if proc.poll() is None:
-                    _terminate_proc(proc)
-                return 0
-
-            # Timeout path: propagate the process exit code (or a non‑zero
-            # sentinel if the process was forcibly killed).
-            return proc.returncode if proc.returncode else 1
-        finally:
-            os.close(master_fd)
-    finally:
-        cleanup()
-        try:
-            os.remove(signal_path)
-        except OSError:
-            pass
+        elif invocation.prompt_mode == "option":
+            completed = subprocess.run(
+                [*invocation.argv, invocation.prompt_option, prompt],
+                text=True,
+                check=False,
+                cwd=invocation.cwd,
+            )
+        else:
+            raise ValueError(f"unsupported prompt mode: {invocation.prompt_mode}")
+    except FileNotFoundError as exc:
+        executable = invocation.argv[0] if invocation.argv else invocation.label
+        if exc.filename == executable:
+            raise AgentStartError(f"runner executable not found: {executable}", 127) from exc
+        raise AgentStartError(f"failed to start {invocation.label}: {exc}", 126) from exc
+    except OSError as exc:
+        raise AgentStartError(f"failed to start {invocation.label}: {exc}", 126) from exc
+    return completed.returncode
 
 
-def _terminate_proc(proc: subprocess.Popen, grace: float = 2.0) -> None:
-    """Gracefully terminate *proc*, then force-kill if it does not exit within
-    *grace* seconds.
+def mark_item_failed(todo_path: Path, item: TodoItem, returncode: int) -> bool:
+    """Mark the selected todo item as failed after the agent process exits nonzero.
+
+    This prevents an agent crash from causing an infinite retry loop: the item
+    is turned into `[f]` so the next iteration can archive it or move on.
     """
-    if proc.poll() is not None:
-        return
-    proc.terminate()
     try:
-        proc.wait(timeout=grace)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
+        lines = todo_path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        print(
+            f"error: failed to read {todo_path} to mark failed task: {exc}",
+            file=sys.stderr,
+        )
+        return False
 
+    index = item.lineno - 1
+    if 0 <= index < len(lines):
+        line = lines[index]
+        match = CHECKBOX_RE.match(line)
+        if match:
+            state = match.group("state").lower()
+            if state in {" ", "~"}:
+                prefix = match.group("prefix")
+                rest = match.group("rest")
+                lines[index] = f"{prefix}[f]{rest}"
 
-def _drain_pty(
-    master_fd: int,
-    proc: subprocess.Popen,
-    timeout: float = 10.0,
-) -> None:
-    """Read and forward output until *proc* exits and no data remains.
+    try:
+        todo_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"error: failed to write {todo_path} after marking failed task: {exc}",
+            file=sys.stderr,
+        )
+        return False
 
-    If *proc* does not exit within *timeout* seconds, forcibly terminate it.
-    """
-    deadline = time.time() + timeout
-
-    # Drain while the process is alive (within the deadline).
-    while proc.poll() is None and time.time() < deadline:
-        try:
-            r, _, _ = select.select([master_fd], [], [], 0.3)
-            if r:
-                data = os.read(master_fd, 4096)
-                if not data:
-                    break
-                sys.stdout.buffer.write(data)
-                sys.stdout.buffer.flush()
-        except OSError as exc:
-            if exc.errno != errno.EIO:
-                raise
-            break
-
-    # Final drain of any remaining buffered output.
-    while time.time() < deadline:
-        try:
-            r, _, _ = select.select([master_fd], [], [], 0.3)
-            if r:
-                data = os.read(master_fd, 4096)
-                if not data:
-                    break
-                sys.stdout.buffer.write(data)
-                sys.stdout.buffer.flush()
-            else:
-                break
-        except OSError as exc:
-            if exc.errno != errno.EIO:
-                raise
-            break
-
-    # If the process is still running after the deadline, force-kill it.
-    if proc.poll() is None:
-        _terminate_proc(proc)
+    return True
 
 
 def main() -> int:
     args = parse_args()
+    if args.runner not in {"codex", "kimi", "deepcode"}:
+        print(f"error: unsupported runner: {args.runner}", file=sys.stderr)
+        return 2
+
+    if args.runner == "kimi" and args.kimi_permission_mode.strip():
+        print(
+            "error: Kimi `--prompt` mode cannot be combined with "
+            "`--auto` or `--yolo`; leave --kimi-permission-mode empty. "
+            "Kimi prompt mode uses auto permission handling by default.",
+            file=sys.stderr,
+        )
+        return 2
+
     root = Path(args.root).resolve()
-    todo_path = Path(args.todo)
-    if not todo_path.is_absolute():
-        todo_path = root / todo_path
-    todo_display = os.path.relpath(todo_path, root)
+    try:
+        todo_path, todo_display = resolve_todo_path(root, args.todo)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
-    use_deepcode = is_deepcode_mode(args)
-
-    if not use_deepcode:
-        cmd = build_codex_command(args, root)
+    invocation = build_agent_invocation(args, root)
 
     if args.dry_run:
         try:
@@ -964,16 +949,20 @@ def main() -> int:
             lines,
             args.context_lines,
             args.max_excerpt_line_chars,
+            status.needs_cleanup > 0,
         )
-        prompt = build_prompt(todo_display, args.skill, status, context)
-        if use_deepcode:
-            cmd_basename = os.path.basename(args.codex_cmd)
-            if "deepcode" in cmd_basename.lower():
-                print("command: {} -p <prompt>  (cwd={})".format(args.codex_cmd, root))
-            else:
-                print("command: {} <prompt>  (cwd={})".format(args.codex_cmd, root))
-        else:
-            print("command:", " ".join(cmd))
+        prompt = build_prompt(
+            todo_display,
+            args.skill,
+            status,
+            context,
+            status.needs_cleanup > 0,
+        )
+        prompt = prepare_prompt(invocation, prompt)
+        print("runner:", invocation.label)
+        if invocation.cwd is not None:
+            print("cwd:", invocation.cwd)
+        print("command:", format_command(invocation))
         print()
         print(prompt)
         return 0
@@ -992,19 +981,14 @@ def main() -> int:
         if status_error:
             return status_error
 
-        if status.unfinished == 0:
-            print("done: no unfinished todo tasks remain")
+        if status.runnable == 0 and status.needs_cleanup == 0:
+            print("done: no runnable or cleanup todo tasks remain")
             return 0
 
-        if status.failed and not args.continue_after_failed:
-            print(
-                "error: failed [f] tasks remain; fix them or rerun with "
-                "--continue-after-failed",
-                file=sys.stderr,
-            )
-            return 2
+        cleanup_only = status.needs_cleanup > 0
+        stop_after_failed_cleanup = status.failed > 0 and not args.continue_after_failed
 
-        if status.runnable == 0:
+        if status.runnable == 0 and not cleanup_only:
             print("error: no runnable [ ] or [~] tasks remain", file=sys.stderr)
             return 2
 
@@ -1016,22 +1000,15 @@ def main() -> int:
             lines,
             args.context_lines,
             args.max_excerpt_line_chars,
+            cleanup_only,
         )
-        prompt = build_prompt(todo_display, args.skill, status, context)
+        prompt = build_prompt(todo_display, args.skill, status, context, cleanup_only)
+        prompt = prepare_prompt(invocation, prompt)
+        before_lines = tuple(lines)
+        before_cleanup = status.needs_cleanup
 
         rounds += 1
-        if use_deepcode:
-            # ``deepcode`` accepts ``-p <prompt>``; ``codex`` uses a
-            # positional ``[PROMPT]`` argument (its ``-p`` is ``--profile``).
-            cmd_basename = os.path.basename(args.codex_cmd)
-            if "deepcode" in cmd_basename.lower():
-                deepcode_cmd = [args.codex_cmd, "-p", prompt]
-                print(f"round {rounds}: running {args.codex_cmd} -p <prompt>", flush=True)
-            else:
-                deepcode_cmd = [args.codex_cmd, prompt]
-                print(f"round {rounds}: running {args.codex_cmd} <prompt>", flush=True)
-        else:
-            print(f"round {rounds}: running {' '.join(cmd)}", flush=True)
+        print(f"round {rounds}: running {format_command(invocation)}", flush=True)
         if context.item is not None:
             print(
                 "round {}: target L{} [{}] {}".format(
@@ -1042,15 +1019,65 @@ def main() -> int:
                 ),
                 flush=True,
             )
-        if use_deepcode:
-            returncode = run_deepcode_round(
-                deepcode_cmd, prompt, root, args.deepcode_timeout
-            )
-        else:
-            returncode = run_codex_round(cmd, prompt, use_pty=args.pty)
+        try:
+            returncode = run_agent_round(invocation, prompt)
+        except AgentStartError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return exc.exit_code
         if returncode != 0:
-            print(f"error: codex round {rounds} exited with {returncode}", file=sys.stderr)
+            print(
+                f"warning: {invocation.label} round {rounds} exited with {returncode}; "
+                "not aborting loop.py immediately",
+                file=sys.stderr,
+            )
+            if not cleanup_only and context.item is not None:
+                if mark_item_failed(todo_path, context.item, returncode):
+                    print(
+                        f"round {rounds}: marked L{context.item.lineno} as failed",
+                        flush=True,
+                    )
+                    continue
             return returncode
+
+        try:
+            after_lines = tuple(read_todo_lines(todo_path))
+        except FileNotFoundError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+        after_status = read_todo_status_from_lines(list(after_lines))
+        status_error = validate_status(after_status)
+        if status_error:
+            return status_error
+
+        if after_lines == before_lines:
+            print(
+                f"error: {invocation.label} round {rounds} exited successfully but did not update {todo_display}",
+                file=sys.stderr,
+            )
+            return 4
+
+        if not cleanup_only and after_status == status:
+            print(
+                f"error: {invocation.label} round changed todo text but did not change checkbox status counts",
+                file=sys.stderr,
+            )
+            return 4
+
+        if cleanup_only and after_status.needs_cleanup >= before_cleanup:
+            print(
+                "error: cleanup round did not reduce [x]/[f] items in main todo",
+                file=sys.stderr,
+            )
+            return 4
+
+        if cleanup_only and stop_after_failed_cleanup:
+            print(
+                "stopped: failed [f] tasks were archived; rerun with "
+                "--continue-after-failed to continue remaining runnable tasks",
+                file=sys.stderr,
+            )
+            return 2
 
 
 if __name__ == "__main__":
