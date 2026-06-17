@@ -180,3 +180,18 @@
 | errdefer + try @await | `tests/error_async_errdefer_await_boundary.uya` | errdefer 不响应 try @await 传播的错误 |
 | if 分支含 @await | （已确认 bug，见调试记录）| if/else 分支含 @await 时状态机跳转错误 |
 | match 臂含 @await | （已确认 bug，C codegen 产生错误 C 代码）| match 臂内含 try @await 时变量作用域丢失 |
+
+---
+
+## 归档：2026-06-18（归档清理轮）
+
+> 来自标题：`# Uya 异步生产化 TODO（完整语法 + 动态资源）` → `## 目标` → `- [ ] @async_fn 体内支持完整 Uya 函数体语法` → `- [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口`
+
+    - [x] 创建并验证 `tests/test_async_defer_errdefer.uya` 全路线通过
+      - 验证：`./bin/uya test tests/test_async_defer_errdefer.uya`（native / --c99 / --uya --c99 全路线通过）
+      - 文件：`tests/test_async_defer_errdefer.uya`（4364 bytes）
+    - [x] 创建并验证 `tests/test_async_large_state_machine_syntax.uya` 全路线通过
+      - 验证：`./bin/uya test tests/test_async_large_state_machine_syntax.uya`（native / --c99 / --uya --c99 全路线通过）
+      - 文件：`tests/test_async_large_state_machine_syntax.uya`（5271 bytes）
+    - [x] 收口 `make tests-uya` 无回归（1011/1013 通过，2个预存失败与本次无关）
+      - 验证：`make tests-uya` → 1011/1013 passed，2 个预存失败与本次 async 语法补齐无关
