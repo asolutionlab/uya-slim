@@ -7,9 +7,6 @@
 ## 目标
 
 - [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
-  - [ ] 修复 expr 宏展开后局部绑定/求值在 `@async_fn` 中丢失的问题，并解除对应示例注释限制。
-    - 验证：`./bin/uya build tests/programs/test_ai_prompt_async_macro_combo.uya`
-    - 完成条件：示例可编译运行，宏展开后的局部绑定与同步函数体一致。
   - [ ] 建立 `@async_fn` / 同步函数体语法对齐回归矩阵，并保留规范明确禁止的 `@await` 位置错误测试。
     - 验证：`make tests-uya`
     - 完成条件：同步合法而 async 先前缺失的函数体语法都有正向回归，明确禁止项仍有负向测试约束。

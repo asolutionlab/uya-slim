@@ -29,3 +29,12 @@
     - 结果：通过，`test_manual_iteration`、`test_for_loop_iteration` 全通过。
     - 验证：`make clean`、`make uya`、`make backup-all`
     - 结果：通过，完整门禁、`backup/uyacache` 与跟踪的 `backup/uya*.c` seeds 已刷新。
+
+## 目标
+
+父级路径：`@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+
+  - [x] 修复 expr 宏展开后局部绑定/求值在 `@async_fn` 中丢失的问题，并解除对应示例注释限制。
+    - 验证：`./bin/uya build tests/programs/test_ai_prompt_async_macro_combo.uya`
+    - 完成条件：示例可编译运行，宏展开后的局部绑定与同步函数体一致。
+    - 本轮验证：`./bin/uya test tests/test_async_macro_expand.uya` 通过；`./bin/uya run tests/programs/test_ai_prompt_async_macro_combo.uya` 通过，输出 `加法异步结果 50` / `除法异步结果 5`；`./bin/uya build tests/programs/test_ai_prompt_async_macro_combo.uya` 通过；`./bin/uya test tests/test_async_compound_try_await.uya` 通过；`./bin/uya test tests/test_async_codegen_edge_paths.uya` 通过。
