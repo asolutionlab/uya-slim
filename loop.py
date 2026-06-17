@@ -967,7 +967,11 @@ def main() -> int:
         )
         prompt = build_prompt(todo_display, args.skill, status, context)
         if use_deepcode:
-            print("command: deepcode -p <prompt>  (cwd={})".format(root))
+            cmd_basename = os.path.basename(args.codex_cmd)
+            if "deepcode" in cmd_basename.lower():
+                print("command: {} -p <prompt>  (cwd={})".format(args.codex_cmd, root))
+            else:
+                print("command: {} <prompt>  (cwd={})".format(args.codex_cmd, root))
         else:
             print("command:", " ".join(cmd))
         print()
@@ -1017,8 +1021,15 @@ def main() -> int:
 
         rounds += 1
         if use_deepcode:
-            deepcode_cmd = [args.codex_cmd, "-p", prompt]
-            print(f"round {rounds}: running {args.codex_cmd} -p <prompt>", flush=True)
+            # ``deepcode`` accepts ``-p <prompt>``; ``codex`` uses a
+            # positional ``[PROMPT]`` argument (its ``-p`` is ``--profile``).
+            cmd_basename = os.path.basename(args.codex_cmd)
+            if "deepcode" in cmd_basename.lower():
+                deepcode_cmd = [args.codex_cmd, "-p", prompt]
+                print(f"round {rounds}: running {args.codex_cmd} -p <prompt>", flush=True)
+            else:
+                deepcode_cmd = [args.codex_cmd, prompt]
+                print(f"round {rounds}: running {args.codex_cmd} <prompt>", flush=True)
         else:
             print(f"round {rounds}: running {' '.join(cmd)}", flush=True)
         if context.item is not None:
