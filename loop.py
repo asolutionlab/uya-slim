@@ -13,6 +13,10 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+import json
+import time
+import shutil
+import shlex
 
 
 CHECKBOX_RE = re.compile(r"^(?P<prefix>\s*[-*]\s*)\[(?P<state>[^\]])\](?P<rest>.*)$")
@@ -20,6 +24,11 @@ HEADING_RE = re.compile(r"^(?P<marks>#{1,6})\s+(?P<title>.*)$")
 VALID_STATES = {" ", "x", "~", "f"}
 DEFAULT_SKILL_NAME = "goal-task-runner"
 DEFAULT_SKILL_SOURCE = ".agents/skills/goal-task-runner/SKILL.md"
+DEEPCODE_SETTINGS_DIRNAME = ".deepcode"
+DEEPCODE_SETTINGS_FILENAME = "settings.json"
+DEEPCODE_NOTIFY_SCRIPT_NAME = "notify-loop-signal.sh"
+DEEPCODE_DEFAULT_TIMEOUT = int(os.environ.get("DEEPCODE_LOOP_TIMEOUT", "600"))
+DEEPCODE_STARTUP_DELAY = float(os.environ.get("DEEPCODE_STARTUP_DELAY", "1.0"))
 DEFAULT_GOAL_TASK_RUNNER_SKILL = r"""---
 name: goal-task-runner
 description: 按顺序执行目标导向的长任务 todo，使用 TDD、诚实进度跟踪、任务拆分、性能优先实现、git 提交和推送。适用于 Codex 被要求接收 todo 文件或 todo 列表并依次完成任务的场景。
@@ -188,6 +197,24 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Allocate a pseudo-terminal (PTY) for the codex subprocess. "
             "Required for commands like `deepcode` that check isatty()."
+        ),
+    )
+    parser.add_argument(
+        "--deepcode",
+        action="store_true",
+        default=False,
+        help=(
+            "Use deepcode-specific PTY interaction mode. "
+            "Auto-detected when --codex-cmd contains 'deepcode'."
+        ),
+    )
+    parser.add_argument(
+        "--deepcode-timeout",
+        type=int,
+        default=DEEPCODE_DEFAULT_TIMEOUT,
+        help=(
+            "Maximum seconds to wait for deepcode to signal completion "
+            f"via notify script. Default: {DEEPCODE_DEFAULT_TIMEOUT}."
         ),
     )
     return parser.parse_args()
@@ -661,6 +688,253 @@ def run_codex_round(cmd: list[str], prompt: str, *, use_pty: bool = False) -> in
         os.close(master_fd)
 
 
+def is_deepcode_mode(args: argparse.Namespace) -> bool:
+    """Return True when deepcode-specific interaction should be used."""
+    if args.deepcode:
+        return True
+    cmd_name = os.path.basename(args.codex_cmd)
+    return "deepcode" in cmd_name.lower()
+
+
+def _deepcode_settings_path(root: Path) -> Path:
+    return root / DEEPCODE_SETTINGS_DIRNAME / DEEPCODE_SETTINGS_FILENAME
+
+
+def _deepcode_notify_script_content(signal_path: str) -> str:
+    """Return a minimal shell script that touches *signal_path* when invoked."""
+    return (
+        "#!/bin/sh\n"
+        f"echo 'done' > {shlex.quote(signal_path)}\n"
+    )
+
+
+def setup_deepcode_round(root: Path, signal_path: str):
+    """Prepare a notify script and inject it into the project settings.
+
+    Returns a cleanup callable that restores the original settings file (or
+    removes the one we created).
+    """
+    settings_dir = root / DEEPCODE_SETTINGS_DIRNAME
+    settings_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write the signal script.
+    script_path = settings_dir / DEEPCODE_NOTIFY_SCRIPT_NAME
+    script_path.write_text(_deepcode_notify_script_content(signal_path))
+    script_path.chmod(0o755)
+
+    settings_file = _deepcode_settings_path(root)
+    backup_path = settings_file.with_suffix(".json.bak")
+
+    # Read existing settings or start fresh.
+    if settings_file.exists():
+        original_text = settings_file.read_text(encoding="utf-8")
+        try:
+            settings = json.loads(original_text)
+        except json.JSONDecodeError:
+            settings = {}
+        # Backup the original.
+        shutil.copy2(settings_file, backup_path)
+    else:
+        original_text = None
+        settings = {}
+
+    # Merge our mandatory keys.
+    settings["notify"] = str(script_path)
+    settings.setdefault("permissions", {})
+    settings["permissions"]["defaultMode"] = "allowAll"
+
+    settings_file.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+
+    def cleanup():
+        # Remove the notify script.
+        try:
+            script_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        # Restore or remove settings.
+        if original_text is not None:
+            settings_file.write_text(original_text, encoding="utf-8")
+            try:
+                backup_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        else:
+            try:
+                settings_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    return cleanup
+
+
+def run_deepcode_round(
+    cmd: list[str],
+    prompt: str,
+    root: Path,
+    timeout: int,
+) -> int:
+    """Execute one deepcode round via PTY.
+
+    1. Launches ``deepcode -p "<prompt>"`` in a PTY.
+    2. Sends Enter to submit the pre-filled prompt.
+    3. Waits for the notify signal file (or timeout).
+    4. Exits the TUI (``/exit``), drains output, and returns an exit code.
+
+    Returns 0 when the deepcode turn completed (notify signal received), even
+    if the process had to be forcibly terminated to exit.  Returns non‑zero
+    on timeout or unexpected process failure.
+    """
+
+    signal_path = f"/tmp/deepcode_loop_signal_{os.getpid()}_{int(time.time())}"
+
+    # Ensure any stale signal is gone.
+    try:
+        os.remove(signal_path)
+    except OSError:
+        pass
+
+    cleanup = setup_deepcode_round(root, signal_path)
+    try:
+        master_fd, slave_fd = pty.openpty()
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                cwd=str(root),
+                close_fds=True,
+            )
+            os.close(slave_fd)
+
+            # Give the TUI a moment to initialise, then submit the prompt.
+            time.sleep(DEEPCODE_STARTUP_DELAY)
+            try:
+                os.write(master_fd, b"\r")
+            except OSError:
+                pass
+
+            deadline = time.time() + timeout
+            signalled = False
+
+            # Read output and wait for signal or timeout.
+            while time.time() < deadline and proc.poll() is None:
+                r, _, _ = select.select([master_fd], [], [], 0.5)
+                if r:
+                    data = os.read(master_fd, 4096)
+                    if not data:
+                        break
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+                if os.path.exists(signal_path):
+                    signalled = True
+                    break
+
+            # --- exit phase ---
+            if not signalled and proc.poll() is None:
+                print(
+                    f"\n[loop.py] deepcode notify timeout after {timeout}s; "
+                    "sending esc + /exit",
+                    flush=True,
+                )
+                # Interrupt any in‑flight model generation so that the TUI
+                # returns to command mode and can process ``/exit``.
+                try:
+                    os.write(master_fd, b"\x1b")
+                except OSError:
+                    pass
+                time.sleep(0.5)
+
+            # Send /exit to quit the TUI gracefully.
+            try:
+                os.write(master_fd, b"/exit\r")
+            except OSError:
+                pass
+
+            # Drain remaining output (with a hard deadline).
+            _drain_pty(master_fd, proc, timeout=10.0)
+
+            # Finished cleanly: notify signal was received.
+            if signalled:
+                if proc.poll() is None:
+                    _terminate_proc(proc)
+                return 0
+
+            # Timeout path: propagate the process exit code (or a non‑zero
+            # sentinel if the process was forcibly killed).
+            return proc.returncode if proc.returncode else 1
+        finally:
+            os.close(master_fd)
+    finally:
+        cleanup()
+        try:
+            os.remove(signal_path)
+        except OSError:
+            pass
+
+
+def _terminate_proc(proc: subprocess.Popen, grace: float = 2.0) -> None:
+    """Gracefully terminate *proc*, then force-kill if it does not exit within
+    *grace* seconds.
+    """
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def _drain_pty(
+    master_fd: int,
+    proc: subprocess.Popen,
+    timeout: float = 10.0,
+) -> None:
+    """Read and forward output until *proc* exits and no data remains.
+
+    If *proc* does not exit within *timeout* seconds, forcibly terminate it.
+    """
+    deadline = time.time() + timeout
+
+    # Drain while the process is alive (within the deadline).
+    while proc.poll() is None and time.time() < deadline:
+        try:
+            r, _, _ = select.select([master_fd], [], [], 0.3)
+            if r:
+                data = os.read(master_fd, 4096)
+                if not data:
+                    break
+                sys.stdout.buffer.write(data)
+                sys.stdout.buffer.flush()
+        except OSError as exc:
+            if exc.errno != errno.EIO:
+                raise
+            break
+
+    # Final drain of any remaining buffered output.
+    while time.time() < deadline:
+        try:
+            r, _, _ = select.select([master_fd], [], [], 0.3)
+            if r:
+                data = os.read(master_fd, 4096)
+                if not data:
+                    break
+                sys.stdout.buffer.write(data)
+                sys.stdout.buffer.flush()
+            else:
+                break
+        except OSError as exc:
+            if exc.errno != errno.EIO:
+                raise
+            break
+
+    # If the process is still running after the deadline, force-kill it.
+    if proc.poll() is None:
+        _terminate_proc(proc)
+
+
 def main() -> int:
     args = parse_args()
     root = Path(args.root).resolve()
@@ -669,7 +943,10 @@ def main() -> int:
         todo_path = root / todo_path
     todo_display = os.path.relpath(todo_path, root)
 
-    cmd = build_codex_command(args, root)
+    use_deepcode = is_deepcode_mode(args)
+
+    if not use_deepcode:
+        cmd = build_codex_command(args, root)
 
     if args.dry_run:
         try:
@@ -689,7 +966,10 @@ def main() -> int:
             args.max_excerpt_line_chars,
         )
         prompt = build_prompt(todo_display, args.skill, status, context)
-        print("command:", " ".join(cmd))
+        if use_deepcode:
+            print("command: deepcode -p <prompt>  (cwd={})".format(root))
+        else:
+            print("command:", " ".join(cmd))
         print()
         print(prompt)
         return 0
@@ -736,7 +1016,11 @@ def main() -> int:
         prompt = build_prompt(todo_display, args.skill, status, context)
 
         rounds += 1
-        print(f"round {rounds}: running {' '.join(cmd)}", flush=True)
+        if use_deepcode:
+            deepcode_cmd = [args.codex_cmd, "-p", prompt]
+            print(f"round {rounds}: running {args.codex_cmd} -p <prompt>", flush=True)
+        else:
+            print(f"round {rounds}: running {' '.join(cmd)}", flush=True)
         if context.item is not None:
             print(
                 "round {}: target L{} [{}] {}".format(
@@ -747,7 +1031,12 @@ def main() -> int:
                 ),
                 flush=True,
             )
-        returncode = run_codex_round(cmd, prompt, use_pty=args.pty)
+        if use_deepcode:
+            returncode = run_deepcode_round(
+                deepcode_cmd, prompt, root, args.deepcode_timeout
+            )
+        else:
+            returncode = run_codex_round(cmd, prompt, use_pty=args.pty)
         if returncode != 0:
             print(f"error: codex round {rounds} exited with {returncode}", file=sys.stderr)
             return returncode
