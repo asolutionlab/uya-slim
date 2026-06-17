@@ -71,6 +71,7 @@ baseline_tests=(
     "tests/test_async_await.uya"
     "tests/test_async_await_ready.uya"
     "tests/test_async_multiple_await.uya"
+    "tests/test_async_state_machine.uya"
     "tests/test_async_if_await.uya"
     "tests/test_async_else_if_await.uya"
     "tests/test_async_for_await.uya"
@@ -78,12 +79,16 @@ baseline_tests=(
     "tests/test_async_bug_a_two_while.uya"
     "tests/test_async_bug_b_sync_between.uya"
     "tests/test_async_bug_d_nested_block.uya"
+    "tests/test_async_await_direct_err_union.uya"
+    "tests/test_async_return_error_direct.uya"
     "tests/test_async_compound_try_await.uya"
     "tests/test_async_fn_multi_segment_unwrap.uya"
     "tests/test_async_await_limits_and_segments.uya"
     "tests/test_async_sync_body_matrix.uya"
     "tests/test_async_method_interface.uya"
     "tests/test_async_local_interface_await.uya"
+    "tests/test_async_nested.uya"
+    "tests/test_async_macro_expand.uya"
     "tests/test_async_frame_inline_temp.uya"
     "tests/test_async_frame_inline_temp2.uya"
     "tests/test_async_fn_local_fixed_array.uya"
@@ -104,4 +109,15 @@ expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机�
 expect_compile_fail "tests/error_async_for_iterator_interface_await.uya" "for 循环需要数组类型或实现了迭代器接口的结构体，但无法推断表达式类型"
 expect_compile_fail "tests/error_async_for_iterator_ref_await.uya" "错误: @async_fn 中 for 数组迭代若为迭代器接口形式，@await 尚未支持"
 
-echo "verify_async_full_language_matrix: positive matrix, iterator for boundaries, and forbidden @await positions passed"
+# nested future 真实边界专项验证（正向 + 负向）
+echo "==> verify_async_nested_future_boundary"
+bash "$SCRIPT_DIR/verify_async_nested_future_boundary.sh" >/dev/null
+
+# 宏展开 async lowering 程序级回归
+echo "==> test_ai_prompt_async_macro_combo build/run"
+(
+    cd "$REPO_ROOT"
+    UYA_ROOT="$UYA_ROOT" "$COMPILER" run "tests/programs/test_ai_prompt_async_macro_combo.uya" >/dev/null
+)
+
+echo "verify_async_full_language_matrix: positive matrix (30 tests), iterator for boundaries, forbidden @await positions, nested future boundary, and macro combo passed"

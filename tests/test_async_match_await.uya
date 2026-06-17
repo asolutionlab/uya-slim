@@ -1,0 +1,147 @@
+// test_async_match_await.uya
+// 专用回归：@async_fn 体内 match 表达式与 @await 的各种组合
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+union Op {
+    add: i32,
+    sub: i32,
+    mul: i32,
+    nop: void,
+}
+
+fn make_op(seed: i32) Op {
+    if seed == 0 {
+        return Op.add(seed + 5);
+    }
+    if seed == 1 {
+        return Op.sub(seed + 10);
+    }
+    if seed == 2 {
+        return Op.mul(seed + 2);
+    }
+    return Op.nop({});
+}
+
+struct FlipI32 : Future<!i32> {
+    value: i32,
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn flip_i32(v: i32) Future<!i32> {
+    return FlipI32{ value: v, polled: 0 };
+}
+
+// match 在 @await 之后，各 arm 直接求值
+@async_fn
+fn match_after_await(seed: i32) Future<!i32> {
+    const op_seed: i32 = try @await flip_i32(seed);
+    const op: Op = make_op(op_seed);
+    const bonus: i32 = match op {
+        .add(n) => n,
+        .sub(n) => n + 10,
+        .mul(n) => op_seed * n,
+        .nop(_) => 7,
+    };
+    const base: i32 = try @await flip_i32(seed + 1);
+    return base + bonus;
+}
+
+// match 在 @await 之前，保证 match 不影响 lowering
+@async_fn
+fn match_before_await(seed: i32) Future<!i32> {
+    const op: Op = make_op(seed);
+    const bonus: i32 = match op {
+        .add(n) => n,
+        .sub(n) => n + 10,
+        .mul(n) => seed * n,
+        .nop(_) => 7,
+    };
+    const base: i32 = try @await flip_i32(seed + 1);
+    return base + bonus;
+}
+
+// 多个 match，与 @await 交错
+@async_fn
+fn match_multi_await(seed: i32) Future<!i32> {
+    var total: i32 = 0;
+
+    const a: i32 = try @await flip_i32(seed);
+    total = total + a;
+
+    const op1: Op = make_op(seed);
+    total = total + match op1 {
+        .add(n) => n,
+        .sub(n) => 0 - n,
+        .mul(n) => n,
+        .nop(_) => 1,
+    };
+
+    const b: i32 = try @await flip_i32(seed + 5);
+    total = total + b;
+
+    const op2: Op = make_op(seed + 1);
+    total = total + match op2 {
+        .add(n) => n,
+        .sub(n) => 0 - n,
+        .mul(n) => n,
+        .nop(_) => 1,
+    };
+    return total;
+}
+
+@async_fn
+fn no_await_pure_match(seed: i32) Future<!i32> {
+    const op: Op = make_op(seed);
+    return match op {
+        .add(n) => n + 100,
+        .sub(n) => n + 200,
+        .mul(n) => n + 300,
+        .nop(_) => 400,
+    };
+}
+
+test "async_match_after_await" {
+    const f: Future<!i32> = match_after_await(2);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 11);  // op_seed=2 → mul(4), bonus=2*4=8, base=3 → 11
+}
+
+test "async_match_before_await" {
+    const f: Future<!i32> = match_before_await(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 6);  // add(5), bonus=5, base=1 → 6
+}
+
+test "async_match_multi_await" {
+    const f: Future<!i32> = match_multi_await(1);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    // seed=1: op1=sub(11), match→0-11=-11; op2=2→mul(4), match→4
+    // a=1, b=6; total=1-11+6+4=0
+    // wait: seed=1 → a=1, op1=sub(11)→-11, b=6, op2=2→mul(4)→4, total=1+(-11)+6+4=0
+    try assert_eq_i32(v, 0);
+}
+
+test "async_no_await_pure_match" {
+    const f: Future<!i32> = no_await_pure_match(2);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 304);  // mul(4) → 4 + 300 = 304
+}
