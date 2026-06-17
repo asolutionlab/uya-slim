@@ -195,3 +195,25 @@
       - 文件：`tests/test_async_large_state_machine_syntax.uya`（5271 bytes）
     - [x] 收口 `make tests-uya` 无回归（1011/1013 通过，2个预存失败与本次无关）
       - 验证：`make tests-uya` → 1011/1013 passed，2 个预存失败与本次 async 语法补齐无关
+
+---
+
+## 2026-06-18
+
+### [x] 验证 `tests/test_async_match_await.uya` 全路线通过（native / --c99 / --uya --c99）
+
+**父级路径**：目标 > `@async_fn` 体内支持完整 Uya 函数体语法 > 根据矩阵补齐剩余 async 函数体语法/语义缺口
+
+**验证命令与结果**：
+
+1. native: `./bin/uya test tests/test_async_match_await.uya` → 4/4 通过
+   - async_match_after_await: OK
+   - async_match_before_await: OK
+   - async_match_multi_await: OK
+   - async_no_await_pure_match: OK
+
+2. --c99: `./bin/uya test tests/test_async_match_await.uya --c99` → 4/4 通过
+
+3. --uya --c99: `./tests/run_programs_parallel.sh --uya --c99 test_async_match_await.uya` → 1/1 通过
+
+**结论**：`@async_fn` 体内 match 表达式与 `@await` 的各种组合（match after await, match before await, multi-match interleaved with await, purely match without await）在三条路线上均正确编译和运行。
