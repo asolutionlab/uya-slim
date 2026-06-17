@@ -3,6 +3,40 @@
 use std.async;
 use std.testing.assert_eq_i32;
 
+error IterEnd;
+
+interface AsyncI32Iterator {
+    fn next(self: &Self) !void;
+    fn value(self: &Self) i32;
+}
+
+struct AsyncRangeIterator : AsyncI32Iterator {
+    current: i32,
+    end_val: i32,
+    started: i32
+}
+
+AsyncRangeIterator {
+    fn next(self: &Self) !void {
+        if self.started == 0 {
+            self.started = 1;
+        } else {
+            self.current = self.current + 1;
+        }
+        if self.current >= self.end_val {
+            return error.IterEnd;
+        }
+    }
+
+    fn value(self: &Self) i32 {
+        return self.current;
+    }
+}
+
+fn make_async_range(start: i32, end_val: i32) AsyncRangeIterator {
+    return AsyncRangeIterator{ current: start, end_val: end_val, started: 0 };
+}
+
 fn ready_7() Future<!i32> {
     const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(7));
     return Future<!i32>{ state: p };
@@ -63,4 +97,23 @@ test "async_for_array_ref_with_await" {
     const got3: i32 = v3 catch { 0 - 1; };
     // 数组变为 [8, 9, 10]，循环累计 27，返回 27 + 27 = 54
     try assert_eq_i32(got3, 54);
+}
+
+@async_fn
+fn sum_iterator_for_with_await() Future<!i32> {
+    var iter: AsyncRangeIterator = make_async_range(0, 4);
+    var t: i32 = 0;
+    for iter |v| {
+        const x: i32 = try @await ready_7();
+        t = t + v + x;
+    }
+    return t;
+}
+
+test "async_for_iterator_with_await" {
+    const f4: Future<!i32> = sum_iterator_for_with_await();
+    const v4: !i32 = block_on<i32>(f4);
+    const got4: i32 = v4 catch { 0 - 1; };
+    // (0+7)+(1+7)+(2+7)+(3+7) = 34
+    try assert_eq_i32(got4, 34);
 }

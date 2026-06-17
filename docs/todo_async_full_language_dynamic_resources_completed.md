@@ -17,3 +17,15 @@
   - 结果：通过。
   - 验证：`./bin/uya test tests/test_async_await_limits_and_segments.uya`
   - 结果：通过。
+## 目标
+父级路径：`@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+
+  - [x] 支持迭代器形式 `for iter |v|` 在 `@async_fn` 中跨 `@await` 正常 lowering。
+    - 验证：`./bin/uya test tests/test_async_for_await.uya`
+    - 结果：修复前复现 `错误: @async_fn 中 for 数组迭代若为迭代器接口形式，@await 尚未支持`，随后宿主 C 编译命中未提升字段 `_uya_loc___uya_fi_106_5` / `_uya_loc_v` 缺失与 `v undeclared`。
+    - 验证：`./bin/uya test tests/test_async_for_await.uya`
+    - 结果：通过，`async_for_range_with_await`、`async_for_array_with_await`、`async_for_array_ref_with_await`、`async_for_iterator_with_await` 全通过。
+    - 验证：`./bin/uya test tests/test_for_iterator.uya`
+    - 结果：通过，`test_manual_iteration`、`test_for_loop_iteration` 全通过。
+    - 验证：`make clean`、`make uya`、`make backup-all`
+    - 结果：通过，完整门禁、`backup/uyacache` 与跟踪的 `backup/uya*.c` seeds 已刷新。

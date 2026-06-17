@@ -3528,6 +3528,15 @@ fn c99_async_for_fe_hoist_name(codegen: &C99CodeGenerator, for_n: &ASTNode) &byt
     return c99_arena_strdup(codegen.arena, &buf[0] as &byte);
 }
 
+fn c99_async_for_iter_hoist_name(codegen: &C99CodeGenerator, for_n: &ASTNode) &byte {
+    if codegen == null || codegen.arena == null || for_n == null {
+        return null;
+    }
+    var buf: [byte: 64] = [];
+    snprintf(&buf[0] as *byte, 64, "__uya_fi_%d_%d" as *byte, for_n.line, for_n.column);
+    return c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+}
+
 fn c99_async_for_ar_hoist_names(codegen: &C99CodeGenerator, for_n: &ASTNode, out_len: &&byte, out_i: &&byte) void {
     out_len[0] = null;
     out_i[0] = null;
@@ -3589,6 +3598,136 @@ fn c99_async_find_var_or_param_type_ast(fn_decl: &ASTNode, name: &byte) &ASTNode
         pi = pi + 1;
     }
     return null;
+}
+
+fn c99_async_for_iterator_struct_name(codegen: &C99CodeGenerator, for_stmt: &ASTNode) &byte {
+    if codegen == null || codegen.arena == null || for_stmt == null || for_stmt.for_stmt_array == null ||
+        for_stmt.for_stmt_is_ref != 0 {
+        return null;
+    }
+    if codegen.async_fn_decl != null &&
+        for_stmt.for_stmt_array.type == ASTNodeType.AST_IDENTIFIER &&
+        for_stmt.for_stmt_array.identifier_name != null {
+        const iter_type_ast: &ASTNode = c99_async_find_var_or_param_type_ast(codegen.async_fn_decl, for_stmt.for_stmt_array.identifier_name);
+        if iter_type_ast != null && iter_type_ast.type == ASTNodeType.AST_TYPE_NAMED && iter_type_ast.type_named_name != null {
+            const next_method_ast: &ASTNode = find_instance_method_in_struct_c99(codegen, iter_type_ast.type_named_name, "next" as *byte);
+            const value_method_ast: &ASTNode = find_instance_method_in_struct_c99(codegen, iter_type_ast.type_named_name, "value" as *byte);
+            if next_method_ast != null && value_method_ast != null {
+                return iter_type_ast.type_named_name;
+            }
+        }
+    }
+    if codegen.checker != null {
+        const inferred_type: Type = checker_infer_type(codegen.checker, for_stmt.for_stmt_array);
+        if inferred_type.kind == TypeKind.TYPE_STRUCT && inferred_type.struct_name != null {
+            const next_method_chk: &ASTNode = find_instance_method_in_struct_c99(codegen, inferred_type.struct_name, "next" as *byte);
+            const value_method_chk: &ASTNode = find_instance_method_in_struct_c99(codegen, inferred_type.struct_name, "value" as *byte);
+            if next_method_chk != null && value_method_chk != null {
+                return inferred_type.struct_name;
+            }
+        }
+    }
+    const expr_type_c: &byte = get_c_type_of_expr(codegen, for_stmt.for_stmt_array);
+    if expr_type_c == null {
+        return null;
+    }
+    var matched: i32 = 0;
+    const prefix: &byte = "struct " as *byte;
+    while matched < 7 && expr_type_c[matched] != 0 && expr_type_c[matched] == prefix[matched] {
+        matched = matched + 1;
+    }
+    if matched != 7 {
+        return null;
+    }
+    var buf: [byte: TEMP_BUF_SIZE] = [];
+    var src_i: i32 = 7;
+    var dst_i: i32 = 0;
+    while expr_type_c[src_i] != 0 && expr_type_c[src_i] != 32 && dst_i < TEMP_BUF_LIMIT {
+        buf[dst_i] = expr_type_c[src_i];
+        src_i = src_i + 1;
+        dst_i = dst_i + 1;
+    }
+    if dst_i >= 0 && dst_i < TEMP_BUF_SIZE {
+        buf[dst_i] = 0;
+    }
+    const struct_name: &byte = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+    if struct_name == null {
+        return null;
+    }
+    const next_method: &ASTNode = find_instance_method_in_struct_c99(codegen, struct_name, "next" as *byte);
+    const value_method: &ASTNode = find_instance_method_in_struct_c99(codegen, struct_name, "value" as *byte);
+    if next_method == null || value_method == null {
+        return null;
+    }
+    return struct_name;
+}
+
+fn c99_async_for_iterator_method(codegen: &C99CodeGenerator, for_stmt: &ASTNode, method_name: &byte) &ASTNode {
+    if codegen == null || for_stmt == null || method_name == null {
+        return null;
+    }
+    const struct_name: &byte = c99_async_for_iterator_struct_name(codegen, for_stmt);
+    if struct_name == null {
+        return null;
+    }
+    return find_instance_method_in_struct_c99(codegen, struct_name, method_name);
+}
+
+fn c99_async_for_iterator_method_c_name(codegen: &C99CodeGenerator, for_stmt: &ASTNode, method_name: &byte) &byte {
+    if codegen == null || for_stmt == null || method_name == null {
+        return null;
+    }
+    const struct_name: &byte = c99_async_for_iterator_struct_name(codegen, for_stmt);
+    if struct_name == null {
+        return null;
+    }
+    return get_method_c_name(codegen, struct_name, method_name);
+}
+
+fn c99_async_for_iterator_state_type_ast(codegen: &C99CodeGenerator, for_stmt: &ASTNode) &ASTNode {
+    if codegen == null || codegen.checker == null || for_stmt == null || for_stmt.for_stmt_array == null {
+        return null;
+    }
+    if c99_async_for_iterator_struct_name(codegen, for_stmt) == null {
+        return null;
+    }
+    if codegen.async_fn_decl != null &&
+        for_stmt.for_stmt_array.type == ASTNodeType.AST_IDENTIFIER &&
+        for_stmt.for_stmt_array.identifier_name != null {
+        const iter_type_ast: &ASTNode = c99_async_find_var_or_param_type_ast(codegen.async_fn_decl, for_stmt.for_stmt_array.identifier_name);
+        if iter_type_ast != null && iter_type_ast.type != ASTNodeType.AST_TYPE_ARRAY &&
+            iter_type_ast.type != ASTNodeType.AST_TYPE_SLICE {
+            return iter_type_ast;
+        }
+    }
+    const iter_type: Type = checker_infer_type(codegen.checker, for_stmt.for_stmt_array);
+    return type_to_ast(codegen.checker, &iter_type, for_stmt.line, for_stmt.column, for_stmt.filename);
+}
+
+fn c99_async_for_iterator_value_type_ast(codegen: &C99CodeGenerator, for_stmt: &ASTNode) &ASTNode {
+    if codegen == null || for_stmt == null {
+        return null;
+    }
+    const value_method: &ASTNode = c99_async_for_iterator_method(codegen, for_stmt, "value" as *byte);
+    if value_method == null || value_method.fn_decl_return_type == null {
+        return null;
+    }
+    return substitute_type_arg(codegen, value_method.fn_decl_return_type);
+}
+
+fn c99_async_for_iterator_next_type_c(codegen: &C99CodeGenerator, for_stmt: &ASTNode) &byte {
+    if codegen == null || for_stmt == null {
+        return null;
+    }
+    const next_method: &ASTNode = c99_async_for_iterator_method(codegen, for_stmt, "next" as *byte);
+    if next_method == null || next_method.fn_decl_return_type == null {
+        return null;
+    }
+    const next_type_ast: &ASTNode = substitute_type_arg(codegen, next_method.fn_decl_return_type);
+    if next_type_ast == null {
+        return null;
+    }
+    return c99_type_to_c(codegen, next_type_ast);
 }
 
 // 定长数组 for：元素 C 类型（优先 local_variables，否则从形参/函数体 var 的 AST 类型推断）
@@ -3715,6 +3854,44 @@ fn c99_async_hoist_one_for_with_await(codegen: &C99CodeGenerator, fn_decl: &ASTN
         }
     }
     if elt_from_ast == null {
+        var iter_state_type: &ASTNode = null;
+        var iter_struct_name: &byte = null;
+        if for_n.for_stmt_is_ref == 0 && for_n.for_stmt_array != null &&
+            for_n.for_stmt_array.type == ASTNodeType.AST_IDENTIFIER &&
+            for_n.for_stmt_array.identifier_name != null {
+            const iter_type_ast: &ASTNode = c99_async_find_var_or_param_type_ast(fn_decl, for_n.for_stmt_array.identifier_name);
+            if iter_type_ast != null && iter_type_ast.type != ASTNodeType.AST_TYPE_ARRAY &&
+                iter_type_ast.type != ASTNodeType.AST_TYPE_SLICE {
+                iter_state_type = iter_type_ast;
+                if iter_type_ast.type == ASTNodeType.AST_TYPE_NAMED && iter_type_ast.type_named_name != null {
+                    iter_struct_name = iter_type_ast.type_named_name;
+                }
+            }
+        }
+        if iter_state_type == null || iter_struct_name == null {
+            const iter_type: Type = checker_infer_type(codegen.checker, for_n.for_stmt_array);
+            if iter_type.kind == TypeKind.TYPE_STRUCT && iter_type.struct_name != null {
+                iter_state_type = type_to_ast(codegen.checker, &iter_type, for_n.line, for_n.column, fn_decl.filename);
+                iter_struct_name = iter_type.struct_name;
+            }
+        }
+        if iter_state_type == null || iter_struct_name == null {
+            return;
+        }
+        const next_method: &ASTNode = find_instance_method_in_struct_c99(codegen, iter_struct_name, "next" as *byte);
+        const value_method: &ASTNode = find_instance_method_in_struct_c99(codegen, iter_struct_name, "value" as *byte);
+        if next_method == null || value_method == null || value_method.fn_decl_return_type == null {
+            return;
+        }
+        const iter_value_type: &ASTNode = substitute_type_arg(codegen, value_method.fn_decl_return_type);
+        const iter_name: &byte = c99_async_for_iter_hoist_name(codegen, for_n);
+        if iter_name == null {
+            return;
+        }
+        c99_async_try_append_hoist_local(codegen, iter_name, iter_state_type, 0);
+        if for_n.for_stmt_var_name != null && iter_value_type != null {
+            c99_async_try_append_hoist_local(codegen, for_n.for_stmt_var_name, iter_value_type, 0);
+        }
         return;
     }
     const usz: &ASTNode = c99_async_type_named_usize(codegen);
@@ -4154,6 +4331,35 @@ fn emit_async_for_loopback_or_exit(codegen: &C99CodeGenerator, fs: &ASTNode) voi
         }
         return;
     }
+    const iter_state_type: &ASTNode = c99_async_for_iterator_state_type_ast(codegen, fs);
+    if iter_state_type != null {
+        const iter_name: &byte = c99_async_for_iter_hoist_name(codegen, fs);
+        const iter_safe: &byte = get_safe_c_identifier(codegen, iter_name);
+        const next_cname: &byte = c99_async_for_iterator_method_c_name(codegen, fs, "next" as *byte);
+        const next_type_c: &byte = c99_async_for_iterator_next_type_c(codegen, fs);
+        const value_cname: &byte = c99_async_for_iterator_method_c_name(codegen, fs, "value" as *byte);
+        const loop_var_safe: &byte = get_safe_c_identifier(codegen, fs.for_stmt_var_name);
+        if iter_safe != null && next_cname != null && next_type_c != null && value_cname != null &&
+            loop_var_safe != null && codegen.async_state_var != null {
+            fputs("        {\n" as *byte, codegen.emit_stream as *void);
+            fprintf(codegen.emit_stream as *void, "        %s _uya_iter_next_result = %s(&%s->_uya_loc_%s);\n" as *byte,
+                next_type_c as *byte, next_cname as *byte, codegen.async_state_var as *byte, iter_safe as *byte);
+            fputs("        if (_uya_iter_next_result.error_id == 0) {\n" as *byte, codegen.emit_stream as *void);
+            fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = %s(&%s->_uya_loc_%s);\n" as *byte,
+                codegen.async_state_var as *byte, loop_var_safe as *byte, value_cname as *byte,
+                codegen.async_state_var as *byte, iter_safe as *byte);
+            emit_async_segment_with_control(codegen, fbody, 0, fbody.block_stmt_count, null, fs);
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
+            const r_iter: i32 = emit_async_after_stmt(codegen, fs);
+            if r_iter != 0 {
+                fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
+            }
+            fputs("        }\n" as *byte, codegen.emit_stream as *void);
+            fputs("        }\n" as *byte, codegen.emit_stream as *void);
+            return;
+        }
+    }
     var len_nm: [&byte: 1] = [null];
     var i_nm: [&byte: 1] = [null];
     c99_async_for_ar_hoist_names(codegen, fs, &len_nm[0], &i_nm[0]);
@@ -4267,6 +4473,38 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
             }
         }
         return;
+    }
+    const iter_state_type2: &ASTNode = c99_async_for_iterator_state_type_ast(codegen, for_stmt);
+    if iter_state_type2 != null {
+        const iter_name2: &byte = c99_async_for_iter_hoist_name(codegen, for_stmt);
+        const iter_safe2: &byte = get_safe_c_identifier(codegen, iter_name2);
+        const next_cname2: &byte = c99_async_for_iterator_method_c_name(codegen, for_stmt, "next" as *byte);
+        const next_type_c2: &byte = c99_async_for_iterator_next_type_c(codegen, for_stmt);
+        const value_cname2: &byte = c99_async_for_iterator_method_c_name(codegen, for_stmt, "value" as *byte);
+        const loop_var_safe2: &byte = get_safe_c_identifier(codegen, for_stmt.for_stmt_var_name);
+        if iter_safe2 != null && next_cname2 != null && next_type_c2 != null && value_cname2 != null &&
+            loop_var_safe2 != null && codegen.async_state_var != null {
+            fputs("        {\n" as *byte, codegen.emit_stream as *void);
+            fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
+                codegen.async_state_var as *byte, iter_safe2 as *byte);
+            gen_expr(codegen, for_stmt.for_stmt_array);
+            fputs(";\n" as *byte, codegen.emit_stream as *void);
+            fprintf(codegen.emit_stream as *void, "        %s _uya_iter_next_result = %s(&%s->_uya_loc_%s);\n" as *byte,
+                next_type_c2 as *byte, next_cname2 as *byte, codegen.async_state_var as *byte, iter_safe2 as *byte);
+            fputs("        if (_uya_iter_next_result.error_id == 0) {\n" as *byte, codegen.emit_stream as *void);
+            fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = %s(&%s->_uya_loc_%s);\n" as *byte,
+                codegen.async_state_var as *byte, loop_var_safe2 as *byte, value_cname2 as *byte,
+                codegen.async_state_var as *byte, iter_safe2 as *byte);
+            emit_async_segment_with_control(codegen, fbody, 0, fbody.block_stmt_count, null, for_stmt);
+            fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
+            const r_iter2: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
+            if r_iter2 != 0 {
+                fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);
+            }
+            fputs("        }\n" as *byte, codegen.emit_stream as *void);
+            fputs("        }\n" as *byte, codegen.emit_stream as *void);
+            return;
+        }
     }
     const elem_cb: &byte = c99_async_for_array_elem_type_c(codegen, for_stmt);
     if elem_cb == null {
