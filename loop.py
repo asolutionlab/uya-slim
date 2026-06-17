@@ -4,17 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
+import pty
 import re
+import select
 import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 
 CHECKBOX_RE = re.compile(r"^(?P<prefix>\s*[-*]\s*)\[(?P<state>[^\]]*)\](?P<rest>.*)$")
 HEADING_RE = re.compile(r"^(?P<marks>#{1,6})\s+(?P<title>.*)$")
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 VALID_STATES = {" ", "x", "~", "f"}
 DEFAULT_SKILL_NAME = "goal-task-runner"
 DEFAULT_SKILL_SOURCE = ".agents/skills/goal-task-runner/SKILL.md"
@@ -75,6 +80,9 @@ class AgentInvocation:
     prompt_mode: str
     prompt_option: str
     prompt_prelude: str = ""
+    completion_status_pattern: str = ""
+    completion_exit_input: bytes = b""
+    completion_exit_grace_seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -151,8 +159,8 @@ def parse_args() -> argparse.Namespace:
         "--root",
         default=".",
         help=(
-            "Repository root. Codex receives it via `codex exec -C`; Kimi runs "
-            "with this directory as cwd. Default: current directory."
+            "Repository root. Codex receives it via `codex exec -C`; Kimi and "
+            "DeepCode run with this directory as cwd. Default: current directory."
         ),
     )
     parser.add_argument(
@@ -212,7 +220,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional model passed to the selected runner. Codex defaults to "
-            "CODEX_MODEL or `gpt-5.5`; Kimi defaults to KIMI_MODEL or its config."
+            "CODEX_MODEL or `gpt-5.5`; Kimi defaults to KIMI_MODEL or its config. "
+            "DeepCode reads its model from DeepCode settings."
         ),
     )
     parser.add_argument(
@@ -704,8 +713,6 @@ def selected_model(args: argparse.Namespace, runner: str) -> str:
         return os.environ.get("CODEX_MODEL", "gpt-5.5").strip()
     if runner == "kimi":
         return os.environ.get("KIMI_MODEL", "").strip()
-    if runner == "deepcode":
-        return os.environ.get("DEEPCODE_MODEL", "").strip()
     raise ValueError(f"unsupported runner: {runner}")
 
 
@@ -770,18 +777,15 @@ def build_kimi_invocation(args: argparse.Namespace, root: Path) -> AgentInvocati
 
 
 def build_deepcode_invocation(args: argparse.Namespace, root: Path) -> AgentInvocation:
-    cmd = [args.deepcode_cmd]
-
-    model = selected_model(args, "deepcode")
-    if model:
-        cmd.extend(["--model", model])
-
     return AgentInvocation(
         label="deepcode",
-        argv=tuple(cmd),
+        argv=(args.deepcode_cmd,),
         cwd=root,
         prompt_mode="option",
-        prompt_option="-p",
+        prompt_option="--prompt",
+        completion_status_pattern=r"status:\s*completed",
+        completion_exit_input=b"\x04\x04",
+        completion_exit_grace_seconds=5.0,
     )
 
 
@@ -810,6 +814,28 @@ def prepare_prompt(invocation: AgentInvocation, prompt: str) -> str:
     if not prelude:
         return prompt
     return f"{prelude}\n\n{prompt}"
+
+
+def argv_with_prompt(invocation: AgentInvocation, prompt: str) -> list[str]:
+    if invocation.prompt_mode == "stdin":
+        return list(invocation.argv)
+    if invocation.prompt_mode == "option":
+        return [*invocation.argv, invocation.prompt_option, prompt]
+    raise ValueError(f"unsupported prompt mode: {invocation.prompt_mode}")
+
+
+def write_agent_output(data: bytes) -> None:
+    output = getattr(sys.stdout, "buffer", None)
+    if output is None:
+        sys.stdout.write(data.decode("utf-8", errors="replace"))
+        sys.stdout.flush()
+        return
+    output.write(data)
+    output.flush()
+
+
+def strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def print_status(prefix: str, status: TodoStatus) -> None:
@@ -843,10 +869,13 @@ def validate_status(status: TodoStatus) -> int:
 
 
 def run_agent_round(invocation: AgentInvocation, prompt: str) -> int:
+    if invocation.completion_status_pattern:
+        return run_monitored_tty_round(invocation, prompt)
+
     try:
         if invocation.prompt_mode == "stdin":
             completed = subprocess.run(
-                list(invocation.argv),
+                argv_with_prompt(invocation, prompt),
                 input=prompt,
                 text=True,
                 check=False,
@@ -854,7 +883,7 @@ def run_agent_round(invocation: AgentInvocation, prompt: str) -> int:
             )
         elif invocation.prompt_mode == "option":
             completed = subprocess.run(
-                [*invocation.argv, invocation.prompt_option, prompt],
+                argv_with_prompt(invocation, prompt),
                 text=True,
                 check=False,
                 cwd=invocation.cwd,
@@ -869,6 +898,130 @@ def run_agent_round(invocation: AgentInvocation, prompt: str) -> int:
     except OSError as exc:
         raise AgentStartError(f"failed to start {invocation.label}: {exc}", 126) from exc
     return completed.returncode
+
+
+def run_monitored_tty_round(invocation: AgentInvocation, prompt: str) -> int:
+    argv = argv_with_prompt(invocation, prompt)
+    master_fd, slave_fd = pty.openpty()
+    try:
+        try:
+            process = subprocess.Popen(
+                argv,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                text=False,
+                cwd=invocation.cwd,
+                close_fds=True,
+            )
+        except FileNotFoundError as exc:
+            executable = invocation.argv[0] if invocation.argv else invocation.label
+            if exc.filename == executable:
+                raise AgentStartError(
+                    f"runner executable not found: {executable}",
+                    127,
+                ) from exc
+            raise AgentStartError(f"failed to start {invocation.label}: {exc}", 126) from exc
+        except OSError as exc:
+            raise AgentStartError(f"failed to start {invocation.label}: {exc}", 126) from exc
+        finally:
+            os.close(slave_fd)
+
+        pattern = re.compile(invocation.completion_status_pattern, re.IGNORECASE)
+        output_tail = ""
+        completed_at: float | None = None
+        exit_requested = False
+
+        while True:
+            returncode = process.poll()
+            if returncode is not None:
+                output_tail, completed_in_drain = drain_tty_output(
+                    master_fd,
+                    output_tail,
+                    pattern,
+                )
+                if completed_at is None and completed_in_drain:
+                    completed_at = time.monotonic()
+                if completed_at is not None and returncode != 0:
+                    print(
+                        f"loop.py: {invocation.label} exited with {returncode} "
+                        "after completion; treating completion as success",
+                        flush=True,
+                    )
+                    return 0
+                return returncode
+
+            readable, _, _ = select.select([master_fd], [], [], 0.25)
+            if readable:
+                try:
+                    data = os.read(master_fd, 4096)
+                except OSError as exc:
+                    if exc.errno == errno.EIO:
+                        data = b""
+                    else:
+                        raise
+                if data:
+                    write_agent_output(data)
+                    text = strip_ansi(data.decode("utf-8", errors="ignore"))
+                    output_tail = (output_tail + text)[-4096:]
+
+            if completed_at is None and pattern.search(output_tail):
+                completed_at = time.monotonic()
+                print(
+                    f"\nloop.py: detected {invocation.label} status completed; requesting exit",
+                    flush=True,
+                )
+
+            if completed_at is None:
+                continue
+
+            if not exit_requested and invocation.completion_exit_input:
+                try:
+                    os.write(master_fd, invocation.completion_exit_input)
+                except OSError as exc:
+                    if exc.errno != errno.EIO:
+                        raise
+                exit_requested = True
+
+            grace = invocation.completion_exit_grace_seconds
+            if grace > 0 and time.monotonic() - completed_at >= grace:
+                print(
+                    f"loop.py: {invocation.label} did not exit after completion; terminating TUI",
+                    flush=True,
+                )
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=3)
+                return 0
+    finally:
+        os.close(master_fd)
+
+
+def drain_tty_output(
+    master_fd: int,
+    output_tail: str,
+    pattern: re.Pattern[str],
+) -> tuple[str, bool]:
+    completed = pattern.search(output_tail) is not None
+    while True:
+        readable, _, _ = select.select([master_fd], [], [], 0)
+        if not readable:
+            return output_tail, completed
+        try:
+            data = os.read(master_fd, 4096)
+        except OSError as exc:
+            if exc.errno == errno.EIO:
+                return output_tail, completed
+            raise
+        if not data:
+            return output_tail, completed
+        write_agent_output(data)
+        text = strip_ansi(data.decode("utf-8", errors="ignore"))
+        output_tail = (output_tail + text)[-4096:]
+        completed = completed or pattern.search(output_tail) is not None
 
 
 def mark_item_failed(todo_path: Path, item: TodoItem, returncode: int) -> bool:
@@ -913,6 +1066,14 @@ def main() -> int:
     args = parse_args()
     if args.runner not in {"codex", "kimi", "deepcode"}:
         print(f"error: unsupported runner: {args.runner}", file=sys.stderr)
+        return 2
+
+    if args.runner == "deepcode" and args.model is not None:
+        print(
+            "error: DeepCode CLI does not support --model; configure the model "
+            "in ~/.deepcode/settings.json or ./.deepcode/settings.json",
+            file=sys.stderr,
+        )
         return 2
 
     if args.runner == "kimi" and args.kimi_permission_mode.strip():
