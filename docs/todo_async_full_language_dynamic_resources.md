@@ -10,9 +10,6 @@
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
     - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
-    - [ ] 收口 `Future<Future<T>>` / nested future poll 的真实支持边界，并补 dedicated 回归或显式失败用例。
-      - 验证：`./bin/uya test tests/test_async_nested.uya`
-      - 完成条件：权威矩阵与 `docs/std_async_design.md` 对 nested future 的口径一致，且有对应测试证据。
     - [ ] 替换 `tests/error_async_too_many_awaits.uya` / `tests/error_async_too_many_params.uya` 的旧上限口径，改成动态容量验证路线。
       - 验证：`make tests-uya`
       - 完成条件：不再把人为固定上限失败当作正确行为。
@@ -58,7 +55,7 @@
 | 位置 | 现状 | 证据 |
 |------|------|------|
 | `src/codegen/c99/function.uya` | `@async_fn` 中迭代器 `for` 仍只有“具体 struct + 值迭代”有直接回归；interface/ref 形式边界尚未收口 | `c99_async_for_iterator_struct_name()` 对 `for_stmt_is_ref != 0` 直接返回 `null`，fallback 仍保留“迭代器接口形式尚未支持”诊断 |
-| `docs/std_async_design.md` | 仍把 `Future<Future<T>>.poll` 记为已知限制 | nested future 语义尚未收口 |
+| `docs/std_async_design.md` | 历史上把 `Future<Future<T>>.poll` 一概记成已知限制 | 需改成“值类型双层 poll 已验证通过，但 `!Future<Future<T>>` 的无 await + 同步 `try` 返回在 C99 codegen 仍显式失败”的真实边界 |
 | `tests/error_async_too_many_awaits.uya` / `tests/error_async_too_many_params.uya` | 当前测试仍把固定上限失败当成正确行为 | 与“资源动态化”目标正面冲突 |
 | `tests/verify_async_full_language_matrix.sh` | 当前脚本已是高价值基线入口，但还不能单独证明“完整函数体语法已收口” | 它目前覆盖已存在主链路回归与明确禁止位置，不覆盖 nested future、动态容量和迭代器 interface/ref 边界 |
 
@@ -128,7 +125,7 @@
 | async 体内 `catch` 与 `@await` 组合 | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 `try/@await` 后接 `catch` 恢复路径 |
 | async 体内 `defer / errdefer` | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 success/error 两条清理顺序 |
 | 宏展开后的 expr / stmt 进入 async lowering | `tests/test_async_macro_expand.uya`、`tests/programs/test_ai_prompt_async_macro_combo.uya` | 已有覆盖 | 已验证 pre-await 求值不会在 poll/resume 间丢失或重复执行，程序级 macro combo 也可 build/run |
-| `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya` 顶部注释与 `docs/std_async_design.md` | 已知限制 | 当前仍不能宣称已收口 |
+| `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya`、`tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh`、`docs/std_async_design.md` | 已收口到真实边界 | 值类型 `Future<Future<T>>` 双层 poll 已有正向回归；无 await 的 `!Future<Future<T>>` + 同步 `try` 返回仍有 C99 codegen 显式失败用例 |
 | 大状态机 / 大量 await / 参数与 meta 动态扩容 | `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya` | 与目标冲突 | 这些旧测试本身就是“仍有固定上限”的证据 |
 
 > 建议把 [tests/verify_async_full_language_matrix.sh](../tests/verify_async_full_language_matrix.sh) 当作当前快照入口：
@@ -142,7 +139,6 @@
 - [ ] 如有必要，从 `tests/test_async_for_await.uya` 拆出 dedicated `for iter |v|` + `@await` 回归；当前主回归已覆盖该组合。
 - [ ] 如有必要，从 `tests/test_async_for_await.uya` 拆出 dedicated `for arr |&x|` + `@await` 回归；当前主回归已覆盖该组合。
 - [ ] 维护 `tests/test_async_macro_expand.uya` 与程序级 `tests/programs/test_ai_prompt_async_macro_combo.uya` 作为宏展开 async lowering 的固定证据。
-- [ ] 新增 `tests/test_async_nested_future_poll.uya`
 - [ ] 新增 `tests/test_async_large_state_machine_syntax.uya`
 - [ ] 所有新测试都要同时覆盖：
   - [ ] native 路线

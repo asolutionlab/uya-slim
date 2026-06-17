@@ -1,6 +1,6 @@
 # Uya Async 现状总表
 
-**最后更新**：2026-04-25  
+**最后更新**：2026-06-17
 **范围**：Linux + C99 后端；聚焦 `@async_fn` / `@await` / `Future` / `Poll` / `Waker` / `AsyncFd` / `Scheduler` / `async_compute`
 
 > **2026-06-17 注意**
@@ -43,6 +43,7 @@
 - direct `const r: !T = @await fut` 绑定现已纳入固定回归；但 parser 对 `catch { 0 - 1 }` 一类写法仍会打印假性的“意外的 token `}`”诊断
 - 接口方法签名可写 `@async_fn`，但对接口来说这仍是“返回 future 的异步契约”，不是单独的新 ABI
 - `@frame(foo)` 当前公开高层方法只有 `start` / `poll` / `stop`
+- `Future<Future<T>>` 需要区分值类型与 async wrapper 两类：`tests/test_async_nested.uya` 已证明手工构造的 `Future<Future<i32>>` 可双层 poll；但无 await 的 `@async_fn` 返回 `!Future<Future<T>>` 且 `return` 里同步 `try` 另一个 `!Future<T>` 时，C99 codegen 仍会生成错误的 `Poll<Future<T>>.Ready` 载荷，显式失败用例见 `tests/test_async_nested_future_poll.uya` 与 `tests/verify_async_nested_future_boundary.sh`
 
 ## 剩余 P2
 

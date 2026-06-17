@@ -1,8 +1,21 @@
 // test_async_nested.uya
-// 多个 @async_fn：poll Future<i32>。注：嵌套类型 Future<Future<i32>> 上 .poll 尚为已知限制。
+// 当前已确认可用的 nested future 子集：
+// 1. 手工构造的 Future<Future<i32>> 可连续两层 poll。
+// 2. 多个 @async_fn 串联后，经 try 拿到的单层 Future<i32> 可正常 poll。
 
 use std.async;
 use std.testing.assert_eq_i32;
+
+fn ready_i32(v: i32) Future<i32> {
+    const state: Poll<i32> = Poll<i32>.Ready(v);
+    return Future<i32>{ state: state };
+}
+
+fn ready_nested_i32(v: i32) Future<Future<i32>> {
+    const inner: Future<i32> = ready_i32(v);
+    const state: Poll<Future<i32>> = Poll<Future<i32>>.Ready(inner);
+    return Future<Future<i32>>{ state: state };
+}
 
 @async_fn
 fn answer() !Future<i32> {
@@ -12,6 +25,26 @@ fn answer() !Future<i32> {
 @async_fn
 fn get_answer() !Future<i32> {
     return 42;
+}
+
+test "manual_nested_future_poll" {
+    const outer: Future<Future<i32>> = ready_nested_i32(42);
+    const w: Waker = Waker{};
+    const outer_poll: Poll<Future<i32>> = outer.poll(&w);
+    var result: i32 = 0 - 1;
+
+    match outer_poll {
+        .Ready(inner) => {
+            const inner_poll: Poll<i32> = inner.poll(&w);
+            match inner_poll {
+                .Ready(x) => { result = x; },
+                .Pending(_) => { result = 0 - 2; },
+            };
+        },
+        .Pending(_) => { result = 0 - 3; },
+    };
+
+    try assert_eq_i32(result, 42);
 }
 
 test "async_nested_multiple_fns" {

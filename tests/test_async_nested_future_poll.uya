@@ -1,0 +1,44 @@
+// test_async_nested_future_poll.uya
+// 当前是 dedicated 显式失败用例，不应放进正向 `uya test` 套件。
+//
+// 现状边界：
+// - `Future<Future<i32>>` 这个值类型本身可以双层 poll，见 `tests/test_async_nested.uya`
+// - 但无 await 的 `@async_fn` 若返回 `!Future<Future<i32>>`，且 return 表达式里同步 `try`
+//   另一个 `!Future<i32>`，C99 codegen 会把同步错误路径错误地塞进 `Poll<Future<i32>>.Ready`
+//   的载荷里，最终生成无法通过宿主 cc 的 C
+//
+// 验证脚本：
+//   tests/verify_async_nested_future_boundary.sh
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+@async_fn
+fn inner_value() !Future<i32> {
+    return 42;
+}
+
+@async_fn
+fn outer_future() !Future<Future<i32>> {
+    return try inner_value();
+}
+
+test "async_nested_future_poll" {
+    const outer: Future<Future<i32>> = try outer_future();
+    const w: Waker = Waker{};
+    const outer_poll: Poll<Future<i32>> = outer.poll(&w);
+    var got: i32 = 0 - 1;
+
+    match outer_poll {
+        .Ready(inner) => {
+            const inner_poll: Poll<i32> = inner.poll(&w);
+            match inner_poll {
+                .Ready(value) => { got = value; },
+                .Pending(_) => { got = 0 - 2; },
+            };
+        },
+        .Pending(_) => { got = 0 - 3; },
+    };
+
+    try assert_eq_i32(got, 42);
+}

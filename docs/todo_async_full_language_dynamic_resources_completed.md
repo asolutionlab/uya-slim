@@ -71,3 +71,15 @@
       - 验证：`git diff --check`
       - 结果：通过。
       - 结果：权威 todo 已不再把 `for arr |&x|`、`for iter |v|`、expr 宏 async 组合和 `tests/verify_async_full_language_matrix.sh` 误写成缺口，并把剩余真实边界改为 nested future / 动态容量 / 迭代器 interface/ref。
+
+父级路径：
+- [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+  - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
+    - [x] 收口 `Future<Future<T>>` / nested future poll 的真实支持边界，并补 dedicated 回归或显式失败用例。
+      - 验证：`./bin/uya test tests/test_async_nested.uya`
+      - 完成条件：权威矩阵与 `docs/std_async_design.md` 对 nested future 的口径一致，且有对应测试证据。
+      - 验证结果：`manual_nested_future_poll` 与 `async_nested_multiple_fns` 两个测试均通过。
+      - 补充验证：`./tests/verify_async_nested_future_boundary.sh`
+      - 补充结果：值类型 `Future<Future<T>>` 双层 poll 正向回归通过；无 await 的 `!Future<Future<T>>` 且 `return` 中同步 `try` 另一个 `!Future<T>` 仍按显式失败用例稳定复现当前 C99 codegen 边界。
+      - 相关产物：`tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh`。
+      - 文档同步：`docs/std_async_design.md`、`docs/async_status_matrix.md`、`docs/todo_async_full_language_dynamic_resources.md` 已改成真实支持边界口径。
