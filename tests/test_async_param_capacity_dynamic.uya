@@ -1,0 +1,29 @@
+// test_async_param_capacity_dynamic.uya
+use std.async;
+use std.testing.assert_eq_i32;
+
+fn ready(v: i32) Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(v));
+    return Future<!i32>{ state: p };
+}
+
+@async_fn
+fn many_params_past_old_limit(
+    a0: i32, a1: i32, a2: i32, a3: i32, a4: i32, a5: i32, a6: i32, a7: i32,
+    a8: i32, a9: i32, a10: i32, a11: i32, a12: i32, a13: i32, a14: i32, a15: i32,
+    a16: i32
+) Future<!i32> {
+    const got: i32 = try @await ready(a16);
+    return got + a0 + a8;
+}
+
+test "async_param_capacity_grows_past_16" {
+    const f: Future<!i32> = many_params_past_old_limit(
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+        17
+    );
+    const bo: !i32 = block_on<i32>(f);
+    const v: i32 = bo catch { 0 - 1; };
+    try assert_eq_i32(v, 27);
+}

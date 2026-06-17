@@ -5221,11 +5221,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const params: & & ASTNode = fn_decl.fn_decl_params;
-    var async_param_type_nodes: [&ASTNode: 16] = [];
-    var async_param_type_cs: [&byte: 16] = [];
+    var async_param_type_nodes: [&ASTNode: C99_MAX_CALL_ARGS] = [];
+    var async_param_type_cs: [&byte: C99_MAX_CALL_ARGS] = [];
     {
         var pre_pi: i32 = 0;
-        while pre_pi < param_count && pre_pi < 16 {
+        while pre_pi < param_count && pre_pi < C99_MAX_CALL_ARGS {
             const param_pre: &ASTNode = params[pre_pi];
             if param_pre != null && param_pre.type == ASTNodeType.AST_VAR_DECL && param_pre.var_decl_type != null {
                 const substituted_param_type: &ASTNode = substitute_type_arg(codegen, param_pre.var_decl_type);
@@ -5632,7 +5632,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     var pi: i32 = 0;
     if is_struct_defined(codegen, async_struct) == 0 {
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
@@ -5732,7 +5732,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             loc_i = loc_i + 1;
         }
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param2: &ASTNode = params[pi];
             if param2 != null && param2.type == ASTNodeType.AST_VAR_DECL && param2.var_decl_type != null {
                 const psz: i32 = get_type_node_size_bytes(codegen, param2.var_decl_type);
@@ -5823,7 +5823,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     codegen.async_param_count = 0;
     pi = 0;
-    while pi < param_count && pi < 16 {
+    while pi < param_count && pi < C99_MAX_CALL_ARGS {
         const param: &ASTNode = params[pi];
         if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
             codegen.async_param_names[pi] = param.var_decl_name;
@@ -6198,7 +6198,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         codegen.defer_stack_depth = codegen.defer_stack_depth - 1;
     }
     pi = 0;
-    while pi < 16 {
+    while pi < @len(codegen.async_param_names) {
         codegen.async_param_names[pi] = null;
         pi = pi + 1;
     }
@@ -6267,7 +6267,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if frame_init_name != null {
         fprintf(codegen.emit_stream as *void, "static void %s(struct %s *s" as *byte, frame_init_name as *byte, async_struct as *byte);
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
                 var ptype_c: &byte = async_param_type_cs[pi];
@@ -6293,7 +6293,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         fputs("    s->state = 0; s->_uya_frame_active = 1; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
@@ -6308,7 +6308,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if old_frame_init_name != null && frame_init_name != null {
         fprintf(codegen.emit_stream as *void, "static void %s(struct %s *s" as *byte, old_frame_init_name as *byte, async_struct as *byte);
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param_old: &ASTNode = params[pi];
             if param_old != null && param_old.type == ASTNodeType.AST_VAR_DECL && param_old.var_decl_type != null && param_old.var_decl_name != null {
                 var ptype_old: &byte = async_param_type_cs[pi];
@@ -6330,7 +6330,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         fputs(") {\n" as *byte, codegen.emit_stream as *void);
         fprintf(codegen.emit_stream as *void, "    %s(s" as *byte, frame_init_name as *byte);
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param_old2: &ASTNode = params[pi];
             if param_old2 != null && param_old2.type == ASTNodeType.AST_VAR_DECL && param_old2.var_decl_name != null {
                 const pname_old2: &byte = get_safe_c_identifier(codegen, param_old2.var_decl_name);
@@ -6433,7 +6433,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     pi = 0;
     var first_param: i32 = 1;
-    while pi < param_count && pi < 16 {
+    while pi < param_count && pi < C99_MAX_CALL_ARGS {
         const param: &ASTNode = params[pi];
         if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
             if first_param == 0 {
@@ -6471,7 +6471,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if frame_init_name != null {
         fprintf(codegen.emit_stream as *void, "    %s(s" as *byte, frame_init_name as *byte);
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
@@ -6485,7 +6485,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     } else {
         fputs("    s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut));\n" as *byte, codegen.emit_stream as *void);
         pi = 0;
-        while pi < param_count && pi < 16 {
+        while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param: &ASTNode = params[pi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
                 const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);

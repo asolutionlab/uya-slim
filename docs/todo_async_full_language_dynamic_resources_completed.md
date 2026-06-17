@@ -83,3 +83,17 @@
       - 补充结果：值类型 `Future<Future<T>>` 双层 poll 正向回归通过；无 await 的 `!Future<Future<T>>` 且 `return` 中同步 `try` 另一个 `!Future<T>` 仍按显式失败用例稳定复现当前 C99 codegen 边界。
       - 相关产物：`tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh`。
       - 文档同步：`docs/std_async_design.md`、`docs/async_status_matrix.md`、`docs/todo_async_full_language_dynamic_resources.md` 已改成真实支持边界口径。
+
+## 目标
+
+路径：`@async_fn` 体内支持完整 Uya 函数体语法 -> 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径
+
+    - [x] 替换 `tests/error_async_too_many_awaits.uya` / `tests/error_async_too_many_params.uya` 的旧上限口径，改成动态容量验证路线。
+      - 验证：`make tests-uya`
+      - 完成条件：不再把人为固定上限失败当作正确行为。
+      - 验证记录（2026-06-17）：
+        - `./tests/run_programs_parallel.sh --uya --c99 tests/test_async_param_capacity_dynamic.uya`：通过
+        - `./tests/run_programs_parallel.sh --uya --c99 tests/test_async_await_capacity_dynamic.uya`：通过
+        - `./tests/run_programs_parallel.sh --uya --c99 tests/test_async_await_limits_and_segments.uya`：通过
+        - `./tests/verify_async_nested_future_boundary.sh`：通过（保留 dedicated 显式失败边界覆盖）
+        - `make tests-uya`：通过（1005/1005，默认套件排除 `test_async_nested_future_poll.uya`）

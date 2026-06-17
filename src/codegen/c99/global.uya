@@ -568,7 +568,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     }
     if codegen.async_state_var != null && codegen.async_param_count > 0 {
         var ai: i32 = 0;
-        while ai < codegen.async_param_count && ai < 16 {
+        while ai < codegen.async_param_count && ai < @len(codegen.async_param_names) {
             if codegen.async_param_names[ai] != null &&
                 strcmp(codegen.async_param_names[ai] as *byte, name as *byte) == 0 {
                 const s_len: i32 = strlen(codegen.async_state_var as *byte);

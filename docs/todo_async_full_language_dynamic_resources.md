@@ -10,9 +10,6 @@
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
     - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
-    - [ ] 替换 `tests/error_async_too_many_awaits.uya` / `tests/error_async_too_many_params.uya` 的旧上限口径，改成动态容量验证路线。
-      - 验证：`make tests-uya`
-      - 完成条件：不再把人为固定上限失败当作正确行为。
     - [ ] 审计并收口 async `for` 对迭代器 interface/ref 形式的真实支持边界。
       - 验证：`make tests-uya`
       - 完成条件：矩阵中这类 `for` 语法的状态由源码/测试直接证明，而不是沿用历史描述。

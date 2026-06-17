@@ -1,18 +1,14 @@
-// error_async_too_many_awaits.uya
-//
-// 预期：编译失败。async 状态机 await 槽位上限为 256，
-// 超出后会在 checker 阶段报错，避免 codegen 静默截断。
-
+// test_async_await_capacity_dynamic.uya
 use std.async;
+use std.testing.assert_eq_i32;
 
 fn ready(v: i32) Future<!i32> {
     const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(v));
     return Future<!i32>{ state: p };
 }
 
-// 300 个 await，超过 256 上限
 @async_fn
-fn too_many_awaits() Future<!i32> {
+fn many_awaits_near_old_limit() Future<!i32> {
     const a000: i32 = try @await ready(0);
     const a001: i32 = try @await ready(1);
     const a002: i32 = try @await ready(2);
@@ -273,48 +269,12 @@ fn too_many_awaits() Future<!i32> {
     const a257: i32 = try @await ready(257);
     const a258: i32 = try @await ready(258);
     const a259: i32 = try @await ready(259);
-    const a260: i32 = try @await ready(260);
-    const a261: i32 = try @await ready(261);
-    const a262: i32 = try @await ready(262);
-    const a263: i32 = try @await ready(263);
-    const a264: i32 = try @await ready(264);
-    const a265: i32 = try @await ready(265);
-    const a266: i32 = try @await ready(266);
-    const a267: i32 = try @await ready(267);
-    const a268: i32 = try @await ready(268);
-    const a269: i32 = try @await ready(269);
-    const a270: i32 = try @await ready(270);
-    const a271: i32 = try @await ready(271);
-    const a272: i32 = try @await ready(272);
-    const a273: i32 = try @await ready(273);
-    const a274: i32 = try @await ready(274);
-    const a275: i32 = try @await ready(275);
-    const a276: i32 = try @await ready(276);
-    const a277: i32 = try @await ready(277);
-    const a278: i32 = try @await ready(278);
-    const a279: i32 = try @await ready(279);
-    const a280: i32 = try @await ready(280);
-    const a281: i32 = try @await ready(281);
-    const a282: i32 = try @await ready(282);
-    const a283: i32 = try @await ready(283);
-    const a284: i32 = try @await ready(284);
-    const a285: i32 = try @await ready(285);
-    const a286: i32 = try @await ready(286);
-    const a287: i32 = try @await ready(287);
-    const a288: i32 = try @await ready(288);
-    const a289: i32 = try @await ready(289);
-    const a290: i32 = try @await ready(290);
-    const a291: i32 = try @await ready(291);
-    const a292: i32 = try @await ready(292);
-    const a293: i32 = try @await ready(293);
-    const a294: i32 = try @await ready(294);
-    const a295: i32 = try @await ready(295);
-    const a296: i32 = try @await ready(296);
-    const a297: i32 = try @await ready(297);
-    const a298: i32 = try @await ready(298);
-    const a299: i32 = try @await ready(299);
-    return a000 + a001 + a002 + a003 + a004 + a005 + a006 + a007 + a008 + a009;
+    return a259;
 }
 
-test "expect_compile_fail" {
+test "async_await_capacity_grows_past_256" {
+    const f: Future<!i32> = many_awaits_near_old_limit();
+    const bo: !i32 = block_on<i32>(f);
+    const v: i32 = bo catch { 0 - 1; };
+    try assert_eq_i32(v, 259);
 }
