@@ -10,9 +10,6 @@
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
     - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
-    - [x] 审计并收口无 `@await` 的 `!Future<Future<T>>` + 同步 `try` 返回边界。
-      - 验证结果：`tests/verify_async_nested_future_boundary.sh` 通过（正向通过，负向稳定复现失败边界）；`docs/std_async_design.md` L30、`docs/async_status_matrix.md` L46 已写成精确真实边界；`./bin/uya test tests/test_async_nested.uya` 通过（2/2）。
-      - 完成条件：`tests/test_async_nested_future_poll.uya` 与 `tests/verify_async_nested_future_boundary.sh` 的正/负证据、以及相关文档口径保持一致，不再把这类 nested future 失败写成笼统“已知限制”。
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
@@ -88,21 +85,6 @@
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
 - [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
 - [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
-
-## Phase 0：基线与文档对齐
-
-- [x] 维护当前目标的测试/文档总入口：本文件 + `tests/verify_async_full_language_matrix.sh`。
-- [x] 在文档里明确区分三类问题：
-  - [x] 语法/语义不支持
-  - [x] 编译器内部固定容量
-  - [x] 运行时/协议层固定容量
-- [x] 盘点现有 async 测试，标出“已有覆盖”“缺失覆盖”“历史已知限制”。
-- [x] 识别所有“silent truncation / emitter 内部 stderr 提示 / 历史 workaround”分支，并登记成待清理项。
-
-**验收**：
-
-- [x] `rg -n "尚未支持|已知限制|量产已完成" docs src tests | rg "async|await|frame|scheduler|thread|http1"`
-- [x] 校准并扩展 `tests/verify_async_full_language_matrix.sh`，让它持续代表当前权威矩阵。
 
 ## Phase 1：`@async_fn` 语法完整性
 
