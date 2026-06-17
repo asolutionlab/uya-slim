@@ -1,0 +1,43 @@
+// error_async_errdefer_await_boundary.uya
+// 已知限制：errdefer 当前不响应 try @await 传播的错误。
+// 当错误来自 return error.X 时 errdefer 正常触发，
+// 但当错误来自 try @await 传播时 errdefer 未触发。
+// 后续补齐 async lowering 后，本文件用例应迁移到 test_async_defer_errdefer.uya。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+error BoundaryErr;
+
+struct FlipErr : Future<!i32> {
+    v: i32, fail: i32, p: i32,
+    fn poll(self: &Self, w: &Waker) Poll<!i32> {
+        _ = w;
+        if self.p == 0 { self.p = 1; return Poll<!i32>.Pending({}); }
+        if self.fail != 0 { return Poll<!i32>.Ready(error.BoundaryErr); }
+        return Poll<!i32>.Ready(ok<i32>(self.v));
+    }
+    fn release(self: &Self) void { _ = self; }
+}
+fn flip_err(v: i32, fail: i32) Future<!i32> {
+    return FlipErr{ v: v, fail: fail, p: 0 };
+}
+
+var g: i32 = 0;
+
+// errdefer on try @await error propagation — currently fails
+@async_fn
+fn errdefer_await_error(fail: i32) Future<!i32> {
+    errdefer { g = g * 10 + 5; }
+    defer { g = g * 10 + 3; }
+    const v: i32 = try @await flip_err(42, fail);
+    return v;
+}
+
+test "boundary_errdefer_await_error" {
+    g = 0;
+    const f: Future<!i32> = errdefer_await_error(1);
+    const r: !i32 = block_on<i32>(f);
+    _ = r;
+    try assert_eq_i32(g, 35);
+}

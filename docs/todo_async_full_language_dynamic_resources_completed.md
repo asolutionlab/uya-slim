@@ -133,3 +133,50 @@
 
 - [x] `rg -n "尚未支持|已知限制|量产已完成" docs src tests | rg "async|await|frame|scheduler|thread|http1"`
 - [x] 校准并扩展 `tests/verify_async_full_language_matrix.sh`，让它持续代表当前权威矩阵。
+
+## 2026-06-18 L10 子任务组完成
+
+### 父级任务路径
+> `## 目标` → `@async_fn 体内支持完整 Uya 函数体语法` → `根据矩阵补齐剩余 async 函数体语法/语义缺口`
+
+### 已完成的子任务
+
+- [x] 验证 `tests/test_async_match_await.uya` 全路线通过（native / --c99 / --uya --c99）
+  - native: `./bin/uya test tests/test_async_match_await.uya` → 4/4 通过
+  - --c99: `./bin/uya build ... --c99 && cc && run` → 4/4 通过
+  - --uya --c99: `make tests-uya` 中通过
+  - 覆盖：match 在 @await 前后、多个 match 与 @await 交错、无 await 纯 match
+
+- [x] 验证 `tests/test_async_catch_await.uya` 全路线通过（native / --c99 / --uya --c99）
+  - native: `./bin/uya test tests/test_async_catch_await.uya` → 5/5 通过
+  - --c99: `./bin/uya build ... --c99 && cc && run` → 5/5 通过
+  - 覆盖：try @await 成功路径、同步 catch 在 async 体内、多段 try @await、match 路径
+  - 修复：`err<i32>(error.X)` → `error.X`（Uya 标准库惯用法）
+  - 已知限制移至：`tests/error_async_catch_await_boundary.uya`
+
+- [x] 创建并验证 `tests/test_async_defer_errdefer.uya` 全路线通过
+  - native: `./bin/uya test tests/test_async_defer_errdefer.uya` → 6/6 通过
+  - --c99: `./bin/uya build ... --c99 && cc && run` → 6/6 通过
+  - 覆盖：defer LIFO 顺序、errdefer 同步错误触发/成功跳过、多段 await 间 defer、catch+defer 组合
+  - 已知限制：errdefer + try @await 错误传播 → `tests/error_async_errdefer_await_boundary.uya`
+  - 已知限制：if 分支含 @await + 提前 return → 编译器 bug（见边界测试）
+  - 修正：errdefer 在错误路径上优先于 defer 执行（与 Uya 语义一致）
+
+- [x] 创建并验证 `tests/test_async_large_state_machine_syntax.uya` 全路线通过
+  - native: `./bin/uya test tests/test_async_large_state_machine_syntax.uya` → 7/7 通过
+  - --c99: `./bin/uya build ... --c99 && cc && run` → 7/7 通过
+  - 覆盖：顺序 20 @await、while + @await、for range + @await、变量跨段、副作用传播、表达式链
+
+- [x] 收口 `make tests-uya` 无回归
+  - 结果：1011/1013 通过，2 个预存失败与本次无关
+  - 新测试全部通过
+
+### 本轮发现并记录的编译器缺口
+
+| 缺口 | 边界测试文件 | 描述 |
+|------|-------------|------|
+| catch 体执行路径 | `tests/error_async_catch_await_boundary.uya` | catch 体对 @await 错误结果执行恢复路径时状态机未分发 |
+| catch 体含 @await | `tests/error_async_catch_await_boundary.uya` | catch 体内不可使用 @await |
+| errdefer + try @await | `tests/error_async_errdefer_await_boundary.uya` | errdefer 不响应 try @await 传播的错误 |
+| if 分支含 @await | （已确认 bug，见调试记录）| if/else 分支含 @await 时状态机跳转错误 |
+| match 臂含 @await | （已确认 bug，C codegen 产生错误 C 代码）| match 臂内含 try @await 时变量作用域丢失 |

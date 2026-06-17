@@ -1,0 +1,162 @@
+// test_async_defer_errdefer.uya
+// 专用回归：@async_fn 体内 defer / errdefer 的清理语义与执行顺序。
+// 已知限制：errdefer 当前不响应 try @await 错误传播（仅响应 return error.X），
+// 见 tests/error_async_errdefer_await_boundary.uya。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+error DeferTestErr;
+
+var g_trace: i32 = 0;
+var g_trace2: i32 = 0;
+
+struct FlipI32 : Future<!i32> {
+    value: i32,
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn flip_i32(v: i32) Future<!i32> {
+    return FlipI32{ value: v, polled: 0 };
+}
+
+fn sync_maybe_err(fail: i32) !i32 {
+    if fail != 0 {
+        return error.DeferTestErr;
+    }
+    return 42;
+}
+
+// ── defer 基础：跨多段 await 的 LIFO 顺序 ──
+
+@async_fn
+fn defer_across_awaits(x: i32) Future<!i32> {
+    defer { g_trace = g_trace * 10 + 1; }
+    defer { g_trace = g_trace * 10 + 2; }
+
+    const a: i32 = try @await flip_i32(x);
+    const b: i32 = try @await flip_i32(x + 10);
+    return a + b;
+}
+
+// ── errdefer + defer 共同出现，错误来自同步 return（验证与矩阵测试一致）──
+
+@async_fn
+fn errdefer_with_sync_error(fail: i32) Future<!i32> {
+    errdefer { g_trace2 = g_trace2 * 10 + 5; }
+    defer { g_trace2 = g_trace2 * 10 + 3; }
+
+    const v: i32 = try @await flip_i32(7);
+    if fail != 0 {
+        return error.DeferTestErr;
+    }
+    return v;
+}
+
+// ── 多段 await 间插入 defer ──
+
+@async_fn
+fn defer_between_awaits(a: i32, b: i32, c: i32) Future<!i32> {
+    defer { g_trace2 = g_trace2 * 10 + 9; }
+
+    const va: i32 = try @await flip_i32(a);
+    defer { g_trace2 = g_trace2 * 10 + 8; }
+
+    const vb: i32 = try @await flip_i32(b);
+    defer { g_trace2 = g_trace2 * 10 + 7; }
+
+    const vc: i32 = try @await flip_i32(c);
+    return va + vb + vc;
+}
+
+// ── 同步 catch + defer 在 async 体内 ──
+
+@async_fn
+fn sync_catch_defer_in_async(fail: i32) Future<!i32> {
+    var total: i32 = 0;
+    defer { g_trace = g_trace * 10 + 1; }
+
+    const base: i32 = try @await flip_i32(10);
+    total = total + base;
+
+    const bonus: i32 = sync_maybe_err(fail) catch |err| {
+        _ = err;
+        total = total + 50;
+        total;
+    };
+    return total + bonus;
+}
+
+// ── 测试用例 ──
+
+test "async_defer_across_awaits_order" {
+    g_trace = 0;
+    const f: Future<!i32> = defer_across_awaits(5);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 20);
+    // LIFO: 先 *10+2, 后 *10+1 → 0→2→21
+    try assert_eq_i32(g_trace, 21);
+}
+
+test "async_errdefer_sync_error_triggers" {
+    g_trace2 = 0;
+    const f: Future<!i32> = errdefer_with_sync_error(1);
+    const r: !i32 = block_on<i32>(f);
+    _ = r;
+    // errdefer 优先于 defer 执行: errdefer {*10+5}→5, defer {*10+3}→53
+    try assert_eq_i32(g_trace2, 53);
+}
+
+test "async_errdefer_sync_success_skips" {
+    g_trace2 = 0;
+    const f: Future<!i32> = errdefer_with_sync_error(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 7);
+    // errdefer 不触发，仅 defer: *10+3=3
+    try assert_eq_i32(g_trace2, 3);
+}
+
+test "async_defer_between_awaits" {
+    g_trace2 = 0;
+    const f: Future<!i32> = defer_between_awaits(1, 2, 3);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 6);
+    // LIFO: +7 → +8 → +9: trace2=789
+    try assert_eq_i32(g_trace2, 789);
+}
+
+test "async_sync_catch_defer_in_async_success" {
+    g_trace = 0;
+    const f: Future<!i32> = sync_catch_defer_in_async(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    // base=10, bonus=42, total=10+42=52
+    try assert_eq_i32(v, 52);
+    try assert_eq_i32(g_trace, 1);
+}
+
+test "async_sync_catch_defer_in_async_error_recovery" {
+    g_trace = 0;
+    const f: Future<!i32> = sync_catch_defer_in_async(1);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    // base=10, catch: total=10+50=60, bonus=60, total+bonus=120
+    try assert_eq_i32(v, 120);
+    try assert_eq_i32(g_trace, 1);
+}

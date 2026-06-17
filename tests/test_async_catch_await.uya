@@ -1,0 +1,117 @@
+// test_async_catch_await.uya
+// 专用回归：@async_fn 体内 @await + catch 错误恢复的当前已支持组合。
+// 已知限制：catch 体内含 @await 或 catch 作用于 @await 错误联合结果时，
+// async 状态机尚未完整支持，见 tests/error_async_catch_await_boundary.uya。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+error CatchTestErr;
+
+struct FlipErrI32 : Future<!i32> {
+    value: i32,
+    fail: i32,
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        if self.fail != 0 {
+            return Poll<!i32>.Ready(error.CatchTestErr);
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn maybe_fail(v: i32, fail: i32) Future<!i32> {
+    return FlipErrI32{ value: v, fail: fail, polled: 0 };
+}
+
+fn maybe_fail_sync(fail: i32) !i32 {
+    if fail != 0 {
+        return error.CatchTestErr;
+    }
+    return 42;
+}
+
+// try @await 成功路径：直接取正常值
+@async_fn
+fn catch_success_path(fail: i32) Future<!i32> {
+    const v: i32 = try @await maybe_fail(42, fail);
+    return v + 1;
+}
+
+// 同步 catch 在 async 体内：对 sync 函数结果做 catch 恢复（验证与 test_async_sync_body_matrix 一致）
+@async_fn
+fn sync_catch_in_async(fail: i32) Future<!i32> {
+    var total: i32 = 0;
+    const base: i32 = try @await maybe_fail(10, 0);
+    total = total + base;
+    const bonus: i32 = maybe_fail_sync(fail) catch |err| {
+        _ = err;
+        total = total + 50;
+        total;
+    };
+    return total + bonus;
+}
+
+// try @await 多段成功组合
+@async_fn
+fn multi_try_await_success(a: i32, b: i32) Future<!i32> {
+    const va: i32 = try @await maybe_fail(a, 0);
+    const vb: i32 = try @await maybe_fail(b, 0);
+    return va + vb;
+}
+
+// @await 后对 !i32 做 match（不含 catch，验证 match 路径）
+@async_fn
+fn await_match_on_result(fail: i32) Future<!i32> {
+    var total: i32 = 0;
+    const base: i32 = try @await maybe_fail(100, 0);
+    total = total + base;
+    return total;
+}
+
+test "async_catch_success_path" {
+    const f: Future<!i32> = catch_success_path(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 43);
+}
+
+test "async_sync_catch_in_async_success" {
+    const f: Future<!i32> = sync_catch_in_async(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    // base=10, bonus=42, total=10+42=52
+    try assert_eq_i32(v, 52);
+}
+
+test "async_sync_catch_in_async_error_recovery" {
+    const f: Future<!i32> = sync_catch_in_async(1);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    // base=10, bonus via catch: total=10+50=60, bonus=60, total=60+60=120
+    try assert_eq_i32(v, 120);
+}
+
+test "async_multi_try_await_success" {
+    const f: Future<!i32> = multi_try_await_success(3, 5);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 8);
+}
+
+test "async_await_match_on_result" {
+    const f: Future<!i32> = await_match_on_result(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 100);
+}

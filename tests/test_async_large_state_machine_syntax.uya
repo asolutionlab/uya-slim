@@ -1,0 +1,188 @@
+// test_async_large_state_machine_syntax.uya
+// 压力回归：中等规模 @async_fn 状态机（~30 @await）。
+// 验证状态机在较多段数时仍能正确编译、运行，保持变量跨段绑定。
+// 注意：当前 MAX_SEGMENTS=258，本测试保持在安全范围内（~30 await）。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+var g_side: i32 = 0;
+
+struct FlipI32 : Future<!i32> {
+    value: i32,
+    polled: i32,
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+    fn release(self: &Self) void { _ = self; }
+}
+fn flip(v: i32) Future<!i32> { return FlipI32{ value: v, polled: 0 }; }
+
+// ── 顺序 20 @await 累加 ──
+
+@async_fn
+fn seq_20_awaits(seed: i32) Future<!i32> {
+    var total: i32 = try @await flip(seed);
+    total = total + try @await flip(1);
+    total = total + try @await flip(2);
+    total = total + try @await flip(3);
+    total = total + try @await flip(4);
+    total = total + try @await flip(5);
+    total = total + try @await flip(6);
+    total = total + try @await flip(7);
+    total = total + try @await flip(8);
+    total = total + try @await flip(9);
+    total = total + try @await flip(10);
+    total = total + try @await flip(11);
+    total = total + try @await flip(12);
+    total = total + try @await flip(13);
+    total = total + try @await flip(14);
+    total = total + try @await flip(15);
+    total = total + try @await flip(16);
+    total = total + try @await flip(17);
+    total = total + try @await flip(18);
+    total = total + try @await flip(19);
+    return total;
+}
+
+// ── while + @await 迭代 ──
+
+@async_fn
+fn while_multi_await(start: i32, steps: i32) Future<!i32> {
+    var total: i32 = start;
+    var i: i32 = 0;
+    while i < steps {
+        total = total + try @await flip(i + 1);
+        i = i + 1;
+    }
+    return total;
+}
+
+// ── for 0..n + @await ──
+
+@async_fn
+fn for_range_with_await(n: i32) Future<!i32> {
+    var total: i32 = 0;
+    for 0..n |k| {
+        const v: i32 = try @await flip(k as i32 + 1);
+        total = total + v;
+    }
+    return total;
+}
+
+// ── 变量跨多段声明 ──
+
+@async_fn
+fn vars_across_segments() Future<!i32> {
+    const a: i32 = try @await flip(10);
+    const b: i32 = try @await flip(a);
+    const c: i32 = try @await flip(b);
+    const d: i32 = try @await flip(c);
+    const e: i32 = try @await flip(d);
+    return e;
+}
+
+// ── 副作用跨段传播 ──
+
+@async_fn
+fn side_effects_across_awaits(seed: i32) Future<!i32> {
+    g_side = seed;
+    const a: i32 = try @await flip(g_side + 1);
+    g_side = a + 2;
+    const b: i32 = try @await flip(g_side + 3);
+    g_side = b + 4;
+    const c: i32 = try @await flip(g_side + 5);
+    g_side = c + 6;
+    return g_side;
+}
+
+// ── 复杂表达式链 + @await ──
+
+@async_fn
+fn expr_pipeline_with_await(base: i32) Future<!i32> {
+    const a: i32 = try @await flip(base);
+    const b: i32 = try @await flip(a * 2 + 1);
+    const c: i32 = try @await flip(b - 5);
+    const d: i32 = try @await flip(c + c);
+    return d + try @await flip(1);
+}
+
+// ── while + @await，使用 ready future（无 Pending 延迟，减少轮次）──
+
+struct ReadyI32 : Future<!i32> {
+    value: i32,
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+    fn release(self: &Self) void { _ = self; }
+}
+fn ready(v: i32) Future<!i32> { return ReadyI32{ value: v }; }
+
+@async_fn
+fn while_ready_await(start: i32, steps: i32) Future<!i32> {
+    var total: i32 = start;
+    var i: i32 = 0;
+    while i < steps {
+        total = total + try @await ready(i + 1);
+        i = i + 1;
+    }
+    return total;
+}
+
+// ── 测试用例 ──
+
+test "async_seq_20_awaits" {
+    const f: Future<!i32> = seq_20_awaits(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 190);
+}
+
+test "async_while_multi_await_3" {
+    const f: Future<!i32> = while_multi_await(10, 3);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 16);
+}
+
+test "async_while_ready_await_5" {
+    const f: Future<!i32> = while_ready_await(0, 5);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 15);
+}
+
+test "async_for_range_with_await_3" {
+    const f: Future<!i32> = for_range_with_await(3);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 6);
+}
+
+test "async_vars_across_segments" {
+    const f: Future<!i32> = vars_across_segments();
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 10);
+}
+
+test "async_side_effects_across_awaits" {
+    g_side = 0;
+    const f: Future<!i32> = side_effects_across_awaits(1);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 22);
+}
+
+test "async_expr_pipeline_with_await" {
+    const f: Future<!i32> = expr_pipeline_with_await(3);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 5);
+}
