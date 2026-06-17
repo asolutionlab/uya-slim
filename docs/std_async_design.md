@@ -4,6 +4,7 @@
 - [std/libc 标准库设计](std_c_design.md) — 同步 I/O（`std.io`）、C 兼容层（`lib/libc`）
 - [语言规范 第 18 章](uya.md#18-异步编程) — 异步编程语言核心（`@async_fn`、`@await`、`interface Future<T>`、`union Poll<T>`）
 - [async_status_matrix.md](async_status_matrix.md) — async 实现现状总表（runtime / codegen / tests / docs）
+- [todo_async_full_language_dynamic_resources.md](todo_async_full_language_dynamic_resources.md) — 当前 async 生产化权威 TODO（完整语法 + 动态资源）
 
 ## 概述
 
@@ -14,6 +15,15 @@
 - 零成本抽象：状态机栈分配，无运行时堆分配
 - 显式控制：所有挂起必须 `@await`，无隐式行为
 - 与 `std.io` 形成同步/异步对称设计
+
+> **2026-06-17 注意**
+>
+> 本文档主要描述 async 标准库的目标设计与阶段性实现，并不单独证明当前实现已经达到“完整语法 + 动态资源 + 生产可用”。
+> 当前权威 TODO 请看：[todo_async_full_language_dynamic_resources.md](todo_async_full_language_dynamic_resources.md)。
+> 尤其要注意三点：
+> 1. 当前实现里仍存在固定容量资源与 fallback 路径，和“全部动态化”目标并不一致。
+> 2. 当前 `@async_fn` 的已通过回归不等于已经覆盖完整 Uya 函数体语法。
+> 3. 本文中的“设计原则”包含目标态表述；评估当前真实状态时，应以源码、测试和权威 TODO 为准。
 
 ## 架构概览
 

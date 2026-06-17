@@ -1,0 +1,439 @@
+# Uya 异步生产化 TODO（完整语法 + 动态资源）
+
+**最后更新**：2026-06-17  
+**当前定位**：本文件是当前“让异步编程生产级可用”目标的权威 TODO。  
+**口径说明**：在本文件完成前，`docs/async_production_todo.md`、`docs/async_status_matrix.md`、`docs/std_async_design.md` 中“量产已完成”或“主链路已收口”的表述都只能视为历史阶段结论，不能直接当作本目标的完成依据。
+
+## 目标
+
+- [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+- [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+- [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+- [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
+
+## 先澄清边界
+
+- [ ] “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
+- [ ] 这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+  - [ ] `@await` 只能出现在 `@async_fn` 中。
+  - [ ] `@await` 出现在 `while` 条件等当前明确禁止的位置时，仍应报错，除非后续先修改语言规范。
+  - [ ] async 递归 / 间接递归的限制是否保留，必须由新的大小模型或规范决定，不能在实现里偷偷放开。
+- [ ] 本阶段先以 **Linux + C99** 为生产主线；`kqueue` / `IOCP` 不作为阻塞项。
+
+## 源码现状审计
+
+### 1. 运行时资源仍有明显硬编码
+
+| 模块 | 现状 | 影响 |
+|------|------|------|
+| `lib/std/async_event.uya` | `LinuxEpoll` 的 slot / event 数组均固定 `1024`，`find_slot()` 线性扫描固定容量 | 并发 fd 上限、退化 O(n)、容量达到上限时只能报错 |
+| `lib/std/async_scheduler.uya` | `TaskQueue<T>` 固定 `64` 槽，scheduler 自带 `_frame_stack_buffer[8192]`，inline repoll 上限固定 `1024` | 队列容量、池后备缓冲和轮询策略都不是动态策略 |
+| `lib/std/thread.uya` | `THREAD_POOL_MAX_WORKERS=32`、`THREAD_POOL_MAX_PENDING=32`、`THREAD_POOL_MAX_TASK_SLOTS=16`，满载后还会回退到 `sys_fork()` one-shot | 线程池容量与退化路径写死，生产行为不可预测 |
+| `lib/std/async_frame.uya` | `ASYNC_FRAME_POOL_MAX_BUCKETS=128`、`ASYNC_FRAME_POOL_MAX_PER_BUCKET=4096`、descriptor 表固定 `512` | frame 元信息和池容量都有硬上限 |
+| `lib/std/http/http1_async.uya` | 多处请求头 scratch buffer 固定 `4096` | 大 header / 扩展请求场景不是真动态 |
+
+### 2. 编译器 async 相关容量仍有硬编码
+
+| 模块 | 现状 | 影响 |
+|------|------|------|
+| `src/codegen/c99/async_transform.uya` | `MAX_SEGMENTS=258`、`MAX_LOCALS=32` | “完整语法”一旦放大状态机，就会撞上内部数组上限 |
+| `src/codegen/c99/internal.uya` | `C99_ASYNC_MAX_AWAITS=4096` 且大量数组按此大小静态展开 | 仍是固定容量设计，不是动态结构 |
+| `src/checker/async_frame_meta.uya` | `MAX_ASYNC_FRAME_METAS=512` | async frame 元信息会在大工程中截断 |
+| `src/codegen/c99/main.uya` | 生成 `_uya_async_frame_descriptors` 时仍按 `MAX_ASYNC_FRAME_METAS` 截断 | codegen 与 runtime descriptor 上限耦合 |
+
+### 3. 已知语法/语义缺口仍存在
+
+| 位置 | 现状 | 证据 |
+|------|------|------|
+| `src/codegen/c99/function.uya` | `@async_fn` 中 `for arr |&x|` + `@await` 明确报“尚未支持” | 约 4246 行附近 |
+| `src/codegen/c99/function.uya` | `@async_fn` 中迭代器形式 `for obj \|v\|` + `@await` 明确报“尚未支持” | 约 4255 行附近 |
+| `tests/programs/test_ai_prompt_async_macro_combo.uya` | 注释明确写着 expr 宏不要放进 `@async_fn`，否则局部绑定/求值会丢 | 当前 async lowering 对宏展开后的局部结构不完整 |
+| `docs/std_async_design.md` | 仍把 `Future<Future<T>>.poll` 记为已知限制 | nested future 语义尚未收口 |
+| `tests/error_async_too_many_awaits.uya` | 当前测试仍把 “超过 256 个 await 编译失败” 当成正确行为 | 与“资源动态化”目标正面冲突 |
+
+### 4. 文档口径与源码状态有漂移
+
+- [ ] 现有“量产完成”文档没有把上面的固定容量、语法禁区和回退路径当成阻塞项。
+- [ ] 本目标完成前，必须先把“文档真相”与“源码真相”重新对齐，再谈 release 口径。
+
+## 完成定义
+
+- [ ] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+- [ ] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+- [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+- [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
+- [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
+
+## Phase 0：基线与文档对齐
+
+- [ ] 建立当前目标的测试/文档总入口：本文件 + `tests/verify_async_full_language_matrix.sh`。
+- [ ] 在文档里明确区分三类问题：
+  - [ ] 语法/语义不支持
+  - [ ] 编译器内部固定容量
+  - [ ] 运行时/协议层固定容量
+- [ ] 盘点现有 async 测试，标出“已有覆盖”“缺失覆盖”“历史已知限制”。
+- [ ] 识别所有“silent truncation / emitter 内部 stderr 提示 / 历史 workaround”分支，并登记成待清理项。
+
+**验收**：
+
+- [ ] `rg -n "尚未支持|已知限制|量产已完成" docs src tests | rg "async|await|frame|scheduler|thread|http1"`
+- [ ] 新增 `tests/verify_async_full_language_matrix.sh`，可一键跑当前权威矩阵。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+- [ ] 以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+  - [ ] 局部变量声明 / 赋值 / 提前 return
+  - [ ] `if / else if / else`
+  - [ ] `while`
+  - [ ] `for range`
+  - [ ] `for` 定长数组值迭代
+  - [ ] `for` 定长数组引用迭代 `|&x|`
+  - [ ] 迭代器形式 `for obj |v|`
+  - [ ] `match`
+  - [ ] `try / catch`
+  - [ ] `defer / errdefer`
+  - [ ] 复合表达式
+  - [ ] 宏展开后的 expr / stmt
+  - [ ] 泛型函数 / 泛型方法 / 接口方法 / 结构体外方法块
+
+### 1.1.1 当前语法覆盖快照（基于现有仓库）
+
+| 语法类别 | 当前证据 | 状态 | 说明 |
+|------|------|------|------|
+| `@async_fn` / `@await` 基础解析与上下文约束 | `tests/test_async_await_parse.uya` | 已有基础覆盖 | 证明基础 parse 与返回类型约束可工作，但不代表完整函数体语法都已接通 |
+| Ready/Pending 基本语义 | `tests/test_async_await.uya`、`tests/test_async_await_ready.uya`、`tests/test_async_multiple_await.uya`、`tests/test_async_state_machine.uya` | 已有基础覆盖 | 覆盖单段与多段状态机的最小语义 |
+| direct err-union await / 直接 `return error.X` | `tests/test_async_await_direct_err_union.uya`、`tests/test_async_return_error_direct.uya` | 已有覆盖 | 证明部分错误传播形态已打通 |
+| `if / else / else if` + `@await` | `tests/test_async_if_await.uya`、`tests/test_async_else_if_await.uya` | 已有覆盖 | 仍只覆盖常见形态，不等于所有分支语法 |
+| `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |
+| `for range` / 定长数组值迭代 + `@await` | `tests/test_async_for_await.uya` | 仅部分覆盖 | 只覆盖 `for 0..n` 和 `for arr |e|`；不含迭代器 `for obj |v|` 与 `for |&x|` |
+| 复合表达式 / await 绑定跨段重放 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya` | 已有覆盖 | 覆盖 RHS/return 表达式与多段 bind 依赖 |
+| 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
+| caller-owned inline / frame / 局部定长数组 | `tests/test_async_frame_inline_temp.uya`、`tests/test_async_frame_inline_temp2.uya`、`tests/test_async_fn_local_fixed_array.uya`、`tests/test_async_frame_type.uya` | 已有覆盖 | 更偏 codegen/frame correctness，不等于完整语法 |
+| runtime / scheduler / real client 集成 | `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_http1_async_client.uya` | 已有覆盖 | 是“真实使用链路”证据，但不覆盖全部语法 |
+| async 体内 `match` | 未见 dedicated async-body regression | 缺口 | 当前只看到 async 外围 `match p` 的测试，不足以证明 `@async_fn` 体内 `match` + `@await` |
+| async 体内 `catch` 与 `@await` 组合 | `tests/test_async_codegen_edge_paths.uya` 仅覆盖 catch codegen 边路径 | 缺口 | 还没有 dedicated `@async_fn` + `try/@await` + `catch` 语义回归 |
+| async 体内 `defer / errdefer` | 未见 dedicated async-body regression | 缺口 | 这是当前最明确的空洞之一 |
+| 迭代器 `for obj |v|` + `@await` | `src/codegen/c99/function.uya` 明确报“尚未支持” | 明确未支持 | 需要先补红测，再实现 |
+| `for arr |&x|` + `@await` | `src/codegen/c99/function.uya` 明确报“尚未支持” | 明确未支持 | 需要指针/引用语义与状态机字段模型一起收口 |
+| 宏展开后的 expr / stmt 进入 async lowering | `tests/programs/test_ai_prompt_async_macro_combo.uya` 顶部注释明确规避 | 已知限制 | 当前不能把它当作已支持 |
+| `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya` 顶部注释与 `docs/std_async_design.md` | 已知限制 | 当前仍不能宣称已收口 |
+| 大状态机 / 大量 await / 参数与 meta 动态扩容 | `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya` | 与目标冲突 | 这些旧测试本身就是“仍有固定上限”的证据 |
+
+> 建议把 [tests/verify_async_full_language_matrix.sh](../tests/verify_async_full_language_matrix.sh) 当作当前快照入口：
+> 它先跑现有高价值基线，再检查 TODO 中要求的新测试文件是否已经补齐；缺失时应明确失败，而不是假装“全语法已验证”。
+
+### 1.2 先补红测，再动实现
+
+- [ ] 新增 `tests/test_async_match_await.uya`
+- [ ] 新增 `tests/test_async_catch_await.uya`
+- [ ] 新增 `tests/test_async_defer_errdefer.uya`
+- [ ] 新增 `tests/test_async_iterator_for_await.uya`
+- [ ] 新增 `tests/test_async_array_ref_for_await.uya`
+- [ ] 新增 `tests/test_async_macro_expand.uya`
+- [ ] 新增 `tests/test_async_nested_future_poll.uya`
+- [ ] 新增 `tests/test_async_large_state_machine_syntax.uya`
+- [ ] 所有新测试都要同时覆盖：
+  - [ ] native 路线
+  - [ ] `--c99`
+  - [ ] `--uya --c99`
+
+### 1.3 把 async lowering 从“特判发射”改成“统一 lowered plan”
+
+- [ ] 以 `src/lower/async.uya` 为中心，建立单一 async lowering 计划结构，而不是让 `src/codegen/c99/function.uya` 和 `src/codegen/c99/async_transform.uya` 各自再做一轮语义猜测。
+- [ ] 让 C99 emitter 只消费 lowered async plan，不再自己重新推断：
+  - [ ] await split 点
+  - [ ] state 编号
+  - [ ] resume 入口
+  - [ ] cleanup 区域
+  - [ ] break / continue / return / error 路径
+- [ ] 对 `defer / errdefer` 建立显式 cleanup 区域模型，保证跨 await 与提前返回语义一致。
+- [ ] 对 `match / catch / 宏展开后 AST` 走统一 traversal，不再靠个别形状特判。
+- [ ] 把当前 `fprintf(stderr, "...尚未支持")` 这类 emitter 临时提示，改成 checker 或 lowering 阶段的正式诊断；对于应该支持的语法，最终要彻底移除这类分支。
+
+### 1.4 收口语法口径
+
+- [ ] 为仍然非法的语法保留明确、稳定、可测试的诊断。
+- [ ] 任何“只是因为内部实现没覆盖到，所以先拒绝”的限制，都必须消失或升级成规范层决策。
+
+**验收**：
+
+- [ ] `./bin/uya test tests/test_async_match_await.uya`
+- [ ] `./bin/uya test tests/test_async_defer_errdefer.uya`
+- [ ] `./tests/run_programs_parallel.sh --uya --c99 test_async_iterator_for_await.uya`
+- [ ] `./tests/run_programs_parallel.sh --uya --c99 test_async_array_ref_for_await.uya`
+- [ ] `rg -n "尚未支持" src/codegen/c99/function.uya src/codegen/c99/async_transform.uya src/lower/async.uya`
+  - [ ] 对合法 async 语法不再出现“尚未支持”分支
+
+## Phase 1.5：标准库手工 Future 清零迁移
+
+> **用户新增要求（2026-06-17）**
+>
+> 标准库里的所有手工异步 `Future` 都要转成 `@async_fn` / `@await` 路线，并把任务拆解进本 TODO。
+
+### 1.5.0 统计口径
+
+- [ ] 先明确“手工异步 Future”的统计范围：
+  - [ ] **算入迁移范围**：`lib/std` 中任何 `struct XxxFuture : Future<...>` 且自定义 `poll()` 的业务/协议/传输状态机。
+  - [ ] **不算业务迁移对象**：`std.async` 的 `interface Future<T>`、占位 `struct Future<T>`、`Task<T>` 这类 runtime 核心协议壳类型。
+  - [ ] **不算手工状态机**：只返回 `Future{ state: Poll.Ready(...) }` 的一次性 ready wrapper。
+- [ ] 最终目标口径：
+  - [ ] 标准库业务层、协议层和 I/O 组合层不再保留手写 `poll()` 状态机。
+  - [ ] 如果最底层 runtime 叶子原语仍必须手写，要把它们收缩到最小、明确、可解释的 substrate 集，并单列为最后清零项，不允许无限期混在业务模块里。
+
+### 1.5.1 当前手工 Future 清单（基于当前仓库）
+
+| 模块 | 手工 Future | 类型 | 当前作用 |
+|------|------|------|------|
+| `lib/std/async.uya` | `AsyncFdWriteFuture`、`AsyncFdReadFuture` | runtime I/O 叶子 | 非阻塞 fd 读写，直接操作 `Waker.wait_readable/wait_writable` |
+| `lib/std/thread.uya` | `AsyncComputeFuture<T>` | runtime / 调度桥接 | worker slot / eventfd / pipe / cancel / one-shot fallback |
+| `lib/std/net/dns.uya` | `DnsUdpFuture`、`DnsTcpFuture`、`DnsQueryTransportFuture` | 传输层 + 组合层 | UDP/TCP 查询状态机与 fallback 组合 |
+| `lib/std/http/http1_async.uya` | `Http1ConnectFuture` | I/O 叶子 | nonblocking connect + deadline |
+| `lib/std/http/websocket_client.uya` | `WebSocketClientReconnectFuture` | 纯组合层 | reconnect / backoff / attach session |
+| `lib/std/http/websocket_async.uya` | `WebSocketReadMessageFuture`、`WebSocketHeartbeatTimeoutFuture` | 协议层 + 组合层 | 消息聚合、close/ping/heartbeat 超时 |
+| `lib/std/http/uyagin.uya` | `UyaginRecoverFuture`、`UyaginObserveFuture` | 纯组合层 | handler 包装与观测 |
+| `lib/std/http/uyagin.uya` | `UyaginWritevFuture`、`UyaginSendFileBodyFuture`、`UyaginConnReadParseFuture`、`UyaginConnReadParseIntoFuture`、`UyaginAcceptFuture` | syscall/I/O 叶子 | writev/sendfile/read-parse/accept 等高性能热路径 |
+
+### 1.5.2 迁移顺序原则
+
+- [ ] **先纯组合层，后 syscall 叶子层**。
+  - [ ] 纯组合层更适合直接改写成 `@async_fn`，也是验证完整语法支持的最好样本。
+  - [ ] syscall 叶子层如果直接硬改，容易把 runtime 底座和业务逻辑缠在一起。
+- [ ] **先提炼通用 awaitable 原语，再迁移重复状态机**。
+  - [ ] 例如 `async_connect`、`async_accept`、`async_writev`、`async_sendfile`、`async_recv_parse`、`async_worker_result` 这类原语先统一，再让协议层用 `@await` 组合。
+- [ ] **迁移不能降低现有错误语义、取消语义和 deadline 语义**。
+
+### 1.5.3 第一批：纯组合层先全部改成 `@async_fn`
+
+- [ ] `lib/std/http/websocket_client.uya`
+  - [ ] 将 `WebSocketClientReconnectFuture` 改为 `@async_fn reconnect_tick_async(...)` 或等价异步方法。
+  - [ ] 保持现有 backoff / attach / exhausted 语义不变。
+  - [ ] 依赖：`catch + @await`、结构体方法 async、错误路径收口稳定。
+- [ ] `lib/std/http/websocket_async.uya`
+  - [ ] 将 `WebSocketHeartbeatTimeoutFuture` 改为 `@async_fn`。
+  - [ ] 如果还依赖手工 close future，则先抽出 awaitable close helper。
+- [ ] `lib/std/http/uyagin.uya`
+  - [ ] 将 `UyaginRecoverFuture` 改为 `@async_fn` 包装器。
+  - [ ] 将 `UyaginObserveFuture` 改为 `@async_fn` 包装器。
+  - [ ] 依赖：`defer / errdefer`、`catch + @await`、观测副作用在 async body 中稳定。
+- [ ] `lib/std/net/dns.uya`
+  - [ ] 先把 `DnsQueryTransportFuture` 改为 `@async_fn` 组合层，底层 UDP/TCP 先不动。
+  - [ ] 目标是先消灭“手工 future poll 另一个 future”的组合器层。
+
+**验收**：
+
+- [ ] 上述四类组合层不再含手写 `poll()`。
+- [ ] 相关回归补齐并纳入脚本：
+  - [ ] `tests/test_async_catch_await.uya`
+  - [ ] `tests/test_async_defer_errdefer.uya`
+  - [ ] websocket client / uyagin / dns 新回归
+
+### 1.5.4 第二批：抽象并统一 syscall / I/O 叶子原语
+
+- [ ] 在 `lib/std/async.uya` 或新的 leaf 模块中抽象以下 awaitable 原语：
+  - [ ] `async_connect(fd, sockaddr, len, deadline_ms)` 或等价 helper
+  - [ ] `async_accept(fd)` 或等价 helper
+  - [ ] `async_writev(fd, iov, iovcnt)` 或等价 helper
+  - [ ] `async_sendfile(fd, file_fd, ...)` 或等价 helper
+  - [ ] `async_read_parse(fd, buf, ...)` / `async_read_parse_into(...)` 或更底层的可组合 read helper
+  - [ ] 对 DNS UDP/TCP 读写可复用的 transport helper
+- [ ] 统一原语的要求：
+  - [ ] deadline / timeout 语义统一
+  - [ ] cancel 语义统一
+  - [ ] `Waker` interest 注册统一
+  - [ ] 错误类型统一，不再每个模块手写一套 `Poll.Pending/Ready(err)` 分支
+
+### 1.5.5 第三批：把协议/服务端热路径 future 改写成 `@async_fn`
+
+- [ ] `lib/std/http/http1_async.uya`
+  - [ ] 将 `Http1ConnectFuture` 改为基于通用 `async_connect` 的 `@async_fn` 路线。
+  - [ ] 后续同步清理 `http1_request_async` 里的 manual-ready wrapper 重复路径。
+- [ ] `lib/std/net/dns.uya`
+  - [ ] 将 `DnsUdpFuture` 改为 `@async_fn`。
+  - [ ] 将 `DnsTcpFuture` 改为 `@async_fn`。
+  - [ ] 目标：DNS 只保留 transport helper，不再自带手写 poll 状态机。
+- [ ] `lib/std/http/websocket_async.uya`
+  - [ ] 将 `WebSocketReadMessageFuture` 改为 `@async_fn`。
+  - [ ] 把 frame read / write / ping / close / message aggregate 的状态流收敛到统一 await 链。
+- [ ] `lib/std/http/uyagin.uya`
+  - [ ] 将 `UyaginAcceptFuture` 改为 `@async_fn` + `async_accept`。
+  - [ ] 将 `UyaginWritevFuture` 改为 `@async_fn` + `async_writev`。
+  - [ ] 将 `UyaginSendFileBodyFuture` 改为 `@async_fn` + `async_sendfile`。
+  - [ ] 将 `UyaginConnReadParseFuture` / `UyaginConnReadParseIntoFuture` 改为 `@async_fn` + 通用 read helper。
+  - [ ] 迁移后再评估是否仍需专门 slot-level manual polling。
+
+### 1.5.6 第四批：runtime 底座手工 Future 最小化与最终清零
+
+- [ ] `lib/std/async.uya`
+  - [ ] 评估 `AsyncFdReadFuture` / `AsyncFdWriteFuture` 是否可以进一步收敛成更底层 wait primitive + `@async_fn` 包装。
+  - [ ] 如果必须保留叶子手写 future，要求搬离高层 helper 路径，并文档化为 runtime substrate 的唯一例外。
+- [ ] `lib/std/thread.uya`
+  - [ ] 将 `AsyncComputeFuture<T>` 分解为：
+    - [ ] worker 提交/排队
+    - [ ] 结果 ready 通知
+    - [ ] cancel / cleanup
+    - [ ] one-shot fallback 或其替代策略
+  - [ ] 先提炼 `async_worker_result` / `async_thread_slot_wait` 之类可 await 原语，再把对外 `async_compute<T>` 改写为 `@async_fn` 组合层。
+  - [ ] 把 `sys_fork()` fallback 的默认路径从“隐藏在手写 future 内部”改成显式策略决策。
+- [ ] 如果要做到“标准库里 0 手写业务 Future”，必须给 runtime 留一个非常清晰的最终边界：
+  - [ ] 要么连 `AsyncFdReadFuture` / `AsyncFdWriteFuture` / `AsyncComputeFuture<T>` 也消灭
+  - [ ] 要么把这三类定义为语言/runtime substrate，不再算作标准库业务层 hand-written future
+  - [ ] 二者必须选其一，不能长期模糊
+
+### 1.5.7 配套测试与闸门
+
+- [ ] 为每个迁移模块增加一条“旧 hand-written future 已删除”的结构性检查：
+  - [ ] `rg -n "^(export )?struct .*: Future<" lib/std/http lib/std/net lib/std/thread.uya lib/std/async.uya`
+  - [ ] 最终只允许 runtime 核心协议壳类型保留；业务层/协议层 future 必须消失
+- [ ] 为每个迁移模块补 dedicated regression：
+  - [ ] DNS：UDP/TCP/fallback/cancel/timeout
+  - [ ] HTTP1：connect timeout / happy path / closed peer
+  - [ ] WebSocket：message aggregate / heartbeat / reconnect
+  - [ ] UyaGin：accept / read-parse / writev / sendfile / recover / observe
+  - [ ] Thread：queue full / cancel / result ready / no hidden fork fallback
+- [ ] 将这些模块回归纳入：
+  - [ ] `tests/verify_async_full_language_matrix.sh`
+  - [ ] 后续 `tests/verify_async_dynamic_resources.sh`
+
+### 1.5.8 建议执行顺序
+
+1. [ ] 先完成 Phase 1 的语法缺口，尤其是 `catch`、`defer/errdefer`、`match`。
+2. [ ] 再做 1.5.3，把纯组合层 hand-written future 先全部改掉。
+3. [ ] 然后做 1.5.4，提炼统一 syscall/I/O awaitable 原语。
+4. [ ] 再做 1.5.5，迁移 DNS / HTTP1 / WebSocket / UyaGin 热路径。
+5. [ ] 最后做 1.5.6，把 runtime 叶子手写 future 收缩到最终边界并清零或正式归类。
+
+**阶段验收**：
+
+- [ ] `rg -n "^(export )?struct .*: Future<" lib/std --glob '*.uya'`
+  - [ ] 阶段初始基线应只出现当前盘点对象
+  - [ ] 组合层迁移后，不再出现 `WebSocketClientReconnectFuture`、`UyaginRecoverFuture`、`UyaginObserveFuture`、`DnsQueryTransportFuture`
+  - [ ] 最终只允许 runtime 核心协议壳类型和经明确定义的 substrate 例外存在
+- [ ] `./tests/verify_async_full_language_matrix.sh`
+- [ ] `make check`
+
+## Phase 2：编译器 async 资源动态化
+
+- [ ] 把 `src/codegen/c99/async_transform.uya` 的 `MAX_SEGMENTS`、`MAX_LOCALS` 改成 growable 存储。
+- [ ] 把 `src/codegen/c99/internal.uya` 的 `C99_ASYNC_MAX_AWAITS` 固定数组改成 arena/vector 风格的动态结构。
+- [ ] 把 `src/checker/async_frame_meta.uya` 的 `MAX_ASYNC_FRAME_METAS` 改成动态元信息表。
+- [ ] 把 `src/codegen/c99/main.uya` 的 async frame descriptor emission 改成“按真实数量生成”，不再静默截断到 `512`。
+- [ ] 为“超大 async 函数”建立新的错误模型：
+  - [ ] 若只是旧的人为上限，不应再报错
+  - [ ] 若真因内存耗尽或编译器资源不足失败，要给出明确诊断，而不是静默丢字段/丢状态
+- [ ] 替换现有 `tests/error_async_too_many_awaits.uya`：
+  - [ ] 不再把 “>256 await 编译失败” 视为正确
+  - [ ] 改成“旧上限附近成功编译+运行”的压力测试
+- [ ] 补一个“多 frame / 多 mono instance / 多 generic async”压力样本，验证 descriptor 和 meta 表不会截断。
+
+**验收**：
+
+- [ ] `./bin/uya test tests/test_async_await_limits_and_segments.uya`
+- [ ] 新增 `tests/verify_async_large_state_machine.sh`
+- [ ] 新增 `tests/test_async_descriptor_growth.uya`
+- [ ] 在旧 `256 await`、`32 locals`、`512 frame meta` 边界附近的样本全部通过
+
+## Phase 3：运行时 async 资源动态化
+
+### 3.1 EventLoop / epoll
+
+- [ ] 将 `lib/std/async_event.uya` 的固定 `1024` slot / event buffer 改成动态容量。
+- [ ] 消灭 `find_slot()` 线性扫固定数组的实现，改成更适合生产的索引结构。
+- [ ] 把“容量满直接失败”改成可增长或可配置策略，并补上指标。
+
+### 3.2 Scheduler / TaskQueue
+
+- [ ] 将 `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 从固定 `64` 槽改成动态队列。
+- [ ] 把 scheduler 的 `_frame_stack_buffer[8192]` 改成显式配置或动态后备存储策略。
+- [ ] 评估并收口 `SCHEDULER_INLINE_REPOLL_LIMIT=1024` 的策略，让它成为调度策略参数，而不是写死常量。
+
+### 3.3 AsyncFramePool
+
+- [ ] 将 `lib/std/async_frame.uya` 的 bucket / slot / descriptor 上限改成动态结构。
+- [ ] 为 pool 建立明确的 ownership 跟踪，修掉 reset/free 语义只能靠注释解释的隐患。
+- [ ] 区分：
+  - [ ] 真正来自 caller buffer 的 frame
+  - [ ] 池内复用 frame
+  - [ ] debug heap fallback frame
+- [ ] 默认生产路径不应依赖 heap fallback 才能跑通。
+
+### 3.4 ThreadPool / async_compute
+
+- [ ] 将 `lib/std/thread.uya` 的 worker / pending / task slot 数量改成动态或可配置。
+- [ ] 明确 `async_compute` 饱和后的生产策略：
+  - [ ] 要么动态排队并背压
+  - [ ] 要么显式返回容量错误
+  - [ ] 不再默默回退到 `sys_fork()` 作为默认生产路径
+- [ ] 为 thread pool 增加容量、排队深度、取消、排空时间的指标。
+
+### 3.5 协议层临时 buffer
+
+- [ ] 将 `lib/std/http/http1_async.uya` 的固定 `4096` 请求头 scratch buffer 改成 growable buffer 或调用方可控容量。
+- [ ] 审计 `websocket_async`、DNS/TLS 等 async 协议模块中的固定 scratch buffer，把“协议暂存”与“产品上限”拆开。
+
+**验收**：
+
+- [ ] 新增 `tests/test_async_event_dynamic_growth.uya`
+- [ ] 新增 `tests/test_async_task_queue_dynamic_growth.uya`
+- [ ] 新增 `tests/test_async_frame_pool_dynamic_growth.uya`
+- [ ] 新增 `tests/test_async_thread_pool_dynamic_growth.uya`
+- [ ] 新增 `tests/stress_async_dynamic_resources.sh`
+- [ ] 压测时不再因为 `16/32/64/512/1024` 这类旧常量直接失败
+
+## Phase 4：生产级可靠性与可观测性
+
+- [ ] 为 async runtime 增加统一指标：
+  - [ ] frame alloc/free/full/fallback
+  - [ ] scheduler queue depth
+  - [ ] epoll registered fd / resize count
+  - [ ] thread pool queue depth / running workers / saturation count
+  - [ ] timeout / cancel / wake 来源统计
+- [ ] 建立长压测与泄漏验证：
+  - [ ] fd 不泄漏
+  - [ ] frame 不泄漏
+  - [ ] eventfd 不泄漏
+  - [ ] 取消后资源能稳定回收
+- [ ] 清理“只在 bench/特定 demo 下成立”的 workaround，把生产路径与测试绕过分开。
+- [ ] 对 `http1_async`、DNS、TLS、`async_compute` 做混合压力测试，验证共享 runtime 不互相踩资源上限。
+
+**验收**：
+
+- [ ] `tests/stress_http_async_epoll.sh`
+- [ ] `tests/verify_http_bench_async_epoll_runtime.sh`
+- [ ] 新增 `tests/verify_async_no_fd_leak.sh`
+- [ ] 新增 `tests/verify_async_cancel_cleanup.sh`
+
+## Phase 5：发布闸门与文档同步
+
+- [ ] 新增/更新权威验证脚本：
+  - [ ] `tests/verify_async_full_language_matrix.sh`
+  - [ ] `tests/verify_async_dynamic_resources.sh`
+  - [ ] `tests/verify_async_production_smoke.sh`
+- [ ] 收口前至少跑通：
+  - [ ] `make uya`
+  - [ ] `make tests-uya`
+  - [ ] `make check`
+  - [ ] `make clean`
+  - [ ] `make backup-all`
+- [ ] 文档同步：
+  - [ ] `docs/async_production_todo.md`
+  - [ ] `docs/async_status_matrix.md`
+  - [ ] `docs/std_async_design.md`
+  - [ ] 如语义/规范改变，再同步 `docs/uya.md`、`docs/grammar_formal.md`、`docs/grammar_quick.md`
+
+## 执行顺序
+
+1. [ ] 先做 Phase 0，把“真实缺口”与“验证入口”钉住。
+2. [ ] 再做 Phase 1，先拿下完整语法支持，不继续在 emitter 里堆特判。
+3. [ ] 接着做 Phase 2，把编译器内部 async 容量全部动态化。
+4. [ ] 然后做 Phase 3，把 runtime 和协议层资源动态化。
+5. [ ] 最后做 Phase 4 和 Phase 5，用真实压测和 release 闸门把“生产级”口径关上。
+
+## 未完成前不得宣称完成的条件
+
+- [ ] 仍存在合法 async 语法被“尚未支持”拒绝。
+- [ ] 仍存在 `16/32/64/512/1024` 这类固定上限决定正常功能成败。
+- [ ] 仍需要 `fork` fallback 才能掩盖线程池饱和。
+- [ ] 仍把 `tests/error_async_too_many_awaits.uya` 这类旧人为上限测试当成正确口径。
+- [ ] 文档仍声称“量产已完成”，但源码和闸门没有证据支撑。

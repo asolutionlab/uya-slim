@@ -3,6 +3,15 @@
 **最后更新**：2026-04-16（跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义、结构体/接口方法 `@async_fn` 主链路已收口；复合表达式 `try @await` lowering 已转正；`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）
 **目标范围**：Linux + C99 后端 + `@async_fn` / `@await` / `Future` / `Poll` / `Waker` + `AsyncFd` / `LinuxEpoll`，优先保障 DNS、HTTP/1.1、HTTPS 客户端主链路达到可量产状态。
 
+> **2026-06-17 注意**
+>
+> 本文档是 2026-04 阶段的历史量产收口记录，不再单独代表当前 async 生产化目标的完成定义。
+> 当前权威 TODO 请看：[todo_async_full_language_dynamic_resources.md](todo_async_full_language_dynamic_resources.md)。
+> 新目标额外要求：
+> 1. `@async_fn` 支持完整 Uya 函数体语法，而不只是若干已收口形态。
+> 2. async 相关资源改成动态或可配置，而不是继续依赖 `16/32/64/512/1024` 这类固定容量。
+> 3. 文档口径必须与当前源码和验证闸门一致，不能仅凭本文历史结论宣称“已量产”。
+
 ## 量产定义
 
 - [x] `@async_fn` 在常见复杂控制流中稳定：`if/else if`、`while`、`for`、嵌套分支、await 间同步语句、提前返回错误。

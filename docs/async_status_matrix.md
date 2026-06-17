@@ -3,6 +3,15 @@
 **最后更新**：2026-04-25  
 **范围**：Linux + C99 后端；聚焦 `@async_fn` / `@await` / `Future` / `Poll` / `Waker` / `AsyncFd` / `Scheduler` / `async_compute`
 
+> **2026-06-17 注意**
+>
+> 本表是 2026-04/05 阶段的能力快照，`✅` 仅表示当时对应子问题已经收口，**不等于**当前目标“异步编程生产级可用”已经完成。
+> 当前权威 TODO 请看：[todo_async_full_language_dynamic_resources.md](todo_async_full_language_dynamic_resources.md)。
+> 仍未被本表覆盖为“已完成”的关键目标包括：
+> - `@async_fn` 对完整 Uya 函数体语法的支持，而不只是当前回归已覆盖的子集
+> - async 编译器/runtime 资源的动态化，消除 `TaskQueue=64`、`LinuxEpoll=1024`、`ThreadPool=32/16`、descriptor/meta 表固定上限等硬编码
+> - 历史“已知限制”与源码现状、验证闸门之间的重新对齐
+
 ## 总览
 
 | 能力 | 状态 | Runtime | Codegen | Tests | Docs |
