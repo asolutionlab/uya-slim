@@ -1063,3 +1063,15 @@
       - 结果：通过；覆盖迭代器引用绑定 `for iter |&item|` + `try @await`。
     - 更广验证：`bash tests/verify_async_full_language_matrix.sh`
       - 结果：目标相关 async for 用例已执行通过；脚本后段 `verify_async_shared_runtime_matrix` 在 `tests/test_async_shared_runtime_semantics.uya` 的宿主 C 编译阶段失败，关键错误为 `/tmp/uya_output_2811915.c` 中 `std_http_uyagin_send_context_response_head_only_async` / `std_http_uyagin_accept_async` 生成 `invalid initializer`，与本轮迭代器语法覆盖无直接关系。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务路径：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] `match`
+    - 验证命令：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya`
+    - 验证结果：通过；4 个测试、20 个断言通过，覆盖同步/async 成对 `match` 表达式语义。
+    - 扩展验证命令：`./tests/verify_async_full_language_matrix.sh`
+    - 扩展验证结果：非阻塞失败；脚本已跑过 `tests/test_async_sync_body_matrix.uya`，后续在 `verify_async_shared_runtime_matrix` 生成 C99 链接阶段失败，关键错误为 `invalid initializer`，涉及 `std_http_uyagin_send_context_response_head_only_async` 与 `std_http_uyagin_accept_async`，不属于本轮 `match` 专项路径。
