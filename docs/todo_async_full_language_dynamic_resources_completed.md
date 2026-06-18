@@ -394,3 +394,11 @@
   - [x] 为 `ThreadPool` 容量补充可配置入口，避免生产路径只能依赖小规模写死常量；最小验证：相关 thread 测试通过。
     - 验证：`../uya/bin/uya test tests/test_std_thread.uya` 通过；21 tests passed，83 assertions passed。
     - 验证：`../uya/bin/uya test tests/test_async_compute_types.uya` 通过；11 tests passed，11 assertions passed。
+
+## 目标
+
+- async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+  - [x] 梳理 `http1_async` 请求头 scratch buffer 的容量策略，补充明确可配置或动态扩容路径；最小验证：相关 HTTP async 测试通过。
+    - 完成记录：`lib/std/http/http1_async.uya` 新增 `HTTP1_ASYNC_REQUEST_HEADER_INLINE_CAP`、请求头所需容量计算、动态分配/释放 helper，并将普通 async、同步 streaming、async streaming 请求发送路径改为按实际请求头长度分配；移除 Host 写入的 200 字节隐含截断。
+    - 验证命令：`../uya/bin/uya test tests/test_http1_async_client.uya`
+    - 验证结果：通过；7 个测试全部 OK，包含 `http1_async_request_header_buffer_grows_past_inline_cap` 与 HTTP async loopback 回归。

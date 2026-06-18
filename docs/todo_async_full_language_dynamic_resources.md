@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
-  - [ ] 梳理 `http1_async` 请求头 scratch buffer 的容量策略，补充明确可配置或动态扩容路径；最小验证：相关 HTTP async 测试通过。
   - [ ] 梳理编译器 async transform / C99 await / frame meta 容量上限，改为动态或明确诊断可配置；最小验证：相关 compiler async 测试通过。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。

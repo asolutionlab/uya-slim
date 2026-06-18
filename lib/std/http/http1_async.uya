@@ -29,6 +29,17 @@ use std.async_event.LinuxEpoll;
 export error HttpChunkedNotSupported;
 export error HttpTimeout;
 
+/// HTTP/1 async 请求头默认内联容量。
+/// 参数说明：无。
+/// 返回值说明：短请求按此容量分配；超过时按实际请求头长度动态分配。
+export const HTTP1_ASYNC_REQUEST_HEADER_INLINE_CAP: usize = 4096;
+
+export struct Http1AsyncRequestHeaderBuffer {
+    ptr: &byte,
+    len: usize,
+    cap: usize,
+}
+
 // 本地时间辅助函数
 fn http_now_ms() !u64 {
     var tv: TimeVal = TimeVal{ tv_sec: 0, tv_usec: 0 };
@@ -511,7 +522,7 @@ fn path_for_request(p: &[byte]) &[byte] {
 fn format_host_header_at(buf: &byte, start: usize, host: &[byte], port: u16) usize {
     var pos: usize = start;
     var i: usize = 0;
-    while i < host.len && pos < 200 {
+    while i < host.len {
         buf[pos] = host.ptr[i];
         pos = pos + 1;
         i = i + 1;
@@ -524,7 +535,63 @@ fn format_host_header_at(buf: &byte, start: usize, host: &[byte], port: u16) usi
     return pos;
 }
 
+fn u16_dec_len(n: u16) usize {
+    if n == 0 {
+        return 1;
+    }
+    var len: usize = 0;
+    var x: u16 = n;
+    while x > 0 {
+        len = len + 1;
+        x = x / 10;
+    }
+    return len;
+}
+
+fn usize_dec_len(n: usize) usize {
+    if n == 0 {
+        return 1;
+    }
+    var len: usize = 0;
+    var x: usize = n;
+    while x > 0 {
+        len = len + 1;
+        x = x / 10;
+    }
+    return len;
+}
+
+/// 计算 HTTP/1 async 请求头所需字节数。
+/// 参数说明：req 为请求描述。
+/// 返回值说明：返回完整请求头字节数，不含请求体。
+export fn http1_async_request_header_required_capacity(req: &Http1AsyncRequest) usize {
+    const mp: &[byte] = method_prefix(req.method);
+    const pth: &[byte] = path_for_request(req.path);
+    var total: usize = 0;
+    total = total + mp.len;
+    total = total + pth.len;
+    total = total + 11;  // " HTTP/1.1\r\n"
+    total = total + 6;   // "Host: "
+    total = total + req.host.len;
+    if req.port != 80 {
+        total = total + 1 + u16_dec_len(req.port);
+    }
+    total = total + 21;  // "\r\nConnection: close\r\n"
+    if req.method == Method.POST {
+        if req.content_type.len > 0 {
+            total = total + 14 + req.content_type.len + 2;
+        }
+        total = total + 16 + usize_dec_len(req.body.len) + 2;
+    }
+    total = total + 2;
+    return total;
+}
+
 fn build_request_headers(req: &Http1AsyncRequest, buf: &byte, cap: usize) !usize {
+    const required: usize = http1_async_request_header_required_capacity(req);
+    if required > cap {
+        return error.HeaderTooLarge;
+    }
     var pos: usize = 0;
     if pos >= cap {
         return error.HeaderTooLarge;
@@ -552,6 +619,36 @@ fn build_request_headers(req: &Http1AsyncRequest, buf: &byte, cap: usize) !usize
         return error.HeaderTooLarge;
     }
     return pos;
+}
+
+/// 分配并构建 HTTP/1 async 请求头。
+/// 参数说明：req 为请求描述。
+/// 返回值说明：返回拥有堆内存的请求头 buffer，调用方必须用 http1_async_request_header_free 释放。
+export fn http1_async_request_header_build(req: &Http1AsyncRequest) !Http1AsyncRequestHeaderBuffer {
+    const required: usize = http1_async_request_header_required_capacity(req);
+    var cap: usize = HTTP1_ASYNC_REQUEST_HEADER_INLINE_CAP;
+    if required > cap {
+        cap = required;
+    }
+    const mem: &void = malloc(cap);
+    if (((mem as &byte) as usize) == 0) {
+        return error.InvalidRequest;
+    }
+    const ptr: &byte = mem as &byte;
+    const len: usize = build_request_headers(req, ptr, cap) catch |err| {
+        free(mem);
+        return err;
+    };
+    return Http1AsyncRequestHeaderBuffer{ ptr: ptr, len: len, cap: cap };
+}
+
+/// 释放 http1_async_request_header_build 返回的请求头 buffer。
+/// 参数说明：buf 为请求头 buffer。
+/// 返回值说明：无。
+export fn http1_async_request_header_free(buf: &Http1AsyncRequestHeaderBuffer) void {
+    if buf.ptr != null {
+        free(buf.ptr as &void);
+    }
 }
 
 fn find_header_body_start(buf: &[byte]) !usize {
@@ -819,19 +916,29 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
         return err_resp;
     }
 
-    var hdr: [byte: 4096] = [];
-    const hdr_len: usize = try build_request_headers(req, &hdr[0] as &byte, 4096);
+    const hdr_result: !Http1AsyncRequestHeaderBuffer = http1_async_request_header_build(req);
+    const hdr: Http1AsyncRequestHeaderBuffer = hdr_result catch |err| {
+        _ = sys_close(fd) catch {};
+        return err;
+    };
 
     var woff: usize = 0;
-    while woff < hdr_len {
-        const wn: usize = try @await async_fd_write_future(fd, @ptr_from_usize(@usize_from_ptr(&hdr[0] as &void) + woff) as &const byte, hdr_len - woff);
+    while woff < hdr.len {
+        const write_result: !usize = @await async_fd_write_future(fd, @ptr_from_usize(@usize_from_ptr(hdr.ptr as &void) + woff) as &const byte, hdr.len - woff);
+        const wn: usize = write_result catch |err| {
+            http1_async_request_header_free(&hdr);
+            _ = sys_close(fd) catch {};
+            return err;
+        };
         if wn == 0 {
+            http1_async_request_header_free(&hdr);
             _ = sys_close(fd) catch {};
             const err_resp: Http1AsyncResponse = try http1_async_err_closed();
             return err_resp;
         }
         woff = woff + wn;
     }
+    http1_async_request_header_free(&hdr);
 
     var boff: usize = 0;
     if req.method == Method.POST && req.body.len > 0 {
@@ -1255,20 +1362,21 @@ export fn http1_request_streaming(
     }
     
     // 发送请求头
-    var hdr: [byte: 4096] = [];
-    const hdr_len_result: !usize = build_request_headers(req, &hdr[0] as &byte, 4096);
-    var hdr_len: usize = 0;
-    if hdr_len_result.error_id != 0 {
+    const hdr_result: !Http1AsyncRequestHeaderBuffer = http1_async_request_header_build(req);
+    var hdr: Http1AsyncRequestHeaderBuffer = Http1AsyncRequestHeaderBuffer{ ptr: null, len: 0, cap: 0 };
+    if hdr_result.error_id != 0 {
         _ = sys_close(fd) catch {};
         return error.InvalidRequest;
     }
-    hdr_len = hdr_len_result.value;
+    hdr = hdr_result.value;
     
-    const write_result: !void = http1_sync_write_all(fd, &hdr[0] as &const byte, hdr_len);
+    const write_result: !void = http1_sync_write_all(fd, hdr.ptr as &const byte, hdr.len);
     if write_result.error_id != 0 {
+        http1_async_request_header_free(&hdr);
         _ = sys_close(fd) catch {};
         return error.ConnectionClosed;
     }
+    http1_async_request_header_free(&hdr);
     
     // 发送 body（如果是 POST）
     if req.method == Method.POST && req.body.len > 0 {
@@ -1328,18 +1436,28 @@ export @async_fn fn http1_request_stream_async(
         return error.ConnectionClosed;
     }
 
-    var hdr: [byte: 4096] = [];
-    const hdr_len: usize = try build_request_headers(req, &hdr[0] as &byte, 4096);
+    const hdr_result: !Http1AsyncRequestHeaderBuffer = http1_async_request_header_build(req);
+    const hdr: Http1AsyncRequestHeaderBuffer = hdr_result catch |err| {
+        _ = sys_close(fd) catch {};
+        return err;
+    };
 
     var woff: usize = 0;
-    while woff < hdr_len {
-        const wn: usize = try @await async_fd_write_future(fd, @ptr_from_usize(@usize_from_ptr(&hdr[0] as &void) + woff) as &const byte, hdr_len - woff);
+    while woff < hdr.len {
+        const write_result: !usize = @await async_fd_write_future(fd, @ptr_from_usize(@usize_from_ptr(hdr.ptr as &void) + woff) as &const byte, hdr.len - woff);
+        const wn: usize = write_result catch |err| {
+            http1_async_request_header_free(&hdr);
+            _ = sys_close(fd) catch {};
+            return err;
+        };
         if wn == 0 {
+            http1_async_request_header_free(&hdr);
             _ = sys_close(fd) catch {};
             return error.ConnectionClosed;
         }
         woff = woff + wn;
     }
+    http1_async_request_header_free(&hdr);
 
     if req.method == Method.POST && req.body.len > 0 {
         var boff: usize = 0;
