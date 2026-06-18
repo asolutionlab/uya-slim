@@ -3,6 +3,12 @@
 // 且含 @frame 字段的结构体布局不会导致未对齐访问。
 
 use std.async;
+use std.async_frame.AsyncFramePool;
+use std.async_frame.AsyncFramePoolConfig;
+use std.async_frame.async_frame_pool_alloc_aligned;
+use std.async_frame.async_frame_pool_free_aligned;
+use std.async_frame.async_frame_pool_init_with_config;
+use std.async_frame.async_frame_pool_stats;
 use std.testing.expect;
 use std.testing.run_test;
 
@@ -29,10 +35,76 @@ fn test_aligned_async_pool_alloc() !void {
     try expect(result == 42);
 }
 
+fn test_pool_config_above_legacy_bucket_limit() !void {
+    var pool: AsyncFramePool = AsyncFramePool{};
+    var config: AsyncFramePoolConfig = AsyncFramePoolConfig{};
+    config.max_buckets = 130;
+    config.max_per_bucket = 1;
+    config.debug_heap_fallback = 1;
+    config.stack_limit = 65536usize;
+    async_frame_pool_init_with_config(&pool, &config);
+
+    var i: i32 = 0;
+    while i < 130 {
+        const size: usize = (i as usize) + 1usize;
+        const ptr: &byte = async_frame_pool_alloc_aligned(&pool, size, 8usize);
+        try expect(ptr != null);
+        async_frame_pool_free_aligned(&pool, ptr, size, 8usize);
+        i = i + 1;
+    }
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 130);
+    try expect(total_free == 130);
+    try expect(full_count == 0);
+}
+
+fn test_pool_config_above_legacy_per_bucket_limit() !void {
+    var storage: [byte: 8192] = [];
+    var pool: AsyncFramePool = AsyncFramePool{};
+    var config: AsyncFramePoolConfig = AsyncFramePoolConfig{};
+    config.max_buckets = 1;
+    config.max_per_bucket = 4097;
+    config.debug_heap_fallback = 0;
+    config.stack_limit = 65536usize;
+    async_frame_pool_init_with_config(&pool, &config);
+    pool.buffer = &storage[0] as &byte;
+    pool.buffer_size = 8192usize;
+    pool.buffer_used = 0usize;
+
+    var i: i32 = 0;
+    while i < 4097 {
+        const ptr: &byte = async_frame_pool_alloc_aligned(&pool, 1usize, 1usize);
+        try expect(ptr != null);
+        i = i + 1;
+    }
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 4097);
+    try expect(full_count == 0);
+    try expect(heap_fallback == 0);
+}
+
 test "align_of_frame_type" {
     run_test("align_of_frame_type", test_align_of_frame_type);
 }
 
 test "aligned_async_pool_alloc" {
     run_test("aligned_async_pool_alloc", test_aligned_async_pool_alloc);
+}
+
+test "async_frame_pool_config_above_legacy_bucket_limit" {
+    run_test("async_frame_pool_config_above_legacy_bucket_limit", test_pool_config_above_legacy_bucket_limit);
+}
+
+test "async_frame_pool_config_above_legacy_per_bucket_limit" {
+    run_test("async_frame_pool_config_above_legacy_per_bucket_limit", test_pool_config_above_legacy_per_bucket_limit);
 }

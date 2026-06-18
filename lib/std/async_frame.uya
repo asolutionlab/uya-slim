@@ -232,8 +232,10 @@ fn async_frame_pool_bucket_ptr(pool: &AsyncFramePool, idx: i32) &AsyncFramePoolB
         return null;
     }
     const bucket_idx: usize = idx as usize;
-    const limit: i32 = async_frame_pool_normalize_limit(pool.max_buckets, ASYNC_FRAME_POOL_DEFAULT_BUCKETS);
-    if bucket_idx >= limit as usize {
+    if pool.max_buckets <= 0 {
+        return null;
+    }
+    if bucket_idx >= pool.max_buckets as usize {
         return null;
     }
     const base: &AsyncFramePoolBucket = pool.buckets;
@@ -272,7 +274,10 @@ fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, al
     if pool == null {
         return null;
     }
-    const effective_bucket_cap: i32 = async_frame_pool_normalize_limit(pool.max_buckets, ASYNC_FRAME_POOL_DEFAULT_BUCKETS);
+    const effective_bucket_cap: i32 = pool.max_buckets;
+    if effective_bucket_cap <= 0 {
+        return null;
+    }
     var i: i32 = 0;
     while i < pool.bucket_count && i < effective_bucket_cap {
         const b: &AsyncFramePoolBucket = async_frame_pool_bucket_ptr(pool, i);
