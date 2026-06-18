@@ -548,3 +548,24 @@
   - 完成内容：已在主 TODO 中拆出 TLS 审计、awaitable I/O API 设计、负向/边界验证、TLS I/O future 实现、统一 runtime smoke 五个后续叶子；已在 `docs/async_runtime_semantics_matrix.md` 中明确 `tests/test_https_loopback.uya` 只能证明 handler bridge，不能证明 TLS handshake/read/write 接入 `Waker` / `EventLoop` / `Scheduler`。
   - 验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`
   - 验证结果：通过。
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 审计 `lib/tls/https.uya` / TLS I/O 调用链，列出 handshake/read/write 当前同步或 would-block 映射边界；完成条件：TODO 中明确哪些函数尚未返回 `Future`，验证命令：`rg -n "https_read_some|handshake|tls_.*write|Future|Waker" lib/tls lib/std/http tests/test_https_loopback.uya`。
+    - 审计结论：
+      - `https_read_some(fd, out, out_max) !usize` 和 `https_write_all(fd, src, src_len) !void` 仍是同步 syscall 包装；它们把 `EAGAIN` / `EWOULDBLOCK` / `EINPROGRESS` / `EALREADY` 统一映射为 `error.ReadWouldBlock`，不会自身返回 `Future`。
+      - `https_read_some_async(...) Future<!usize>` 已存在，`HttpsReadFuture.poll` 在 `ReadWouldBlock` 时调用 `waker.wait_readable(fd)` 并返回 `Poll.Pending`；其他错误当前收敛为 `ConnectionClosed`。
+      - `https_write_all_async(...) Future<!usize>` 已存在，`HttpsWriteAllFuture.poll` 直接用 `sys_write` 保存 `off` 进度，`ReadWouldBlock` 时调用 `waker.wait_writable(fd)` 并返回 `Poll.Pending`；同步 `https_write_all` 仍不返回 `Future`。
+      - `https_handshake_async(...) Future<!usize>` 已存在，但 `HttpsHandshakeFuture.poll` 只是调用同步 `https_server_handshake` / `https_client_handshake`；这些同步握手函数内部重新分配局部握手缓冲并通过 `https_read_handshake_input`、`https_read_handshake_burst`、`https_read_client_second_flight`、`https_read_server_second_flight`、`https_write_all` 推进多步握手。would-block 只会在最外层被映射为 readable pending，未保存握手阶段、局部收发缓冲、已写偏移，也没有 writable pending 边界。
+      - `https_read_tls_record_exact(...) !void`、`https_read_exact(...) !void` 和握手读取辅助函数仍是同步精确读取循环；would-block 通过 `error.ReadWouldBlock` 向上传播，不返回 `Future`，也不登记 `Waker`。
+      - `https_server_serve_once`、`https_server_serve_uyagin_once`、`https_get_internal` / `https_get` / `https_get_insecure` 仍走同步 `https_server_handshake` / `https_client_handshake`、同步 TLS record read、同步 `https_write_all`；尚未接入共享 runtime 的 TLS I/O future。
+      - `lib/std/http/websocket_tls.uya` 的 `websocket_tls_transport_accept_server` 和 `websocket_accept_from_https_server` 仍同步 accept + TLS handshake + HTTP upgrade；尚未返回 `Future`。
+      - `WebSocketTlsTransport.read/read_exact/write/write_all` 虽然签名返回 `Future<!usize>`，但只是用 `websocket_tls_ready_result(...)` 包装同步 `websocket_tls_transport_read_some_sync` / `read_exact_sync` / `write_all_sync` 的结果；would-block 会被关闭连接并映射为 `WebSocketConnectionClosed`，不会 `Poll.Pending` 或注册 `Waker`。
+      - `tests/test_https_loopback.uya` 当前只验证同步 `https_read_some` 的 would-block 映射、closed pipe 映射、同步 `https_write_all` roundtrip，以及同步 HTTPS loopback；其中 handler 返回 `Future` 不能证明 TLS I/O 已接入 `Waker` / `EventLoop` / `Scheduler`。
+    - 尚未返回真实 awaitable `Future` 或尚未真实 pending 的函数/边界：
+      - 同步入口：`https_read_some`、`https_write_all`、`https_connect_fd`、`https_accept_one`、`https_read_tls_record_exact`、`https_client_handshake`、`https_server_handshake`、`https_read_uyagin_request`、`https_server_serve_once`、`https_server_serve_uyagin_once`、`https_get_internal`。
+      - TLS WebSocket 入口：`websocket_tls_transport_accept_server`、`websocket_accept_from_https_server`、`websocket_tls_transport_read_some_sync`、`websocket_tls_transport_read_exact_sync`、`websocket_tls_transport_write_all_sync`，以及 `WebSocketTlsTransport.read/read_exact/write/write_all` 的 ready-wrapper Future。
+      - 部分已有 Future 仍不完整：`https_handshake_async` 返回 `Future`，但没有可恢复握手状态机和 writable interest；当前只能把同步握手遇到的 `ReadWouldBlock` 粗略转成 readable pending。
+    - 验证：
+      - `rg -n "https_read_some|handshake|tls_.*write|Future|Waker" lib/tls lib/std/http tests/test_https_loopback.uya` 退出码 0；输出确认 `lib/tls/https.uya` 中 `https_read_some_async`、`https_write_all_async`、`https_handshake_async` 已存在，同时同步 `https_client_handshake` / `https_server_handshake`、`https_read_tls_record_exact`、`https_get_internal`、`https_server_serve_*` 和 WebSocket TLS ready-wrapper 路径仍在调用链上。
