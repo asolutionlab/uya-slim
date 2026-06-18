@@ -41,10 +41,10 @@
 | 范围 `for`、定长数组值/引用迭代、具体 struct 迭代器值/引用迭代 | ✅ 已覆盖 | `test_async_for_await.uya`、`test_async_for_iterator_ref_await.uya` | 保持回归 |
 | 结构体/联合体内部方法、外部方法块、接口方法签名上的 `@async_fn` | ✅ 已覆盖 | `test_async_method_interface.uya` | 保持回归 |
 | `@frame(fn)` 类型构造器和 `start` / `poll` / `stop` | ✅ 已覆盖 | `test_async_frame_methods.uya`、`test_async_frame_stack_ok.uya`、`test_async_frame_release_path.uya` | 保持回归 |
-| `match` 表达式/语句、union 解构分支内 await | ⚠️ 未验证/待补 | async lowering 的逃逸分析遍历 `match_expr`，但矩阵未列出固定 async 回归 | 补最小 async 正向回归；若失败再修 lowering/codegen |
-| `catch { ... }` 与 `try` 非 await 表达式组合 | ⚠️ 未验证/待补 | 已知 parser 对部分 `catch { ... }` 写法仍有假诊断；未形成完整 async 语法覆盖 | 先补同步/async 对照回归，区分通用 parser 噪音和 async 独有缺口 |
-| `defer`、作用域退出 drop、提前 return/error 与 await 混合 | ⚠️ 未验证/待补 | 规范有 defer/drop 语义，但当前 async 矩阵未列出覆盖 | 补带 await 的 defer/drop 顺序回归 |
-| 指针/数组/切片访问、结构体字面量、数组/tuple 字面量中嵌套 async 调用逃逸 | ⚠️ 未验证/待补 | 逃逸分析覆盖相关 AST，但缺少完整 async 函数体语法证明 | 补组合表达式回归，确认错误诊断或合法 lowering |
+| `match` 表达式/语句、union 解构分支内 await | ✅ 已覆盖 | `test_async_sync_body_matrix.uya` 用同步/async 成对断言覆盖 `match` 表达式、union 分支和 await 后值进入 match | 保持回归 |
+| `catch { ... }` 与 `try` 非 await 表达式组合 | ✅ 已覆盖 | `test_async_sync_body_matrix.uya` 覆盖同步 `!T` 的 `catch` 恢复；`test_async_catch_await.uya` 覆盖 `@await` 结果、catch 体内 await、catch 后继续执行与提前 return | 保持回归；parser 假诊断作为通用噪音另行处理 |
+| `defer`、作用域退出 drop、提前 return/error 与 await 混合 | ✅ 已覆盖 | `test_async_sync_body_matrix.uya` 覆盖成功/错误路径清理顺序；`test_async_defer_errdefer.uya` 覆盖跨 await、同步错误与 await 错误触发 `defer/errdefer` | 保持回归 |
+| 指针/数组/切片访问、结构体字面量、数组/tuple 字面量中嵌套 async 调用逃逸 | ✅ 已覆盖 | `test_async_sync_body_matrix.uya` 覆盖数组值/引用迭代与指针写回；`test_async_compound_try_await.uya`、`test_async_fn_multi_segment_unwrap.uya`、`test_async_await_limits_and_segments.uya` 覆盖复合表达式和 await 绑定跨段重放 | 保持回归 |
 | `@await` 出现在 `while` 条件等非允许位置 | 🚫 规范禁止 | 当前边界说明仍要求禁止 | 保持负向回归，不计入 async 缺口 |
 | 接口值迭代 | 🚫 非 async 独有缺口 | 同步也不支持；已有 `error_for_iterator_interface_value.uya` / `error_async_for_iterator_interface_await.uya` | 不作为 async 生产化阻塞项 |
 | async 递归/间接递归 | 🚫 当前禁止 | 状态机大小要求编译期确定 | 除非先修改大小模型和规范，否则保持禁止 |

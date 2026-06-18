@@ -338,3 +338,14 @@
         - 验证：`../uya/bin/uya --c99 tests/test_async_match_await.uya` 通过，生成 `a.out`。
         - 验证：`./a.out` 通过，4 tests passed，0 failed，4 assertions passed。
         - 完成条件：已有专用回归 `tests/test_async_match_await.uya` 覆盖矩阵第一个未验证项 `match` 表达式/语句、union 解构分支内 await，并稳定证明当前实现覆盖。
+
+## 目标 / @async_fn 体内支持完整 Uya 函数体语法 / 根据矩阵补齐剩余 async 函数体语法/语义缺口 / 收口 async 函数体语法矩阵和历史“已完成”口径
+
+- [x] 修复该语法缺口并同步矩阵。
+  - 验证：`../uya/bin/uya --c99 tests/test_async_sync_body_matrix.uya`
+    - 结果：通过，C99 编译与链接完成。
+  - 验证：`bash tests/verify_async_full_language_matrix.sh`
+    - 结果：通过，positive matrix 31 tests、iterator for boundaries、forbidden @await positions、nested future boundary、macro combo 均通过。
+  - 验证：`make tests-uya`
+    - 结果：通过，1012/1012 测试通过，自举编译器构建完成，UPM 验证套件通过。
+  - 完成条件：`docs/async_status_matrix.md` 中 `match`、`catch`、`defer/errdefer`、复合表达式相关矩阵项已从“未验证/待补”同步为“已覆盖”，未新增 async 独有限制。
