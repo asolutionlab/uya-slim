@@ -57,6 +57,7 @@ test "scheduler_new_uses_stack_backed_frame_pool" {
     try assert_eq_i32(pool.buffer != null, true);
     try assert_eq_i32(pool.buffer_size > 0usize, true);
     try assert_eq_i32(pool.stack_limit > 0usize, true);
+    try assert_eq_i32(scheduler_frame_buffer_size(&s) > 0usize, true);
 }
 
 test "scheduler_new_with_config_sets_frame_buffer_and_inline_repoll" {
@@ -64,6 +65,7 @@ test "scheduler_new_with_config_sets_frame_buffer_and_inline_repoll" {
     const pool: &AsyncFramePool = scheduler_frame_pool(&s);
     try assert_eq_i32(pool.buffer != null, true);
     try assert_eq_i32(pool.buffer_size == 16384usize, true);
+    try assert_eq_i32(scheduler_frame_buffer_size(&s) == 16384usize, true);
     try assert_eq_i32(scheduler_inline_repoll_limit(&s), 3);
 }
 
@@ -559,7 +561,11 @@ test "task_queue_with_capacity_limits_pushes" {
 }
 
 test "task_queue_capacity_can_exceed_default_capacity" {
+    var default_queue: TaskQueue_i32 = task_queue_i32_new();
+    try assert_eq_i32(task_queue_i32_capacity(&default_queue), TASK_QUEUE_I32_CAPACITY);
+
     var queue: TaskQueue_i32 = task_queue_i32_new_with_capacity(96);
+    try assert_eq_i32(task_queue_i32_capacity(&queue), 96);
     var i: i32 = 0;
     while i < 96 {
         const idx: i32 = try queue.push(ready(i));

@@ -57,7 +57,6 @@
 ## 完成定义
 
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
-  - [ ] 调度器 TaskQueue 和 inline repoll/frame buffer 使用动态分配或显式配置，默认值仅作兼容策略。最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
   - [ ] AsyncFramePool bucket/per-bucket/descriptor 查询按运行时配置或生成表大小执行，不以 `128/4096/512` 作为硬上限。最小验证：`../uya/bin/uya test tests/test_async_frame_align_pool.uya tests/test_c99_async_frame_empty_descriptors.uya`。
   - [ ] ThreadPool worker/pending/task slot 容量支持显式配置和随 worker 扩展，旧 `32/32/16` 仅为兼容默认。最小验证：`../uya/bin/uya test tests/test_std_thread.uya`。
 - [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。

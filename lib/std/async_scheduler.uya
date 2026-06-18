@@ -300,6 +300,13 @@ export fn task_queue_new_with_capacity<T>(capacity: i32) TaskQueue<T> {
     return TaskQueue<T>{ len: 0, capacity: task_queue_normalize_capacity(capacity), slots: null };
 }
 
+fn task_queue_capacity_internal<T>(queue: &TaskQueue<T>) i32 {
+    if queue == null {
+        return TASK_QUEUE_CAPACITY;
+    }
+    return queue.capacity_limit();
+}
+
 /// 创建默认容量的 i32 任务队列。
 /// 参数：无。
 /// 返回：TaskQueue_i32。
@@ -312,6 +319,13 @@ export fn task_queue_i32_new() TaskQueue_i32 {
 /// 返回：TaskQueue_i32。
 export fn task_queue_i32_new_with_capacity(capacity: i32) TaskQueue_i32 {
     return task_queue_new_with_capacity<i32>(capacity);
+}
+
+/// 获取 i32 任务队列当前配置容量。
+/// 参数：queue 为 i32 任务队列指针。
+/// 返回：队列容量；空指针时返回兼容默认容量。
+export fn task_queue_i32_capacity(queue: &TaskQueue_i32) i32 {
+    return task_queue_capacity_internal<i32>(queue);
 }
 
 /// 创建默认容量的 u32 任务队列。
@@ -328,6 +342,13 @@ export fn task_queue_u32_new_with_capacity(capacity: i32) TaskQueue_u32 {
     return task_queue_new_with_capacity<u32>(capacity);
 }
 
+/// 获取 u32 任务队列当前配置容量。
+/// 参数：queue 为 u32 任务队列指针。
+/// 返回：队列容量；空指针时返回兼容默认容量。
+export fn task_queue_u32_capacity(queue: &TaskQueue_u32) i32 {
+    return task_queue_capacity_internal<u32>(queue);
+}
+
 /// 创建默认容量的 usize 任务队列。
 /// 参数：无。
 /// 返回：TaskQueue_usize。
@@ -340,6 +361,13 @@ export fn task_queue_usize_new() TaskQueue_usize {
 /// 返回：TaskQueue_usize。
 export fn task_queue_usize_new_with_capacity(capacity: i32) TaskQueue_usize {
     return task_queue_new_with_capacity<usize>(capacity);
+}
+
+/// 获取 usize 任务队列当前配置容量。
+/// 参数：queue 为 usize 任务队列指针。
+/// 返回：队列容量；空指针时返回兼容默认容量。
+export fn task_queue_usize_capacity(queue: &TaskQueue_usize) i32 {
+    return task_queue_capacity_internal<usize>(queue);
 }
 
 /// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
@@ -440,6 +468,16 @@ export fn scheduler_inline_repoll_limit(self: &Scheduler) i32 {
         return SCHEDULER_INLINE_REPOLL_LIMIT;
     }
     return scheduler_normalize_inline_repoll_limit(self._inline_repoll_limit);
+}
+
+/// 获取调度器 frame pool backing buffer 字节数。
+/// 参数：self 为调度器指针。
+/// 返回：当前配置的 frame buffer 字节数；空指针时返回 0。
+export fn scheduler_frame_buffer_size(self: &Scheduler) usize {
+    if self == null {
+        return 0usize;
+    }
+    return self._frame_buffer_size;
 }
 
 /// 获取调度器绑定的 async frame pool。

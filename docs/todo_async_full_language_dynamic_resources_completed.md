@@ -892,3 +892,10 @@
   - [x] 事件循环 epoll slot/event 容量支持实例级配置，并用非线性扫的 fd->slot 索引验证突破 `1024` 默认兼容容量。最小验证：`../uya/bin/uya test tests/test_std_async_event.uya`；完成条件：`linux_epoll_create_config(0, 1025, 1025)` 保留配置容量且 fd 查找不依赖全表线性扫。
     - 验证：`../uya/bin/uya test tests/test_std_async_event.uya` 通过（总计 1 个测试，通过 1，失败 0）。
     - 证据：`lib/std/async_event.uya` 已提供 `linux_epoll_create_config(flags, slot_capacity, event_capacity)`，按实例容量分配 slot/event buffer，并通过 fd 哈希表 `fd_keys/fd_slot_indices` 查找 slot；`tests/test_std_async_event.uya` 验证 `1025` 容量保留且 lookup 容量大于 slot 容量。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 调度器 TaskQueue 和 inline repoll/frame buffer 使用动态分配或显式配置，默认值仅作兼容策略。最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+    - 验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过，17/17 tests passed，167 assertions passed。
