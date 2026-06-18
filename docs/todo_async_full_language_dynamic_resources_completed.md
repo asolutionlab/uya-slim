@@ -473,3 +473,12 @@
   - [x] 文档同步共享 runtime 语义的真实覆盖范围和剩余边界；最小验证命令：`git diff --check`；完成条件：`docs/async_status_matrix.md` 与 `docs/std_async_design.md` 不再把未统一验收的分散测试表述为完整量产。
     - 验证命令：`git diff --check`
     - 验证结果：通过；`docs/async_status_matrix.md` 与 `docs/std_async_design.md` 已改为阶段性覆盖/目标态口径，不再把未统一验收的分散测试表述为完整量产。
+
+## 2026-06-18
+
+上下文：`# Uya 异步生产化 TODO（完整语法 + 动态资源）` / `## 目标` / `Linux + C99 主链路下，HTTP/DNS/TLS/async_compute/Scheduler 共享同一套稳定的 async 运行时语义。`
+
+  - [x] 审计 HTTP/DNS/TLS/`async_compute`/`Scheduler` 当前入口、共享 runtime 资源、取消/唤醒/错误语义，产出 `docs/async_runtime_semantics_matrix.md`；最小验证：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`。
+    - 验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`
+    - 验证结果：通过，命令退出码 0。
+    - 完成记录：新增 `docs/async_runtime_semantics_matrix.md`，记录 HTTP/DNS/TLS/`async_compute`/`Scheduler` 的当前入口、共享 runtime 资源、已覆盖语义、缺口和下一步最小验证。
