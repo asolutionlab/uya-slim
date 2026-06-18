@@ -4,10 +4,6 @@
 **当前定位**：本文件是当前“让异步编程生产级可用”目标的权威 TODO。  
 **口径说明**：在本文件完成前，`docs/async_production_todo.md`、`docs/async_status_matrix.md`、`docs/std_async_design.md` 中“量产已完成”或“主链路已收口”的表述都只能视为历史阶段结论，不能直接当作本目标的完成依据。
 
-## 先澄清边界
-
-- [ ] 本阶段先以 **Linux + C99** 为生产主线；`kqueue` / `IOCP` 不作为阻塞项。
-
 ## 源码现状审计
 
 ### 1. 运行时资源仍有明显硬编码

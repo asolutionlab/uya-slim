@@ -699,3 +699,12 @@
     - 结果：按预期失败，诊断包含 `@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）`。
     - 验证命令：`../uya/bin/uya check tests/error_async_indirect_recursive.uya`
     - 结果：按预期失败，诊断包含 `@async_fn 函数不允许形成递归调用环（待 CPS/状态机大小计算实现）`。
+
+## 先澄清边界
+
+- [x] 本阶段先以 **Linux + C99** 为生产主线；`kqueue` / `IOCP` 不作为阻塞项。
+  - 验证命令：
+    - `sed -n '1,18p' docs/async_status_matrix.md`
+    - `sed -n '1,12p;136,144p' docs/async_production_todo.md`
+    - `sed -n '248,266p' docs/std_async_design.md`
+  - 验证结果：`docs/async_status_matrix.md` 明确当前范围为 Linux + C99 后端；`docs/async_production_todo.md` 将 macOS kqueue / Windows IOCP 后端列为后续待办；`docs/std_async_design.md` 将多平台事件后端列为第三里程碑，Linux 异步 I/O 是第一里程碑。
