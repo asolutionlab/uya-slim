@@ -92,6 +92,7 @@ baseline_tests=(
     "tests/test_async_compound_try_await.uya"
     "tests/test_async_catch_await.uya"
     "tests/test_async_defer_errdefer.uya"
+    "tests/test_async_cleanup_body_coverage.uya"
     "tests/test_async_fn_multi_segment_unwrap.uya"
     "tests/test_async_await_limits_and_segments.uya"
     "tests/test_async_sync_body_matrix.uya"
@@ -116,6 +117,9 @@ done
 expect_check_fail "tests/error_await_outside_async.uya" "@await 只能在 @async_fn 函数内使用"
 expect_check_fail "tests/error_async_await_in_while_cond.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机结构验证失败"
+expect_check_fail "tests/error_async_defer_return.uya" "defer/errdefer 块中不能使用 return 语句"
+expect_check_fail "tests/error_async_errdefer_break.uya" "defer/errdefer 块中不能使用 break 语句"
+expect_check_fail "tests/error_async_defer_continue_nested.uya" "defer/errdefer 块中不能使用 continue 语句"
 expect_compile_fail "tests/error_async_for_iterator_interface_await.uya" "接口类型变量的 for 迭代目前不支持；请使用具体实现迭代器类型"
 
 # 2026-06-18: struct 迭代器 ref 绑定现已支持，转为正向回归。

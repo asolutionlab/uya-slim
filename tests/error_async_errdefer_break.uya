@@ -1,0 +1,20 @@
+// @async_fn 的 errdefer 块中不能使用 break 语句。
+// 预期：编译失败，与同步函数 errdefer 禁止控制流一致。
+
+use std.async;
+
+error AsyncErrdeferBreakErr;
+
+@async_fn
+fn bad_async_errdefer_break() Future<!i32> {
+    while true {
+        errdefer { break; }
+        return error.AsyncErrdeferBreakErr;
+    }
+    return 0;
+}
+
+fn main() i32 {
+    _ = bad_async_errdefer_break();
+    return 0;
+}

@@ -1,0 +1,79 @@
+// 覆盖 @async_fn 函数体内清理语句与同步函数的基础语义一致性。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+error AsyncCleanupBodyErr;
+
+var g_sync_trace: i32 = 0;
+var g_async_trace: i32 = 0;
+
+struct ReadyI32 : Future<!i32> {
+    value: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn ready_i32(value: i32) Future<!i32> {
+    return ReadyI32{ value: value };
+}
+
+fn sync_cleanup_body(fail: i32) !i32 {
+    defer { g_sync_trace = g_sync_trace * 10 + 1; }
+    errdefer { g_sync_trace = g_sync_trace * 10 + 2; }
+    defer { g_sync_trace = g_sync_trace * 10 + 3; }
+
+    if fail != 0 {
+        return error.AsyncCleanupBodyErr;
+    }
+    return 7;
+}
+
+@async_fn
+fn async_cleanup_body(fail: i32) Future<!i32> {
+    defer { g_async_trace = g_async_trace * 10 + 1; }
+    errdefer { g_async_trace = g_async_trace * 10 + 2; }
+    defer { g_async_trace = g_async_trace * 10 + 3; }
+
+    const base: i32 = try @await ready_i32(7);
+    if fail != 0 {
+        return error.AsyncCleanupBodyErr;
+    }
+    return base;
+}
+
+test "async cleanup body success matches sync" {
+    g_sync_trace = 0;
+    const sv: !i32 = sync_cleanup_body(0);
+    const sync_value: i32 = sv catch { -1; };
+
+    g_async_trace = 0;
+    const f: Future<!i32> = async_cleanup_body(0);
+    const av: !i32 = block_on<i32>(f);
+    const async_value: i32 = av catch { -1; };
+
+    try assert_eq_i32(sync_value, async_value);
+    try assert_eq_i32(g_sync_trace, 31);
+    try assert_eq_i32(g_async_trace, 31);
+}
+
+test "async cleanup body error matches sync" {
+    g_sync_trace = 0;
+    const sv: !i32 = sync_cleanup_body(1);
+    _ = sv;
+
+    g_async_trace = 0;
+    const f: Future<!i32> = async_cleanup_body(1);
+    const av: !i32 = block_on<i32>(f);
+    _ = av;
+
+    try assert_eq_i32(g_sync_trace, 231);
+    try assert_eq_i32(g_async_trace, 231);
+}

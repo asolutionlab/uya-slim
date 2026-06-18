@@ -1,0 +1,20 @@
+// @async_fn 的 defer 块内嵌套 continue 也应被禁止。
+// 预期：编译失败，与同步函数 defer 禁止控制流一致。
+
+use std.async;
+
+@async_fn
+fn bad_async_defer_continue_nested() Future<!i32> {
+    defer {
+        var i: i32 = 0;
+        while i < 10 {
+            continue;
+        }
+    }
+    return 1;
+}
+
+fn main() i32 {
+    _ = bad_async_defer_continue_nested();
+    return 0;
+}

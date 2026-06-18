@@ -1,0 +1,15 @@
+// @async_fn 的 defer 块中不能使用 return 语句。
+// 预期：编译失败，与同步函数 defer 禁止控制流一致。
+
+use std.async;
+
+@async_fn
+fn bad_async_defer_return() Future<!i32> {
+    defer { return 0; }
+    return 1;
+}
+
+fn main() i32 {
+    _ = bad_async_defer_return();
+    return 0;
+}
