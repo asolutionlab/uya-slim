@@ -635,3 +635,12 @@
     - 新增测试：`tests/test_async_decl_expr_coverage.uya`
     - 验证：`../uya/bin/uya test tests/test_async_decl_expr_coverage.uya`，通过（1 tests，2 assertions）。
     - 相关回归：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya`，通过（4 tests，20 assertions）。
+
+## 先澄清边界
+
+父级任务路径：`“完整 Uya 语言语法”指的是：凡是同步函数体里合法的 Uya 语法，放进 @async_fn 后也应合法并按同样语义工作，除非语言规范本来就明确禁止。`
+
+  - [x] 建立 async 函数体控制流覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`if`、`while`、`for`、`break`、`continue`、块语句和 `return` 在 `@async_fn` 中与同步函数一致。
+    - 新增测试：`tests/test_async_control_flow_body.uya`
+    - 验证：`../uya/bin/uya test tests/test_async_control_flow_body.uya`，通过，3 tests passed，0 failed。
+    - 相关回归：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya`，通过，4 tests passed，0 failed。
