@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
+COMPILER="$REPO_ROOT/../uya/bin/uya"
 export UYA_ROOT="${UYA_ROOT:-$REPO_ROOT/lib/}"
 BUILD_DIR="$SCRIPT_DIR/build"
 mkdir -p "$BUILD_DIR"
@@ -16,7 +16,7 @@ PORT=8876
 HOST="127.0.0.1"
 BASE_URL="http://$HOST:$PORT"
 
-if [ ! -f "$COMPILER" ]; then
+if [ ! -x "$COMPILER" ]; then
     echo "✗ 未找到编译器: $COMPILER（请先 make uya）"
     exit 1
 fi

@@ -4,7 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
+COMPILER="$REPO_ROOT/../uya/bin/uya"
 export UYA_ROOT="${UYA_ROOT:-$REPO_ROOT/lib/}"
 BUILD_DIR="$SCRIPT_DIR/build"
 mkdir -p "$BUILD_DIR"
@@ -13,7 +13,7 @@ SRC="$REPO_ROOT/benchmarks/http_bench_async_epoll.uya"
 OUT_C="$BUILD_DIR/verify_http_bench_async_epoll.c"
 OUT_O="$BUILD_DIR/verify_http_bench_async_epoll.o"
 
-if [ ! -f "$COMPILER" ]; then
+if [ ! -x "$COMPILER" ]; then
     echo "✗ 未找到编译器: $COMPILER（请先 make uya）"
     exit 1
 fi

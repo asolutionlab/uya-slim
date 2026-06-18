@@ -605,3 +605,11 @@
     - 验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya`，通过，4 tests passed，41 assertions passed。
     - 相关验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_io.uya`，通过，1 test passed，16 assertions passed。
     - 相关验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya`，通过，1 test passed，17 assertions passed。
+
+## 目标
+
+- [x] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
+  - 完成内容：新增 `tests/verify_async_production_smoke.sh`，将 full-language/boundary、shared runtime、nested future、HTTP async epoll C99 compile/runtime smoke 串成单一生产 smoke 闸门。
+  - 配套修正：`tests/verify_http_bench_async_epoll_compile.sh` 与 `tests/verify_http_bench_async_epoll_runtime.sh` 固定使用 `../uya/bin/uya`，避免使用 `bin/uya` 或环境覆盖编译器。
+  - 验证命令：`bash tests/verify_async_production_smoke.sh`
+  - 验证结果：通过；输出摘要 `verify_async_production_smoke: full-language, shared runtime, nested future, and HTTP async epoll smoke matrix passed`。
