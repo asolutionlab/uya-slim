@@ -61,9 +61,6 @@
 
 ### 1.1 先建立“完整语法”矩阵
 
-- [ ] 以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
-  - [ ] 泛型函数 / 泛型方法 / 接口方法 / 结构体外方法块
-
 ### 1.1.1 当前语法覆盖快照（基于现有仓库）
 
 | 语法类别 | 当前证据 | 状态 | 说明 |
@@ -79,6 +76,7 @@
 | 迭代器 interface/ref 边界 + `@await` | `tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya`、`tests/test_async_for_iterator_ref_await.uya` | 已有覆盖 | 接口值 `for` 是同步也不支持的通用语言边界；`for iter |&x|` 引用绑定已作为 async 正向回归覆盖 |
 | 复合表达式 / await 绑定跨段重放 / 大状态机 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya`、`tests/test_async_large_state_machine_syntax.uya` | 已有覆盖 | 覆盖 RHS/return 表达式、多段 bind 依赖，以及包含顺序 20 awaits、循环、跨段变量、副作用和表达式链的大状态机语法回归 |
 | 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
+| 泛型函数 / 泛型方法 / 接口方法 / 结构体外方法块 | `docs/grammar_formal.md` 的 `fn_decl`、`method_decl`、`struct_method_block`、`method_sig`；`docs/uya.md` 第 18.3.1；`tests/test_async_fn_basic.uya`、`tests/test_generic_async_function_codegen.uya`、`tests/test_async_method_interface.uya` | 部分覆盖，泛型 async 方法仍为缺口 | 顶层泛型 `@async_fn`、接口 `@async_fn` 方法签名、结构体内部 async 方法与结构体外方法块 async 实现已有正向回归；本轮临时正向回归 `AsyncBox { @async_fn fn choose<T>(...) Future<!T> }` 暴露 C99 未生成 `uya_AsyncBox_choose_i32`，因此泛型方法与 `@async_fn` 的组合不能标为已验证覆盖 |
 | caller-owned inline / frame / 局部定长数组 | `tests/test_async_frame_inline_temp.uya`、`tests/test_async_frame_inline_temp2.uya`、`tests/test_async_fn_local_fixed_array.uya`、`tests/test_async_frame_type.uya` | 已有覆盖 | 更偏 codegen/frame correctness，不等于完整语法 |
 | runtime / scheduler / real client 集成 | `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_http1_async_client.uya` | 已有覆盖 | 是“真实使用链路”证据，但不覆盖全部语法 |
 | sync/async 函数体对齐矩阵 | `tests/test_async_sync_body_matrix.uya`、`tests/verify_async_full_language_matrix.sh` | 已有覆盖 | 用同步/async 成对断言覆盖局部变量、提前 return、分支、循环、`match`、`catch`、`defer/errdefer` 等组合语法 |

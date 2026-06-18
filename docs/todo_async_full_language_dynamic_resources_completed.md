@@ -1131,3 +1131,15 @@
     - 验证结果：通过，输出 `加法异步结果 50` / `除法异步结果 5`。
     - 更广验证命令：`bash tests/verify_async_full_language_matrix.sh`
     - 更广验证结果：脚本已通过本轮相关的 positive matrix 阶段，包括 `tests/test_async_macro_expand.uya`；随后在 `verify_async_shared_runtime_matrix` 的 `tests/test_async_shared_runtime_semantics.uya` 宿主 C 编译阶段失败，关键错误为 `/tmp/uya_output_2883756.c:51021:51: error: invalid initializer` 与 `/tmp/uya_output_2883756.c:51801:63: error: invalid initializer`，涉及 `std_http_uyagin_send_context_response_head_only_async(...)` / `std_http_uyagin_accept_async(...)`，与本轮宏展开 expr/stmt async lowering 证据无关。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务路径：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] 泛型函数 / 泛型方法 / 接口方法 / 结构体外方法块
+    - 验证：`../uya/bin/uya test tests/test_async_fn_basic.uya` 通过，覆盖基础泛型 `@async_fn` poll-ready 路径。
+    - 验证：`../uya/bin/uya test tests/test_generic_async_function_codegen.uya` 通过，覆盖顶层泛型 `@async_fn` codegen。
+    - 验证：`../uya/bin/uya test tests/test_async_method_interface.uya` 通过，覆盖接口方法签名、结构体内部 async 方法、结构体外方法块 async 实现与 vtable 调用。
+    - 缺口确认：临时正向回归 `AsyncBox { @async_fn fn choose<T>(...) Future<!T> }` 失败于 C99 链接阶段，关键错误为未生成 `uya_AsyncBox_choose_i32` 且 `struct uya_interface_Future_err_i32` 在 `std_block_on_i32` 处不完整；未保留失败测试文件，矩阵中如实标为“部分覆盖，泛型 async 方法仍为缺口”。
