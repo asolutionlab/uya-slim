@@ -1,0 +1,218 @@
+// test_async_runtime_shared_dns.uya - DNS transport shared Scheduler/LinuxEpoll smoke
+
+use std.async;
+use std.async_event;
+use std.async_scheduler;
+use std.http.server.fill_sockaddr_loopback_16;
+use std.http.server.read_port_from_sockaddr_16;
+use std.net.dns;
+use std.testing.assert_eq_i32;
+use libc.syscall;
+
+fn shared_dns_recvfrom(sockfd: i32, buf: &byte, len: usize, flags: i32, addr: &byte, addrlen: &u32) !isize {
+    return @syscall(SYS_recvfrom, sockfd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64) as! isize;
+}
+
+fn shared_dns_sendto(sockfd: i32, buf: &const byte, len: usize, flags: i32, addr: &const byte, addrlen: u32) !isize {
+    return @syscall(SYS_sendto, sockfd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64) as! isize;
+}
+
+fn shared_dns_read_exact(fd: i32, buf: &byte, want: usize) !void {
+    var total: usize = 0;
+    while total < want {
+        const n: isize = try sys_recv(fd, &buf[total], want - total, 0);
+        if n <= 0 {
+            return error.ConnectionClosed;
+        }
+        total = total + (n as usize);
+    }
+}
+
+fn shared_dns_write_all(fd: i32, buf: &const byte, len: usize) !void {
+    var total: usize = 0;
+    while total < len {
+        const n: isize = try sys_send(fd, &buf[total], len - total, 0);
+        if n <= 0 {
+            return error.ConnectionClosed;
+        }
+        total = total + (n as usize);
+    }
+}
+
+fn shared_dns_listen_udp_tcp_pair(port_out: &u16, udp_fd_out: &i32, tcp_fd_out: &i32) !void {
+    const tcp_fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    var one: i32 = 1;
+    _ = sys_setsockopt(tcp_fd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4 as u32) catch {};
+    var tcp_addr: [byte: 16] = [0:16];
+    fill_sockaddr_loopback_16(0, &tcp_addr[0] as &byte);
+    _ = try sys_bind(tcp_fd, &tcp_addr[0] as &void, 16 as u32);
+    _ = try sys_listen(tcp_fd, 4);
+
+    var bound: [byte: 16] = [0:16];
+    var bound_len: u32 = 16;
+    _ = try sys_getsockname(tcp_fd, &bound[0] as &void, &bound_len);
+    const port: u16 = read_port_from_sockaddr_16(&bound[0] as &byte);
+
+    const udp_fd: i32 = try sys_socket(AF_INET, SOCK_DGRAM, 0);
+    var udp_addr: [byte: 16] = [0:16];
+    fill_sockaddr_loopback_16(port, &udp_addr[0] as &byte);
+    _ = try sys_bind(udp_fd, &udp_addr[0] as &void, 16 as u32);
+
+    port_out[0] = port;
+    udp_fd_out[0] = udp_fd;
+    tcp_fd_out[0] = tcp_fd;
+}
+
+fn shared_dns_serve_truncated_udp_then_tcp_a(udp_fd: i32, tcp_fd: i32) !void {
+    var query: [byte: 512] = [0:512];
+    var peer_addr: [byte: 16] = [0:16];
+    var peer_len: u32 = 16;
+    const udp_n: isize = try shared_dns_recvfrom(udp_fd, &query[0], 512, 0, &peer_addr[0], &peer_len);
+    if udp_n <= 0 {
+        return error.ConnectionClosed;
+    }
+
+    var udp_resp: [byte: 12] = [0x12, 0x34, 0x83, 0x00, 0, 1, 0, 0, 0, 0, 0, 0];
+    udp_resp[0] = query[0];
+    udp_resp[1] = query[1];
+    _ = try shared_dns_sendto(udp_fd, &udp_resp[0], 12, 0, &peer_addr[0], peer_len);
+
+    var client_addr: [byte: 16] = [0:16];
+    var client_len: u32 = 16;
+    const cfd: i32 = try sys_accept(tcp_fd, &client_addr[0] as &void, &client_len);
+
+    var lenbuf: [byte: 2] = [0:2];
+    try shared_dns_read_exact(cfd, &lenbuf[0], 2);
+    const body_len: usize = (((lenbuf[0] as usize) << 8) | (lenbuf[1] as usize));
+    if body_len > 0 {
+        var req: [byte: 512] = [0:512];
+        try shared_dns_read_exact(cfd, &req[0], body_len);
+    }
+
+    var body: [byte: 45] = [
+        0x12, 0x34, 0x81, 0x00, 0, 1, 0, 1, 0, 0, 0, 0,
+        7, 101, 120, 97, 109, 112, 108, 101,
+        3, 99, 111, 109, 0,
+        0, 1, 0, 1,
+        0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 5, 6, 7, 8,
+    ];
+    body[0] = query[0];
+    body[1] = query[1];
+
+    var framed: [byte: 47] = [0:47];
+    framed[0] = 0;
+    framed[1] = 45;
+    var i: usize = 0;
+    while i < 45 {
+        framed[2 + i] = body[i];
+        i = i + 1;
+    }
+    try shared_dns_write_all(cfd, &framed[0], 47);
+    _ = sys_close(cfd) catch {};
+}
+
+fn shared_dns_epoll_registered_count(loop: &LinuxEpoll) i32 {
+    var count: i32 = 0;
+    var i: i32 = 0;
+    while i < loop.slot_capacity {
+        if loop.slot_states[i as usize] != 0 {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+fn shared_dns_child_query_via_scheduler(port: u16) void {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0, prefer_family: 0 };
+    var resolver: [byte: 9] = [49, 50, 55, 46, 48, 46, 48, 46, 49];
+    dns_client_init(&client, &resolver[0: 9]);
+    client.nameserver_port = port;
+    dns_client_set_timeout_ms(&client, 1000);
+
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_async(&client, &host[0], 11, &out[0], 4, &out_len);
+
+    var queue: TaskQueue_usize = task_queue_usize_new();
+    const dns_idx: i32 = queue.push(fut) catch {
+        sys_exit(21);
+        return;
+    };
+    var scheduler: Scheduler = scheduler_new();
+    var epoll_impl: LinuxEpoll = linux_epoll_create(0) catch {
+        sys_exit(22);
+        return;
+    };
+    const loop: EventLoop = epoll_impl;
+    const completed: i32 = scheduler_run_task_queue_usize_with_event_loop(&scheduler, loop, &queue, 1000) catch {
+        _ = sys_close(epoll_impl.epfd) catch {};
+        sys_exit(23);
+        return;
+    };
+
+    if completed != 1 {
+        _ = sys_close(epoll_impl.epfd) catch {};
+        sys_exit(24);
+    }
+    if queue.error_id(dns_idx) != 0 {
+        _ = sys_close(epoll_impl.epfd) catch {};
+        sys_exit(25);
+    }
+    if (queue.result(dns_idx) as i32) != 4 || (out_len as i32) != 4 {
+        _ = sys_close(epoll_impl.epfd) catch {};
+        sys_exit(26);
+    }
+    if out[0] != 5 || out[1] != 6 || out[2] != 7 || out[3] != 8 {
+        _ = sys_close(epoll_impl.epfd) catch {};
+        sys_exit(27);
+    }
+    if shared_dns_epoll_registered_count(&epoll_impl) != 0 {
+        _ = sys_close(epoll_impl.epfd) catch {};
+        sys_exit(28);
+    }
+    _ = sys_close(epoll_impl.epfd) catch {};
+    sys_exit(0);
+}
+
+fn shared_dns_wait_child_ok(pid: i32) !void {
+    var st: i32 = 0;
+    _ = try sys_waitpid(pid, &st, 0);
+    try assert_eq_i32((st & 0xff) as i32, 0);
+    try assert_eq_i32(((st >> 8) & 0xff) as i32, 0);
+}
+
+test "dns_transport_tcp_fallback_runs_in_shared_scheduler_epoll_queue" {
+    var port: u16 = 0;
+    var udp_fd: i32 = -1;
+    var tcp_fd: i32 = -1;
+    shared_dns_listen_udp_tcp_pair(&port, &udp_fd, &tcp_fd) catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        _ = sys_close(udp_fd) catch {};
+        _ = sys_close(tcp_fd) catch {};
+        shared_dns_child_query_via_scheduler(port);
+    }
+    if child_pid <= 0 {
+        _ = sys_close(udp_fd) catch {};
+        _ = sys_close(tcp_fd) catch {};
+        try assert_eq_i32(0, 1);
+        return;
+    }
+
+    shared_dns_serve_truncated_udp_then_tcp_a(udp_fd, tcp_fd) catch {
+        _ = sys_close(udp_fd) catch {};
+        _ = sys_close(tcp_fd) catch {};
+        try assert_eq_i32(0, 1);
+        return;
+    };
+
+    _ = sys_close(udp_fd) catch {};
+    _ = sys_close(tcp_fd) catch {};
+    try shared_dns_wait_child_ok(child_pid);
+}

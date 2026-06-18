@@ -500,3 +500,7 @@
     - 验证结果：通过；目标父级下已拆出 DNS transport 共享调度 smoke、DNS `A/AAAA` 聚合、TLS async 边界回归、TLS I/O Future 接入、共享 runtime 组合闸门五个可执行叶子，每项均包含最小验证命令和完成条件。
     - 验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md`
     - 验证结果：通过，无 whitespace error。
+- 上下文：# Uya 异步生产化 TODO（完整语法 + 动态资源） > ## 目标 > Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+  - [x] 为 DNS async transport 增加共享 `Scheduler` / `LinuxEpoll` 组合 smoke，把真实 UDP/TCP fallback future 放进同一 `TaskQueue` 或等价共享调度入口；最小验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_dns.uya`；完成条件：测试能证明 DNS transport 在 shared runtime 中完成 readiness、fallback 和资源清理。
+    - 验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_dns.uya` 通过（1 tests passed, 0 failed）。
+    - 相关回归：`../uya/bin/uya test --c99 tests/test_std_dns_async_transport.uya` 通过（2 tests passed, 0 failed）；`../uya/bin/uya test --c99 tests/test_async_shared_runtime_semantics.uya` 通过（2 tests passed, 0 failed）。

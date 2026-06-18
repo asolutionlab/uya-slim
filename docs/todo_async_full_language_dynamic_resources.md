@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 为 DNS async transport 增加共享 `Scheduler` / `LinuxEpoll` 组合 smoke，把真实 UDP/TCP fallback future 放进同一 `TaskQueue` 或等价共享调度入口；最小验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_dns.uya`；完成条件：测试能证明 DNS transport 在 shared runtime 中完成 readiness、fallback 和资源清理。
   - [ ] 为 DNS `A/AAAA` 并发聚合补 async 查询实现和回归，避免继续只验证单 transport future；最小验证：`../uya/bin/uya test --c99 tests/test_std_dns_async_query_aggregate.uya`；完成条件：同一查询入口能聚合 `A` 与 `AAAA` 结果，并覆盖成功、部分失败和超时路径。
   - [ ] 为 TLS/HTTPS I/O 增加显式 async 边界回归，固定 handshake/read/write 尚未返回 `Future` 的当前缺口，避免被 loopback handler 误判为 runtime 已接入；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya`；完成条件：测试或结构性检查能稳定指出 TLS I/O 未接入 `Waker`/`EventLoop`，并随真实接入时反向更新。
   - [ ] 将 TLS handshake/read/write 拆为 `Future<!usize>` 或等价 async leaf primitive，并接入 `Waker.wait_readable/wait_writable`；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya`；完成条件：TLS I/O would-block 时返回 `Poll.Pending`，ready 后通过共享 `LinuxEpoll` 唤醒并返回 `Poll.Ready`。
