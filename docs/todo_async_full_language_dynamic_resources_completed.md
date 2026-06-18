@@ -1162,3 +1162,11 @@
   - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya` → 10 tests passed, 0 failed; 10 assertions passed。
   - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya --c99` → 10 tests passed, 0 failed; 10 assertions passed。
   - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya --uya --c99` → 10 tests passed, 0 failed; 10 assertions passed。
+
+### 归档：Phase 1 / 1.2 先补红测，再动实现
+
+- [x] 新增 `tests/test_async_defer_errdefer.uya`
+  - 说明：目标测试文件已存在，覆盖 @async_fn 体内 defer / errdefer、跨多段 @await 的 defer LIFO、同步错误触发 errdefer、以及 `try @await` 错误传播触发 errdefer。
+  - 验证：`../uya/bin/uya test tests/test_async_defer_errdefer.uya` 通过，8 tests passed, 0 failed, 14 assertions passed。
+  - 验证：`../uya/bin/uya test tests/test_async_defer_errdefer.uya --c99` 通过，8 tests passed, 0 failed, 14 assertions passed。
+  - 验证：`../uya/bin/uya test tests/test_async_defer_errdefer.uya --uya --c99` 通过，8 tests passed, 0 failed, 14 assertions passed。
