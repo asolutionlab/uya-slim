@@ -6,8 +6,6 @@
 
 ## 目标
 
-- [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 把 TLS async I/O 纳入共享 runtime smoke，与 HTTP/DNS/`async_compute` 同一 `TaskQueue` / `EventLoop` 组合验收；完成条件：统一 smoke 覆盖 TLS pending、ready、cancel/cleanup，验证命令：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya`。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
 
 ## 先澄清边界

@@ -333,6 +333,9 @@ struct HttpsReadFuture : Future<!usize> {
     out_max: usize,
 
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        if waker.is_cancelled() {
+            return Poll<!usize>.Ready(error.Cancelled);
+        }
         const n: usize = https_read_some(self.fd, self.out, self.out_max) catch |err| {
             if @error_id(err) == @error_id(error.ReadWouldBlock) {
                 waker.wait_readable(self.fd);
@@ -355,6 +358,9 @@ struct HttpsWriteAllFuture : Future<!usize> {
     off: usize = 0,
 
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        if waker.is_cancelled() {
+            return Poll<!usize>.Ready(error.Cancelled);
+        }
         while self.off < self.src_len {
             const p: *const byte = @ptr_from_usize(@usize_from_ptr(self.src as &void) + self.off) as *const byte;
             const write_result: !isize = sys_write(self.fd, p, self.src_len - self.off);
@@ -388,6 +394,9 @@ struct HttpsHandshakeFuture : Future<!usize> {
     role: i32,
 
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        if waker.is_cancelled() {
+            return Poll<!usize>.Ready(error.Cancelled);
+        }
         if self.role == HS_ROLE_SERVER {
             https_server_handshake(self.fd, self.ctx) catch |err| {
                 if @error_id(err) == @error_id(error.ReadWouldBlock) {
