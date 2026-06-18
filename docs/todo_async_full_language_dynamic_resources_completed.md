@@ -490,3 +490,13 @@
     - 新增回归：`tests/test_async_shared_runtime_semantics.uya` 中 `shared_runtime_smoke_scheduler_async_compute_and_async_fd_share_linux_epoll`。
     - 验证命令：`../uya/bin/uya test --c99 tests/test_async_shared_runtime_semantics.uya`；结果：通过，2 个测试通过，0 失败。
     - 相关验证命令：`./tests/verify_async_runtime_shared_semantics.sh`；结果：通过，shared async runtime baseline passed。
+
+## 2026-06-18
+
+上下文：`# Uya 异步生产化 TODO（完整语法 + 动态资源）` > `## 目标` > `Linux + C99 主链路下，HTTP/DNS/TLS/async_compute/Scheduler 共享同一套稳定的 async 运行时语义。`
+
+  - [x] 将 DNS/TLS 当前同步或半同步边界接入矩阵中的统一语义缺口，拆出可运行的后续实现叶子；最小验证：相关 todo 只保留可执行叶子，且每项包含验证命令。
+    - 验证命令：`sed -n '7,20p' docs/todo_async_full_language_dynamic_resources.md`
+    - 验证结果：通过；目标父级下已拆出 DNS transport 共享调度 smoke、DNS `A/AAAA` 聚合、TLS async 边界回归、TLS I/O Future 接入、共享 runtime 组合闸门五个可执行叶子，每项均包含最小验证命令和完成条件。
+    - 验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md`
+    - 验证结果：通过，无 whitespace error。
