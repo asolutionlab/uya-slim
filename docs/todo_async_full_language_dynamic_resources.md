@@ -57,7 +57,6 @@
 ## 完成定义
 
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
-  - [ ] `lib/std/async_event.uya` 的 epoll slot/event 容量改为动态或可配置，并避免 `find_slot()` 无界线性扫；最小验证：新增/更新事件循环 slot 容量测试并运行 `../uya/bin/uya test ...`。
   - [ ] `lib/std/async_scheduler.uya` 的 frame stack buffer 与 inline repoll 容量改为动态或可配置；最小验证：新增/更新 scheduler frame/repoll 测试并运行 `../uya/bin/uya test ...`。
   - [ ] `lib/std/async_frame.uya` 的 frame pool bucket、per-bucket 容量和 descriptor 表改为动态或可配置；最小验证：新增/更新 frame pool/descriptor 测试并运行 `../uya/bin/uya test ...`。
   - [ ] `lib/std/thread.uya` 的线程池 worker、pending、task slot 容量改为动态或可配置策略，并移除固定容量导致的产品上限；最小验证：新增/更新 thread pool 容量测试并运行 `../uya/bin/uya test ...`。

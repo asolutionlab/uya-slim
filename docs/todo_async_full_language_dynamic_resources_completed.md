@@ -849,3 +849,12 @@
   - [x] `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 支持调用方配置容量，不再把默认 64 槽作为不可突破边界；最小验证：新增/更新队列容量测试并运行 `../uya/bin/uya test ...`。
     - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
     - 验证结果：通过，`task_queue_with_capacity_limits_pushes` 和 `task_queue_capacity_can_exceed_default_capacity` 覆盖可配置容量及超过默认 64 槽场景；总计 16 tests passed。
+
+## 完成定义
+
+父级路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_event.uya` 的 epoll slot/event 容量改为动态或可配置，并避免 `find_slot()` 无界线性扫；最小验证：新增/更新事件循环 slot 容量测试并运行 `../uya/bin/uya test ...`。
+    - 验证：`../uya/bin/uya test tests/test_std_async_event.uya` 通过（1 个测试通过）。
+    - 相关回归：`../uya/bin/uya test tests/test_std_async_event_fd_reuse.uya` 通过（4 个子测试通过）。
+    - 相关回归：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过（16 个子测试通过）。

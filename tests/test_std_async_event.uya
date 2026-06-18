@@ -43,6 +43,9 @@ export fn main() i32 {
     };
     _ = assert_eq_i32(linux_epoll_slot_capacity(&large_ep), 1025) catch { return 14; };
     _ = assert_eq_i32(linux_epoll_event_capacity(&large_ep), 1025) catch { return 15; };
+    if linux_epoll_lookup_capacity(&large_ep) <= linux_epoll_slot_capacity(&large_ep) {
+        return 16;
+    }
     if large_ep.epfd >= 0 {
         _ = test_sys_close(large_ep.epfd);
     }
