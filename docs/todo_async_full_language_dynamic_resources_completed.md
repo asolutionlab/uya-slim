@@ -870,3 +870,10 @@
     - 结果：通过，1 test / 0 failed。
     - 验证命令：`../uya/bin/uya test tests/test_async_frame_stack_ok.uya`
     - 结果：通过，2 个测试项均 OK。
+
+## 完成定义 / runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_frame.uya` 的 frame pool bucket、per-bucket 容量和 descriptor 表改为动态或可配置；最小验证：新增/更新 frame pool/descriptor 测试并运行 `../uya/bin/uya test ...`。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过；5 个测试通过，覆盖显式 config、超过默认 128 buckets、超过默认 4096 per-bucket。
+    - 验证：`../uya/bin/uya test tests/test_c99_async_frame_empty_descriptors.uya` 通过；空 descriptor 表路径通过。
+    - 验证：`../uya/bin/uya --c99 tests/test_async_frame_pool_stats.uya -o /tmp/uya_async_frame_pool_stats.c && rg -n "_uya_async_frame_descriptor_entries\[|_uya_async_frame_descriptor_count|AsyncFrameDescriptorTable" /tmp/uya_async_frame_pool_stats.c` 通过；生成 `_uya_async_frame_descriptor_entries[6]` 和 `_uya_async_frame_descriptor_count = 6`，未固定为 512。

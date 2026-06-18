@@ -57,7 +57,6 @@
 ## 完成定义
 
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
-  - [ ] `lib/std/async_frame.uya` 的 frame pool bucket、per-bucket 容量和 descriptor 表改为动态或可配置；最小验证：新增/更新 frame pool/descriptor 测试并运行 `../uya/bin/uya test ...`。
   - [ ] `lib/std/thread.uya` 的线程池 worker、pending、task slot 容量改为动态或可配置策略，并移除固定容量导致的产品上限；最小验证：新增/更新 thread pool 容量测试并运行 `../uya/bin/uya test ...`。
 - [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
 - [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
