@@ -363,3 +363,11 @@
     - 兼容构造验证：`../uya/bin/uya --c99 benchmarks/http_bench_async_epoll.uya -o tests/build/verify_http_bench_async_epoll.c` 通过，且生成 C 可被 `cc` 编译为对象文件。
     - 兼容构造验证：`../uya/bin/uya --c99 --no-safety-proof benchmarks/http_bench_async_epoll_await.uya -o tests/build/verify_http_bench_async_epoll_await.c` 通过，且生成 C 可被 `cc` 编译为对象文件。
     - 兼容构造验证：`../uya/bin/uya --c99 --no-safety-proof benchmarks/http_bench_async_epoll_await_stack.uya -o tests/build/verify_http_bench_async_epoll_await_stack.c` 通过，且生成 C 可被 `cc` 编译为对象文件。
+
+## 目标
+
+父级任务路径：
+- [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+  - [x] 为 `TaskQueue<T>` / `Scheduler` 队列和 inline repoll 上限补充可配置入口，默认兼容既有容量；最小验证：相关 scheduler 测试通过。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 验证结果：通过；14 个 scheduler 测试全部 OK，Tests Failed: 0，Assertions Passed: 61。

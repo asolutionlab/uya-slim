@@ -162,15 +162,17 @@ export struct TaskQueueSlot<T> {
 
 export struct TaskQueue<T> {
     len: i32,
+    capacity: i32,
     slots: [TaskQueueSlot<T>: 64] = [],
 
     fn push(self: &Self, f: Future<!T>) !i32 {
-        if self.len >= TASK_QUEUE_CAPACITY {
+        const limit: i32 = self.capacity_limit();
+        if self.len >= limit {
             return error.TaskQueueFull;
         }
 
         const idx: i32 = self.len;
-        if idx < 0 || idx >= TASK_QUEUE_CAPACITY {
+        if idx < 0 || idx >= limit {
             return error.TaskQueueFull;
         }
         var zero_sample: [T: 1] = [];
@@ -191,8 +193,18 @@ export struct TaskQueue<T> {
         return idx;
     }
 
+    fn capacity_limit(self: &Self) i32 {
+        if self.capacity <= 0 {
+            return TASK_QUEUE_CAPACITY;
+        }
+        if self.capacity > TASK_QUEUE_CAPACITY {
+            return TASK_QUEUE_CAPACITY;
+        }
+        return self.capacity;
+    }
+
     fn result(self: &Self, idx: i32) T {
-        if idx < 0 || idx >= self.len || idx >= TASK_QUEUE_CAPACITY {
+        if idx < 0 || idx >= self.len || idx >= self.capacity_limit() {
             var sample: [T: 1] = [];
             return sample[0];
         }
@@ -200,28 +212,28 @@ export struct TaskQueue<T> {
     }
 
     fn error_id(self: &Self, idx: i32) u32 {
-        if idx < 0 || idx >= self.len || idx >= TASK_QUEUE_CAPACITY {
+        if idx < 0 || idx >= self.len || idx >= self.capacity_limit() {
             return 0 as u32;
         }
         return self.slots[idx as usize].error_id;
     }
 
     fn is_done(self: &Self, idx: i32) bool {
-        if idx < 0 || idx >= self.len || idx >= TASK_QUEUE_CAPACITY {
+        if idx < 0 || idx >= self.len || idx >= self.capacity_limit() {
             return false;
         }
         return self.slots[idx as usize].done != 0;
     }
 
     fn is_cancelled(self: &Self, idx: i32) bool {
-        if idx < 0 || idx >= self.len || idx >= TASK_QUEUE_CAPACITY {
+        if idx < 0 || idx >= self.len || idx >= self.capacity_limit() {
             return false;
         }
         return self.slots[idx as usize].cancelled != 0;
     }
 
     fn cancel(self: &Self, idx: i32) bool {
-        if idx < 0 || idx >= self.len || idx >= TASK_QUEUE_CAPACITY {
+        if idx < 0 || idx >= self.len || idx >= self.capacity_limit() {
             return false;
         }
         const slot: &TaskQueueSlot<T> = &self.slots[idx as usize];
@@ -240,20 +252,70 @@ export type TaskQueue_u32 = TaskQueue<u32>;
 export type TaskQueueSlot_usize = TaskQueueSlot<usize>;
 export type TaskQueue_usize = TaskQueue<usize>;
 
-export fn task_queue_new<T>() TaskQueue<T> {
-    return TaskQueue<T>{ len: 0 };
+fn task_queue_normalize_capacity(capacity: i32) i32 {
+    if capacity <= 0 {
+        return TASK_QUEUE_CAPACITY;
+    }
+    if capacity > TASK_QUEUE_CAPACITY {
+        return TASK_QUEUE_CAPACITY;
+    }
+    return capacity;
 }
 
+/// 创建默认容量的任务队列。
+/// 参数：无。
+/// 返回：容量兼容既有默认值的 TaskQueue<T>。
+export fn task_queue_new<T>() TaskQueue<T> {
+    return TaskQueue<T>{ len: 0, capacity: TASK_QUEUE_CAPACITY };
+}
+
+/// 创建指定运行时容量上限的任务队列。
+/// 参数：capacity 为队列可入队任务上限；小于等于 0 时使用默认值，超过编译期槽位上限时截断到默认上限。
+/// 返回：带可配置容量上限的 TaskQueue<T>。
+export fn task_queue_new_with_capacity<T>(capacity: i32) TaskQueue<T> {
+    return TaskQueue<T>{ len: 0, capacity: task_queue_normalize_capacity(capacity) };
+}
+
+/// 创建默认容量的 i32 任务队列。
+/// 参数：无。
+/// 返回：TaskQueue_i32。
 export fn task_queue_i32_new() TaskQueue_i32 {
     return task_queue_new<i32>();
 }
 
+/// 创建指定运行时容量上限的 i32 任务队列。
+/// 参数：capacity 为队列可入队任务上限。
+/// 返回：TaskQueue_i32。
+export fn task_queue_i32_new_with_capacity(capacity: i32) TaskQueue_i32 {
+    return task_queue_new_with_capacity<i32>(capacity);
+}
+
+/// 创建默认容量的 u32 任务队列。
+/// 参数：无。
+/// 返回：TaskQueue_u32。
 export fn task_queue_u32_new() TaskQueue_u32 {
     return task_queue_new<u32>();
 }
 
+/// 创建指定运行时容量上限的 u32 任务队列。
+/// 参数：capacity 为队列可入队任务上限。
+/// 返回：TaskQueue_u32。
+export fn task_queue_u32_new_with_capacity(capacity: i32) TaskQueue_u32 {
+    return task_queue_new_with_capacity<u32>(capacity);
+}
+
+/// 创建默认容量的 usize 任务队列。
+/// 参数：无。
+/// 返回：TaskQueue_usize。
 export fn task_queue_usize_new() TaskQueue_usize {
     return task_queue_new<usize>();
+}
+
+/// 创建指定运行时容量上限的 usize 任务队列。
+/// 参数：capacity 为队列可入队任务上限。
+/// 返回：TaskQueue_usize。
+export fn task_queue_usize_new_with_capacity(capacity: i32) TaskQueue_usize {
+    return task_queue_new_with_capacity<usize>(capacity);
 }
 
 /// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
@@ -263,6 +325,7 @@ export struct Scheduler {
     _metrics_frame_alloc_seen: u64,
     _metrics_frame_free_seen: u64,
     _metrics_heap_fallback_seen: u64,
+    _inline_repoll_limit: i32,
 }
 
 /// 辅助：将 AsyncFramePool 值装箱为 IAllocator（利用 return 隐式转换）。
@@ -290,6 +353,7 @@ export fn scheduler_init(self: &Scheduler) void {
     self._metrics_frame_alloc_seen = 0u64;
     self._metrics_frame_free_seen = 0u64;
     self._metrics_heap_fallback_seen = 0u64;
+    self._inline_repoll_limit = SCHEDULER_INLINE_REPOLL_LIMIT;
 }
 
 /// 创建调度器并初始化其 async frame pool。
@@ -297,6 +361,42 @@ export fn scheduler_new() Scheduler {
     var s: Scheduler = Scheduler{};
     scheduler_init(&s);
     return s;
+}
+
+/// 设置调度器在无 I/O interest 的 Pending 状态下可连续 inline repoll 的上限。
+/// 参数：limit 为上限；小于 0 时按 0 处理。
+/// 返回值：无。
+export fn scheduler_set_inline_repoll_limit(self: &Scheduler, limit: i32) void {
+    if self == null {
+        return;
+    }
+    if limit < 0 {
+        self._inline_repoll_limit = 0;
+        return;
+    }
+    self._inline_repoll_limit = limit;
+}
+
+/// 创建调度器并设置 inline repoll 上限。
+/// 参数：limit 为无 I/O interest Pending 的连续 inline repoll 上限。
+/// 返回：已初始化的 Scheduler。
+export fn scheduler_new_with_inline_repoll_limit(limit: i32) Scheduler {
+    var s: Scheduler = scheduler_new();
+    scheduler_set_inline_repoll_limit(&s, limit);
+    return s;
+}
+
+/// 获取调度器 inline repoll 上限。
+/// 参数：self 为调度器指针。
+/// 返回：当前 inline repoll 上限；空指针时返回默认值。
+export fn scheduler_inline_repoll_limit(self: &Scheduler) i32 {
+    if self == null {
+        return SCHEDULER_INLINE_REPOLL_LIMIT;
+    }
+    if self._inline_repoll_limit < 0 {
+        return 0;
+    }
+    return self._inline_repoll_limit;
 }
 
 /// 获取调度器绑定的 async frame pool。
@@ -364,7 +464,7 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
                     inline_repoll_count = 0;
                     continue;
                 }
-                if !w.has_io_interest() && inline_repoll_count < SCHEDULER_INLINE_REPOLL_LIMIT {
+                if !w.has_io_interest() && inline_repoll_count < scheduler_inline_repoll_limit(self) {
                     inline_repoll_count = inline_repoll_count + 1;
                     continue;
                 }
@@ -528,7 +628,7 @@ export fn scheduler_run_task_queue_with_event_loop<T>(self: &Scheduler, loop: Ev
     var completed: i32 = 0;
     defer {
         var cleanup_idx: i32 = 0;
-        while cleanup_idx < queue.len && cleanup_idx < TASK_QUEUE_CAPACITY {
+        while cleanup_idx < queue.len && cleanup_idx < queue.capacity_limit() {
             const slot: &TaskQueueSlot<T> = &queue.slots[cleanup_idx as usize];
             if slot.active != 0 {
                 scheduler_cleanup_slot_resources(loop, &slot.waker, &slot.io_epoll_fd, &slot.event_epoll_fd);
@@ -542,7 +642,7 @@ export fn scheduler_run_task_queue_with_event_loop<T>(self: &Scheduler, loop: Ev
         var registered: i32 = 0;
         var i: i32 = 0;
 
-        while i < queue.len && i < TASK_QUEUE_CAPACITY {
+        while i < queue.len && i < queue.capacity_limit() {
             const slot: &TaskQueueSlot<T> = &queue.slots[i as usize];
             if slot.active == 0 || slot.done != 0 {
                 i = i + 1;

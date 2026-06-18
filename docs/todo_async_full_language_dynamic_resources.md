@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
-  - [ ] 为 `TaskQueue<T>` / `Scheduler` 队列和 inline repoll 上限补充可配置入口，默认兼容既有容量；最小验证：相关 scheduler 测试通过。
   - [ ] 为 async frame pool / descriptor 表容量补充可配置入口或动态结构，默认兼容既有容量；最小验证：相关 async frame 测试通过。
   - [ ] 为 `ThreadPool` 容量补充可配置入口，避免生产路径只能依赖小规模写死常量；最小验证：相关 thread 测试通过。
   - [ ] 梳理 `http1_async` 请求头 scratch buffer 的容量策略，补充明确可配置或动态扩容路径；最小验证：相关 HTTP async 测试通过。

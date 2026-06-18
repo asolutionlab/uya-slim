@@ -96,6 +96,7 @@ var scheduler_interest_switch_poll_count: i32 = 0;
 var scheduler_interest_switch_waker_count: i32 = 0;
 var scheduler_interest_switch_seen_count: i32 = 0;
 var scheduler_interest_switch_seen: [i32: 4] = [];
+var scheduler_inline_pending_poll_count: i32 = 0;
 
 struct TestEventLoop : EventLoop {
     fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
@@ -420,6 +421,23 @@ struct ReadableThenWritableFuture : Future<!i32> {
     }
 }
 
+struct InlinePendingThenReady : Future<!i32> {
+    ready_after_pending: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if scheduler_inline_pending_poll_count < self.ready_after_pending {
+            scheduler_inline_pending_poll_count = scheduler_inline_pending_poll_count + 1;
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(88));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
 fn queue_event_loop() EventLoop {
     return QueueEventLoop{};
 }
@@ -519,6 +537,30 @@ test "scheduler_run_task_queue_i32_with_shared_event_loop" {
     try assert_eq_i32(scheduler_queue_task_poll_counts[0], 2);
     try assert_eq_i32(scheduler_queue_task_poll_counts[1], 2);
     try assert_eq_i32(scheduler_queue_task_poll_counts[2], 2);
+}
+
+test "task_queue_with_capacity_limits_pushes" {
+    var queue: TaskQueue_i32 = task_queue_i32_new_with_capacity(2);
+    const first_idx: i32 = try queue.push(ready(1));
+    const second_idx: i32 = try queue.push(ready(2));
+    const third_result: !i32 = queue.push(ready(3));
+
+    try assert_eq_i32(first_idx, 0);
+    try assert_eq_i32(second_idx, 1);
+    try assert_eq_i32(third_result.error_id as i32, @error_id(error.TaskQueueFull) as i32);
+}
+
+test "scheduler_inline_repoll_limit_is_configurable" {
+    scheduler_inline_pending_poll_count = 0;
+    scheduler_loop_poll_count = 0;
+
+    var s: Scheduler = scheduler_new_with_inline_repoll_limit(1);
+    const loop: EventLoop = test_event_loop();
+    const result: i32 = try scheduler_run_with_event_loop<i32>(&s, loop, InlinePendingThenReady{ ready_after_pending: 2 }, 0);
+
+    try assert_eq_i32(result, 88);
+    try assert_eq_i32(scheduler_inline_pending_poll_count, 2);
+    try assert_eq_i32(scheduler_loop_poll_count, 1);
 }
 
 test "scheduler_run_task_queue_generic_u32_with_shared_event_loop" {
