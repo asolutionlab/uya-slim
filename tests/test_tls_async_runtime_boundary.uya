@@ -1,0 +1,80 @@
+// 固定 TLS/HTTPS I/O 尚未接入 std.async runtime 的当前边界。
+//
+// 这个测试故意检查 lib/tls/https.uya 的结构性签名，而不是 loopback 行为：
+// loopback handler 可以跑通同步 TLS 收发，但不能证明 handshake/read/write 已返回 Future
+// 或通过 Waker/EventLoop readiness 驱动。真实 async TLS I/O 接入后，应反向更新本测试。
+
+use libc.syscall;
+use std.string.strlen;
+use std.testing.assert_eq_i32;
+
+error SourceOpenFailed;
+error SourceReadFailed;
+
+const HTTPS_SOURCE_PATH: &const byte = "lib/tls/https.uya\0" as &const byte;
+const HTTPS_SOURCE_MAX: usize = 65536;
+
+fn bytes_equal_at(hay: &const byte, hay_len: usize, start: usize, needle: &const byte, needle_len: usize) bool {
+    if start + needle_len > hay_len {
+        return false;
+    }
+    var i: usize = 0;
+    while i < needle_len {
+        if hay[start + i] != needle[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn source_contains(hay: &const byte, hay_len: usize, needle: &const byte, needle_len: usize) bool {
+    if needle_len == 0 {
+        return true;
+    }
+    if hay_len < needle_len {
+        return false;
+    }
+    var i: usize = 0;
+    while i + needle_len <= hay_len {
+        if bytes_equal_at(hay, hay_len, i, needle, needle_len) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn source_contains_cstr(hay: &const byte, hay_len: usize, needle: &const byte) bool {
+    return source_contains(hay, hay_len, needle, strlen(needle));
+}
+
+fn read_https_source(buf: &byte, cap: usize) !usize {
+    const fd: i32 = sys_open(HTTPS_SOURCE_PATH, O_RDONLY as i32, 0) catch {
+        return error.SourceOpenFailed;
+    };
+    const n: isize = sys_read(fd, buf as *byte, cap) catch {
+        _ = sys_close(fd) catch {};
+        return error.SourceReadFailed;
+    };
+    _ = sys_close(fd) catch {};
+    if n < 0 {
+        return error.SourceReadFailed;
+    }
+    return (n as! usize).value;
+}
+
+test "tls_https_io_boundary_is_still_sync" {
+    var src: [byte: HTTPS_SOURCE_MAX] = [0:HTTPS_SOURCE_MAX];
+    const len: usize = try read_https_source(&src[0], HTTPS_SOURCE_MAX);
+
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_read_some(fd: i32, out: &byte, out_max: usize) !usize\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_write_all(fd: i32, src: &const byte, src_len: usize) !void\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_client_handshake(fd: i32, ctx: &SslContext) !void\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_server_handshake(fd: i32, ctx: &SslContext) !void\0" as &const byte) as i32, 1);
+
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "Future<!usize>\0" as &const byte) as i32, 0);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "wait_readable\0" as &const byte) as i32, 0);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "wait_writable\0" as &const byte) as i32, 0);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "EventLoop\0" as &const byte) as i32, 0);
+}

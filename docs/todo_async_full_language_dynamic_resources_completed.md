@@ -514,3 +514,9 @@
       - `../uya/bin/uya test --c99 tests/test_std_dns_async_query_aggregate.uya`：通过，3 个测试覆盖 A/AAAA 并发聚合成功、A 失败保留 AAAA、双查询已发出后的 DnsTimeout 路径。
       - `../uya/bin/uya test --c99 tests/test_std_dns_async_transport.uya`：通过，2 个测试覆盖 IPv4-only TCP fallback 与 ANY 模式下并发 A/AAAA + A TCP fallback。
       - `../uya/bin/uya test --c99 tests/test_std_dns.uya`：通过，34 个测试覆盖既有 DNS 同步/异步基础回归。
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 为 TLS/HTTPS I/O 增加显式 async 边界回归，固定 handshake/read/write 尚未返回 `Future` 的当前缺口，避免被 loopback handler 误判为 runtime 已接入；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya`；完成条件：测试或结构性检查能稳定指出 TLS I/O 未接入 `Waker`/`EventLoop`，并随真实接入时反向更新。
+    - 验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya` 通过，1 个测试通过、8 个断言通过；结构性检查确认 `lib/tls/https.uya` 中 `https_read_some` / `https_write_all` / `https_client_handshake` / `https_server_handshake` 仍为同步签名，且未出现 `Future<!usize>` / `wait_readable` / `wait_writable` / `EventLoop`。
