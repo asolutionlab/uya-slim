@@ -107,7 +107,8 @@ expect_check_fail "tests/error_await_outside_async.uya" "@await 只能在 @async
 expect_check_fail "tests/error_async_await_in_while_cond.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机结构验证失败"
 expect_compile_fail "tests/error_async_for_iterator_interface_await.uya" "for 循环需要数组类型或实现了迭代器接口的结构体，但无法推断表达式类型"
-expect_compile_fail "tests/error_async_for_iterator_ref_await.uya" "错误: @async_fn 中 for 数组迭代若为迭代器接口形式，@await 尚未支持"
+    # 2026-06-18: struct 迭代器 ref 绑定现已支持，转为正向回归
+    run_uya_test "tests/test_async_for_iterator_ref_await.uya"
 
 # nested future 真实边界专项验证（正向 + 负向）
 echo "==> verify_async_nested_future_boundary"

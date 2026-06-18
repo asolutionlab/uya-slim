@@ -3647,8 +3647,7 @@ fn c99_async_find_var_or_param_type_ast(fn_decl: &ASTNode, name: &byte) &ASTNode
 }
 
 fn c99_async_for_iterator_struct_name(codegen: &C99CodeGenerator, for_stmt: &ASTNode) &byte {
-    if codegen == null || codegen.arena == null || for_stmt == null || for_stmt.for_stmt_array == null ||
-        for_stmt.for_stmt_is_ref != 0 {
+    if codegen == null || codegen.arena == null || for_stmt == null || for_stmt.for_stmt_array == null {
         return null;
     }
     if codegen.async_fn_decl != null &&
@@ -3902,7 +3901,7 @@ fn c99_async_hoist_one_for_with_await(codegen: &C99CodeGenerator, fn_decl: &ASTN
     if elt_from_ast == null {
         var iter_state_type: &ASTNode = null;
         var iter_struct_name: &byte = null;
-        if for_n.for_stmt_is_ref == 0 && for_n.for_stmt_array != null &&
+        if for_n.for_stmt_array != null &&
             for_n.for_stmt_array.type == ASTNodeType.AST_IDENTIFIER &&
             for_n.for_stmt_array.identifier_name != null {
             const iter_type_ast: &ASTNode = c99_async_find_var_or_param_type_ast(fn_decl, for_n.for_stmt_array.identifier_name);

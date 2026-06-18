@@ -549,11 +549,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 // 检查 next 方法签名：next(self: &Self) !void
                 const next_return_type: Type = type_from_ast(checker, next_method.fn_decl_return_type);
                 if next_return_type.kind == TypeKind.TYPE_ERROR_UNION {
-                    if async_for_has_await != 0 && node.for_stmt_is_ref != 0 {
-                        checker_report_error(checker, node,
-                            "@async_fn 中带 @await 的迭代器 for 目前只支持具体 struct 的值绑定 `for iter |v|`；`for iter |&item|` 引用绑定尚未支持" as *byte);
-                        return 1;
-                    }
+                    // 2026-06-18: ref 绑定 for iter |&item| 现在已支持
                     // 检查 value 方法返回类型，作为循环变量类型
                     const value_return_type: Type = type_from_ast(checker, value_method.fn_decl_return_type);
                     

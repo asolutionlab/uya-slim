@@ -230,3 +230,20 @@
     2. `../uya/bin/uya test tests/test_async_catch_await.uya --c99` — C99 后端：5/5 测试，5/5 断言通过
     3. `./tests/run_programs_parallel.sh --uya --c99 tests/test_async_catch_await.uya` — 自举编译器 + C99：1/1 文件通过
   - 覆盖场景：try @await 成功路径、同步 catch 在 async 体内（成功/错误恢复）、多段 try @await 组合、@await 后对 !i32 做 match
+
+## 2026-06-18：子任务 1 完成
+
+**父级路径**：目标 > `@async_fn` 体内支持完整 Uya 函数体语法 > 根据矩阵补齐剩余 async 函数体语法/语义缺口
+
+- [x] 子任务 1：codegen 支持 @async_fn 中 struct 迭代器 ref 绑定 `for iter |&item|` + @await
+  - 已完成：移除 checker 阻断（check_node_extra.uya:552-555）、移除 codegen 阻断（function.uya:3651,3904）
+  - 测试文件已从 `error_async_for_iterator_ref_await.uya` 重命名为 `test_async_for_iterator_ref_await.uya`
+  - 验证：`../uya/bin/uya test tests/test_async_for_iterator_ref_await.uya` 通过（1/1，断言通过）
+  - 验证脚本已更新：`tests/verify_async_full_language_matrix.sh` 第 110 行改为正向 run_uya_test
+  - 修改文件：
+    - `src/checker/check_node_extra.uya`：移除 ref 绑定 checker 阻断
+    - `src/codegen/c99/function.uya`：移除 `c99_async_for_iterator_struct_name` 的 `for_stmt_is_ref != 0` 阻断（3651），移除 hoisting 的 `for_stmt_is_ref == 0` 条件（3904）
+    - `tests/error_async_for_iterator_ref_await.uya` → `tests/test_async_for_iterator_ref_await.uya`：修正 value() 返回 &i32，改为正向测试
+    - `tests/verify_async_full_language_matrix.sh`：第 110 行改为正向 run_uya_test
+
+**已知遗留**：`make tests-uya` 中 `error_async_errdefer_await_boundary` 和 `error_async_catch_await_boundary` 仍失败（预存问题，非本次改动引起）

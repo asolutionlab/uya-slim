@@ -1,16 +1,13 @@
 // error_async_for_iterator_ref_await.uya
-// 预期：编译失败，@async_fn 中带 @await 的迭代器 for 当前不支持 |&item| 引用绑定
+// 验证：@async_fn 中带 @await 的迭代器 for 支持 |&item| 引用绑定
+// 改为正向回归：value() 返回 &i32，for iter |&item| + @await 应在 async 中正常工作
 
 use std.async;
+use std.testing.assert_eq_i32;
 
 error IterEnd;
 
-interface AsyncI32Iterator {
-    fn next(self: &Self) !void;
-    fn value(self: &Self) i32;
-}
-
-struct AsyncRangeIterator : AsyncI32Iterator {
+struct AsyncRangeIterator {
     current: i32,
     end_val: i32,
     started: i32
@@ -28,8 +25,8 @@ AsyncRangeIterator {
         }
     }
 
-    fn value(self: &Self) i32 {
-        return self.current;
+    fn value(self: &Self) &i32 {
+        return &self.current;
     }
 }
 
@@ -43,7 +40,7 @@ fn ready_1() Future<!i32> {
 }
 
 @async_fn
-fn fail_iterator_ref_with_await() Future<!i32> {
+fn iterator_ref_with_await() Future<!i32> {
     var iter: AsyncRangeIterator = make_async_range(0, 2);
     var total: i32 = 0;
     for iter |&item| {
@@ -53,11 +50,12 @@ fn fail_iterator_ref_with_await() Future<!i32> {
     return total;
 }
 
-fn main() i32 {
-    const fut: Future<!i32> = fail_iterator_ref_with_await();
+test "async_for_iterator_ref_await" {
+    const fut: Future<!i32> = iterator_ref_with_await();
     const result: !i32 = block_on<i32>(fut);
     const value: i32 = result catch {
-        return 1;
+        return;
     };
-    return value;
+    // iter 0..2: item=0, x=1, total=1; item=1, x=1, total=3
+    try assert_eq_i32(value, 3);
 }

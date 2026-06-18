@@ -10,6 +10,16 @@
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
     - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
+    - [ ] 子任务 2：修复 nested Future + try return C99 codegen 生成错误 C
+      - 当前：`test_async_nested_future_poll.uya` Uya 编译通过但生成 C 无法通过宿主 cc
+      - 验证：`../uya/bin/uya test tests/test_async_nested_future_poll.uya` 通过
+    - [ ] 子任务 3：厘清接口值迭代器边界
+      - 当前：`error_async_for_iterator_interface_await.uya` checker 报错
+      - 结论：接口类型 for 循环迭代是通用语言缺口（同步也不支持），非 async 独有
+      - 验证：更新测试注释/标题说明边界，确保不误报为 async 缺口
+    - [ ] 子任务 4：更新 `tests/verify_async_full_language_matrix.sh` 预期错误字符串与测试结构
+      - 当前：脚本中 `expect_compile_fail` 的预期错误字符串与实际 checker 输出不匹配
+      - 验证：`./tests/verify_async_full_language_matrix.sh` 全通过
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
