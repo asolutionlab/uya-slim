@@ -1185,3 +1185,13 @@
   - 验证：`../uya/bin/uya test tests/test_async_for_await.uya` 通过，4 tests / 4 assertions passed。
   - 验证：`../uya/bin/uya test tests/test_async_for_await.uya --c99` 通过，4 tests / 4 assertions passed。
   - 说明：`./tests/run_programs_parallel.sh --uya --c99 test_async_for_await.uya` 曾通过，但脚本固定使用 `$REPO_ROOT/bin/uya`，不满足本轮 `../uya/bin/uya` 硬约束，未计入有效验证。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.2 先补红测，再动实现
+
+- [x] 维护 `tests/test_async_macro_expand.uya` 与程序级 `tests/programs/test_ai_prompt_async_macro_combo.uya` 作为宏展开 async lowering 的固定证据。
+  - 验证命令：`../uya/bin/uya test tests/test_async_macro_expand.uya`
+  - 结果：通过；`async_expr_macro_block_keeps_preawait_eval_once` 通过，1 个测试通过、0 个失败、4 个断言通过。
+  - 验证命令：`../uya/bin/uya run tests/programs/test_ai_prompt_async_macro_combo.uya`
+  - 结果：通过；程序输出 `加法异步结果 50`、`除法异步结果 5`，退出码 0。

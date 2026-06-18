@@ -104,7 +104,6 @@
 
 ### 1.2 先补红测，再动实现
 
-- [ ] 维护 `tests/test_async_macro_expand.uya` 与程序级 `tests/programs/test_ai_prompt_async_macro_combo.uya` 作为宏展开 async lowering 的固定证据。
 - [ ] 新增 `tests/test_async_large_state_machine_syntax.uya`
 - [ ] 所有新测试都要同时覆盖：
   - [ ] native 路线
