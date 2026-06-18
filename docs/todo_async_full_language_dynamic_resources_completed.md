@@ -727,3 +727,11 @@
     - `bash tests/verify_async_full_language_matrix.sh`（通过；positive matrix 31 tests、iterator boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo passed）
     - `git diff --check`（通过）
   - 完成条件：本 todo 的审计口径与当前源码常量、nested future 专项验证、迭代器 interface/ref 边界和 async full language matrix 覆盖范围一致。
+
+## 完成定义 / `@async_fn` 函数体语法支持范围
+
+- [x] 建立并校验 async/sync 函数体语法覆盖矩阵，明确已有覆盖、缺失覆盖和同步/async 共同限制；最小验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya`、`./tests/verify_async_full_language_matrix.sh`、`git diff --check`。
+  - 父级任务：`@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+  - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过（4 tests，20 assertions）。
+  - 验证：`./tests/verify_async_full_language_matrix.sh` 通过（positive matrix 31 tests、iterator for boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo）。
+  - 验证：`git diff --check` 通过。
