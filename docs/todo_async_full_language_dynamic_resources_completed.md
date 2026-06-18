@@ -465,3 +465,11 @@
     验证记录：已将 `tests/test_async_shared_runtime_semantics.uya` 接入 `tests/verify_async_runtime_shared_semantics.sh`，覆盖 HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享 `TaskQueue_i32`、`EventLoop`、`Waker` 和 cancellation 语义。
     验证命令：`../uya/bin/uya test tests/test_async_shared_runtime_semantics.uya`，结果：通过，1 个测试、14 个断言通过。
     验证命令：`bash tests/verify_async_runtime_shared_semantics.sh`，结果：通过，脚本输出 `verify_async_runtime_shared_semantics: shared async runtime baseline passed`。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 文档同步共享 runtime 语义的真实覆盖范围和剩余边界；最小验证命令：`git diff --check`；完成条件：`docs/async_status_matrix.md` 与 `docs/std_async_design.md` 不再把未统一验收的分散测试表述为完整量产。
+    - 验证命令：`git diff --check`
+    - 验证结果：通过；`docs/async_status_matrix.md` 与 `docs/std_async_design.md` 已改为阶段性覆盖/目标态口径，不再把未统一验收的分散测试表述为完整量产。

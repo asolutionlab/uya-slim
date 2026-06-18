@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 文档同步共享 runtime 语义的真实覆盖范围和剩余边界；最小验证命令：`git diff --check`；完成条件：`docs/async_status_matrix.md` 与 `docs/std_async_design.md` 不再把未统一验收的分散测试表述为完整量产。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
 
 ## 先澄清边界
