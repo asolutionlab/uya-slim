@@ -671,3 +671,12 @@
     - 验证命令：`../uya/bin/uya test tests/test_async_builtin_body_coverage.uya`
     - 验证结果：通过；1 个测试通过，覆盖 `@params.0/.1`、`@func_name`、`@src_name`、`@src_path`、`@src_line`、`@src_col`、`@error_id`、`@error_name` 在 `@async_fn` 中与同步函数体语义对齐。
     - 相关回归：`../uya/bin/uya test tests/test_async_decl_expr_coverage.uya`、`../uya/bin/uya test tests/test_varargs_full.uya`、`../uya/bin/uya test tests/test_error_id_builtin.uya`、`../uya/bin/uya test tests/test_error_name_builtin.uya`、`../uya/bin/uya test tests/test_src_location.uya` 均通过。
+
+## 先澄清边界
+
+父级任务路径：这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+
+  - [x] `@await` 只能出现在 `@async_fn` 中。
+    验证命令：`../uya/bin/uya check tests/error_await_in_future_returning_non_async.uya`，结果：失败且报告 `@await 只能在 @async_fn 函数内使用`（先确认旧实现曾错误通过，修复后通过负例验证）。
+    验证命令：`../uya/bin/uya check tests/error_await_outside_async.uya`，结果：失败且报告 `@await 只能在 @async_fn 函数内使用`。
+    验证命令：`./tests/verify_async_full_language_matrix.sh`，结果：通过，输出 `forbidden @await positions ... passed`。

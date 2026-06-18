@@ -115,6 +115,7 @@ done
 
 # 规范明确禁止的 @await 位置，必须继续保持失败。
 expect_check_fail "tests/error_await_outside_async.uya" "@await 只能在 @async_fn 函数内使用"
+expect_check_fail "tests/error_await_in_future_returning_non_async.uya" "@await 只能在 @async_fn 函数内使用"
 expect_check_fail "tests/error_async_await_in_while_cond.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_defer_return.uya" "defer/errdefer 块中不能使用 return 语句"
