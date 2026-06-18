@@ -10,7 +10,6 @@ use libc.free;
 use libc.malloc;
 use libc.pthread;
 use libc.stdlib;
-use libc.signal;
 use libc.syscall;
 
 // Legacy compatibility constants: no longer used as product capacity limits.
@@ -1045,8 +1044,6 @@ struct ThreadAsyncComputeCore {
     slot_idx: i32,
     worker_idx: i32,
     read_fd: i32,
-    child_pid: i32,
-    owns_read_fd: i32,
     first_poll: i32,
 
     fn finish_cleanup(self: &Self) void {
@@ -1058,36 +1055,11 @@ struct ThreadAsyncComputeCore {
             thread_pool_release_slot(self.pool, self.slot_idx);
             self.slot_idx = 0 - 1;
         }
-        if self.owns_read_fd != 0 && self.read_fd >= 0 {
-            _ = sys_close(self.read_fd);
-            self.read_fd = 0 - 1;
-        }
-        if self.child_pid > 0 {
-            var status: i32 = 0;
-            _ = sys_waitpid(self.child_pid, &status, 0);
-            self.child_pid = 0;
-        }
     }
 
     fn try_cancel_now(self: &Self) i32 {
-        if self.child_pid > 0 {
-            _ = sys_kill(self.child_pid as i64, SIGKILL) catch {};
-            if self.owns_read_fd != 0 && self.read_fd >= 0 {
-                _ = sys_close(self.read_fd) catch {};
-                self.read_fd = 0 - 1;
-            }
-            var status: i32 = 0;
-            _ = sys_waitpid(self.child_pid, &status, 0) catch {};
-            self.child_pid = 0;
-            self.owns_read_fd = 0;
-            return 1;
-        }
-
         if self.slot_idx < 0 {
-            if self.read_fd < 0 {
-                return 1;
-            }
-            return 0;
+            return 1;
         }
 
         if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.pool, self.slot_idx) {
@@ -1129,8 +1101,6 @@ struct ThreadAsyncComputeCore {
             if pool_ref._workers[worker_idx as usize].active != 0 {
                 self.worker_idx = worker_idx;
                 self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
-                self.child_pid = 0;
-                self.owns_read_fd = 0;
                 return 1;
             }
         }
@@ -1424,7 +1394,7 @@ export fn thread_pool_shutdown(pool: &ThreadPool) void {
     pool._next_worker = 0;
 }
 
-/// 构造 `AsyncComputeFuture<T>`：共享槽位 / one-shot 状态机在 `ThreadAsyncComputeCore` 中。
+/// 构造 `AsyncComputeFuture<T>`：共享槽位状态机在 `ThreadAsyncComputeCore` 中。
 fn thread_async_compute_future_new<T>(pool: &ThreadPool, compute_fn: &void, task_kind: i32, arg_bits: usize) AsyncComputeFuture<T> {
     return AsyncComputeFuture<T>{
         core: ThreadAsyncComputeCore{
@@ -1435,8 +1405,6 @@ fn thread_async_compute_future_new<T>(pool: &ThreadPool, compute_fn: &void, task
             slot_idx: 0 - 1,
             worker_idx: 0 - 1,
             read_fd: 0 - 1,
-            child_pid: 0,
-            owns_read_fd: 0,
             first_poll: 0,
         },
         done: 0,
@@ -1456,7 +1424,7 @@ fn thread_f64_arg_bits(arg: f64) usize {
 }
 
 // 执行 T -> T 计算，并返回 Future<!T>（装箱后的接口对象）。
-// 说明：优先复用 ThreadPool 的 worker 线程；池满载时先进入共享槽位 FIFO，再回退 one-shot 子进程。
+// 说明：复用 ThreadPool 的 worker 线程；池满载时进入共享槽位 FIFO，容量不足时返回资源错误。
 // 通用 async_compute<T> 顶层入口。
 // 依赖单态化后的常量条件裁剪，仅保留与 T 对应的 concrete future 分支。
 export fn async_compute<T>(pool: &ThreadPool, compute_fn: &void, arg: T) Future<!T> {

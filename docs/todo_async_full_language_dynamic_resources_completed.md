@@ -940,3 +940,11 @@
   - [x] 将 `lib/std/async_frame.uya` 的 bucket / slot / descriptor 上限改成动态结构；最小验证：`../uya/bin/uya test tests/test_async_frame_pool_dynamic_growth.uya`。
     - 验证：`../uya/bin/uya test tests/test_async_frame_pool_dynamic_growth.uya` 通过。
     - 相关验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya`、`../uya/bin/uya test tests/test_async_frame_pool_negative.uya`、`../uya/bin/uya test tests/test_async_frame_align_pool.uya` 均通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/thread.uya` 的 worker / pending / task slot 数量改成动态或可配置，并去掉默认 `fork()` fallback；最小验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya` 通过（1/1 tests，26 assertions）。
+    - 相关验证：`../uya/bin/uya test tests/test_std_thread.uya` 通过（24/24 tests，93 assertions）。
