@@ -1152,3 +1152,13 @@
   - 验证：`../uya/bin/uya test tests/test_async_match_await.uya` 通过；4 tests passed, 0 failed, 4 assertions passed。
   - 验证：`../uya/bin/uya test --c99 tests/test_async_match_await.uya` 通过；4 tests passed, 0 failed, 4 assertions passed。
   - 验证：`../uya/bin/uya test --uya --c99 tests/test_async_match_await.uya` 通过；4 tests passed, 0 failed, 4 assertions passed。
+
+## 2026-06-18 本轮完成：Phase 1 / 1.2
+
+上下文：`# Uya 异步生产化 TODO（完整语法 + 动态资源）` / `Phase 1：@async_fn 语法完整性` / `1.2 先补红测，再动实现`
+
+- [x] 新增 `tests/test_async_catch_await.uya`
+  - 说明：目标测试文件已存在并已纳入 `tests/verify_async_full_language_matrix.sh`；本轮确认其作为 dedicated async catch + await 正向回归，覆盖 `try @await` 成功路径、await 后错误联合 `catch`、catch 体内 `@await`、catch 后继续执行、多 catch 和 catch 内提前 return。
+  - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya` → 10 tests passed, 0 failed; 10 assertions passed。
+  - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya --c99` → 10 tests passed, 0 failed; 10 assertions passed。
+  - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya --uya --c99` → 10 tests passed, 0 failed; 10 assertions passed。
