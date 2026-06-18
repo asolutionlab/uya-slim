@@ -124,6 +124,64 @@ fn test_pool_config_limits_bucket_capacity() !void {
     try expect(heap_fallback == 0);
 }
 
+fn test_pool_config_allows_more_than_default_buckets() !void {
+    var pool: AsyncFramePool = AsyncFramePool{};
+    var config: AsyncFramePoolConfig = AsyncFramePoolConfig{};
+    config.max_buckets = 130;
+    config.max_per_bucket = 1;
+    config.debug_heap_fallback = 1;
+    config.stack_limit = 65536usize;
+    async_frame_pool_init_with_config(&pool, &config);
+
+    var i: i32 = 0;
+    while i < 130 {
+        const size: usize = (i as usize) + 1usize;
+        const ptr: &byte = async_frame_pool_alloc_aligned(&pool, size, 8usize);
+        try expect(ptr != null);
+        async_frame_pool_free_aligned(&pool, ptr, size, 8usize);
+        i = i + 1;
+    }
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 130);
+    try expect(total_free == 130);
+    try expect(full_count == 0);
+}
+
+fn test_pool_config_allows_more_than_default_per_bucket() !void {
+    var storage: [byte: 8192] = [];
+    var pool: AsyncFramePool = AsyncFramePool{};
+    var config: AsyncFramePoolConfig = AsyncFramePoolConfig{};
+    config.max_buckets = 1;
+    config.max_per_bucket = 4097;
+    config.debug_heap_fallback = 0;
+    config.stack_limit = 65536usize;
+    async_frame_pool_init_with_config(&pool, &config);
+    pool.buffer = &storage[0] as &byte;
+    pool.buffer_size = 8192usize;
+    pool.buffer_used = 0usize;
+
+    var i: i32 = 0;
+    while i < 4097 {
+        const ptr: &byte = async_frame_pool_alloc_aligned(&pool, 1usize, 1usize);
+        try expect(ptr != null);
+        i = i + 1;
+    }
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 4097);
+    try expect(full_count == 0);
+    try expect(heap_fallback == 0);
+}
+
 test "async_frame_pool_stats" {
     run_test("async_frame_pool_stats", test_pool_stats);
 }
@@ -134,4 +192,12 @@ test "async_frame_pool_buffer_prefers_stack_and_large_heap" {
 
 test "async_frame_pool_config_limits_bucket_capacity" {
     run_test("async_frame_pool_config_limits_bucket_capacity", test_pool_config_limits_bucket_capacity);
+}
+
+test "async_frame_pool_config_allows_more_than_default_buckets" {
+    run_test("async_frame_pool_config_allows_more_than_default_buckets", test_pool_config_allows_more_than_default_buckets);
+}
+
+test "async_frame_pool_config_allows_more_than_default_per_bucket" {
+    run_test("async_frame_pool_config_allows_more_than_default_per_bucket", test_pool_config_allows_more_than_default_per_bucket);
 }

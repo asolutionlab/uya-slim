@@ -820,3 +820,14 @@
     - `../uya/bin/uya test tests/test_async_scheduler_event_allocator_signature.uya`：通过，1 test passed。
     - `../uya/bin/uya test tests/test_async_frame_align_pool.uya`：通过，2 tests passed。
     - `git diff --check`：通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_frame.uya` 的 frame pool bucket、每 bucket 数量、descriptor 表容量改为动态或可配置策略，避免 `128/4096/512` 固定产品上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过（5 tests, 0 failed；覆盖 bucket 数 > 128 与 per bucket > 4096）。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_negative.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_stack_limit_env.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过（16 tests, 0 failed）。
+    - 验证：`git diff --check` 通过。
