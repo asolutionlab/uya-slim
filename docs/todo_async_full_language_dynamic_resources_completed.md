@@ -664,3 +664,10 @@
   - [x] 建立 async 函数体模式匹配覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`match` 语句/表达式、枚举/联合体模式和 `else` 分支在 `@async_fn` 中与同步函数一致。
     验证：`../uya/bin/uya test tests/test_async_match_body_coverage.uya` 通过（3 tests, 0 failed）。
     相关验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过（4 tests, 0 failed）。
+## 先澄清边界
+
+- [x] “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
+  - [x] 建立 async 函数体内建函数体语法覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`@params`、`@func_name`、`@src_*`、`@error_id`、`@error_name` 等本来允许在同步函数体内使用的内建在 `@async_fn` 中语义一致。
+    - 验证命令：`../uya/bin/uya test tests/test_async_builtin_body_coverage.uya`
+    - 验证结果：通过；1 个测试通过，覆盖 `@params.0/.1`、`@func_name`、`@src_name`、`@src_path`、`@src_line`、`@src_col`、`@error_id`、`@error_name` 在 `@async_fn` 中与同步函数体语义对齐。
+    - 相关回归：`../uya/bin/uya test tests/test_async_decl_expr_coverage.uya`、`../uya/bin/uya test tests/test_varargs_full.uya`、`../uya/bin/uya test tests/test_error_id_builtin.uya`、`../uya/bin/uya test tests/test_error_name_builtin.uya`、`../uya/bin/uya test tests/test_src_location.uya` 均通过。

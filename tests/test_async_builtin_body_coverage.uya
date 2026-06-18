@@ -1,0 +1,66 @@
+// 覆盖 @async_fn 函数体内内建表达式，并与同步函数体语义对齐。
+
+use libc.strcmp;
+use std.async;
+use std.testing.assert_eq_i32;
+
+error AsyncBuiltinNamedFailure;
+error AsyncBuiltinMismatch;
+
+fn sync_builtin_score(a: i32, b: i32) !i32 {
+    const name: *byte = @src_name;
+    const path: *byte = @src_path;
+    const line: i32 = @src_line;
+    const col: i32 = @src_col;
+    const func: *byte = @func_name;
+    const err_id: u32 = @error_id(error.AsyncBuiltinNamedFailure);
+    const err_name: *byte = @error_name(error.AsyncBuiltinNamedFailure);
+
+    if name == null || path == null || line <= 0 || col <= 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+    if strcmp(func as *const byte, "sync_builtin_score\0" as *const byte) != 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+    if err_id == 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+    if strcmp(err_name as *const byte, "AsyncBuiltinNamedFailure\0" as *const byte) != 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+
+    return @params.0 + @params.1 + (err_id as i32);
+}
+
+@async_fn
+fn async_builtin_score(a: i32, b: i32) Future<!i32> {
+    const name: *byte = @src_name;
+    const path: *byte = @src_path;
+    const line: i32 = @src_line;
+    const col: i32 = @src_col;
+    const func: *byte = @func_name;
+    const err_id: u32 = @error_id(error.AsyncBuiltinNamedFailure);
+    const err_name: *byte = @error_name(error.AsyncBuiltinNamedFailure);
+
+    if name == null || path == null || line <= 0 || col <= 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+    if strcmp(func as *const byte, "async_builtin_score\0" as *const byte) != 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+    if err_id == 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+    if strcmp(err_name as *const byte, "AsyncBuiltinNamedFailure\0" as *const byte) != 0 {
+        return error.AsyncBuiltinMismatch;
+    }
+
+    return @params.0 + @params.1 + (err_id as i32);
+}
+
+test "async builtin body expressions match sync semantics" {
+    const sync_score: i32 = try sync_builtin_score(11, 31);
+    const async_score: i32 = try block_on<i32>(async_builtin_score(11, 31));
+
+    try assert_eq_i32(async_score, sync_score);
+}
