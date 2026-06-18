@@ -129,7 +129,8 @@ export struct AsyncFramePool : IAllocator {
 
 // 包装结构体，使 extern 变量能被 checker 接受
 struct AsyncFrameDescriptorTable {
-    entries: [AsyncFrameDescriptor: 1024],
+    entries: &AsyncFrameDescriptor,
+    count: i32,
 }
 
 // 全局静态 descriptor 表（由编译器填充）
@@ -215,10 +216,13 @@ export fn async_frame_pool_default() &AsyncFramePool {
 }
 
 fn async_frame_descriptor_entry(frame_idx: usize) &AsyncFrameDescriptor {
-    if frame_idx >= @len(_uya_async_frame_descriptors.entries) {
+    if _uya_async_frame_descriptors.entries == null {
         return null;
     }
-    const base: &AsyncFrameDescriptor = &_uya_async_frame_descriptors.entries[0];
+    if frame_idx >= _uya_async_frame_descriptors.count as usize {
+        return null;
+    }
+    const base: &AsyncFrameDescriptor = _uya_async_frame_descriptors.entries;
     const off: usize = frame_idx * @size_of(AsyncFrameDescriptor);
     return @ptr_from_usize(@usize_from_ptr(base as &void) + off) as &AsyncFrameDescriptor;
 }
@@ -250,10 +254,10 @@ fn async_frame_bucket_slot_ptr(bucket: &AsyncFramePoolBucket, idx: i32) &&byte {
 
 // 获取某个 frame_id 对应的 descriptor
 fn async_frame_pool_descriptor(frame_id: u32) &AsyncFrameDescriptor {
-    const desc_cap: u32 = @len(_uya_async_frame_descriptors.entries) as u32;
+    const desc_cap: u32 = _uya_async_frame_descriptors.count as u32;
     if frame_id < desc_cap {
         const frame_idx: usize = frame_id as usize;
-        if frame_idx >= 0 && frame_idx < @len(_uya_async_frame_descriptors.entries) {
+        if frame_idx >= 0 && frame_idx < _uya_async_frame_descriptors.count as usize {
             return async_frame_descriptor_entry(frame_idx);
         }
     }

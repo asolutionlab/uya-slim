@@ -788,3 +788,15 @@
     - 验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya` 通过。
     - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过。
     - 额外验证：`bash tests/verify_async_full_language_matrix.sh` 执行到 shared runtime 阶段失败；新增 capacity 回归已通过，失败点为 `test_async_shared_runtime_semantics.uya` 的宿主 C 编译 `invalid initializer`（`GinContext_file_poll` / `Engine_serve_once_poll`），与本轮 4097-await C99 生成路径不同。
+
+## 完成定义
+
+- [x] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+  - [x] async frame descriptor 发射不再按固定上限截断，descriptor table 大小按 checker meta count 生成；最小验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 与相关 async frame C99 回归。
+    - 验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 通过。
+    - 验证：`make uya` 通过，已重建 `../uya/bin/uya`。
+    - 验证：`tests/verify_c99_async_frame_descriptors.sh` 通过，生成 `_uya_async_frame_descriptor_entries[7]` 且 count 为 7。
+    - 验证：`tests/verify_c99_async_frame_empty_descriptors.sh` 通过，空表生成占位 `_uya_async_frame_descriptor_entries[1]` 且 count 为 0。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_type.uya` 通过。
+    - 验证：`git diff --check` 通过。
