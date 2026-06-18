@@ -543,3 +543,8 @@
   - [x] 补齐共享语义文档与既有阶段性文档的口径同步，避免继续把分散回归表述为主链路已收口；最小验证：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`。
     - 验证命令：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`
     - 验证结果：通过；命令退出码 0，无输出。
+- [x] 拆分 TLS I/O 接入共享 runtime 的实现边界与验证任务，避免把 HTTPS loopback 当作 TLS async I/O 已接入 `Waker` / `EventLoop` / `Scheduler`；最小验证：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`。
+  - 上下文：`# Uya 异步生产化 TODO（完整语法 + 动态资源）` / `## 目标` / `Linux + C99 主链路下，HTTP/DNS/TLS/async_compute/Scheduler 共享同一套稳定的 async 运行时语义。`
+  - 完成内容：已在主 TODO 中拆出 TLS 审计、awaitable I/O API 设计、负向/边界验证、TLS I/O future 实现、统一 runtime smoke 五个后续叶子；已在 `docs/async_runtime_semantics_matrix.md` 中明确 `tests/test_https_loopback.uya` 只能证明 handler bridge，不能证明 TLS handshake/read/write 接入 `Waker` / `EventLoop` / `Scheduler`。
+  - 验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`
+  - 验证结果：通过。
