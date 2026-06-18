@@ -1177,3 +1177,11 @@
   - 结论：无需拆出 dedicated 回归；`tests/test_async_for_await.uya` 已包含 `sum_iterator_for_with_await()` 和 `async_for_iterator_with_await`，覆盖具体 struct 迭代器 `for iter |v|` 循环体内 `try @await ready_7()` 后累加返回。
   - 验证命令：`../uya/bin/uya test tests/test_async_for_await.uya`
   - 验证结果：通过；4 个测试全部 OK，包含 `async_for_iterator_with_await`。
+
+## 归档：Phase 1 / 1.2 先补红测，再动实现
+
+- [x] 如有必要，从 `tests/test_async_for_await.uya` 拆出 dedicated `for arr |&x|` + `@await` 回归；当前主回归已覆盖该组合。
+  - 结论：无需拆出新 dedicated 文件；`tests/test_async_for_await.uya` 已包含独立测试 `async_for_array_ref_with_await`，覆盖 `for a |&item|` 循环体内 `try @await ready_7()`、引用写回 `*item` 和结果断言。
+  - 验证：`../uya/bin/uya test tests/test_async_for_await.uya` 通过，4 tests / 4 assertions passed。
+  - 验证：`../uya/bin/uya test tests/test_async_for_await.uya --c99` 通过，4 tests / 4 assertions passed。
+  - 说明：`./tests/run_programs_parallel.sh --uya --c99 test_async_for_await.uya` 曾通过，但脚本固定使用 `$REPO_ROOT/bin/uya`，不满足本轮 `../uya/bin/uya` 硬约束，未计入有效验证。
