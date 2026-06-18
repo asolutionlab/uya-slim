@@ -45,6 +45,30 @@
 | TLS handshake/read/write async I/O | 新增 TLS I/O future，在 would-block 时返回 `Poll.Pending` 并通过 `Waker.wait_readable/wait_writable` 注册 fd interest | `../uya/bin/uya test --c99 tests/test_tls_async_runtime_io.uya` |
 | TLS 加入统一 runtime smoke | 在同一 `TaskQueue` / `LinuxEpoll` 中组合 TLS pending/ready、HTTP/DNS readiness 与 `async_compute` eventfd wake | `../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya` |
 
+## TLS awaitable I/O 叶子 API 合约
+
+TLS/HTTPS 接入共享 runtime 时只允许把最底层会阻塞的 fd 边界做成 awaitable 叶子；TLS 记录解析、握手状态推进和 HTTP handler bridge 继续保持协议语义，不直接拥有 `EventLoop` 或 `Scheduler`。叶子 API 固定为：
+
+| API | 返回类型 | pending interest | Ready 成功语义 |
+|-----|----------|------------------|----------------|
+| `https_read_some_async(fd, out, out_max)` | `Future<!usize>` | 底层 `https_read_some` 命中 `ReadWouldBlock` 时调用 `waker.wait_readable(fd)`，然后返回 `Poll.Pending` | 返回本次读到的密文字节数；`out` / `out_max` 生命周期必须覆盖 future 完成或取消 |
+| `https_write_all_async(fd, src, src_len)` | `Future<!usize>` | `sys_write` 命中 `EAGAIN` / `EWOULDBLOCK` / `EINPROGRESS` / `EALREADY` 时调用 `waker.wait_writable(fd)`，然后返回 `Poll.Pending` | 完成后返回累计写入字节数；future 内部保存偏移，重复 poll 不得重写已完成前缀 |
+| `https_handshake_async(fd, ctx, role)` | `Future<!usize>` | handshake 读边界命中 `ReadWouldBlock` 时调用 `waker.wait_readable(fd)`；后续如果 handshake 状态机暴露写阻塞，应在写边界调用 `waker.wait_writable(fd)` | 握手完成返回 `0`；`role` 仅允许 `HS_ROLE_CLIENT` / `HS_ROLE_SERVER` |
+
+错误语义：
+
+- 同步 helper 的 `ReadWouldBlock` / 写 would-block 只用于 leaf 内部判断；async API 对调用者不得以 `Ready(error.ReadWouldBlock)` 暴露 pending，而必须返回 `Poll.Pending` 并注册 fd interest。
+- EOF、短写为 0、TLS alert/认证失败、handshake 状态机失败和不可恢复 syscall 错误必须返回 `Poll.Ready(error.ConnectionClosed)` 或后续更精确的 TLS 错误；业务失败仍属于 `Ready(!T)`，不能伪装为 pending。
+- `EINTR` 在 leaf 内部重试，不改变 `Waker` interest。
+- `https_handshake_async` 不拥有 `SslContext`，不能在错误路径释放调用者持有的证书、握手状态或记录层缓冲。
+
+取消与清理语义：
+
+- 每个 TLS leaf future 的 `poll()` 开头必须检查 `waker.is_cancelled()`；观察到取消后返回 `Poll.Ready(error.Cancelled)`，不得继续推进 TLS 状态机或读写 fd。
+- `release()` 只清理 future 自身分配的 async frame 或临时缓冲；不关闭 `fd`，不释放调用者传入的 `out` / `src` / `SslContext`。
+- `Scheduler` 负责在完成或取消后注销 `EventLoop` 中的 fd interest、关闭 eventfd 并清理 task slot；TLS leaf 不直接调用 `EventLoop.deregister()`。
+- pending 后下一轮 poll 必须重新执行真实 syscall 或 handshake step；禁止只因为上轮注册过 interest 就直接返回 Ready。
+
 ## 当前结论
 
 HTTP、DNS、`async_compute` 和 `Scheduler` 已经在源码层共享 `Future` / `Poll` / `Waker` / `LinuxEpoll` 的核心语义，但还没有一个统一回归同时证明这些链路在同一 scheduler/event loop 下工作。TLS/HTTPS 目前只能说 UyaGin handler 层复用了 async handler 形态，TLS I/O 本身尚未接入同一 runtime。因此第 9 行总目标不能标记完成；下一步应按主 TODO 的 TLS 审计、API 设计、边界验证、I/O future 实现、统一 smoke 顺序推进，直到 TLS handshake/read/write 的 pending 路径真实接入 `Waker` / `EventLoop` / `Scheduler`。

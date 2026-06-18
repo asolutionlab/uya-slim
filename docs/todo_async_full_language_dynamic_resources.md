@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 设计 TLS handshake/read/write 的 awaitable I/O 叶子 API，使 pending 路径通过 `Waker.wait_readable/wait_writable` 注册 fd interest；完成条件：文档给出 API、错误语义、取消/清理语义，验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`。
   - [ ] 为 TLS I/O 尚未接入共享 runtime 补负向/边界验证，禁止把 `tests/test_https_loopback.uya` 当作 `Waker` / `EventLoop` / `Scheduler` 接入证明；完成条件：验证脚本或文档矩阵能区分 handler bridge 与 TLS I/O future，验证命令：`../uya/bin/uya test --c99 tests/test_https_loopback.uya` 加边界验证命令。
   - [ ] 实现 TLS handshake/read/write async future 并接入同一 `LinuxEpoll` / `Scheduler`；完成条件：TLS I/O 的 would-block 路径返回 `Poll.Pending` 并注册 fd interest，验证命令：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_io.uya`。
   - [ ] 把 TLS async I/O 纳入共享 runtime smoke，与 HTTP/DNS/`async_compute` 同一 `TaskQueue` / `EventLoop` 组合验收；完成条件：统一 smoke 覆盖 TLS pending、ready、cancel/cleanup，验证命令：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya`。
