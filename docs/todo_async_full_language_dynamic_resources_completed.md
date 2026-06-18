@@ -924,3 +924,11 @@
     - 验证：先运行 `../uya/bin/uya test tests/test_std_async_scheduler.uya`，旧实现新增用例 `task_queue_default_capacity_grows_past_64` 失败；实现后通过（18 tests）。
     - 回归：`../uya/bin/uya test tests/test_async_fd.uya` 通过（7 tests）。
     - 相关宽回归：`../uya/bin/uya test tests/test_async_runtime_shared_semantics.uya` 未通过，宿主 C 编译在既有 `std_http_uyagin_send_context_response_head_only_async` / `std_http_uyagin_accept_async` 生成代码处报 `invalid initializer`，不在本次 `TaskQueue` 路径。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/async_scheduler.uya` 的 `_frame_stack_buffer[8192]` 改成显式配置或动态后备存储策略；最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 验证结果：通过，19 个测试通过，0 个失败。

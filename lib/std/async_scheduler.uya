@@ -25,7 +25,7 @@ error TimedOut;
 export const TASK_QUEUE_CAPACITY: i32 = 64;
 export const TASK_QUEUE_I32_CAPACITY: i32 = TASK_QUEUE_CAPACITY;
 const SCHEDULER_INLINE_REPOLL_LIMIT: i32 = 1024;
-const SCHEDULER_FRAME_STACK_BUFFER_BYTES: usize = 8192;
+const SCHEDULER_DEFAULT_FRAME_BUFFER_BYTES: usize = 8192;
 
 // 本地时间辅助函数（避免跨模块 time.xxx 调用在泛型函数中的编译器 bug）
 fn sched_now_ms() !u64 {
@@ -141,6 +141,18 @@ fn scheduler_normalize_inline_repoll_limit(limit: i32) i32 {
         return 0;
     }
     return limit;
+}
+
+fn scheduler_runtime_default_frame_buffer_bytes() usize {
+    var buffer_size: usize = SCHEDULER_DEFAULT_FRAME_BUFFER_BYTES;
+    const env: &byte = getenv("UYA_SCHEDULER_FRAME_BUFFER_BYTES" as &const byte);
+    if env != null && env[0] != 0 as byte {
+        const parsed: i32 = atoi(env as &const byte);
+        if parsed > 0 {
+            buffer_size = parsed as usize;
+        }
+    }
+    return buffer_size;
 }
 
 fn scheduler_cleanup_waker(loop: EventLoop, waker: &Waker, io_registered_fd: &i32, event_registered_fd: &i32) void {
@@ -413,7 +425,7 @@ fn scheduler_pool_to_allocator(pool: &AsyncFramePool) IAllocator {
 
 /// 创建调度器并初始化其 async frame pool。
 export fn scheduler_init(self: &Scheduler) void {
-    scheduler_init_with_config(self, SCHEDULER_FRAME_STACK_BUFFER_BYTES, SCHEDULER_INLINE_REPOLL_LIMIT);
+    scheduler_init_with_config(self, 0usize, SCHEDULER_INLINE_REPOLL_LIMIT);
 }
 
 /// 使用显式资源配置创建调度器。
@@ -429,7 +441,7 @@ export fn scheduler_init_with_config(self: &Scheduler, frame_buffer_bytes: usize
     }
     var buffer_size: usize = frame_buffer_bytes;
     if buffer_size == 0 {
-        buffer_size = SCHEDULER_FRAME_STACK_BUFFER_BYTES;
+        buffer_size = scheduler_runtime_default_frame_buffer_bytes();
     }
     self._frame_buffer = malloc(buffer_size) as &byte;
     self._frame_buffer_size = buffer_size;
