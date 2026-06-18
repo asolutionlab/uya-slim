@@ -165,8 +165,8 @@ fn collect_awaits_recursive(...) void {
 
 - **范围 `for`**：循环变量、上界（及丢弃元素时的内部计数）写入状态机合成字段（如 `__uya_fe_*`），与 `while` 类似地做「条件 → 段内代码 → await 分裂 → continuation 回跳或退出」。
 - **定长数组 `for`**：合成索引/长度；**元素变量**需进入 `_uya_loc_*`（或等价字段），以便跨 await 绑定；元素类型在 hoist 阶段可从函数体 AST / 形参类型回退解析（`c99_async_for_array_elem_type_c` 等）。
-- **已覆盖**：范围 `for`、定长数组值/引用迭代，以及**具体 struct 迭代器值绑定** `for iter |v|` 与 `@async_fn + @await` 的组合。
-- **未覆盖**：**接口值迭代**与**迭代器 `for iter |&x|` 引用绑定** 在 `@async_fn + @await` 下仍需保持明确编译错误。
+- **已覆盖**：范围 `for`、定长数组值/引用迭代、**具体 struct 迭代器值绑定** `for iter |v|`，以及**具体 struct 迭代器引用绑定** `for iter |&x|` 与 `@async_fn + @await` 的组合。
+- **显式边界**：**接口值迭代**是同步 checker 也不支持的通用语言边界，在 `@async_fn + @await` 下继续保持明确编译错误。
 
 ### 4.7 标识符重写
 
@@ -213,7 +213,7 @@ state 2 (poll writer)                                                  │
 | 无 `@await` 的 `@async_fn` 同步语句 / `try !void` | ✅ 已修 | `gen_async_function_stage_b` 现会先发出函数体再包装 `Poll.Ready`；回归见 `tests/test_async_codegen_edge_paths.uya` |
 | await 循环间同步语句 | ✅ 已修复 | `tests/test_async_bug_b_sync_between.uya` |
 | 复合表达式中的 `try @await` | ✅ 已修复 | 覆盖赋值 RHS 与 return 表达式；回归见 `tests/test_async_compound_try_await.uya` |
-| 接口值迭代、迭代器 `for iter |&x|` + `@async_fn` | ❌ 未支持 | 具体 struct 的值绑定 `for iter |v|` 已支持；接口值与 iterator ref 绑定仍需显式报错 |
+| 接口值迭代 + `@async_fn` | 显式通用语言边界 | 具体 struct 的值绑定 `for iter |v|` 与引用绑定 `for iter |&x|` 已支持；接口值迭代仍需显式报错 |
 
 ---
 

@@ -1,11 +1,10 @@
 // test_async_nested_future_poll.uya
-// 当前是 dedicated 显式失败用例，不应放进正向 `uya test` 套件。
+// dedicated 正向回归：nested future poll 与无 await 的 !Future<Future<T>> 返回路径。
 //
 // 现状边界：
 // - `Future<Future<i32>>` 这个值类型本身可以双层 poll，见 `tests/test_async_nested.uya`
-// - 但无 await 的 `@async_fn` 若返回 `!Future<Future<i32>>`，且 return 表达式里同步 `try`
-//   另一个 `!Future<i32>`，C99 codegen 会把同步错误路径错误地塞进 `Poll<Future<i32>>.Ready`
-//   的载荷里，最终生成无法通过宿主 cc 的 C
+// - 无 await 的 `@async_fn` 若返回 `!Future<Future<i32>>`，且 return 表达式里同步 `try`
+//   另一个 `!Future<i32>`，当前应能生成通过宿主 cc 编译的 C，并在 poll 后得到内层值
 //
 // 验证脚本：
 //   tests/verify_async_nested_future_boundary.sh

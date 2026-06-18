@@ -755,3 +755,13 @@
     - 验证：`../uya/bin/uya test tests/test_async_for_iterator_ref_await.uya` 通过，1 个测试通过。
     - 验证：`rg -n "尚未支持" src/codegen/c99/function.uya src/codegen/c99/async_transform.uya src/lower/async.uya` 无命中。
     - 验证：`./tests/verify_async_full_language_matrix.sh` 通过：positive matrix、iterator for boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo passed。
+
+## 完成定义
+
+父级任务路径：`@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+
+- [x] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+  - [x] 汇总 `@async_fn` 函数体语法完成证据并移除已过期的 workaround/限制说明；最小验证：`./tests/verify_async_full_language_matrix.sh`、`git diff --check`。
+    - 完成记录：更新 nested future、iterator ref 绑定与矩阵摘要的当前证据口径；移除已过期的失败边界/未支持说明。
+    - 验证：`./tests/verify_async_full_language_matrix.sh` 通过，输出 `verify_async_full_language_matrix: positive async language matrix, iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
+    - 验证：`git diff --check` 通过。
