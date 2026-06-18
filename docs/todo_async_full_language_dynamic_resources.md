@@ -62,7 +62,6 @@
 ### 1.1 先建立“完整语法”矩阵
 
 - [ ] 以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
-  - [ ] 局部变量声明 / 赋值 / 提前 return
   - [ ] `if / else if / else`
   - [ ] `while`
   - [ ] `for range`
@@ -82,6 +81,7 @@
 |------|------|------|------|
 | `@async_fn` / `@await` 基础解析与上下文约束 | `tests/test_async_await_parse.uya` | 已有基础覆盖 | 证明基础 parse 与返回类型约束可工作，但不代表完整函数体语法都已接通 |
 | Ready/Pending 基本语义 | `tests/test_async_await.uya`、`tests/test_async_await_ready.uya`、`tests/test_async_multiple_await.uya`、`tests/test_async_state_machine.uya` | 已有基础覆盖 | 覆盖单段与多段状态机的最小语义 |
+| 局部变量声明 / 赋值 / 提前 return | `tests/test_async_control_flow_body.uya`、`tests/test_async_await_var.uya` | 已验证覆盖 | `docs/grammar_formal.md` 将 `var_decl`、`expr_stmt` 与 `return_stmt` 列为函数体 `statement`；`docs/uya.md` 第 3 章和 5.1 说明 `const`/`var`、赋值与 `return` 语义。回归覆盖 async 函数体内 `const`/`var` 声明、`i = i + 1`/`total = total + ...` 赋值、函数入口和尾部提前 `return`，以及 await 结果绑定后返回 |
 | direct err-union await / 直接 `return error.X` | `tests/test_async_await_direct_err_union.uya`、`tests/test_async_return_error_direct.uya` | 已有覆盖 | 证明部分错误传播形态已打通 |
 | `if / else / else if` + `@await` | `tests/test_async_if_await.uya`、`tests/test_async_else_if_await.uya` | 已有覆盖 | 仍只覆盖常见形态，不等于所有分支语法 |
 | `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |

@@ -980,3 +980,15 @@
   - [x] 将 async C99 回归和长压测纳入闸门脚本，并验证对应阶段可运行；最小验证：运行脚本的 C99/stress 阶段。
     验证命令：`ASYNC_GATE_STRESS_PTHREAD_ITERATIONS=1 ASYNC_GATE_STRESS_EPOLL_ITERATIONS=1 ASYNC_GATE_STRESS_HTTP_DURATION_SEC=2 ASYNC_GATE_STRESS_HTTP_SAMPLE_INTERVAL_SEC=1 bash tests/verify_async_full_dynamic_resources_gate.sh c99-stress`
     验证结果：通过；覆盖 async C99 frame descriptors、empty frame descriptors、nested split-C codegen、http async epoll C99 compile/runtime verify、pthread stress、epoll server stress、http async epoll runtime stress。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] 局部变量声明 / 赋值 / 提前 return
+    - 证据：`docs/grammar_formal.md` 的 `statement` 包含 `var_decl`、`expr_stmt`、`return_stmt`；`docs/uya.md` 第 3 章和 5.1 说明局部 `const`/`var`、赋值与 `return` 语义。
+    - async 状态：已有覆盖；`tests/test_async_control_flow_body.uya` 覆盖 async 函数体内 `const`/`var` 声明、赋值、入口提前 return 和尾部 return；`tests/test_async_await_var.uya` 覆盖 await 结果绑定后返回。
+    - 验证：`../uya/bin/uya test tests/test_async_control_flow_body.uya` 通过，3 tests passed / 0 failed。
+    - 验证：`../uya/bin/uya test tests/test_async_await_var.uya` 通过，1 test passed / 0 failed。
