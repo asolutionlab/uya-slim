@@ -16,7 +16,7 @@ use libc.syscall;
 // 须与 ThreadPool._workers、ThreadPoolSharedState.pending_slots 数组维度一致
 export const THREAD_POOL_MAX_WORKERS: i32 = 32;
 export const THREAD_POOL_MAX_PENDING: i32 = 32;
-const THREAD_POOL_MAX_TASK_SLOTS: i32 = 16;
+export const THREAD_POOL_MAX_TASK_SLOTS: i32 = 16;
 const THREAD_SLOT_STATE_FREE: i32 = 0;
 const THREAD_SLOT_STATE_READY: i32 = 1;
 const THREAD_SLOT_STATE_QUEUED: i32 = 2;
@@ -320,6 +320,8 @@ struct ThreadTaskSlotRaw {
 }
 
 struct ThreadPoolSharedState {
+    pending_capacity: i32,
+    task_slot_capacity: i32,
     pending_head: atomic i32,
     pending_tail: atomic i32,
     pending_count: atomic i32,
@@ -336,10 +338,21 @@ struct ThreadWorkerStart {
 
 export struct ThreadPool {
     worker_count: i32,
+    pending_capacity: i32,
+    task_slot_capacity: i32,
     _started_workers: i32,
     _next_worker: i32,
     _shared_state: &ThreadPoolSharedState,
     _workers: [ThreadWorker: 32] = [],
+}
+
+/// `ThreadPool` 容量配置。
+/// 参数：`worker_count` 为最大 worker 数，`pending_capacity` 为等待队列容量，`task_slot_capacity` 为共享任务槽容量。
+/// 返回值：此结构体用于传入 `thread_pool_new_with_config`，各字段会按编译期上限归一化。
+export struct ThreadPoolConfig {
+    worker_count: i32,
+    pending_capacity: i32,
+    task_slot_capacity: i32,
 }
 
 fn thread_worker_set_nonblock(fd: i32) !i32 {
@@ -373,6 +386,8 @@ fn thread_pool_ensure_shared_state(pool: &ThreadPool) i32 {
     if shared_state == null as &ThreadPoolSharedState {
         return 0;
     }
+    shared_state.pending_capacity = pool.pending_capacity;
+    shared_state.task_slot_capacity = pool.task_slot_capacity;
     pool._shared_state = shared_state;
     return 1;
 }
@@ -381,13 +396,53 @@ fn thread_pool_slot_is_valid(slot_idx: i32) bool {
     return slot_idx >= 0 && slot_idx < THREAD_POOL_MAX_TASK_SLOTS;
 }
 
+fn thread_pool_task_slot_capacity(pool: &ThreadPool) i32 {
+    if pool == null as &ThreadPool {
+        return 1;
+    }
+    if pool.task_slot_capacity <= 0 {
+        return 1;
+    }
+    if pool.task_slot_capacity > THREAD_POOL_MAX_TASK_SLOTS {
+        return THREAD_POOL_MAX_TASK_SLOTS;
+    }
+    return pool.task_slot_capacity;
+}
+
+fn thread_shared_task_slot_capacity(shared_state: &ThreadPoolSharedState) i32 {
+    if shared_state == null as &ThreadPoolSharedState {
+        return THREAD_POOL_MAX_TASK_SLOTS;
+    }
+    if shared_state.task_slot_capacity <= 0 {
+        return THREAD_POOL_MAX_TASK_SLOTS;
+    }
+    if shared_state.task_slot_capacity > THREAD_POOL_MAX_TASK_SLOTS {
+        return THREAD_POOL_MAX_TASK_SLOTS;
+    }
+    return shared_state.task_slot_capacity;
+}
+
+fn thread_shared_pending_capacity(shared_state: &ThreadPoolSharedState) i32 {
+    if shared_state == null as &ThreadPoolSharedState {
+        return THREAD_POOL_MAX_PENDING;
+    }
+    if shared_state.pending_capacity <= 0 {
+        return THREAD_POOL_MAX_PENDING;
+    }
+    if shared_state.pending_capacity > THREAD_POOL_MAX_PENDING {
+        return THREAD_POOL_MAX_PENDING;
+    }
+    return shared_state.pending_capacity;
+}
+
 fn thread_pool_reserve_slot_raw(pool: &ThreadPool, compute_fn: &void, task_kind: i32, arg_bits: usize) i32 {
     if thread_pool_ensure_shared_state(pool) == 0 {
         return 0 - 1;
     }
 
     var i: i32 = 0;
-    while i < THREAD_POOL_MAX_TASK_SLOTS {
+    const slot_capacity: i32 = thread_pool_task_slot_capacity(pool);
+    while i < slot_capacity {
         if pool._shared_state.slots[i as usize].state == THREAD_SLOT_STATE_FREE {
             pool._shared_state.slots[i as usize].worker_idx = 0 - 1;
             pool._shared_state.slots[i as usize].task_kind = task_kind;
@@ -455,7 +510,7 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
             if !thread_pool_slot_is_valid(active_slot) {
                 break;
             }
-            if active_slot < 0 || active_slot >= 16 {
+            if active_slot < 0 || active_slot >= thread_shared_task_slot_capacity(shared_state) {
                 break;
             }
 
@@ -645,7 +700,8 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
     }
 
     var slot_idx: i32 = 0;
-    while slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
+    const slot_capacity: i32 = thread_pool_task_slot_capacity(pool);
+    while slot_idx < slot_capacity {
         const slot_state: i32 = pool._shared_state.slots[slot_idx as usize].state;
         // 仅 RUNNING 视为占用：worker 正在执行该 slot。
         // DONE 表示任务已算完、结果待 future 读取，worker 旋即回到 pop/阻塞读，
@@ -818,17 +874,18 @@ fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
     if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || !thread_pool_has_shared_state(pool) {
         return 0;
     }
-    if pool._shared_state.pending_count >= THREAD_POOL_MAX_PENDING {
+    const pending_capacity: i32 = thread_shared_pending_capacity(pool._shared_state);
+    if pool._shared_state.pending_count >= pending_capacity {
         return 0;
     }
-    if pool._shared_state.pending_tail >= 0 && pool._shared_state.pending_tail < THREAD_POOL_MAX_PENDING {
+    if pool._shared_state.pending_tail >= 0 && pool._shared_state.pending_tail < pending_capacity {
         pool._shared_state.pending_slots[pool._shared_state.pending_tail as usize] = slot_idx;
         pool._shared_state.pending_tail = pool._shared_state.pending_tail + 1;
-        if pool._shared_state.pending_tail >= THREAD_POOL_MAX_PENDING {
+        if pool._shared_state.pending_tail >= pending_capacity {
             pool._shared_state.pending_tail = 0;
         }
         pool._shared_state.pending_count = pool._shared_state.pending_count + 1;
-        if slot_idx >= 0 && slot_idx < 16 {
+        if slot_idx >= 0 && slot_idx < thread_shared_task_slot_capacity(pool._shared_state) && slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
             pool._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_QUEUED;
         }
         return 1;
@@ -846,21 +903,22 @@ fn thread_shared_remove_pending_slot(shared_state: &ThreadPoolSharedState, slot_
     var kept: [i32: 32] = [];
     var kept_count: i32 = 0;
     var removed: i32 = 0;
+    const pending_capacity: i32 = thread_shared_pending_capacity(shared_state);
 
     while remaining > 0 {
-        if read_idx >= 0 && read_idx < THREAD_POOL_MAX_PENDING {
+        if read_idx >= 0 && read_idx < pending_capacity {
             const pending_idx: i32 = read_idx;
-            if pending_idx >= 0 && pending_idx < THREAD_POOL_MAX_PENDING {
+            if pending_idx >= 0 && pending_idx < pending_capacity && pending_idx < THREAD_POOL_MAX_PENDING {
                 const queued_slot: i32 = shared_state.pending_slots[pending_idx as usize];
                 if removed == 0 && queued_slot == slot_idx {
                     removed = 1;
-                } else if kept_count >= 0 && kept_count < THREAD_POOL_MAX_PENDING {
+                } else if kept_count >= 0 && kept_count < pending_capacity {
                     kept[kept_count as usize] = queued_slot;
                     kept_count = kept_count + 1;
                 }
                 shared_state.pending_slots[pending_idx as usize] = 0;
                 read_idx = read_idx + 1;
-                if read_idx >= THREAD_POOL_MAX_PENDING {
+                if read_idx >= pending_capacity {
                     read_idx = 0;
                 }
                 remaining = remaining - 1;
@@ -877,12 +935,12 @@ fn thread_shared_remove_pending_slot(shared_state: &ThreadPoolSharedState, slot_
     shared_state.pending_count = 0;
 
     var write_idx: i32 = 0;
-    while write_idx < kept_count && write_idx < THREAD_POOL_MAX_PENDING {
+    while write_idx < kept_count && write_idx < pending_capacity {
         shared_state.pending_slots[write_idx as usize] = kept[write_idx as usize];
         write_idx = write_idx + 1;
     }
     shared_state.pending_tail = kept_count;
-    if shared_state.pending_tail >= THREAD_POOL_MAX_PENDING {
+    if shared_state.pending_tail >= pending_capacity {
         shared_state.pending_tail = 0;
     }
     shared_state.pending_count = kept_count;
@@ -894,12 +952,14 @@ fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedState) i32 {
         return 0 - 1;
     }
 
+    const pending_capacity: i32 = thread_shared_pending_capacity(shared_state);
+    const slot_capacity: i32 = thread_shared_task_slot_capacity(shared_state);
     while shared_state.pending_count > 0 {
-        if shared_state.pending_head >= 0 && shared_state.pending_head < THREAD_POOL_MAX_PENDING {
+        if shared_state.pending_head >= 0 && shared_state.pending_head < pending_capacity && shared_state.pending_head < THREAD_POOL_MAX_PENDING {
             const slot_idx: i32 = shared_state.pending_slots[shared_state.pending_head as usize];
             shared_state.pending_slots[shared_state.pending_head as usize] = 0;
             shared_state.pending_head = shared_state.pending_head + 1;
-            if shared_state.pending_head >= THREAD_POOL_MAX_PENDING {
+            if shared_state.pending_head >= pending_capacity {
                 shared_state.pending_head = 0;
             }
             shared_state.pending_count = shared_state.pending_count - 1;
@@ -907,11 +967,11 @@ fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedState) i32 {
             if !thread_pool_slot_is_valid(slot_idx) {
                 continue;
             }
-            if slot_idx < 0 || slot_idx >= THREAD_POOL_MAX_TASK_SLOTS {
+            if slot_idx < 0 || slot_idx >= slot_capacity {
                 continue;
             }
 
-            if slot_idx >= 0 && slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
+            if slot_idx >= 0 && slot_idx < slot_capacity && slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
                 const slot_state: i32 = shared_state.slots[slot_idx as usize].state;
                 if slot_state == THREAD_SLOT_STATE_QUEUED {
                     return slot_idx;
@@ -1261,15 +1321,35 @@ export type AsyncComputeF64Future = AsyncComputeFuture<f64>;
 
 // 线程池最小构造：当前使用懒启动 worker 池，队列中的任务负载放在固定共享槽位中。
 export fn thread_pool_new(worker_count: i32) ThreadPool {
-    var normalized: i32 = worker_count;
+    return thread_pool_new_with_config(ThreadPoolConfig{
+        worker_count: worker_count,
+        pending_capacity: THREAD_POOL_MAX_PENDING,
+        task_slot_capacity: THREAD_POOL_MAX_TASK_SLOTS,
+    });
+}
+
+fn thread_pool_normalize_capacity(value: i32, max_value: i32) i32 {
+    var normalized: i32 = value;
     if normalized <= 0 {
         normalized = 1;
     }
-    if normalized > THREAD_POOL_MAX_WORKERS {
-        normalized = THREAD_POOL_MAX_WORKERS;
+    if normalized > max_value {
+        normalized = max_value;
     }
+    return normalized;
+}
+
+/// 使用显式容量配置构造 `ThreadPool`。
+/// 参数：`config` 提供 worker、pending 队列和 task slot 容量；无效或过大的值会归一化到 `[1, 上限]`。
+/// 返回值：返回懒启动线程池，实际容量保存在公开字段中，后续调度按这些容量边界执行。
+export fn thread_pool_new_with_config(config: ThreadPoolConfig) ThreadPool {
+    const normalized: i32 = thread_pool_normalize_capacity(config.worker_count, THREAD_POOL_MAX_WORKERS);
+    const normalized_pending: i32 = thread_pool_normalize_capacity(config.pending_capacity, THREAD_POOL_MAX_PENDING);
+    const normalized_slots: i32 = thread_pool_normalize_capacity(config.task_slot_capacity, THREAD_POOL_MAX_TASK_SLOTS);
     return ThreadPool{
         worker_count: normalized,
+        pending_capacity: normalized_pending,
+        task_slot_capacity: normalized_slots,
         _started_workers: 0,
         _next_worker: 0,
         _shared_state: null as &ThreadPoolSharedState,

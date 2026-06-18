@@ -386,3 +386,11 @@
       - `../uya/bin/uya test tests/test_async_frame_pool_full.uya`：通过。
       - `bash tests/verify_c99_async_frame_descriptors.sh`：通过。
       - `bash tests/verify_c99_async_frame_empty_descriptors.sh`：通过。
+
+## 目标
+
+父级任务路径：async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+
+  - [x] 为 `ThreadPool` 容量补充可配置入口，避免生产路径只能依赖小规模写死常量；最小验证：相关 thread 测试通过。
+    - 验证：`../uya/bin/uya test tests/test_std_thread.uya` 通过；21 tests passed，83 assertions passed。
+    - 验证：`../uya/bin/uya test tests/test_async_compute_types.uya` 通过；11 tests passed，11 assertions passed。
