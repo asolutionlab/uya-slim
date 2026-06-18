@@ -1,0 +1,69 @@
+// test_async_frame_pool_dynamic_growth.uya
+// 验证 AsyncFramePool 默认 bucket 表和每桶 slot 表可以按需增长，不把初始容量当产品上限。
+
+use std.async_frame.AsyncFramePool;
+use std.async_frame.async_frame_pool_alloc_aligned;
+use std.async_frame.async_frame_pool_free_aligned;
+use std.async_frame.async_frame_pool_init;
+use std.async_frame.async_frame_pool_stats;
+use std.testing.expect;
+use std.testing.run_test;
+
+fn test_bucket_table_grows_past_initial_capacity() !void {
+    var pool: AsyncFramePool = AsyncFramePool{};
+    async_frame_pool_init(&pool, 1, 65536usize);
+
+    var i: i32 = 0;
+    while i < 130 {
+        const size: usize = (i as usize) + 1usize;
+        const ptr: &byte = async_frame_pool_alloc_aligned(&pool, size, 8usize);
+        try expect(ptr != null);
+        async_frame_pool_free_aligned(&pool, ptr, size, 8usize);
+        i = i + 1;
+    }
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 130);
+    try expect(total_free == 130);
+    try expect(full_count == 0);
+}
+
+fn test_bucket_slots_grow_past_initial_capacity() !void {
+    var pool: AsyncFramePool = AsyncFramePool{};
+    async_frame_pool_init(&pool, 1, 65536usize);
+
+    var ptrs: [&byte: 4100] = [];
+    var i: i32 = 0;
+    while i < 4100 {
+        ptrs[i] = async_frame_pool_alloc_aligned(&pool, 1usize, 1usize);
+        try expect(ptrs[i] != null);
+        i = i + 1;
+    }
+
+    i = 0;
+    while i < 4100 {
+        async_frame_pool_free_aligned(&pool, ptrs[i], 1usize, 1usize);
+        i = i + 1;
+    }
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 4100);
+    try expect(total_free == 4100);
+    try expect(full_count == 0);
+}
+
+test "async_frame_pool_bucket_table_dynamic_growth" {
+    run_test("async_frame_pool_bucket_table_dynamic_growth", test_bucket_table_grows_past_initial_capacity);
+}
+
+test "async_frame_pool_bucket_slot_dynamic_growth" {
+    run_test("async_frame_pool_bucket_slot_dynamic_growth", test_bucket_slots_grow_past_initial_capacity);
+}
