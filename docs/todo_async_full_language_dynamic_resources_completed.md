@@ -907,3 +907,11 @@
   - [x] AsyncFramePool bucket/per-bucket/descriptor 查询按运行时配置或生成表大小执行，不以 `128/4096/512` 作为硬上限。最小验证：`../uya/bin/uya test tests/test_async_frame_align_pool.uya tests/test_c99_async_frame_empty_descriptors.uya`。
     - 验证：`../uya/bin/uya test tests/test_async_frame_align_pool.uya tests/test_c99_async_frame_empty_descriptors.uya` 通过，5 个 test case、9 个测试计数、0 失败。
     - 相关回归：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过，5 个 test case、10 个测试计数、0 失败。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] ThreadPool worker/pending/task slot 容量支持显式配置和随 worker 扩展，旧 `32/32/16` 仅为兼容默认。最小验证：`../uya/bin/uya test tests/test_std_thread.uya`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_thread.uya`
+    - 验证结果：通过；24 个测试全部 OK，Assertions Passed: 93。
