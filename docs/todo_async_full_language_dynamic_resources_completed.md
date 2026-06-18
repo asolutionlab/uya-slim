@@ -765,3 +765,14 @@
     - 完成记录：更新 nested future、iterator ref 绑定与矩阵摘要的当前证据口径；移除已过期的失败边界/未支持说明。
     - 验证：`./tests/verify_async_full_language_matrix.sh` 通过，输出 `verify_async_full_language_matrix: positive async language matrix, iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
     - 验证：`git diff --check` 通过。
+
+## 完成定义
+
+父级任务路径：async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+
+  - [x] checker async frame meta 表改为按需扩容，不再由 `MAX_ASYNC_FRAME_METAS` 限制；最小验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 与 `../uya/bin/uya test tests/test_async_frame_type.uya`。
+    - 验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_type.uya` 通过，3 个测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_stack_ok.uya` 通过，2 个测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_inline_temp.uya` 通过，1 个测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_methods.uya` 通过，2 个测试通过。

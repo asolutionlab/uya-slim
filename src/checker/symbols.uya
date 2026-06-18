@@ -171,6 +171,9 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     checker.proof_step_limit = 1000;
     checker.proof_step_count = 0;
     checker.suppress_codegen_diagnostics = 0;
+    checker.async_frame_metas = null;
+    checker.async_frame_meta_count = 0;
+    checker.async_frame_meta_capacity = 0;
     
     return 0;
 }

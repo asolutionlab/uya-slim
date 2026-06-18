@@ -5035,9 +5035,6 @@ fn emit_async_frame_descriptors(codegen: &C99CodeGenerator) void {
     if count < 0 {
         count = 0;
     }
-    if count > MAX_ASYNC_FRAME_METAS {
-        count = MAX_ASYNC_FRAME_METAS;
-    }
     if count == 0 && c99_program_uses_async_frame_runtime(codegen) == 0 {
         fprintf(codegen.emit_stream as *void, "int32_t _uya_async_frame_heap_fallback = %d;\n" as *byte, codegen.async_frame_heap_fallback);
         return;

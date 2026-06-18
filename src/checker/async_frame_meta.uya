@@ -38,7 +38,7 @@ struct AsyncFrameMeta {
     fields: [AsyncFrameFieldMeta: 32],  // 最多 32 个需要显式追踪的字段
 }
 
-const MAX_ASYNC_FRAME_METAS: i32 = 1024;
+const ASYNC_FRAME_META_INITIAL_CAPACITY: i32 = 64;
 
 // ===== 查询 helper（声明在 async_frame_meta.uya，实现在此文件中内联） =====
 
@@ -46,18 +46,50 @@ fn checker_set_async_frame_meta(checker: &TypeChecker, idx: i32, meta: &AsyncFra
     if checker == null || meta == null {
         return;
     }
-    if idx >= 0 && idx < MAX_ASYNC_FRAME_METAS {
+    if idx >= 0 && idx < checker.async_frame_meta_capacity && checker.async_frame_metas != null {
         checker.async_frame_metas[idx] = *meta;
     }
+}
+
+fn checker_ensure_async_frame_meta_capacity(checker: &TypeChecker, needed: i32) i32 {
+    if checker == null || checker.arena == null || needed <= 0 {
+        return -1;
+    }
+    if checker.async_frame_metas != null && checker.async_frame_meta_capacity >= needed {
+        return 0;
+    }
+    var new_cap: i32 = checker.async_frame_meta_capacity;
+    if new_cap < ASYNC_FRAME_META_INITIAL_CAPACITY {
+        new_cap = ASYNC_FRAME_META_INITIAL_CAPACITY;
+    }
+    while new_cap < needed {
+        new_cap = new_cap * 2;
+        if new_cap <= 0 {
+            return -1;
+        }
+    }
+    const new_items: &AsyncFrameMeta = compiler_arena_alloc(checker.arena, @size_of(AsyncFrameMeta) * new_cap as usize) as &AsyncFrameMeta;
+    if new_items == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < checker.async_frame_meta_count {
+        new_items[i] = checker.async_frame_metas[i];
+        i = i + 1;
+    }
+    checker.async_frame_metas = new_items;
+    checker.async_frame_meta_capacity = new_cap;
+    return 0;
 }
 
 fn checker_register_async_frame_meta(checker: &TypeChecker, meta: &AsyncFrameMeta) i32 {
     if checker == null || meta == null {
         return -1;
     }
-    if checker.async_frame_meta_count >= MAX_ASYNC_FRAME_METAS {
+    const needed: i32 = checker.async_frame_meta_count + 1;
+    if checker_ensure_async_frame_meta_capacity(checker, needed) != 0 {
         if libc.stderr != null {
-            fprintf(libc.stderr, "错误: async frame meta 数量超过上限 %d；请减少单次编译的 @async_fn 单态实例数量或提高 MAX_ASYNC_FRAME_METAS\n" as *byte, MAX_ASYNC_FRAME_METAS);
+            fprintf(libc.stderr, "错误: async frame meta 表扩容失败，目标容量 %d\n" as *byte, needed);
         }
         return -1;
     }
@@ -65,9 +97,9 @@ fn checker_register_async_frame_meta(checker: &TypeChecker, meta: &AsyncFrameMet
     if idx < 0 {
         return -1;
     }
-    if idx >= @len(checker.async_frame_metas) {
+    if checker.async_frame_metas == null || idx >= checker.async_frame_meta_capacity {
         if libc.stderr != null {
-            fprintf(libc.stderr, "错误: async frame meta 内部数组容量不足，上限 %d\n" as *byte, @len(checker.async_frame_metas));
+            fprintf(libc.stderr, "错误: async frame meta 内部表容量不足，容量 %d\n" as *byte, checker.async_frame_meta_capacity);
         }
         return -1;
     }
