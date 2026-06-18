@@ -349,3 +349,17 @@
   - 验证：`make tests-uya`
     - 结果：通过，1012/1012 测试通过，自举编译器构建完成，UPM 验证套件通过。
   - 完成条件：`docs/async_status_matrix.md` 中 `match`、`catch`、`defer/errdefer`、复合表达式相关矩阵项已从“未验证/待补”同步为“已覆盖”，未新增 async 独有限制。
+
+## 2026-06-18
+
+上下文：# Uya 异步生产化 TODO（完整语法 + 动态资源） > ## 目标 > async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+
+  - [x] 为 `LinuxEpoll` 的 slot / event 容量补充可配置构造入口，默认兼容 1024；最小验证：`../uya/bin/uya test tests/test_async_event_config.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_event_config.uya` 通过（2 tests）。
+    - 回归：`../uya/bin/uya test tests/test_std_async_event.uya` 通过。
+    - 回归：`../uya/bin/uya test tests/test_std_async_event_fd_reuse.uya` 通过（4 tests）。
+    - 回归：`../uya/bin/uya test tests/test_async_fd.uya` 通过（7 tests）。
+    - 检查：`git diff --check` 通过。
+    - 兼容构造验证：`../uya/bin/uya --c99 benchmarks/http_bench_async_epoll.uya -o tests/build/verify_http_bench_async_epoll.c` 通过，且生成 C 可被 `cc` 编译为对象文件。
+    - 兼容构造验证：`../uya/bin/uya --c99 --no-safety-proof benchmarks/http_bench_async_epoll_await.uya -o tests/build/verify_http_bench_async_epoll_await.c` 通过，且生成 C 可被 `cc` 编译为对象文件。
+    - 兼容构造验证：`../uya/bin/uya --c99 --no-safety-proof benchmarks/http_bench_async_epoll_await_stack.uya -o tests/build/verify_http_bench_async_epoll_await_stack.c` 通过，且生成 C 可被 `cc` 编译为对象文件。

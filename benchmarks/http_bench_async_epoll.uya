@@ -237,7 +237,7 @@ struct BenchSlot {
 }
 
 struct BenchContext {
-    epoll: LinuxEpoll = LinuxEpoll{ epfd: 0 - 1 },
+    epoll: LinuxEpoll = LinuxEpoll{ epfd: 0 - 1, slot_capacity: 1024, event_capacity: 1024 },
     listen_fd: i32 = 0 - 1,
     listen_waker: Waker = Waker{},
     slot_cap: i32 = 0,

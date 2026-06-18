@@ -11,6 +11,9 @@ use libc.errno;
 use libc.syscall;
 
 error EventLoopSlotsFull;
+error EventLoopInvalidCapacity;
+
+const LINUX_EPOLL_MAX_CAPACITY: i32 = 1024;
 
 /// 事件关注类型：可读、可写、可读可写
 export union EventKind {
@@ -52,23 +55,25 @@ export interface EventLoop {
     fn poll(self: &Self, timeout_ms: i32) !i32;
 }
 
-/// Linux epoll 事件循环实现（默认1024容量）
+/// Linux epoll 事件循环实现（默认1024容量，可在构造时配置有效容量）
 /// 
 /// 线程安全：此实现非线程安全，所有操作应在单线程执行。
 /// fd 生命周期：register -> (mod) -> deregister，deregister 后 fd 保留在 epoll 中但事件掩码为 0。
 /// fd 复用：通过 generation 字段防止 fd 复用混淆。
 export struct LinuxEpoll : EventLoop {
     epfd: i32,                          // epoll 实例文件描述符
+    slot_capacity: i32,                 // 当前实例可使用的 slot 数量，范围 1..1024
+    event_capacity: i32,                // 单次 poll 可接收的事件数量，范围 1..1024
     slot_states: [i32: 1024] = [],      // SLOT_STATE_EMPTY / SLOT_STATE_REGISTERED
     slot_fds: [i32: 1024] = [],         // 关联的文件描述符
     slot_wakers: [usize: 1024] = [],    // Waker 指针（0 表示无）
     slot_generations: [u32: 1024] = [], // 代际计数，防止 fd 复用混淆
     next_generation: u32,               // 全局代际计数器
 
-    /// 查找指定 fd 的 slot（线性扫描，O(n)，但容量仅 1024）
+    /// 查找指定 fd 的 slot（按实例 slot_capacity 线性扫描）
     fn find_slot(self: &Self, fd: i32) i32 {
         var i: i32 = 0;
-        while i < 1024 {
+        while i < self.slot_capacity {
             if self.slot_states[i] == SLOT_STATE_REGISTERED && self.slot_fds[i] == fd {
                 return i;
             }
@@ -80,7 +85,7 @@ export struct LinuxEpoll : EventLoop {
     /// 分配空闲 slot
     fn alloc_slot(self: &Self) i32 {
         var i: i32 = 0;
-        while i < 1024 {
+        while i < self.slot_capacity {
             if self.slot_states[i] == SLOT_STATE_EMPTY {
                 return i;
             }
@@ -102,7 +107,7 @@ export struct LinuxEpoll : EventLoop {
 
     /// 清空 slot
     fn clear_slot(self: &Self, slot_idx: i32) void {
-        if slot_idx < 0 || slot_idx >= 1024 {
+        if slot_idx < 0 || slot_idx >= self.slot_capacity {
             return;
         }
         const idx: usize = (slot_idx as! usize).value;
@@ -217,7 +222,7 @@ export struct LinuxEpoll : EventLoop {
             _ = timeout_ms;
             var i: i32 = 0;
             var n: i32 = 0;
-            while i < 1024 {
+            while i < self.slot_capacity {
                 if self.slot_states[i] == SLOT_STATE_REGISTERED && self.slot_wakers[i] != 0 as usize {
                     const waker: &Waker = (self.slot_wakers[i] as &void) as &Waker;
                     waker.wake();
@@ -228,12 +233,12 @@ export struct LinuxEpoll : EventLoop {
             return n;
         }, {
         var events: [EpollEvent: 1024] = [];
-        const wait_result: !i32 = sys_epoll_wait(self.epfd, &events[0], 1024, timeout_ms);
+        const wait_result: !i32 = sys_epoll_wait(self.epfd, &events[0], self.event_capacity, timeout_ms);
         const n: i32 = wait_result catch |err| {
             return wait_result as! i32;
         };
         var i: i32 = 0;
-        while i >= 0 && i < n && i < 1024 {
+        while i >= 0 && i < n && i < self.event_capacity {
             const fd: i32 = events[i].data as i32;
             const slot_idx: i32 = self.find_slot(fd);
             if slot_idx >= 0 && self.slot_wakers[slot_idx] != 0 as usize {
@@ -247,18 +252,40 @@ export struct LinuxEpoll : EventLoop {
     }
 }
 
+fn linux_epoll_capacity_is_valid(capacity: i32) bool {
+    return capacity > 0 && capacity <= LINUX_EPOLL_MAX_CAPACITY;
+}
+
 /// 创建 Linux epoll 实例（flags 传 0 或 EPOLL_CLOEXEC，默认容量 1024）
 export fn linux_epoll_create(flags: i32) !LinuxEpoll {
+    return linux_epoll_create_config(flags, LINUX_EPOLL_MAX_CAPACITY, LINUX_EPOLL_MAX_CAPACITY);
+}
+
+/// 创建 Linux epoll 实例，并配置可使用的 slot 容量和单次 poll event 容量。
+///
+/// 参数：
+/// - `flags`：传给 `epoll_create1` 的 flags，通常为 0 或 EPOLL_CLOEXEC。
+/// - `slot_capacity`：可注册 fd slot 数，范围 1..1024。
+/// - `event_capacity`：单次 `poll` 可接收事件数，范围 1..1024。
+/// 返回值：成功时返回配置后的 `LinuxEpoll`，容量非法或系统调用失败时返回错误。
+export fn linux_epoll_create_config(flags: i32, slot_capacity: i32, event_capacity: i32) !LinuxEpoll {
+    if !linux_epoll_capacity_is_valid(slot_capacity) || !linux_epoll_capacity_is_valid(event_capacity) {
+        return error.EventLoopInvalidCapacity;
+    }
     std.cfg(std.target_os == .tos_macos, {
         _ = flags;
         return LinuxEpoll{
             epfd: -1,
+            slot_capacity: slot_capacity,
+            event_capacity: event_capacity,
             next_generation: 1,
         };
     }, {
     const fd: i32 = try sys_epoll_create1(flags);
     return LinuxEpoll{
         epfd: fd,
+        slot_capacity: slot_capacity,
+        event_capacity: event_capacity,
         next_generation: 1,
     };
     })
@@ -272,7 +299,7 @@ export fn linux_epoll_create(flags: i32) !LinuxEpoll {
 export fn linux_epoll_registered_count(ep: &LinuxEpoll) i32 {
     var count: i32 = 0;
     var i: i32 = 0;
-    while i < 1024 {
+    while i < ep.slot_capacity {
         if ep.slot_states[i] == SLOT_STATE_REGISTERED {
             count = count + 1;
         }
@@ -285,4 +312,20 @@ export fn linux_epoll_registered_count(ep: &LinuxEpoll) i32 {
 export fn linux_epoll_is_registered(ep: &LinuxEpoll, fd: i32) bool {
     const slot: i32 = ep.find_slot(fd);
     return slot >= 0;
+}
+
+/// 获取 LinuxEpoll 当前实例可使用的 slot 容量。
+///
+/// 参数：`ep` 为 LinuxEpoll 实例指针。
+/// 返回值：当前实例可注册 fd slot 数。
+export fn linux_epoll_slot_capacity(ep: &LinuxEpoll) i32 {
+    return ep.slot_capacity;
+}
+
+/// 获取 LinuxEpoll 当前实例单次 poll 可接收的 event 容量。
+///
+/// 参数：`ep` 为 LinuxEpoll 实例指针。
+/// 返回值：当前实例单次 poll 的最大事件数。
+export fn linux_epoll_event_capacity(ep: &LinuxEpoll) i32 {
+    return ep.event_capacity;
 }
