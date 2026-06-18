@@ -247,3 +247,14 @@
     - `tests/verify_async_full_language_matrix.sh`：第 110 行改为正向 run_uya_test
 
 **已知遗留**：`make tests-uya` 中 `error_async_errdefer_await_boundary` 和 `error_async_catch_await_boundary` 仍失败（预存问题，非本次改动引起）
+
+## 2026-06-18
+
+### 子任务 2：修复 nested Future + try return C99 codegen 生成错误 C ✅
+
+- 原状态：`test_async_nested_future_poll.uya` Uya 编译通过但生成 C 无法通过宿主 cc
+- 验证命令：`../uya/bin/uya test tests/test_async_nested_future_poll.uya` → 通过
+- 回归验证：`make tests-uya` → 1011/1013 通过，2 个失败为预先存在（error_async_errdefer_await_boundary, error_async_catch_await_boundary）
+- 修复内容：
+  - `src/codegen/c99/function.uya`: 帧结构体添加 `uint32_t _uya_frame_error` 字段；frame_start 初始化 `s->_uya_frame_error = 0`；包装函数在 need_wrap 时检查帧错误并传播
+  - `src/codegen/c99/expr.uya`: `c99_try_emit_error_return_stmt` 中，当 async poll 上下文 kind==0 且 poll 类型不含 "err_" 时，改为设置帧错误 + 返回零值 Ready（而非尝试将 err_union 嵌入非 err_union 的 Ready）

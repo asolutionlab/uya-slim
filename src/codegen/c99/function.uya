@@ -5595,7 +5595,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
         fputs("struct " as *byte, codegen.emit_stream as *void);
         fprintf(codegen.emit_stream as *void, "%s" as *byte, async_struct as *byte);
-        fputs(" { int32_t state; int32_t _uya_frame_active; " as *byte, codegen.emit_stream as *void);
+        fputs(" { int32_t state; int32_t _uya_frame_active; uint32_t _uya_frame_error; " as *byte, codegen.emit_stream as *void);
         if await_count > 0 && concrete_future_safe != null && await_operand_is_err_future != 0 {
             fprintf(codegen.emit_stream as *void, "struct %s _uya_await_storage; " as *byte, concrete_future_safe as *byte);
         }
@@ -6290,7 +6290,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         if frame_drop_fields_name != null {
             fprintf(codegen.emit_stream as *void, "    if (s->_uya_frame_active != 0) %s(s);\n" as *byte, frame_drop_fields_name as *byte);
         }
-        fputs("    s->state = 0; s->_uya_frame_active = 1; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
+        fputs("    s->state = 0; s->_uya_frame_active = 1; s->_uya_frame_error = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
         pi = 0;
         while pi < param_count && pi < C99_MAX_CALL_ARGS {
             const param: &ASTNode = params[pi];
@@ -6496,6 +6496,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
     }
     if need_wrap != 0 {
+        fputs("    if (s->_uya_frame_error != 0) {\n" as *byte, codegen.emit_stream as *void);
+        fprintf(codegen.emit_stream as *void, "        return (%s){ .error_id = s->_uya_frame_error, .value = (%s){0} };\n" as *byte, wrapper_ret_c as *byte, iface_c as *byte);
+        fputs("    }\n" as *byte, codegen.emit_stream as *void);
         fprintf(codegen.emit_stream as *void, "    return (%s){ .error_id = 0, .value = (%s){ .vtable = (void*)&%s, .data = (void*)s } };\n" as *byte, wrapper_ret_c as *byte, iface_c as *byte, vtable_name as *byte);
     } else {
         fprintf(codegen.emit_stream as *void, "    return (%s){ .vtable = (void*)&%s, .data = (void*)s };\n" as *byte, iface_c as *byte, vtable_name as *byte);

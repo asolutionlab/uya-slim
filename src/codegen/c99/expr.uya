@@ -9362,10 +9362,24 @@ fn c99_try_emit_error_return_stmt(codegen: &C99CodeGenerator, ret_union_c: &byte
     fputs("; if (_uya_try_tmp.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     emit_all_active_scope_cleanup(codegen, 1);
-    c99_emit_indent(codegen);
-    fputs("return " as *byte, codegen.emit_stream as *void);
-    c99_try_emit_error_return_value(codegen, ret_union_c, kind);
-    fputs(";\n" as *byte, codegen.emit_stream as *void);
+    // async poll 内 kind==0：当 poll 的 Ready 载荷不是错误联合体时（poll 类型不含 "err_"），
+    // 无法将 error_id 直接嵌入 Ready，改为存入帧的 _uya_frame_error 字段，返回零值 Ready。
+    // （包装函数会在 frame_start 后检查帧错误并传播至外层 error union）
+    if codegen.async_state_var != null && codegen.async_poll_ret_c != null &&
+        codegen.async_poll_union_c != null && kind == 0 &&
+        strstr(codegen.async_poll_ret_c as *byte, "err_" as *byte) == null {
+        c99_emit_indent(codegen);
+        fprintf(codegen.emit_stream as *void, "%s->_uya_frame_error = _uya_try_tmp.error_id;\n" as *byte,
+            codegen.async_state_var as *byte);
+        c99_emit_indent(codegen);
+        fprintf(codegen.emit_stream as *void, "return (%s){ ._tag = 1, .u = (%s){ .Ready = {0} } };\n" as *byte,
+            codegen.async_poll_ret_c as *byte, codegen.async_poll_union_c as *byte);
+    } else {
+        c99_emit_indent(codegen);
+        fputs("return " as *byte, codegen.emit_stream as *void);
+        c99_try_emit_error_return_value(codegen, ret_union_c, kind);
+        fputs(";\n" as *byte, codegen.emit_stream as *void);
+    }
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit_indent(codegen);
     fputs("}" as *byte, codegen.emit_stream as *void);
