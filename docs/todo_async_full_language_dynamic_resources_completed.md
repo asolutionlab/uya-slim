@@ -1116,3 +1116,18 @@
       - `../uya/bin/uya test tests/test_async_await_limits_and_segments.uya`：通过，3 tests / 4 assertions。
       - `../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`：通过，7 tests / 7 assertions。
     - 结论：`tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya`、`tests/test_async_large_state_machine_syntax.uya` 已覆盖 async RHS/return 复合表达式、`try @await` 跨 poll/resume 重放、多段 bind 依赖、副作用保持和表达式链大状态机语法回归；与主 todo 的“复合表达式 / await 绑定跨段重放 / 大状态机”矩阵证据一致。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级路径：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] 宏展开后的 expr / stmt
+    - 完成说明：当前矩阵已有 `宏展开后的 expr / stmt 进入 async lowering` 证据行，固定证据为 `tests/test_async_macro_expand.uya` 与 `tests/programs/test_ai_prompt_async_macro_combo.uya`。专项测试覆盖 expr 宏展开为块表达式后，pre-await 求值在 poll/resume 间不丢失且不重复；程序级 macro combo 覆盖宏展开表达式进入 `@async_fn` build/run 主链路。
+    - 验证命令：`../uya/bin/uya test tests/test_async_macro_expand.uya`
+    - 验证结果：通过，1 个测试通过，4 个断言通过。
+    - 验证命令：`../uya/bin/uya run tests/programs/test_ai_prompt_async_macro_combo.uya`
+    - 验证结果：通过，输出 `加法异步结果 50` / `除法异步结果 5`。
+    - 更广验证命令：`bash tests/verify_async_full_language_matrix.sh`
+    - 更广验证结果：脚本已通过本轮相关的 positive matrix 阶段，包括 `tests/test_async_macro_expand.uya`；随后在 `verify_async_shared_runtime_matrix` 的 `tests/test_async_shared_runtime_semantics.uya` 宿主 C 编译阶段失败，关键错误为 `/tmp/uya_output_2883756.c:51021:51: error: invalid initializer` 与 `/tmp/uya_output_2883756.c:51801:63: error: invalid initializer`，涉及 `std_http_uyagin_send_context_response_head_only_async(...)` / `std_http_uyagin_accept_async(...)`，与本轮宏展开 expr/stmt async lowering 证据无关。
