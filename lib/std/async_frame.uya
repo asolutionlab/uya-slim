@@ -129,7 +129,7 @@ export struct AsyncFramePool : IAllocator {
 
 // 包装结构体，使 extern 变量能被 checker 接受
 struct AsyncFrameDescriptorTable {
-    entries: [AsyncFrameDescriptor: 512],
+    entries: [AsyncFrameDescriptor: 1024],
 }
 
 // 全局静态 descriptor 表（由编译器填充）

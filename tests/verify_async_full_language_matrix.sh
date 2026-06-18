@@ -121,6 +121,9 @@ expect_compile_fail "tests/error_async_for_iterator_interface_await.uya" "接口
 # 2026-06-18: struct 迭代器 ref 绑定现已支持，转为正向回归。
 run_uya_test "tests/test_async_for_iterator_ref_await.uya"
 
+echo "==> verify_async_await_capacity"
+bash "$SCRIPT_DIR/verify_async_await_capacity.sh" >/dev/null
+
 # nested future 真实边界专项验证（正向编译边界）
 echo "==> verify_async_nested_future_boundary"
 bash "$SCRIPT_DIR/verify_async_nested_future_boundary.sh" >/dev/null

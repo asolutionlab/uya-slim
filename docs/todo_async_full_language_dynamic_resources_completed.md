@@ -402,3 +402,16 @@
     - 完成记录：`lib/std/http/http1_async.uya` 新增 `HTTP1_ASYNC_REQUEST_HEADER_INLINE_CAP`、请求头所需容量计算、动态分配/释放 helper，并将普通 async、同步 streaming、async streaming 请求发送路径改为按实际请求头长度分配；移除 Host 写入的 200 字节隐含截断。
     - 验证命令：`../uya/bin/uya test tests/test_http1_async_client.uya`
     - 验证结果：通过；7 个测试全部 OK，包含 `http1_async_request_header_buffer_grows_past_inline_cap` 与 HTTP async loopback 回归。
+
+## 2026-06-18
+
+# Uya 异步生产化 TODO（完整语法 + 动态资源）
+## 目标
+
+- [x] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+  - [x] 梳理编译器 async transform / C99 await / frame meta 容量上限，改为动态或明确诊断可配置；最小验证：相关 compiler async 测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_await_limits_and_segments.uya` 通过。
+    - 验证：`bash tests/verify_async_await_capacity.sh` 通过，生成并运行 300 个顺序 @await 的容量回归。
+    - 验证：`make uya` 通过，自举编译器构建完成。
+    - 验证：`../uya/bin/uya test tests/test_async_compute_types.uya` 通过，确认 frame meta 上限调整后无段错误。
+    - 验证：`bash tests/verify_async_full_language_matrix.sh` 通过，positive matrix、禁止 @await 位置、nested future boundary 和 macro combo 均通过。

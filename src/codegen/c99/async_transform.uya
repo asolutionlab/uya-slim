@@ -13,8 +13,8 @@
 
 // ── 段（Segment）描述 ──
 
-export const MAX_SEGMENTS: i32 = 258;   // max 256 awaits + entry + exit
-export const MAX_LOCALS: i32 = 32;
+export const MAX_SEGMENTS: i32 = 4098;   // C99_ASYNC_MAX_AWAITS + entry + exit
+export const MAX_LOCALS: i32 = 4096;
 
 export struct AwaitPoint {
     operand: &ASTNode,         // Future 表达式

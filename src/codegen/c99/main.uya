@@ -5002,7 +5002,7 @@ fn emit_async_frame_descriptor_type_defs(codegen: &C99CodeGenerator) void {
     }
     if is_struct_defined(codegen, "AsyncFrameDescriptorTable" as &byte) == 0 {
         fputs("struct AsyncFrameDescriptorTable {\n" as *byte, codegen.emit_stream as *void);
-        fputs("    struct AsyncFrameDescriptor entries[512];\n" as *byte, codegen.emit_stream as *void);
+        fputs("    struct AsyncFrameDescriptor entries[1024];\n" as *byte, codegen.emit_stream as *void);
         fputs("};\n" as *byte, codegen.emit_stream as *void);
         mark_struct_defined(codegen, "AsyncFrameDescriptorTable" as &byte);
     }
