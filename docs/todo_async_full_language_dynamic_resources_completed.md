@@ -1102,3 +1102,17 @@
     - 验证：`../uya/bin/uya check tests/error_async_defer_return.uya` 按预期失败并输出 `defer/errdefer 块中不能使用 return 语句`。
     - 验证：`../uya/bin/uya check tests/error_async_errdefer_break.uya` 按预期失败并输出 `defer/errdefer 块中不能使用 break 语句`。
     - 验证：`../uya/bin/uya check tests/error_async_defer_continue_nested.uya` 按预期失败并输出 `defer/errdefer 块中不能使用 continue 语句`。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务路径：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] 复合表达式
+    - 验证命令：
+      - `../uya/bin/uya test tests/test_async_compound_try_await.uya`：通过，2 tests / 4 assertions。
+      - `../uya/bin/uya test tests/test_async_fn_multi_segment_unwrap.uya`：通过，1 test / 1 assertion。
+      - `../uya/bin/uya test tests/test_async_await_limits_and_segments.uya`：通过，3 tests / 4 assertions。
+      - `../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`：通过，7 tests / 7 assertions。
+    - 结论：`tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya`、`tests/test_async_large_state_machine_syntax.uya` 已覆盖 async RHS/return 复合表达式、`try @await` 跨 poll/resume 重放、多段 bind 依赖、副作用保持和表达式链大状态机语法回归；与主 todo 的“复合表达式 / await 绑定跨段重放 / 大状态机”矩阵证据一致。
