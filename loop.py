@@ -271,7 +271,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--continue-after-failed",
         action="store_true",
-        help="After archiving [f] tasks, continue if there are still [ ] or [~] tasks.",
+        help=(
+            "Compatibility flag. loop.py now continues after archiving [f] "
+            "tasks by default until the todo has no runnable or cleanup items."
+        ),
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=5.0,
+        help=(
+            "Seconds to wait before retrying after a round fails to advance "
+            "the todo. Default: 5."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -868,6 +880,16 @@ def validate_status(status: TodoStatus) -> int:
     return 0
 
 
+def retry_after_warning(message: str, delay: float) -> None:
+    safe_delay = max(0.0, delay)
+    if safe_delay > 0:
+        print(f"warning: {message}; retrying after {safe_delay:g}s", file=sys.stderr)
+        time.sleep(safe_delay)
+        return
+
+    print(f"warning: {message}; retrying immediately", file=sys.stderr)
+
+
 def run_agent_round(invocation: AgentInvocation, prompt: str) -> int:
     if invocation.completion_status_pattern:
         return run_monitored_tty_round(invocation, prompt)
@@ -1147,8 +1169,6 @@ def main() -> int:
             return 0
 
         cleanup_only = status.needs_cleanup > 0
-        stop_after_failed_cleanup = status.failed > 0 and not args.continue_after_failed
-
         if status.runnable == 0 and not cleanup_only:
             print("error: no runnable [ ] or [~] tasks remain", file=sys.stderr)
             return 2
@@ -1198,7 +1218,12 @@ def main() -> int:
                         flush=True,
                     )
                     continue
-            return returncode
+            retry_after_warning(
+                f"{invocation.label} round {rounds} exited with {returncode} "
+                "without a todo state transition",
+                args.retry_delay,
+            )
+            continue
 
         try:
             after_lines = tuple(read_todo_lines(todo_path))
@@ -1212,33 +1237,27 @@ def main() -> int:
             return status_error
 
         if after_lines == before_lines:
-            print(
-                f"error: {invocation.label} round {rounds} exited successfully but did not update {todo_display}",
-                file=sys.stderr,
+            retry_after_warning(
+                f"{invocation.label} round {rounds} exited successfully but "
+                f"did not update {todo_display}",
+                args.retry_delay,
             )
-            return 4
+            continue
 
         if not cleanup_only and after_status == status:
-            print(
-                f"error: {invocation.label} round changed todo text but did not change checkbox status counts",
-                file=sys.stderr,
+            retry_after_warning(
+                f"{invocation.label} round changed todo text but did not "
+                "change checkbox status counts",
+                args.retry_delay,
             )
-            return 4
+            continue
 
         if cleanup_only and after_status.needs_cleanup >= before_cleanup:
-            print(
-                "error: cleanup round did not reduce [x]/[f] items in main todo",
-                file=sys.stderr,
+            retry_after_warning(
+                "cleanup round did not reduce [x]/[f] items in main todo",
+                args.retry_delay,
             )
-            return 4
-
-        if cleanup_only and stop_after_failed_cleanup:
-            print(
-                "stopped: failed [f] tasks were archived; rerun with "
-                "--continue-after-failed to continue remaining runnable tasks",
-                file=sys.stderr,
-            )
-            return 2
+            continue
 
 
 if __name__ == "__main__":
