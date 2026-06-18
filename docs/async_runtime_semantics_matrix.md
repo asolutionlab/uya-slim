@@ -30,7 +30,7 @@
 | `async_compute<T>` | `async_compute<T>(&ThreadPool, fn, arg)` | `Future<!T>`、`Waker`、eventfd wake、线程池结果 fd | 排队/运行/one-shot 路径可返回 pending；取消最终以 `error.Cancelled` 回到调用侧；已覆盖多标量类型 | worker/pending/task slot 仍有固定容量；运行中取消不抢占计算；未与 HTTP/DNS/TLS 同一 `TaskQueue` 组合验收 |
 | HTTP/1.1 async client | `http1_request_async`、`http1_async_get`、`http1_async_post`、`http1_request_stream_async` | `Future<!Http1AsyncResponse>`、`AsyncFd`、`Waker.wait_*`、`LinuxEpoll` deadline block_on | nonblocking connect/read/write 走 readiness；请求头 buffer 已改为按需堆分配；loopback 回归覆盖主路径 | 同步封装仍单独创建 `LinuxEpoll` 并 block_on；未证明与外部 `Scheduler` task queue 共享调度；连接复用/keep-alive 不在当前语义内 |
 | DNS async transport | `lib/std/net/dns.uya` 中 UDP/TCP transport future；测试入口 `test_std_dns_async_transport.uya` | `Future<!usize>`、`Waker.wait_readable/wait_writable`、`block_on_with_event_loop`、`LinuxEpoll` | UDP send/recv 与 TCP fallback 均在 would-block 时 pending；Ready(error) 后 fallthrough 到 TCP 的状态机语义有专门回归 | `A/AAAA` 并发聚合仍未完成；与 HTTP/TLS/`async_compute` 同调度器组合未验收；fd/packet buffer 容量仍有固定边界 |
-| TLS / HTTPS | `lib/tls/https.uya`、`tests/test_https_loopback.uya` | 只在 UyaGin handler 层复用 `Future` / `@async_fn`；HTTPS I/O 主体仍以同步/非阻塞辅助错误映射为主 | loopback 证明 TLS -> UyaGin async handler 桥接可运行；`https_read_some` 可把 would-block 映射为 `ReadWouldBlock` | TLS handshake/read/write 尚未返回 `Future`，也未在 would-block 时调用 `Waker.wait_readable/wait_writable` 注册 fd interest；不能视为接入同一 `EventLoop` / `Scheduler` |
+| TLS / HTTPS | `lib/tls/https.uya`、`tests/test_https_loopback.uya`、`tests/test_tls_async_runtime_boundary.uya`、`tests/test_tls_async_io_future.uya` | UyaGin handler bridge 复用 `Future` / `@async_fn`；TLS leaf I/O 另有 `https_read_some_async`、`https_write_all_async`、`https_handshake_async` 返回 `Future<!usize>` 并通过 `Waker.wait_readable/wait_writable` 记录 fd interest | `test_https_loopback.uya` 只证明 TLS -> UyaGin async handler 桥接可运行；`test_tls_async_runtime_boundary.uya` 结构性区分 handler bridge 与 TLS I/O future；`test_tls_async_io_future.uya` 覆盖 read pending/ready、LinuxEpoll wake 与 write ready | `https_handshake_async` 仍缺真实握手 pending/ready 行为回归；TLS 尚未与 HTTP/DNS/`async_compute` 纳入同一 `TaskQueue` / `EventLoop` 组合 smoke |
 
 ## 最小验证矩阵草案
 
@@ -41,7 +41,7 @@
 | `Scheduler` + `async_compute` 共享 eventfd wake 与取消 | 一个 `TaskQueue<usize>` 同时推入可取消 `async_compute` 和一个手写 pending-then-ready future | `../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya` |
 | `Scheduler` + AsyncFd/HTTP readiness | 在同一 `LinuxEpoll` 上运行 pipe/socket AsyncFd future 或 HTTP loopback future | `../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya` |
 | DNS TCP fallback 状态机保持 `Ready(error)` fallthrough 语义 | 保留 `test_async_transport_fallthrough.uya`，并把真实 DNS async transport 纳入共享调度组合 | `../uya/bin/uya test --c99 tests/test_std_dns_async_transport.uya` |
-| TLS async 缺口显式化 | 已拆成审计、API 设计、负向边界验证、I/O future 实现、统一 smoke 五个 TODO 叶子；`test_https_loopback.uya` 只能证明 handler bridge，不能证明 TLS I/O 接入 `Waker` / `EventLoop` / `Scheduler` | `git diff --check docs/async_runtime_semantics_matrix.md docs/todo_async_full_language_dynamic_resources.md` |
+| TLS handler bridge 与 TLS I/O future 边界显式化 | `test_https_loopback.uya` 只能证明 handler bridge；`test_tls_async_runtime_boundary.uya` 结构性检查 TLS async leaf primitive 与 `Waker` interest；`test_tls_async_io_future.uya` 行为检查 TLS read/write future 的 pending/ready 与 `LinuxEpoll` wake | `../uya/bin/uya test --c99 tests/test_https_loopback.uya`；`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya`；`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya` |
 | TLS handshake/read/write async I/O | 新增 TLS I/O future，在 would-block 时返回 `Poll.Pending` 并通过 `Waker.wait_readable/wait_writable` 注册 fd interest | `../uya/bin/uya test --c99 tests/test_tls_async_runtime_io.uya` |
 | TLS 加入统一 runtime smoke | 在同一 `TaskQueue` / `LinuxEpoll` 中组合 TLS pending/ready、HTTP/DNS readiness 与 `async_compute` eventfd wake | `../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya` |
 
@@ -71,7 +71,7 @@ TLS/HTTPS 接入共享 runtime 时只允许把最底层会阻塞的 fd 边界做
 
 ## 当前结论
 
-HTTP、DNS、`async_compute` 和 `Scheduler` 已经在源码层共享 `Future` / `Poll` / `Waker` / `LinuxEpoll` 的核心语义，但还没有一个统一回归同时证明这些链路在同一 scheduler/event loop 下工作。TLS/HTTPS 目前只能说 UyaGin handler 层复用了 async handler 形态，TLS I/O 本身尚未接入同一 runtime。因此第 9 行总目标不能标记完成；下一步应按主 TODO 的 TLS 审计、API 设计、边界验证、I/O future 实现、统一 smoke 顺序推进，直到 TLS handshake/read/write 的 pending 路径真实接入 `Waker` / `EventLoop` / `Scheduler`。
+HTTP、DNS、`async_compute` 和 `Scheduler` 已经在源码层共享 `Future` / `Poll` / `Waker` / `LinuxEpoll` 的核心语义，但还没有一个统一回归同时证明这些链路在同一 scheduler/event loop 下工作。TLS/HTTPS 已经能用专门边界测试区分 handler bridge 与 TLS I/O future，且 read/write async leaf 已有 pending/ready 与 `LinuxEpoll` wake 回归；但 `test_https_loopback.uya` 本身仍不能作为 TLS I/O 接入 `Waker` / `EventLoop` / `Scheduler` 的证明，TLS handshake 行为回归和跨 HTTP/DNS/`async_compute` 的统一 smoke 仍待补齐。因此第 9 行总目标不能标记完成。
 
 同步到其他阶段性文档时，应使用以下结论句：
 

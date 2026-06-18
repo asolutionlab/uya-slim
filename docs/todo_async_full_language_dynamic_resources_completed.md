@@ -576,3 +576,14 @@
 
   - [x] 设计 TLS handshake/read/write 的 awaitable I/O 叶子 API，使 pending 路径通过 `Waker.wait_readable/wait_writable` 注册 fd interest；完成条件：文档给出 API、错误语义、取消/清理语义，验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`。
     - 验证：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`，通过，无输出。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 为 TLS I/O 尚未接入共享 runtime 补负向/边界验证，禁止把 `tests/test_https_loopback.uya` 当作 `Waker` / `EventLoop` / `Scheduler` 接入证明；完成条件：验证脚本或文档矩阵能区分 handler bridge 与 TLS I/O future，验证命令：`../uya/bin/uya test --c99 tests/test_https_loopback.uya` 加边界验证命令。
+    - 完成内容：`docs/async_runtime_semantics_matrix.md` 已区分 `tests/test_https_loopback.uya` 的 handler bridge 证据、`tests/test_tls_async_runtime_boundary.uya` 的结构性边界证据，以及 `tests/test_tls_async_io_future.uya` 的 TLS I/O future 行为证据；明确 loopback 不能单独作为 TLS I/O 接入 `Waker` / `EventLoop` / `Scheduler` 的证明。
+    - 验证：`../uya/bin/uya test --c99 tests/test_https_loopback.uya` 通过（1 test）。
+    - 验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya` 通过（1 test，9 assertions）。
+    - 验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya` 通过（1 test，17 assertions）。
+    - 验证：`git diff --check docs/async_runtime_semantics_matrix.md docs/todo_async_full_language_dynamic_resources.md` 通过。
