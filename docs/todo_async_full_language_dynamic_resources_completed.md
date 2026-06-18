@@ -809,3 +809,14 @@
     验证：先运行 `../uya/bin/uya test tests/test_std_async_event.uya`，旧实现因 1025 容量返回码 13 失败；实现后通过。
     验证：`../uya/bin/uya test tests/test_std_async_event_fd_reuse.uya` 通过，4 个内部用例全部 OK。
     验证：`../uya/bin/uya test tests/test_async_runtime_shared_dns.uya` 通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_scheduler.uya` 的 `TaskQueue<T>`、frame stack buffer、inline repoll 容量改为动态或可配置策略，避免 `64/8192/1024` 固定产品上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    验证命令与结果：
+    - `../uya/bin/uya test tests/test_std_async_scheduler.uya`：通过，16 tests passed。
+    - `../uya/bin/uya test tests/test_async_scheduler_event_allocator_signature.uya`：通过，1 test passed。
+    - `../uya/bin/uya test tests/test_async_frame_align_pool.uya`：通过，2 tests passed。
+    - `git diff --check`：通过。

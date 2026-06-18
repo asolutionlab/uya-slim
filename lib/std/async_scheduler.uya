@@ -13,6 +13,7 @@ use std.async;
 use std.async_event;
 use std.async_frame;
 use std.mem.allocator.IAllocator;
+use libc.stdlib;
 use libc.syscall;
 
 extern fn malloc(size: usize) &void;
@@ -163,10 +164,16 @@ export struct TaskQueueSlot<T> {
 export struct TaskQueue<T> {
     len: i32,
     capacity: i32,
-    slots: [TaskQueueSlot<T>: 64] = [],
+    slots: &TaskQueueSlot<T> = null,
 
     fn push(self: &Self, f: Future<!T>) !i32 {
         const limit: i32 = self.capacity_limit();
+        if self.slots == null {
+            const init_result: !i32 = self.ensure_slots();
+            _ = init_result catch {
+                return init_result as! i32;
+            };
+        }
         if self.len >= limit {
             return error.TaskQueueFull;
         }
@@ -197,10 +204,23 @@ export struct TaskQueue<T> {
         if self.capacity <= 0 {
             return TASK_QUEUE_CAPACITY;
         }
-        if self.capacity > TASK_QUEUE_CAPACITY {
-            return TASK_QUEUE_CAPACITY;
-        }
         return self.capacity;
+    }
+
+    fn ensure_slots(self: &Self) !i32 {
+        if self.slots != null {
+            return 0;
+        }
+        const limit: i32 = self.capacity_limit();
+        if limit <= 0 {
+            return error.TaskQueueFull;
+        }
+        const ptr: &void = calloc(limit as usize, @size_of(TaskQueueSlot<T>));
+        if ptr == null {
+            return error.TaskQueueFull;
+        }
+        self.slots = ptr as &TaskQueueSlot<T>;
+        return 0;
     }
 
     fn result(self: &Self, idx: i32) T {
@@ -256,9 +276,6 @@ fn task_queue_normalize_capacity(capacity: i32) i32 {
     if capacity <= 0 {
         return TASK_QUEUE_CAPACITY;
     }
-    if capacity > TASK_QUEUE_CAPACITY {
-        return TASK_QUEUE_CAPACITY;
-    }
     return capacity;
 }
 
@@ -266,14 +283,14 @@ fn task_queue_normalize_capacity(capacity: i32) i32 {
 /// 参数：无。
 /// 返回：容量兼容既有默认值的 TaskQueue<T>。
 export fn task_queue_new<T>() TaskQueue<T> {
-    return TaskQueue<T>{ len: 0, capacity: TASK_QUEUE_CAPACITY };
+    return TaskQueue<T>{ len: 0, capacity: TASK_QUEUE_CAPACITY, slots: null };
 }
 
 /// 创建指定运行时容量上限的任务队列。
-/// 参数：capacity 为队列可入队任务上限；小于等于 0 时使用默认值，超过编译期槽位上限时截断到默认上限。
+/// 参数：capacity 为队列可入队任务上限；小于等于 0 时使用默认值。
 /// 返回：带可配置容量上限的 TaskQueue<T>。
 export fn task_queue_new_with_capacity<T>(capacity: i32) TaskQueue<T> {
-    return TaskQueue<T>{ len: 0, capacity: task_queue_normalize_capacity(capacity) };
+    return TaskQueue<T>{ len: 0, capacity: task_queue_normalize_capacity(capacity), slots: null };
 }
 
 /// 创建默认容量的 i32 任务队列。
@@ -321,7 +338,8 @@ export fn task_queue_usize_new_with_capacity(capacity: i32) TaskQueue_usize {
 /// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
 export struct Scheduler {
     _frame_pool: &AsyncFramePool,
-    _frame_stack_buffer: [byte: SCHEDULER_FRAME_STACK_BUFFER_BYTES],
+    _frame_buffer: &byte,
+    _frame_buffer_size: usize,
     _metrics_frame_alloc_seen: u64,
     _metrics_frame_free_seen: u64,
     _metrics_heap_fallback_seen: u64,
@@ -335,6 +353,13 @@ fn scheduler_pool_to_allocator(pool: &AsyncFramePool) IAllocator {
 
 /// 创建调度器并初始化其 async frame pool。
 export fn scheduler_init(self: &Scheduler) void {
+    scheduler_init_with_config(self, SCHEDULER_FRAME_STACK_BUFFER_BYTES, SCHEDULER_INLINE_REPOLL_LIMIT);
+}
+
+/// 使用显式资源配置创建调度器。
+/// 参数：self 为待初始化调度器；frame_buffer_bytes 为 frame pool backing buffer 字节数，0 使用默认值；inline_repoll_limit 为无 I/O Pending 连续 repoll 上限。
+/// 返回值：无。
+export fn scheduler_init_with_config(self: &Scheduler, frame_buffer_bytes: usize, inline_repoll_limit: i32) void {
     if self == null {
         return;
     }
@@ -342,24 +367,42 @@ export fn scheduler_init(self: &Scheduler) void {
     if self._frame_pool == null {
         return;
     }
+    var buffer_size: usize = frame_buffer_bytes;
+    if buffer_size == 0 {
+        buffer_size = SCHEDULER_FRAME_STACK_BUFFER_BYTES;
+    }
+    self._frame_buffer = malloc(buffer_size) as &byte;
+    self._frame_buffer_size = buffer_size;
+    if self._frame_buffer == null {
+        self._frame_buffer_size = 0;
+    }
     const stack_limit: usize = async_frame_runtime_default_stack_limit();
     async_frame_pool_init_with_buffer(
         self._frame_pool,
-        &self._frame_stack_buffer[0] as &byte,
-        SCHEDULER_FRAME_STACK_BUFFER_BYTES,
+        self._frame_buffer,
+        self._frame_buffer_size,
         1,
         stack_limit,
     );
     self._metrics_frame_alloc_seen = 0u64;
     self._metrics_frame_free_seen = 0u64;
     self._metrics_heap_fallback_seen = 0u64;
-    self._inline_repoll_limit = SCHEDULER_INLINE_REPOLL_LIMIT;
+    self._inline_repoll_limit = inline_repoll_limit;
 }
 
 /// 创建调度器并初始化其 async frame pool。
 export fn scheduler_new() Scheduler {
     var s: Scheduler = Scheduler{};
     scheduler_init(&s);
+    return s;
+}
+
+/// 创建调度器并设置 frame buffer 与 inline repoll 资源策略。
+/// 参数：frame_buffer_bytes 为 frame pool backing buffer 字节数，0 使用默认值；inline_repoll_limit 为无 I/O Pending 连续 repoll 上限。
+/// 返回：已初始化的 Scheduler。
+export fn scheduler_new_with_config(frame_buffer_bytes: usize, inline_repoll_limit: i32) Scheduler {
+    var s: Scheduler = Scheduler{};
+    scheduler_init_with_config(&s, frame_buffer_bytes, inline_repoll_limit);
     return s;
 }
 
