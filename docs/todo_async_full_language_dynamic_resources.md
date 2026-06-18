@@ -7,6 +7,9 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+  - [ ] 将共享 runtime 基线接入 async/full-language 验证入口，避免 HTTP/DNS/TLS/`async_compute` 只作为分散单项测试存在；最小验证命令：`bash tests/verify_async_full_language_matrix.sh`；完成条件：矩阵脚本包含共享 runtime 基线且通过。
+  - [ ] 审计 HTTP/DNS/TLS/`async_compute`/`Scheduler` 是否都通过同一套 `Future` / `Poll` / `Waker` / `EventLoop` / cancellation 语义推进，补齐缺失的失败或取消回归；最小验证命令：相关新增测试加 `bash tests/verify_async_runtime_shared_semantics.sh`；完成条件：缺口有测试或文档化边界。
+  - [ ] 文档同步共享 runtime 语义的真实覆盖范围和剩余边界；最小验证命令：`git diff --check`；完成条件：`docs/async_status_matrix.md` 与 `docs/std_async_design.md` 不再把未统一验收的分散测试表述为完整量产。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
 
 ## 先澄清边界

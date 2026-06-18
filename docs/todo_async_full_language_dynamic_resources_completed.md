@@ -442,3 +442,10 @@
     - 最小验证命令：`git diff --check`
     - 完成条件：`docs/async_production_todo.md`、`docs/async_status_matrix.md` 或相关设计文档不再把未验证链路表述为已完全量产。
     - 验证记录：2026-06-18 运行 `git diff --check`，通过；`docs/async_status_matrix.md` 已加入共享 runtime 生产收口矩阵，并将 HTTP/DNS/TLS async 客户端主链路改为“生产收口中”；`docs/async_production_todo.md` 已声明旧历史结论不覆盖共享 runtime 矩阵。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 新增共享 async 运行时语义的可复现基线脚本，串行覆盖 `Scheduler`、HTTP、DNS、TLS loopback 与 `async_compute`；最小验证命令：`bash tests/verify_async_runtime_shared_semantics.sh`；完成条件：脚本只使用 `../uya/bin/uya` 并全部通过。
+    - 验证：`bash tests/verify_async_runtime_shared_semantics.sh` 通过；覆盖 `test_std_async_scheduler.uya`、`test_async_multi_fd_concurrent.uya`、`test_async_fd.uya`、`test_std_thread.uya`、`test_async_compute_types.uya`、`test_http1_async_client.uya`、`test_std_dns_async_transport.uya`、`test_https_loopback.uya`。
