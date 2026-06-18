@@ -62,7 +62,6 @@
 ### 1.1 先建立“完整语法”矩阵
 
 - [ ] 以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
-  - [ ] `for range`
   - [ ] `for` 定长数组值迭代
   - [ ] `for` 定长数组引用迭代 `|&x|`
   - [ ] 迭代器形式 `for obj |v|`
@@ -83,7 +82,8 @@
 | direct err-union await / 直接 `return error.X` | `tests/test_async_await_direct_err_union.uya`、`tests/test_async_return_error_direct.uya` | 已有覆盖 | 证明部分错误传播形态已打通 |
 | `if / else / else if` + `@await` | `tests/test_async_if_await.uya`、`tests/test_async_else_if_await.uya` | 已有覆盖 | 仍只覆盖常见形态，不等于所有分支语法 |
 | `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |
-| `for range` / 定长数组值迭代 / 定长数组引用迭代 / 具体 struct 迭代器值迭代 + `@await` | `tests/test_async_for_await.uya` | 已有覆盖 | 已覆盖 `for 0..n`、`for arr |e|`、`for arr |&x|` 与 `for iter |v|` 的 async 体回归 |
+| `for range` + `@await` | `docs/grammar_formal.md` 的 `for range '\|' ID '\|'` 与 `for range {}`；`docs/uya.md` 第 8 章整数范围形式；`tests/test_async_for_await.uya`、`tests/test_async_large_state_machine_syntax.uya` | 已验证覆盖 | `@async_fn` 中 `for 0..3 |k|` 和 `for 0..n |k|` 循环体内 `try @await` 已有正向回归，覆盖范围循环变量参与 await 后累加与状态机跨段恢复 |
+| 定长数组值迭代 / 定长数组引用迭代 / 具体 struct 迭代器值迭代 + `@await` | `tests/test_async_for_await.uya` | 已有覆盖 | 已覆盖 `for arr |e|`、`for arr |&x|` 与 `for iter |v|` 的 async 体回归；后续叶子任务将分别核对和归档 |
 | 迭代器 interface/ref 边界 + `@await` | `tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya`、`tests/test_async_for_iterator_ref_await.uya` | 已有覆盖 | 接口值 `for` 是同步也不支持的通用语言边界；`for iter |&x|` 引用绑定已作为 async 正向回归覆盖 |
 | 复合表达式 / await 绑定跨段重放 / 大状态机 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya`、`tests/test_async_large_state_machine_syntax.uya` | 已有覆盖 | 覆盖 RHS/return 表达式、多段 bind 依赖，以及包含顺序 20 awaits、循环、跨段变量、副作用和表达式链的大状态机语法回归 |
 | 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
