@@ -1088,3 +1088,17 @@
     - 验证：`../uya/bin/uya test tests/test_async_catch_await.uya` 通过，10 tests passed, 0 failed。
     - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过，4 tests passed, 0 failed。
     - 扩展验证：`bash tests/verify_async_full_language_matrix.sh` 已跑过 async 基线正向测试、禁止 await 位置检查、容量和 nested future 部分；在 `verify_async_shared_runtime_matrix` 阶段失败，关键错误为 `/tmp/uya_output_2841532.c:51021:51: error: invalid initializer` 与 `/tmp/uya_output_2841532.c:51801:63: error: invalid initializer`，涉及 `std_http_uyagin_*_async` 共享 runtime 生成 C，不属于本轮 `try / catch` 语法覆盖本身。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] `defer / errdefer`
+    - 状态：已验证覆盖。`docs/grammar_formal.md` 将 `defer_stmt` / `errdefer_stmt` 列入函数体 `statement`，`docs/uya.md` 第 9 章规定 success/error 清理顺序和块内禁止 `return` / `break` / `continue`；当前 async 矩阵已有 `async 体内 defer / errdefer` 行，证据为 `tests/test_async_sync_body_matrix.uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_defer_errdefer.uya` 通过，8 tests / 14 assertions。
+    - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过，4 tests / 20 assertions。
+    - 验证：`../uya/bin/uya check tests/error_async_defer_return.uya` 按预期失败并输出 `defer/errdefer 块中不能使用 return 语句`。
+    - 验证：`../uya/bin/uya check tests/error_async_errdefer_break.uya` 按预期失败并输出 `defer/errdefer 块中不能使用 break 语句`。
+    - 验证：`../uya/bin/uya check tests/error_async_defer_continue_nested.uya` 按预期失败并输出 `defer/errdefer 块中不能使用 continue 语句`。
