@@ -612,7 +612,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     // await 绑定变量：输出为 s->_uya_bind_name
     if codegen.async_state_var != null && codegen.async_bind_count > 0 {
         var bi: i32 = 0;
-        while bi < codegen.async_bind_count && bi < C99_ASYNC_MAX_AWAITS {
+        while bi < codegen.async_bind_count && codegen.async_bind_names != null {
             if codegen.async_bind_names[bi] != null &&
                 strcmp(codegen.async_bind_names[bi] as *byte, name as *byte) == 0 {
                 const s_len: i32 = strlen(codegen.async_state_var as *byte);

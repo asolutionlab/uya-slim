@@ -13,7 +13,7 @@
 
 // ── 段（Segment）描述 ──
 
-export const MAX_SEGMENTS: i32 = 4098;   // C99_ASYNC_MAX_AWAITS + entry + exit
+export const MAX_SEGMENTS: i32 = 4098;   // legacy segment matrix fallback; C99 collection grows dynamically
 export const MAX_LOCALS: i32 = 4096;
 
 export struct AwaitPoint {

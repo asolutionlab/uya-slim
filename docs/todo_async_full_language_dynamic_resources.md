@@ -57,7 +57,6 @@
 ## 完成定义
 
 - [ ] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
-  - [ ] codegen await 收集/绑定表改为按需扩容，不再由 `C99_ASYNC_MAX_AWAITS` 限制；最小验证：新增超过旧上限的 async await C99 生成回归。
   - [ ] async frame descriptor 发射不再按固定上限截断，descriptor table 大小按 checker meta count 生成；最小验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 与相关 async frame C99 回归。
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
 - [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。

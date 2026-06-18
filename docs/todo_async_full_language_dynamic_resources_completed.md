@@ -776,3 +776,15 @@
     - 验证：`../uya/bin/uya test tests/test_async_frame_stack_ok.uya` 通过，2 个测试通过。
     - 验证：`../uya/bin/uya test tests/test_async_frame_inline_temp.uya` 通过，1 个测试通过。
     - 验证：`../uya/bin/uya test tests/test_async_frame_methods.uya` 通过，2 个测试通过。
+
+## 完成定义
+
+父级任务：async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+
+  - [x] codegen await 收集/绑定表改为按需扩容，不再由 `C99_ASYNC_MAX_AWAITS` 限制；最小验证：新增超过旧上限的 async await C99 生成回归。
+    - 验证：`bash tests/verify_async_await_capacity.sh` 通过；生成 4097 个 await 的 async C99，并确认最终状态分支 `if (s->state == 4098)` 存在。
+    - 验证：`make uya` 通过，更新 `../uya/bin/uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_await_limits_and_segments.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过。
+    - 额外验证：`bash tests/verify_async_full_language_matrix.sh` 执行到 shared runtime 阶段失败；新增 capacity 回归已通过，失败点为 `test_async_shared_runtime_semantics.uya` 的宿主 C 编译 `invalid initializer`（`GinContext_file_poll` / `Engine_serve_once_poll`），与本轮 4097-await C99 生成路径不同。

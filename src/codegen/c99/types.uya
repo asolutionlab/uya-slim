@@ -8112,7 +8112,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     }
     if codegen.async_state_var != null && codegen.async_bind_count > 0 {
         var abi: i32 = 0;
-        while abi < codegen.async_bind_count && abi < C99_ASYNC_MAX_AWAITS {
+        while abi < codegen.async_bind_count && codegen.async_bind_names != null && codegen.async_collect_types != null {
             if codegen.async_bind_names[abi] != null &&
                 strcmp(codegen.async_bind_names[abi] as *byte, name as *byte) == 0 {
                 if codegen.async_collect_types[abi] != null {
