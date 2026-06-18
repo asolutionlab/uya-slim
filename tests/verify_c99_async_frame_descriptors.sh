@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
+COMPILER="$REPO_ROOT/../uya/bin/uya"
 OUT_C="$(mktemp /tmp/uya-async-frame-desc.XXXXXX.c)"
 OUT_BIN="$(mktemp /tmp/uya-async-frame-desc.XXXXXX)"
 
@@ -28,6 +28,16 @@ fi
 
 if ! grep -q "struct AsyncFrameDescriptorTable _uya_async_frame_descriptors" "$OUT_C"; then
     echo "missing async frame descriptor table"
+    exit 1
+fi
+
+if ! grep -q "static struct AsyncFrameDescriptor _uya_async_frame_descriptor_entries\\[7\\]" "$OUT_C"; then
+    echo "async frame descriptor entries are not sized from checker meta count"
+    exit 1
+fi
+
+if ! grep -q "int32_t _uya_async_frame_descriptor_count = 7;" "$OUT_C"; then
+    echo "async frame descriptor count does not match checker meta count"
     exit 1
 fi
 

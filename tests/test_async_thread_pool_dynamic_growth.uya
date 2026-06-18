@@ -1,0 +1,84 @@
+use std.async;
+use std.async_scheduler;
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+use std.thread;
+
+const DYNAMIC_CAPACITY: i32 = THREAD_POOL_MAX_PENDING + 4;
+const DYNAMIC_TASK_COUNT: usize = 20 as usize;
+
+fn add_one_i32(v: i32) i32 {
+    return v + 1;
+}
+
+fn make_dynamic_pool() ThreadPool {
+    return thread_pool_new_with_config(ThreadPoolConfig{
+        worker_count: THREAD_POOL_MAX_WORKERS + 1,
+        pending_capacity: DYNAMIC_CAPACITY,
+        task_slot_capacity: DYNAMIC_CAPACITY,
+    });
+}
+
+test "thread_pool_configured_capacities_run_past_legacy_task_slots_without_fork_fallback" {
+    var pool: ThreadPool = make_dynamic_pool();
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    try assert_eq_i32(pool.worker_count, THREAD_POOL_MAX_WORKERS + 1);
+    try expect(pool.pending_capacity > THREAD_POOL_MAX_PENDING);
+    try expect(pool.task_slot_capacity > THREAD_POOL_MAX_TASK_SLOTS);
+
+    var futures: [Future<!i32>: 20] = [
+        async_compute<i32>(&pool, &add_one_i32 as &void, 0),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 1),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 2),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 3),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 4),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 5),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 6),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 7),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 8),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 9),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 10),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 11),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 12),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 13),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 14),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 15),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 16),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 17),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 18),
+        async_compute<i32>(&pool, &add_one_i32 as &void, 19),
+    ];
+
+    var wakers: [Waker: 20] = [
+        Waker{}, Waker{}, Waker{}, Waker{}, Waker{},
+        Waker{}, Waker{}, Waker{}, Waker{}, Waker{},
+        Waker{}, Waker{}, Waker{}, Waker{}, Waker{},
+        Waker{}, Waker{}, Waker{}, Waker{}, Waker{},
+    ];
+
+    var i: usize = 0 as usize;
+    while i < DYNAMIC_TASK_COUNT {
+        _ = futures[i].poll(&wakers[i]);
+        i = i + 1 as usize;
+    }
+
+    i = 0 as usize;
+    while i < DYNAMIC_TASK_COUNT {
+        _ = futures[i].poll(&wakers[i]);
+        i = i + 1 as usize;
+    }
+
+    i = 0 as usize;
+    while i < DYNAMIC_TASK_COUNT {
+        const value: i32 = try block_on<i32>(futures[i]);
+        try assert_eq_i32(value, i as i32 + 1);
+        i = i + 1 as usize;
+    }
+
+    try expect(thread_pool_started_workers(&pool) >= 1);
+    try expect(thread_pool_started_workers(&pool) <= pool.worker_count);
+    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+}

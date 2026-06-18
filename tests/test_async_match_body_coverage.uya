@@ -1,0 +1,143 @@
+// 覆盖 @async_fn 函数体内 match 语句/表达式、enum/union 模式和 else 分支。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+enum AsyncMatchColor {
+    Red = 1,
+    Green,
+    Blue,
+}
+
+union AsyncMatchValue {
+    num: i32,
+    color: AsyncMatchColor,
+    empty: void,
+}
+
+struct FlipMatchI32 : Future<!i32> {
+    value: i32,
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn flip_match_i32(v: i32) Future<!i32> {
+    return FlipMatchI32{ value: v, polled: 0 };
+}
+
+fn pick_async_match_color(seed: i32) AsyncMatchColor {
+    if seed == 1 {
+        return AsyncMatchColor.Red;
+    }
+    if seed == 2 {
+        return AsyncMatchColor.Green;
+    }
+    return AsyncMatchColor.Blue;
+}
+
+fn pick_async_match_value(seed: i32) AsyncMatchValue {
+    if seed == 0 {
+        return AsyncMatchValue.empty({});
+    }
+    if seed == 1 {
+        return AsyncMatchValue.num(7);
+    }
+    return AsyncMatchValue.color(pick_async_match_color(seed));
+}
+
+fn sync_match_body(seed: i32) i32 {
+    var total: i32 = 0;
+
+    const color: AsyncMatchColor = pick_async_match_color(seed);
+    const color_score: i32 = match color {
+        AsyncMatchColor.Red => 10,
+        AsyncMatchColor.Green => 20,
+        else => 30,
+    };
+    total = total + color_score;
+
+    match pick_async_match_value(seed) {
+        .num(n) => { total = total + n; },
+        .color(c) => {
+            const nested: i32 = match c {
+                AsyncMatchColor.Red => 1,
+                AsyncMatchColor.Green => 2,
+                else => 3,
+            };
+            total = total + nested;
+        },
+        else => { total = total + 40; },
+    };
+
+    const number_score: i32 = match seed {
+        0 => 100,
+        1 => 200,
+        else => 300,
+    };
+    return total + number_score;
+}
+
+@async_fn
+fn async_match_body(seed: i32) Future<!i32> {
+    var total: i32 = 0;
+
+    const awaited_seed: i32 = try @await flip_match_i32(seed);
+    const color: AsyncMatchColor = pick_async_match_color(awaited_seed);
+    const color_score: i32 = match color {
+        AsyncMatchColor.Red => 10,
+        AsyncMatchColor.Green => 20,
+        else => 30,
+    };
+    total = total + color_score;
+
+    match pick_async_match_value(awaited_seed) {
+        .num(n) => { total = total + n; },
+        .color(c) => {
+            const nested: i32 = match c {
+                AsyncMatchColor.Red => 1,
+                AsyncMatchColor.Green => 2,
+                else => 3,
+            };
+            total = total + nested;
+        },
+        else => { total = total + 40; },
+    };
+
+    const number_score: i32 = match awaited_seed {
+        0 => 100,
+        1 => 200,
+        else => 300,
+    };
+    return total + number_score;
+}
+
+fn assert_async_match_body(seed: i32) !void {
+    const sync_value: i32 = sync_match_body(seed);
+    const async_result: !i32 = block_on<i32>(async_match_body(seed));
+    const async_value: i32 = async_result catch { -1; };
+    try assert_eq_i32(sync_value, async_value);
+}
+
+test "async_match_body_empty_else_paths" {
+    try assert_async_match_body(0);
+}
+
+test "async_match_body_union_value_path" {
+    try assert_async_match_body(1);
+}
+
+test "async_match_body_enum_else_path" {
+    try assert_async_match_body(3);
+}

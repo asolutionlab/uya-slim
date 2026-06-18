@@ -4,17 +4,6 @@
 **当前定位**：本文件是当前“让异步编程生产级可用”目标的权威 TODO。  
 **口径说明**：在本文件完成前，`docs/async_production_todo.md`、`docs/async_status_matrix.md`、`docs/std_async_design.md` 中“量产已完成”或“主链路已收口”的表述都只能视为历史阶段结论，不能直接当作本目标的完成依据。
 
-## 先澄清边界
-
-- [ ] “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
-  - [ ] 建立 async 函数体模式匹配覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`match` 语句/表达式、枚举/联合体模式和 `else` 分支在 `@async_fn` 中与同步函数一致。
-  - [ ] 建立 async 函数体内建函数体语法覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`@params`、`@func_name`、`@src_*`、`@error_id`、`@error_name` 等本来允许在同步函数体内使用的内建在 `@async_fn` 中语义一致。
-- [ ] 这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
-  - [ ] `@await` 只能出现在 `@async_fn` 中。
-  - [ ] `@await` 出现在 `while` 条件等当前明确禁止的位置时，仍应报错，除非后续先修改语言规范。
-  - [ ] async 递归 / 间接递归的限制是否保留，必须由新的大小模型或规范决定，不能在实现里偷偷放开。
-- [ ] 本阶段先以 **Linux + C99** 为生产主线；`kqueue` / `IOCP` 不作为阻塞项。
-
 ## 源码现状审计
 
 ### 1. 运行时资源仍有明显硬编码
@@ -22,7 +11,7 @@
 | 模块 | 现状 | 影响 |
 |------|------|------|
 | `lib/std/async_event.uya` | `LinuxEpoll` 的 slot / event 数组均固定 `1024`，`find_slot()` 线性扫描固定容量 | 并发 fd 上限、退化 O(n)、容量达到上限时只能报错 |
-| `lib/std/async_scheduler.uya` | `TaskQueue<T>` 固定 `64` 槽，scheduler 自带 `_frame_stack_buffer[8192]`，inline repoll 上限固定 `1024` | 队列容量、池后备缓冲和轮询策略都不是动态策略 |
+| `lib/std/async_scheduler.uya` | `TaskQueue<T>` 默认队列已自动增长；scheduler 自带 `_frame_stack_buffer[8192]`，inline repoll 上限默认 `1024` | 池后备缓冲和默认轮询策略仍需继续收口 |
 | `lib/std/thread.uya` | `THREAD_POOL_MAX_WORKERS=32`、`THREAD_POOL_MAX_PENDING=32`、`THREAD_POOL_MAX_TASK_SLOTS=16`，满载后还会回退到 `sys_fork()` one-shot | 线程池容量与退化路径写死，生产行为不可预测 |
 | `lib/std/async_frame.uya` | `ASYNC_FRAME_POOL_MAX_BUCKETS=128`、`ASYNC_FRAME_POOL_MAX_PER_BUCKET=4096`、descriptor 表固定 `512` | frame 元信息和池容量都有硬上限 |
 | `lib/std/http/http1_async.uya` | 多处请求头 scratch buffer 固定 `4096` | 大 header / 扩展请求场景不是真动态 |
@@ -31,7 +20,7 @@
 
 | 模块 | 现状 | 影响 |
 |------|------|------|
-| `src/codegen/c99/async_transform.uya` | `MAX_SEGMENTS=258`、`MAX_LOCALS=32` | “完整语法”一旦放大状态机，就会撞上内部数组上限 |
+| `src/codegen/c99/async_transform.uya` | `MAX_SEGMENTS=4098`、`MAX_LOCALS=4096` | “完整语法”一旦放大状态机，仍会撞上内部数组上限 |
 | `src/codegen/c99/internal.uya` | `C99_ASYNC_MAX_AWAITS=4096` 且大量数组按此大小静态展开 | 仍是固定容量设计，不是动态结构 |
 | `src/checker/async_frame_meta.uya` | `MAX_ASYNC_FRAME_METAS=512` | async frame 元信息会在大工程中截断 |
 | `src/codegen/c99/main.uya` | 生成 `_uya_async_frame_descriptors` 时仍按 `MAX_ASYNC_FRAME_METAS` 截断 | codegen 与 runtime descriptor 上限耦合 |
@@ -41,14 +30,9 @@
 | 位置 | 现状 | 证据 |
 |------|------|------|
 | `src/checker/check_node_extra.uya` / `src/codegen/c99/function.uya` | `@async_fn` 中迭代器 `for` 当前只支持“具体 struct + 值迭代”；接口类型变量的 `for` 迭代是同步也不支持的通用语言边界，iterator ref 绑定已转为正向回归 | 正向回归：`tests/test_async_for_await.uya`、`tests/test_async_for_iterator_ref_await.uya`；接口值反向回归：`tests/error_for_iterator_interface_value.uya`（同步 checker 失败）与 `tests/error_async_for_iterator_interface_await.uya`（async checker 失败） |
-| `docs/std_async_design.md` | 历史上把 `Future<Future<T>>.poll` 一概记成已知限制 | 需改成“值类型双层 poll 已验证通过，但 `!Future<Future<T>>` 的无 await + 同步 `try` 返回在 C99 codegen 仍显式失败”的真实边界 |
+| `docs/std_async_design.md` | nested future 口径已从“Future<Future<T>>.poll 一概受限”改成当前真实边界 | 值类型双层 poll、无 await 的 `!Future<Future<T>>` + 同步 `try` 返回、C99 发射与 host C 编译均由 `tests/test_async_nested_future_poll.uya` / `tests/verify_async_nested_future_boundary.sh` 固定为正向回归 |
 | `tests/error_async_too_many_awaits.uya` / `tests/error_async_too_many_params.uya` | 当前测试仍把固定上限失败当成正确行为 | 与“资源动态化”目标正面冲突 |
-| `tests/verify_async_full_language_matrix.sh` | 当前脚本已是高价值基线入口，但还不能单独证明“完整函数体语法已收口” | 它目前覆盖已存在主链路回归与明确禁止位置，不覆盖 nested future、动态容量和迭代器 interface/ref 边界 |
-
-### 4. 文档口径与源码状态有漂移
-
-- [ ] 现有“量产完成”文档没有把上面的固定容量、语法禁区和回退路径当成阻塞项。
-- [ ] 本目标完成前，必须先把“文档真相”与“源码真相”重新对齐，再谈 release 口径。
+| `tests/verify_async_full_language_matrix.sh` | 当前脚本已是高价值基线入口，但还不能单独证明“完整函数体语法已收口” | 它目前覆盖已存在主链路回归、明确禁止位置、nested future 专项和迭代器 interface/ref 边界；仍不覆盖动态容量闸门 |
 
 ### 5. 三类问题明确区分
 
@@ -58,13 +42,13 @@
 |------|--------|------|
 | **通用语言边界** | iterator `for` 接口值（同步与 async checker 均失败，非 async 独有缺口） | `src/checker/check_node_extra.uya`、`tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya` |
 | 语法/语义不支持 | iterator `for` 引用绑定 + `@await`（历史缺口，现已转入 `tests/test_async_for_iterator_ref_await.uya` 正向回归） | `src/codegen/c99/function.uya`、`tests/test_async_for_iterator_ref_await.uya` |
-| 语法/语义不支持 | 无 await 的 `!Future<Future<T>>` + 同步 `try` 返回（C99 codegen 生成错误 C） | `tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh` |
-| **编译器内部固定容量** | `MAX_SEGMENTS=258`、`MAX_LOCALS=32` | `src/codegen/c99/async_transform.uya` |
+| 语法/语义已收口 | 无 await 的 `!Future<Future<T>>` + 同步 `try` 返回（C99 发射与 host C 编译已由专项脚本验证） | `tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh` |
+| **编译器内部固定容量** | `MAX_SEGMENTS=4098`、`MAX_LOCALS=4096` | `src/codegen/c99/async_transform.uya` |
 | 编译器内部固定容量 | `C99_ASYNC_MAX_AWAITS=4096` 静态数组 | `src/codegen/c99/internal.uya` |
 | 编译器内部固定容量 | `MAX_ASYNC_FRAME_METAS=512` | `src/checker/async_frame_meta.uya` |
 | 编译器内部固定容量 | frame descriptor 静默截断到 `512` | `src/codegen/c99/main.uya` |
 | **运行时/协议层固定容量** | epoll slot/event `1024`、`find_slot()` 线性扫 | `lib/std/async_event.uya` |
-| 运行时/协议层固定容量 | `TaskQueue<T>` 固定 `64` 槽 | `lib/std/async_scheduler.uya` |
+| 运行时/协议层固定容量 | `TaskQueue<T>` 默认队列已自动增长，显式容量队列仍保留调用方配置上限 | `lib/std/async_scheduler.uya` |
 | 运行时/协议层固定容量 | `_frame_stack_buffer[8192]`、inline repoll `1024` | `lib/std/async_scheduler.uya` |
 | 运行时/协议层固定容量 | `ASYNC_FRAME_POOL_MAX_BUCKETS=128`、`MAX_PER_BUCKET=4096`、descriptor 表 `512` | `lib/std/async_frame.uya` |
 | 运行时/协议层固定容量 | `THREAD_POOL_MAX_WORKERS=32`、`MAX_PENDING=32`、`MAX_TASK_SLOTS=16`、`fork()` fallback | `lib/std/thread.uya` |
@@ -72,10 +56,7 @@
 
 ## 完成定义
 
-- [ ] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
-- [ ] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
-- [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
-- [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
+- runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
 - [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
 
 ## Phase 1：`@async_fn` 语法完整性
@@ -108,7 +89,7 @@
 | `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |
 | `for range` / 定长数组值迭代 / 定长数组引用迭代 / 具体 struct 迭代器值迭代 + `@await` | `tests/test_async_for_await.uya` | 已有覆盖 | 已覆盖 `for 0..n`、`for arr |e|`、`for arr |&x|` 与 `for iter |v|` 的 async 体回归 |
 | 迭代器 interface/ref 边界 + `@await` | `tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya`、`tests/test_async_for_iterator_ref_await.uya` | 已有覆盖 | 接口值 `for` 是同步也不支持的通用语言边界；`for iter |&x|` 引用绑定已作为 async 正向回归覆盖 |
-| 复合表达式 / await 绑定跨段重放 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya` | 已有覆盖 | 覆盖 RHS/return 表达式与多段 bind 依赖 |
+| 复合表达式 / await 绑定跨段重放 / 大状态机 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya`、`tests/test_async_large_state_machine_syntax.uya` | 已有覆盖 | 覆盖 RHS/return 表达式、多段 bind 依赖，以及包含顺序 20 awaits、循环、跨段变量、副作用和表达式链的大状态机语法回归 |
 | 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
 | caller-owned inline / frame / 局部定长数组 | `tests/test_async_frame_inline_temp.uya`、`tests/test_async_frame_inline_temp2.uya`、`tests/test_async_fn_local_fixed_array.uya`、`tests/test_async_frame_type.uya` | 已有覆盖 | 更偏 codegen/frame correctness，不等于完整语法 |
 | runtime / scheduler / real client 集成 | `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_http1_async_client.uya` | 已有覆盖 | 是“真实使用链路”证据，但不覆盖全部语法 |
@@ -117,24 +98,23 @@
 | async 体内 `catch` 与 `@await` 组合 | `tests/test_async_sync_body_matrix.uya`、`tests/test_async_catch_await.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 `try/@await` 后接 `catch` 恢复、`@await` 错误联合结果交给 `catch`、catch 体内 `@await` 与提前 return |
 | async 体内 `defer / errdefer` | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 success/error 两条清理顺序 |
 | 宏展开后的 expr / stmt 进入 async lowering | `tests/test_async_macro_expand.uya`、`tests/programs/test_ai_prompt_async_macro_combo.uya` | 已有覆盖 | 已验证 pre-await 求值不会在 poll/resume 间丢失或重复执行，程序级 macro combo 也可 build/run |
-| `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya`、`tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh`、`docs/std_async_design.md` | 已收口到真实边界 | 值类型 `Future<Future<T>>` 双层 poll 已有正向回归；无 await 的 `!Future<Future<T>>` + 同步 `try` 返回仍有 C99 codegen 显式失败用例 |
+| `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya`、`tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh`、`docs/std_async_design.md` | 已收口为正向回归 | 值类型 `Future<Future<T>>` 双层 poll 已有正向回归；无 await 的 `!Future<Future<T>>` + 同步 `try` 返回、C99 发射与 host C 编译也已由专项脚本验证通过 |
 | 大状态机 / 大量 await / 参数与 meta 动态扩容 | `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya` | 历史已知限制 | 这些旧测试本身就是“仍有固定上限”的证据 |
 
 > 盘点汇总：
 
 > 待清理项登记（silent truncation / emitter stderr / workaround）：
-> - `src/codegen/c99/function.uya:4557`：fprintf(stderr, ...) 提示 iterator `for` 接口形式 `@await` "尚未支持" → 应升级为 checker 正式诊断或移除（若语法补齐后）
 > - `src/codegen/c99/function.uya:758`："简化处理：使用临时缓冲区" → 确认是否仍为临时方案
 > - `src/checker/async_frame_meta.uya:41,49,58`：`MAX_ASYNC_FRAME_METAS=512` 静默截断 → 待 Phase 2 动态化
 > - `src/codegen/c99/main.uya`：frame descriptor 静默截断到 512 → 待 Phase 2 动态化
 > - `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya`：旧人为上限测试 → 待 Phase 2 替换为压力测试
 > - `tests/test_async_defer_errdefer.uya`：已迁入 `try @await` 错误传播触发 `errdefer` 的正向回归；默认回归不再排除旧边界文件
-> - **已有覆盖**（19项）：基础解析、Ready/Pending、err-union await、if/else if、while、for range/array/iter、复合表达式、方法/接口、frame、runtime/scheduler/client、sync/async对齐矩阵、match/catch/defer/errdefer、宏展开、nested future（边界明确）
-> - **缺失覆盖**：large state machine（L140）
-> - **历史已知限制**：固定上限测试（error_async_too_many_awaits/params）、iterator interface/ref await 不支持
+> - **已有覆盖**（20项）：基础解析、Ready/Pending、err-union await、if/else if、while、for range/array/iter、复合表达式、大状态机、方法/接口、frame、runtime/scheduler/client、sync/async对齐矩阵、match/catch/defer/errdefer、宏展开、nested future（边界明确）
+> - **缺失覆盖**：暂无；后续继续审计非显式规范限制的 async 语法缺口
+> - **历史已知限制**：固定上限测试（error_async_too_many_awaits/params）、iterator interface value for 不支持（同步与 async 通用语言边界）
 
 > 建议把 [tests/verify_async_full_language_matrix.sh](../tests/verify_async_full_language_matrix.sh) 当作当前快照入口：
-> 它当前能证明“已有高价值基线 + 明确禁止位置”仍成立，但不能单独替代完整语法矩阵、nested future 专项验证或动态容量闸门。
+> 它当前能证明“已有高价值基线 + large state machine + 明确禁止位置 + nested future 专项 + 迭代器 interface/ref 边界”仍成立，但不能单独替代完整语法矩阵或动态容量闸门。
 
 ### 1.2 先补红测，再动实现
 
@@ -355,7 +335,6 @@
 
 ### 3.2 Scheduler / TaskQueue
 
-- [ ] 将 `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 从固定 `64` 槽改成动态队列。
 - [ ] 把 scheduler 的 `_frame_stack_buffer[8192]` 改成显式配置或动态后备存储策略。
 - [ ] 评估并收口 `SCHEDULER_INLINE_REPOLL_LIMIT=1024` 的策略，让它成为调度策略参数，而不是写死常量。
 

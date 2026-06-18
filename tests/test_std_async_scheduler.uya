@@ -57,6 +57,24 @@ test "scheduler_new_uses_stack_backed_frame_pool" {
     try assert_eq_i32(pool.buffer != null, true);
     try assert_eq_i32(pool.buffer_size > 0usize, true);
     try assert_eq_i32(pool.stack_limit > 0usize, true);
+    try assert_eq_i32(scheduler_frame_buffer_size(&s) > 0usize, true);
+}
+
+test "scheduler_new_with_config_sets_frame_buffer_and_inline_repoll" {
+    var s: Scheduler = scheduler_new_with_config(16384usize, 3);
+    const pool: &AsyncFramePool = scheduler_frame_pool(&s);
+    try assert_eq_i32(pool.buffer != null, true);
+    try assert_eq_i32(pool.buffer_size == 16384usize, true);
+    try assert_eq_i32(scheduler_frame_buffer_size(&s) == 16384usize, true);
+    try assert_eq_i32(scheduler_inline_repoll_limit(&s), 3);
+}
+
+test "scheduler_new_with_config_accepts_frame_buffer_above_default" {
+    var s: Scheduler = scheduler_new_with_config(24576usize, 3);
+    const pool: &AsyncFramePool = scheduler_frame_pool(&s);
+    try assert_eq_i32(pool.buffer != null, true);
+    try assert_eq_i32(pool.buffer_size == 24576usize, true);
+    try assert_eq_i32(scheduler_frame_buffer_size(&s) == 24576usize, true);
 }
 
 test "scheduler_run_u32" {
@@ -550,6 +568,31 @@ test "task_queue_with_capacity_limits_pushes" {
     try assert_eq_i32(third_result.error_id as i32, @error_id(error.TaskQueueFull) as i32);
 }
 
+test "task_queue_capacity_can_exceed_default_capacity" {
+    var default_queue: TaskQueue_i32 = task_queue_i32_new();
+    try assert_eq_i32(task_queue_i32_capacity(&default_queue), TASK_QUEUE_I32_CAPACITY);
+
+    var queue: TaskQueue_i32 = task_queue_i32_new_with_capacity(96);
+    try assert_eq_i32(task_queue_i32_capacity(&queue), 96);
+    var i: i32 = 0;
+    while i < 96 {
+        const idx: i32 = try queue.push(ready(i));
+        try assert_eq_i32(idx, i);
+        i = i + 1;
+    }
+}
+
+test "task_queue_default_capacity_grows_past_64" {
+    var queue: TaskQueue_i32 = task_queue_i32_new();
+    var i: i32 = 0;
+    while i < TASK_QUEUE_I32_CAPACITY + 1 {
+        const idx: i32 = try queue.push(ready(i));
+        try assert_eq_i32(idx, i);
+        i = i + 1;
+    }
+    try assert_eq_i32(task_queue_i32_capacity(&queue) > TASK_QUEUE_I32_CAPACITY, true);
+}
+
 test "scheduler_inline_repoll_limit_is_configurable" {
     scheduler_inline_pending_poll_count = 0;
     scheduler_loop_poll_count = 0;
@@ -557,6 +600,18 @@ test "scheduler_inline_repoll_limit_is_configurable" {
     var s: Scheduler = scheduler_new_with_inline_repoll_limit(1);
     const loop: EventLoop = test_event_loop();
     const result: i32 = try scheduler_run_with_event_loop<i32>(&s, loop, InlinePendingThenReady{ ready_after_pending: 2 }, 0);
+
+    try assert_eq_i32(result, 88);
+    try assert_eq_i32(scheduler_inline_pending_poll_count, 2);
+    try assert_eq_i32(scheduler_loop_poll_count, 1);
+}
+
+test "block_on_event_loop_inline_repoll_limit_is_configurable" {
+    scheduler_inline_pending_poll_count = 0;
+    scheduler_loop_poll_count = 0;
+
+    const loop: EventLoop = test_event_loop();
+    const result: i32 = try block_on_with_event_loop_inline_repoll_limit<i32>(loop, InlinePendingThenReady{ ready_after_pending: 2 }, 0, 1);
 
     try assert_eq_i32(result, 88);
     try assert_eq_i32(scheduler_inline_pending_poll_count, 2);

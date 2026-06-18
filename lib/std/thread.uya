@@ -10,13 +10,15 @@ use libc.free;
 use libc.malloc;
 use libc.pthread;
 use libc.stdlib;
-use libc.signal;
 use libc.syscall;
 
-// 须与 ThreadPool._workers、ThreadPoolSharedState.pending_slots 数组维度一致
+// Legacy compatibility constants: no longer used as product capacity limits.
 export const THREAD_POOL_MAX_WORKERS: i32 = 32;
 export const THREAD_POOL_MAX_PENDING: i32 = 32;
 export const THREAD_POOL_MAX_TASK_SLOTS: i32 = 16;
+const THREAD_POOL_MAX_CONFIG_CAPACITY: i32 = 4096;
+const THREAD_POOL_DEFAULT_PENDING_PER_WORKER: i32 = 4;
+const THREAD_POOL_DEFAULT_SLOT_PER_WORKER: i32 = 4;
 const THREAD_SLOT_STATE_FREE: i32 = 0;
 const THREAD_SLOT_STATE_READY: i32 = 1;
 const THREAD_SLOT_STATE_QUEUED: i32 = 2;
@@ -322,11 +324,12 @@ struct ThreadTaskSlotRaw {
 struct ThreadPoolSharedState {
     pending_capacity: i32,
     task_slot_capacity: i32,
+    mapped_bytes: usize,
     pending_head: atomic i32,
     pending_tail: atomic i32,
     pending_count: atomic i32,
-    slots: [ThreadTaskSlotRaw: 16] = [],
-    pending_slots: [i32: 32] = [],
+    slots: &ThreadTaskSlotRaw,
+    pending_slots: &i32,
 }
 
 struct ThreadWorkerStart {
@@ -343,12 +346,13 @@ export struct ThreadPool {
     _started_workers: i32,
     _next_worker: i32,
     _shared_state: &ThreadPoolSharedState,
-    _workers: [ThreadWorker: 32] = [],
+    _workers: &ThreadWorker,
+    _workers_bytes: usize,
 }
 
 /// `ThreadPool` 容量配置。
 /// 参数：`worker_count` 为最大 worker 数，`pending_capacity` 为等待队列容量，`task_slot_capacity` 为共享任务槽容量。
-/// 返回值：此结构体用于传入 `thread_pool_new_with_config`，各字段会按编译期上限归一化。
+/// 返回值：此结构体用于传入 `thread_pool_new_with_config`，各字段会按资源保护上限归一化。
 export struct ThreadPoolConfig {
     worker_count: i32,
     pending_capacity: i32,
@@ -368,6 +372,39 @@ fn thread_pool_has_shared_state(pool: &ThreadPool) bool {
     return pool._shared_state != null as &ThreadPoolSharedState;
 }
 
+fn thread_pool_capacity_bytes(count: i32, elem_size: usize) usize {
+    if count <= 0 {
+        return 0 as usize;
+    }
+    return (count as usize) * elem_size;
+}
+
+fn thread_pool_shared_bytes(pending_capacity: i32, task_slot_capacity: i32) usize {
+    return @size_of(ThreadPoolSharedState)
+        + thread_pool_capacity_bytes(task_slot_capacity, @size_of(ThreadTaskSlotRaw))
+        + thread_pool_capacity_bytes(pending_capacity, @size_of(i32));
+}
+
+fn thread_pool_init_worker_storage(pool: &ThreadPool) i32 {
+    if pool == null as &ThreadPool {
+        return 0;
+    }
+    if pool._workers != null as &ThreadWorker {
+        return 1;
+    }
+    const worker_bytes: usize = thread_pool_capacity_bytes(pool.worker_count, @size_of(ThreadWorker));
+    if worker_bytes == 0 as usize {
+        return 0;
+    }
+    const workers: &ThreadWorker = malloc(worker_bytes) as &ThreadWorker;
+    if workers == null as &ThreadWorker {
+        return 0;
+    }
+    pool._workers = workers;
+    pool._workers_bytes = worker_bytes;
+    return 1;
+}
+
 fn thread_pool_ensure_shared_state(pool: &ThreadPool) i32 {
     if pool == null as &ThreadPool {
         return 0;
@@ -376,7 +413,11 @@ fn thread_pool_ensure_shared_state(pool: &ThreadPool) i32 {
         return 1;
     }
 
-    const map_result: !i64 = @syscall(SYS_mmap, 0, @size_of(ThreadPoolSharedState) as i64,
+    const map_bytes: usize = thread_pool_shared_bytes(pool.pending_capacity, pool.task_slot_capacity);
+    if map_bytes == 0 as usize {
+        return 0;
+    }
+    const map_result: !i64 = @syscall(SYS_mmap, 0, map_bytes as i64,
                                       PROT_READ | PROT_WRITE,
                                       MAP_SHARED | MAP_ANONYMOUS, 0 - 1, 0);
     const mapped_ptr: i64 = map_result catch {
@@ -386,14 +427,33 @@ fn thread_pool_ensure_shared_state(pool: &ThreadPool) i32 {
     if shared_state == null as &ThreadPoolSharedState {
         return 0;
     }
+    const slots_offset: usize = @size_of(ThreadPoolSharedState);
+    const pending_offset: usize = slots_offset + thread_pool_capacity_bytes(pool.task_slot_capacity, @size_of(ThreadTaskSlotRaw));
     shared_state.pending_capacity = pool.pending_capacity;
     shared_state.task_slot_capacity = pool.task_slot_capacity;
+    shared_state.mapped_bytes = map_bytes;
+    shared_state.slots = @ptr_from_usize((mapped_ptr as usize) + slots_offset) as &ThreadTaskSlotRaw;
+    shared_state.pending_slots = @ptr_from_usize((mapped_ptr as usize) + pending_offset) as &i32;
     pool._shared_state = shared_state;
     return 1;
 }
 
-fn thread_pool_slot_is_valid(slot_idx: i32) bool {
-    return slot_idx >= 0 && slot_idx < THREAD_POOL_MAX_TASK_SLOTS;
+fn thread_pool_slot_is_valid_for_capacity(slot_idx: i32, capacity: i32) bool {
+    return slot_idx >= 0 && capacity > 0 && slot_idx < capacity;
+}
+
+fn thread_pool_slot_is_valid(pool: &ThreadPool, slot_idx: i32) bool {
+    if pool == null as &ThreadPool {
+        return false;
+    }
+    return thread_pool_slot_is_valid_for_capacity(slot_idx, thread_pool_task_slot_capacity(pool));
+}
+
+fn thread_shared_slot_is_valid(shared_state: &ThreadPoolSharedState, slot_idx: i32) bool {
+    if shared_state == null as &ThreadPoolSharedState {
+        return false;
+    }
+    return thread_pool_slot_is_valid_for_capacity(slot_idx, thread_shared_task_slot_capacity(shared_state));
 }
 
 fn thread_pool_task_slot_capacity(pool: &ThreadPool) i32 {
@@ -402,9 +462,6 @@ fn thread_pool_task_slot_capacity(pool: &ThreadPool) i32 {
     }
     if pool.task_slot_capacity <= 0 {
         return 1;
-    }
-    if pool.task_slot_capacity > THREAD_POOL_MAX_TASK_SLOTS {
-        return THREAD_POOL_MAX_TASK_SLOTS;
     }
     return pool.task_slot_capacity;
 }
@@ -416,9 +473,6 @@ fn thread_shared_task_slot_capacity(shared_state: &ThreadPoolSharedState) i32 {
     if shared_state.task_slot_capacity <= 0 {
         return THREAD_POOL_MAX_TASK_SLOTS;
     }
-    if shared_state.task_slot_capacity > THREAD_POOL_MAX_TASK_SLOTS {
-        return THREAD_POOL_MAX_TASK_SLOTS;
-    }
     return shared_state.task_slot_capacity;
 }
 
@@ -427,9 +481,6 @@ fn thread_shared_pending_capacity(shared_state: &ThreadPoolSharedState) i32 {
         return THREAD_POOL_MAX_PENDING;
     }
     if shared_state.pending_capacity <= 0 {
-        return THREAD_POOL_MAX_PENDING;
-    }
-    if shared_state.pending_capacity > THREAD_POOL_MAX_PENDING {
         return THREAD_POOL_MAX_PENDING;
     }
     return shared_state.pending_capacity;
@@ -459,10 +510,10 @@ fn thread_pool_reserve_slot_raw(pool: &ThreadPool, compute_fn: &void, task_kind:
 }
 
 fn thread_shared_clear_slot(shared_state: &ThreadPoolSharedState, slot_idx: i32) void {
-    if shared_state == null as &ThreadPoolSharedState || !thread_pool_slot_is_valid(slot_idx) {
+    if shared_state == null as &ThreadPoolSharedState || !thread_shared_slot_is_valid(shared_state, slot_idx) {
         return;
     }
-    if slot_idx >= 0 && slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
+    if thread_shared_slot_is_valid(shared_state, slot_idx) {
         shared_state.slots[slot_idx as usize].worker_idx = 0 - 1;
         shared_state.slots[slot_idx as usize].task_kind = 0;
         shared_state.slots[slot_idx as usize].result_bits = 0 as usize;
@@ -473,7 +524,7 @@ fn thread_shared_clear_slot(shared_state: &ThreadPoolSharedState, slot_idx: i32)
 }
 
 fn thread_pool_release_slot(pool: &ThreadPool, slot_idx: i32) void {
-    if !thread_pool_has_shared_state(pool) || !thread_pool_slot_is_valid(slot_idx) {
+    if !thread_pool_has_shared_state(pool) || !thread_pool_slot_is_valid(pool, slot_idx) {
         return;
     }
     thread_shared_clear_slot(pool._shared_state, slot_idx);
@@ -498,7 +549,7 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
         if cmd.slot_idx == THREAD_WORKER_STOP_SLOT {
             break;
         }
-        if cmd.slot_idx != THREAD_WORKER_DRAIN_QUEUE && !thread_pool_slot_is_valid(cmd.slot_idx) {
+        if cmd.slot_idx != THREAD_WORKER_DRAIN_QUEUE && !thread_shared_slot_is_valid(shared_state, cmd.slot_idx) {
             break;
         }
 
@@ -507,7 +558,7 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
             active_slot = thread_shared_pop_slot(shared_state);
         }
         while active_slot >= 0 {
-            if !thread_pool_slot_is_valid(active_slot) {
+            if !thread_shared_slot_is_valid(shared_state, active_slot) {
                 break;
             }
             if active_slot < 0 || active_slot >= thread_shared_task_slot_capacity(shared_state) {
@@ -515,7 +566,7 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
             }
 
             const slot_idx: i32 = active_slot;
-            if slot_idx >= 0 && slot_idx < 16 {
+            if thread_shared_slot_is_valid(shared_state, slot_idx) {
                 shared_state.slots[slot_idx as usize].worker_idx = worker_idx;
                 shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_RUNNING;
                 const fn_ptr: &void = (shared_state.slots[slot_idx as usize].fn_bits as usize) as &void;
@@ -552,7 +603,7 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
 
                 active_slot = thread_shared_pop_slot(shared_state);
                 const next_slot: i32 = active_slot;
-                if next_slot >= 0 && next_slot < 16 {
+                if thread_shared_slot_is_valid(shared_state, next_slot) {
                     shared_state.slots[next_slot as usize].worker_idx = worker_idx;
                     shared_state.slots[next_slot as usize].state = THREAD_SLOT_STATE_RUNNING;
                 }
@@ -575,6 +626,9 @@ fn thread_worker_main(arg: &void) &void {
 
 fn thread_pool_spawn_worker(pool: &ThreadPool, worker_idx: i32) !i32 {
     if thread_pool_ensure_shared_state(pool) == 0 {
+        return thread_generic_error_i32();
+    }
+    if thread_pool_init_worker_storage(pool) == 0 {
         return thread_generic_error_i32();
     }
 
@@ -615,7 +669,7 @@ fn thread_pool_spawn_worker(pool: &ThreadPool, worker_idx: i32) !i32 {
     start.result_write_fd = result_fds[1];
     start.shared_state = pool._shared_state;
 
-    if worker_idx < 0 || worker_idx >= THREAD_POOL_MAX_WORKERS {
+    if worker_idx < 0 || worker_idx >= pool.worker_count {
         free(start as &void);
         _ = sys_close(cmd_fds[0]);
         _ = sys_close(cmd_fds[1]);
@@ -633,7 +687,7 @@ fn thread_pool_spawn_worker(pool: &ThreadPool, worker_idx: i32) !i32 {
         active_slot: 0 - 1,
     };
 
-    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
+    if worker_idx >= 0 && worker_idx < pool.worker_count {
         const create_result: i32 = pthread_create(&pool._workers[worker_idx as usize].thread,
                                                   null as &const pthread_attr_t,
                                                   &thread_worker_main as &void,
@@ -670,7 +724,7 @@ fn thread_pool_try_acquire_idle_worker(pool: &ThreadPool) i32 {
     var offset: i32 = 0;
     while offset < pool._started_workers {
         const idx: i32 = (pool._next_worker + offset) % pool._started_workers;
-        if idx >= 0 && idx < THREAD_POOL_MAX_WORKERS {
+        if idx >= 0 && idx < pool.worker_count {
             if pool._workers[idx as usize].active != 0 && pool._workers[idx as usize].busy == 0 {
                 pool._workers[idx as usize].busy = 1;
                 pool._workers[idx as usize].active_slot = 0 - 1;
@@ -690,10 +744,10 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
     if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) {
         return;
     }
-    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= THREAD_POOL_MAX_WORKERS {
+    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= pool.worker_count {
         return;
     }
-    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
+    if worker_idx >= 0 && worker_idx < pool.worker_count {
         if pool._workers[worker_idx as usize].active == 0 {
             return;
         }
@@ -709,7 +763,7 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
         // 在下一次 acquire 时被误判为忙，从而多 spawn 一个冗余 worker（CI 少核下偶发）。
         if slot_state == THREAD_SLOT_STATE_RUNNING &&
            pool._shared_state.slots[slot_idx as usize].worker_idx == worker_idx {
-            if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
+            if worker_idx >= 0 && worker_idx < pool.worker_count {
                 pool._workers[worker_idx as usize].busy = 1;
                 pool._workers[worker_idx as usize].active_slot = slot_idx;
             }
@@ -718,7 +772,7 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
         slot_idx = slot_idx + 1;
     }
 
-    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
+    if worker_idx >= 0 && worker_idx < pool.worker_count {
         pool._workers[worker_idx as usize].busy = 0;
         pool._workers[worker_idx as usize].active_slot = 0 - 1;
     }
@@ -740,7 +794,7 @@ fn thread_pool_acquire_worker(pool: &ThreadPool) !i32 {
     // acquire 入口与此处之间，既有 worker 可能已 pop 并跑完该 slot（pending 归零），
     // 此时再 spawn 出来的 worker 无事可做，只是把 _started_workers 抬高——
     // 这正是少核/高负载环境下 started_workers 偶发等于 2 的直接原因。
-    if pool._started_workers < pool.worker_count && pool._started_workers < THREAD_POOL_MAX_WORKERS
+    if pool._started_workers < pool.worker_count
         && thread_pool_has_shared_state(pool) && pool._shared_state.pending_count > 0 {
         if thread_pool_ensure_shared_state(pool) == 0 {
             return 0 - 1;
@@ -748,7 +802,7 @@ fn thread_pool_acquire_worker(pool: &ThreadPool) !i32 {
 
         const new_idx: i32 = pool._started_workers;
         _ = try thread_pool_spawn_worker(pool, new_idx);
-        if new_idx >= 0 && new_idx < THREAD_POOL_MAX_WORKERS {
+        if new_idx >= 0 && new_idx < pool.worker_count {
             pool._workers[new_idx as usize].busy = 1;
             pool._workers[new_idx as usize].active_slot = 0 - 1;
             pool._next_worker = 0;
@@ -763,10 +817,10 @@ fn thread_pool_release_worker(pool: &ThreadPool, worker_idx: i32) void {
     if pool == null as &ThreadPool {
         return;
     }
-    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= THREAD_POOL_MAX_WORKERS {
+    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= pool.worker_count {
         return;
     }
-    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
+    if worker_idx >= 0 && worker_idx < pool.worker_count {
         if pool._workers[worker_idx as usize].active == 0 {
             return;
         }
@@ -801,7 +855,7 @@ fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
     const worker_idx: i32 = worker_result catch {
         return worker_result as! i32;
     };
-    if worker_idx < 0 || worker_idx >= THREAD_POOL_MAX_WORKERS {
+    if worker_idx < 0 || worker_idx >= pool.worker_count {
         return 0;
     }
 
@@ -814,7 +868,7 @@ fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
         slot_idx: THREAD_WORKER_DRAIN_QUEUE,
         reserved: 0,
     };
-    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
+    if worker_idx >= 0 && worker_idx < pool.worker_count {
         const cmd_fd: i32 = pool._workers[worker_idx as usize].cmd_write_fd;
         const write_result: !isize = sys_write(cmd_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand));
         const written: isize = write_result catch {
@@ -831,10 +885,10 @@ fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
 }
 
 fn thread_pool_try_progress_slot(pool: &ThreadPool, slot_idx: i32) !i32 {
-    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || !thread_pool_slot_is_valid(slot_idx) {
+    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || !thread_pool_slot_is_valid(pool, slot_idx) {
         return 0;
     }
-    if slot_idx >= 0 && slot_idx < 16 {
+    if thread_pool_slot_is_valid(pool, slot_idx) {
         if pool._shared_state.slots[slot_idx as usize].state != THREAD_SLOT_STATE_QUEUED {
             return 0;
         }
@@ -871,7 +925,7 @@ fn thread_pool_submit_slot_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) i
 }
 
 fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
-    if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || !thread_pool_has_shared_state(pool) {
+    if pool == null as &ThreadPool || !thread_pool_slot_is_valid(pool, slot_idx) || !thread_pool_has_shared_state(pool) {
         return 0;
     }
     const pending_capacity: i32 = thread_shared_pending_capacity(pool._shared_state);
@@ -885,7 +939,7 @@ fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
             pool._shared_state.pending_tail = 0;
         }
         pool._shared_state.pending_count = pool._shared_state.pending_count + 1;
-        if slot_idx >= 0 && slot_idx < thread_shared_task_slot_capacity(pool._shared_state) && slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
+        if thread_shared_slot_is_valid(pool._shared_state, slot_idx) {
             pool._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_QUEUED;
         }
         return 1;
@@ -900,7 +954,7 @@ fn thread_shared_remove_pending_slot(shared_state: &ThreadPoolSharedState, slot_
 
     var remaining: i32 = shared_state.pending_count;
     var read_idx: i32 = shared_state.pending_head;
-    var kept: [i32: 32] = [];
+    var write_idx: i32 = 0;
     var kept_count: i32 = 0;
     var removed: i32 = 0;
     const pending_capacity: i32 = thread_shared_pending_capacity(shared_state);
@@ -908,15 +962,16 @@ fn thread_shared_remove_pending_slot(shared_state: &ThreadPoolSharedState, slot_
     while remaining > 0 {
         if read_idx >= 0 && read_idx < pending_capacity {
             const pending_idx: i32 = read_idx;
-            if pending_idx >= 0 && pending_idx < pending_capacity && pending_idx < THREAD_POOL_MAX_PENDING {
+            if pending_idx >= 0 && pending_idx < pending_capacity {
                 const queued_slot: i32 = shared_state.pending_slots[pending_idx as usize];
+                shared_state.pending_slots[pending_idx as usize] = 0;
                 if removed == 0 && queued_slot == slot_idx {
                     removed = 1;
                 } else if kept_count >= 0 && kept_count < pending_capacity {
-                    kept[kept_count as usize] = queued_slot;
+                    shared_state.pending_slots[write_idx as usize] = queued_slot;
+                    write_idx = write_idx + 1;
                     kept_count = kept_count + 1;
                 }
-                shared_state.pending_slots[pending_idx as usize] = 0;
                 read_idx = read_idx + 1;
                 if read_idx >= pending_capacity {
                     read_idx = 0;
@@ -933,12 +988,6 @@ fn thread_shared_remove_pending_slot(shared_state: &ThreadPoolSharedState, slot_
     shared_state.pending_head = 0;
     shared_state.pending_tail = 0;
     shared_state.pending_count = 0;
-
-    var write_idx: i32 = 0;
-    while write_idx < kept_count && write_idx < pending_capacity {
-        shared_state.pending_slots[write_idx as usize] = kept[write_idx as usize];
-        write_idx = write_idx + 1;
-    }
     shared_state.pending_tail = kept_count;
     if shared_state.pending_tail >= pending_capacity {
         shared_state.pending_tail = 0;
@@ -955,7 +1004,7 @@ fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedState) i32 {
     const pending_capacity: i32 = thread_shared_pending_capacity(shared_state);
     const slot_capacity: i32 = thread_shared_task_slot_capacity(shared_state);
     while shared_state.pending_count > 0 {
-        if shared_state.pending_head >= 0 && shared_state.pending_head < pending_capacity && shared_state.pending_head < THREAD_POOL_MAX_PENDING {
+        if shared_state.pending_head >= 0 && shared_state.pending_head < pending_capacity {
             const slot_idx: i32 = shared_state.pending_slots[shared_state.pending_head as usize];
             shared_state.pending_slots[shared_state.pending_head as usize] = 0;
             shared_state.pending_head = shared_state.pending_head + 1;
@@ -964,14 +1013,14 @@ fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedState) i32 {
             }
             shared_state.pending_count = shared_state.pending_count - 1;
 
-            if !thread_pool_slot_is_valid(slot_idx) {
+            if !thread_shared_slot_is_valid(shared_state, slot_idx) {
                 continue;
             }
             if slot_idx < 0 || slot_idx >= slot_capacity {
                 continue;
             }
 
-            if slot_idx >= 0 && slot_idx < slot_capacity && slot_idx < THREAD_POOL_MAX_TASK_SLOTS {
+            if thread_shared_slot_is_valid(shared_state, slot_idx) {
                 const slot_state: i32 = shared_state.slots[slot_idx as usize].state;
                 if slot_state == THREAD_SLOT_STATE_QUEUED {
                     return slot_idx;
@@ -995,8 +1044,6 @@ struct ThreadAsyncComputeCore {
     slot_idx: i32,
     worker_idx: i32,
     read_fd: i32,
-    child_pid: i32,
-    owns_read_fd: i32,
     first_poll: i32,
 
     fn finish_cleanup(self: &Self) void {
@@ -1008,39 +1055,14 @@ struct ThreadAsyncComputeCore {
             thread_pool_release_slot(self.pool, self.slot_idx);
             self.slot_idx = 0 - 1;
         }
-        if self.owns_read_fd != 0 && self.read_fd >= 0 {
-            _ = sys_close(self.read_fd);
-            self.read_fd = 0 - 1;
-        }
-        if self.child_pid > 0 {
-            var status: i32 = 0;
-            _ = sys_waitpid(self.child_pid, &status, 0);
-            self.child_pid = 0;
-        }
     }
 
     fn try_cancel_now(self: &Self) i32 {
-        if self.child_pid > 0 {
-            _ = sys_kill(self.child_pid as i64, SIGKILL) catch {};
-            if self.owns_read_fd != 0 && self.read_fd >= 0 {
-                _ = sys_close(self.read_fd) catch {};
-                self.read_fd = 0 - 1;
-            }
-            var status: i32 = 0;
-            _ = sys_waitpid(self.child_pid, &status, 0) catch {};
-            self.child_pid = 0;
-            self.owns_read_fd = 0;
+        if self.slot_idx < 0 {
             return 1;
         }
 
-        if self.slot_idx < 0 {
-            if self.read_fd < 0 {
-                return 1;
-            }
-            return 0;
-        }
-
-        if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.slot_idx) {
+        if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.pool, self.slot_idx) {
             self.slot_idx = 0 - 1;
             return 1;
         }
@@ -1075,12 +1097,10 @@ struct ThreadAsyncComputeCore {
         }
 
         const worker_idx: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].worker_idx;
-        if worker_idx >= 0 && worker_idx < pool_ref._started_workers && worker_idx < THREAD_POOL_MAX_WORKERS {
+        if worker_idx >= 0 && worker_idx < pool_ref._started_workers && worker_idx < pool_ref.worker_count {
             if pool_ref._workers[worker_idx as usize].active != 0 {
                 self.worker_idx = worker_idx;
                 self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
-                self.child_pid = 0;
-                self.owns_read_fd = 0;
                 return 1;
             }
         }
@@ -1106,66 +1126,13 @@ struct ThreadAsyncComputeCore {
             return self.progress_current_slot(waker);
         }
 
-        const one_shot_result: !i32 = self.start_one_shot();
-        _ = one_shot_result catch {
-            const err_value: !usize = one_shot_result as! usize;
-            return Poll<!usize>.Ready(err_value);
-        };
-        waker.wake();
-        return Poll<!usize>.Pending({});
-    }
-
-    fn start_one_shot(self: &Self) !i32 {
-        var fds: [i32: 2] = [];
-        _ = try sys_pipe2(&fds[0], O_NONBLOCK);
-
-        const read_fd: i32 = fds[0];
-        const write_fd: i32 = fds[1];
-
-        const fork_result: !i64 = sys_fork();
-        const child_pid: i64 = fork_result catch {
-            _ = sys_close(read_fd);
-            _ = sys_close(write_fd);
-            return fork_result as! i32;
-        };
-
-        if child_pid == 0 {
-            _ = sys_close(read_fd);
-            var value_bits: usize = 0 as usize;
-            if self.task_kind == THREAD_TASK_KIND_USIZE {
-                value_bits = thread_call_usize(self.compute_fn, self.arg_bits);
-            } else if self.task_kind == THREAD_TASK_KIND_U32 {
-                const value_u32: u32 = thread_call_u32(self.compute_fn, self.arg_bits as u32);
-                value_bits = value_u32 as usize;
-            } else if self.task_kind == THREAD_TASK_KIND_F32 {
-                const value_u32: u32 = thread_call_f32(self.compute_fn, self.arg_bits as u32);
-                value_bits = value_u32 as usize;
-            } else if self.task_kind == THREAD_TASK_KIND_F64 {
-                const value_u64: u64 = thread_call_f64(self.compute_fn, self.arg_bits as u64);
-                value_bits = value_u64 as usize;
-            } else {
-                const value_i32: i32 = thread_call_i32(self.compute_fn, self.arg_bits as i32);
-                value_bits = value_i32 as usize;
-            }
-            const write_result: !isize = sys_write(write_fd, (&value_bits) as *const byte, @size_of(usize));
-            _ = write_result catch {};
-            _ = sys_close(write_fd);
-            sys_exit(0);
-        }
-
-        _ = sys_close(write_fd);
-        self.slot_idx = 0 - 1;
-        self.worker_idx = 0 - 1;
-        self.read_fd = read_fd;
-        self.child_pid = child_pid as i32;
-        self.owns_read_fd = 1;
-        return 0;
+        return Poll<!usize>.Ready(thread_generic_error_usize());
     }
 
     fn finish_from_raw_value(self: &Self, raw_value: usize) Poll<!usize> {
         var value: usize = raw_value;
         if self.slot_idx >= 0 {
-            if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.slot_idx) {
+            if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.pool, self.slot_idx) {
                 return Poll<!usize>.Ready(thread_generic_error_usize());
             }
             if raw_value != self.slot_idx as usize {
@@ -1319,12 +1286,26 @@ export type AsyncComputeBoolFuture = AsyncComputeFuture<bool>;
 export type AsyncComputeF32Future = AsyncComputeFuture<f32>;
 export type AsyncComputeF64Future = AsyncComputeFuture<f64>;
 
-// 线程池最小构造：当前使用懒启动 worker 池，队列中的任务负载放在固定共享槽位中。
+fn thread_pool_default_scaled_capacity(worker_count: i32, per_worker: i32) i32 {
+    var normalized_workers: i32 = thread_pool_normalize_config_capacity(worker_count);
+    var normalized_per_worker: i32 = per_worker;
+    if normalized_per_worker <= 0 {
+        normalized_per_worker = 1;
+    }
+    if normalized_workers > THREAD_POOL_MAX_CONFIG_CAPACITY / normalized_per_worker {
+        return THREAD_POOL_MAX_CONFIG_CAPACITY;
+    }
+    return thread_pool_normalize_config_capacity(normalized_workers * normalized_per_worker);
+}
+
+// 线程池最小构造：使用懒启动 worker 池，默认 pending/task slot 随 worker 数扩展。
 export fn thread_pool_new(worker_count: i32) ThreadPool {
+    const pending_capacity: i32 = thread_pool_default_scaled_capacity(worker_count, THREAD_POOL_DEFAULT_PENDING_PER_WORKER);
+    const task_slot_capacity: i32 = thread_pool_default_scaled_capacity(worker_count, THREAD_POOL_DEFAULT_SLOT_PER_WORKER);
     return thread_pool_new_with_config(ThreadPoolConfig{
         worker_count: worker_count,
-        pending_capacity: THREAD_POOL_MAX_PENDING,
-        task_slot_capacity: THREAD_POOL_MAX_TASK_SLOTS,
+        pending_capacity: pending_capacity,
+        task_slot_capacity: task_slot_capacity,
     });
 }
 
@@ -1339,13 +1320,17 @@ fn thread_pool_normalize_capacity(value: i32, max_value: i32) i32 {
     return normalized;
 }
 
+fn thread_pool_normalize_config_capacity(value: i32) i32 {
+    return thread_pool_normalize_capacity(value, THREAD_POOL_MAX_CONFIG_CAPACITY);
+}
+
 /// 使用显式容量配置构造 `ThreadPool`。
-/// 参数：`config` 提供 worker、pending 队列和 task slot 容量；无效或过大的值会归一化到 `[1, 上限]`。
+/// 参数：`config` 提供 worker、pending 队列和 task slot 容量；无效或极端过大的值会归一化到资源保护上限。
 /// 返回值：返回懒启动线程池，实际容量保存在公开字段中，后续调度按这些容量边界执行。
 export fn thread_pool_new_with_config(config: ThreadPoolConfig) ThreadPool {
-    const normalized: i32 = thread_pool_normalize_capacity(config.worker_count, THREAD_POOL_MAX_WORKERS);
-    const normalized_pending: i32 = thread_pool_normalize_capacity(config.pending_capacity, THREAD_POOL_MAX_PENDING);
-    const normalized_slots: i32 = thread_pool_normalize_capacity(config.task_slot_capacity, THREAD_POOL_MAX_TASK_SLOTS);
+    const normalized: i32 = thread_pool_normalize_config_capacity(config.worker_count);
+    const normalized_pending: i32 = thread_pool_normalize_config_capacity(config.pending_capacity);
+    const normalized_slots: i32 = thread_pool_normalize_config_capacity(config.task_slot_capacity);
     return ThreadPool{
         worker_count: normalized,
         pending_capacity: normalized_pending,
@@ -1353,6 +1338,8 @@ export fn thread_pool_new_with_config(config: ThreadPoolConfig) ThreadPool {
         _started_workers: 0,
         _next_worker: 0,
         _shared_state: null as &ThreadPoolSharedState,
+        _workers: null as &ThreadWorker,
+        _workers_bytes: 0 as usize,
     };
 }
 
@@ -1367,7 +1354,7 @@ export fn thread_pool_pending_count(pool: &ThreadPool) i32 {
 export fn thread_pool_shutdown(pool: &ThreadPool) void {
     var i: i32 = 0;
     while i < pool._started_workers {
-        if i >= 0 && i < THREAD_POOL_MAX_WORKERS {
+        if i >= 0 && i < pool.worker_count {
             if pool._workers[i as usize].active != 0 {
                 var cmd: ThreadWorkerCommand = ThreadWorkerCommand{ slot_idx: THREAD_WORKER_STOP_SLOT, reserved: 0 };
                 _ = sys_write(pool._workers[i as usize].cmd_write_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand)) catch {};
@@ -1392,15 +1379,22 @@ export fn thread_pool_shutdown(pool: &ThreadPool) void {
     }
 
     if thread_pool_has_shared_state(pool) {
-        _ = sys_munmap(pool._shared_state as *void, @size_of(ThreadPoolSharedState)) catch {};
+        const mapped_bytes: usize = pool._shared_state.mapped_bytes;
+        _ = sys_munmap(pool._shared_state as *void, mapped_bytes) catch {};
         pool._shared_state = null as &ThreadPoolSharedState;
+    }
+
+    if pool._workers != null as &ThreadWorker {
+        free(pool._workers as &void);
+        pool._workers = null as &ThreadWorker;
+        pool._workers_bytes = 0 as usize;
     }
 
     pool._started_workers = 0;
     pool._next_worker = 0;
 }
 
-/// 构造 `AsyncComputeFuture<T>`：共享槽位 / one-shot 状态机在 `ThreadAsyncComputeCore` 中。
+/// 构造 `AsyncComputeFuture<T>`：共享槽位状态机在 `ThreadAsyncComputeCore` 中。
 fn thread_async_compute_future_new<T>(pool: &ThreadPool, compute_fn: &void, task_kind: i32, arg_bits: usize) AsyncComputeFuture<T> {
     return AsyncComputeFuture<T>{
         core: ThreadAsyncComputeCore{
@@ -1411,8 +1405,6 @@ fn thread_async_compute_future_new<T>(pool: &ThreadPool, compute_fn: &void, task
             slot_idx: 0 - 1,
             worker_idx: 0 - 1,
             read_fd: 0 - 1,
-            child_pid: 0,
-            owns_read_fd: 0,
             first_poll: 0,
         },
         done: 0,
@@ -1432,7 +1424,7 @@ fn thread_f64_arg_bits(arg: f64) usize {
 }
 
 // 执行 T -> T 计算，并返回 Future<!T>（装箱后的接口对象）。
-// 说明：优先复用 ThreadPool 的 worker 线程；池满载时先进入共享槽位 FIFO，再回退 one-shot 子进程。
+// 说明：复用 ThreadPool 的 worker 线程；池满载时进入共享槽位 FIFO，容量不足时返回资源错误。
 // 通用 async_compute<T> 顶层入口。
 // 依赖单态化后的常量条件裁剪，仅保留与 T 对应的 concrete future 分支。
 export fn async_compute<T>(pool: &ThreadPool, compute_fn: &void, arg: T) Future<!T> {

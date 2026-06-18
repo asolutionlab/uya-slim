@@ -34,7 +34,18 @@ export error HttpTimeout;
 /// 返回值说明：短请求按此容量分配；超过时按实际请求头长度动态分配。
 export const HTTP1_ASYNC_REQUEST_HEADER_INLINE_CAP: usize = 4096;
 
+/// HTTP/1 async 响应头块默认最大容量。
+/// 参数说明：无。
+/// 返回值说明：响应头读取按需增长到该上限，避免旧 8 KiB 临时 buffer 成为默认产品上限。
+export const HTTP1_ASYNC_RESPONSE_HEADER_MAX_CAP: usize = 65536;
+
 export struct Http1AsyncRequestHeaderBuffer {
+    ptr: &byte,
+    len: usize,
+    cap: usize,
+}
+
+struct Http1AsyncResponseHeaderBuffer {
     ptr: &byte,
     len: usize,
     cap: usize,
@@ -839,6 +850,47 @@ fn parse_response_meta_raw(buf: &byte, len: usize) !ParsedRespMeta {
     return parse_response_meta(buf[0: len]);
 }
 
+fn http1_response_header_buffer_alloc() !Http1AsyncResponseHeaderBuffer {
+    const cap: usize = 8192;
+    const mem: &void = malloc(cap);
+    if (((mem as &byte) as usize) == 0) {
+        return error.InvalidRequest;
+    }
+    return Http1AsyncResponseHeaderBuffer{ ptr: mem as &byte, len: 0, cap: cap };
+}
+
+fn http1_response_header_buffer_free(buf: &Http1AsyncResponseHeaderBuffer) void {
+    if buf.ptr != null {
+        free(buf.ptr as &void);
+    }
+}
+
+fn http1_response_header_buffer_grow(buf: &Http1AsyncResponseHeaderBuffer) !void {
+    var next_cap: usize = buf.cap * 2;
+    if next_cap <= buf.cap {
+        return error.HeaderTooLarge;
+    }
+    if next_cap > HTTP1_ASYNC_RESPONSE_HEADER_MAX_CAP {
+        next_cap = HTTP1_ASYNC_RESPONSE_HEADER_MAX_CAP;
+    }
+    if next_cap <= buf.cap {
+        return error.HeaderTooLarge;
+    }
+    const next_mem: &void = malloc(next_cap);
+    if (((next_mem as &byte) as usize) == 0) {
+        return error.InvalidRequest;
+    }
+    const next: &byte = next_mem as &byte;
+    var i: usize = 0;
+    while i < buf.len {
+        next[i] = buf.ptr[i];
+        i = i + 1;
+    }
+    free(buf.ptr as &void);
+    buf.ptr = next;
+    buf.cap = next_cap;
+}
+
 /// 解析响应头元数据（允许 chunked 编码，用于流式接口）
 fn parse_response_meta_allow_chunked(header_block: &[byte]) !ParsedRespMeta {
     if header_block.len < 12 {
@@ -955,26 +1007,58 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
 
     try http_check_deadline(deadline_ms);
 
-    var rb: [byte: 8192] = [];
-    var filled: usize = 0;
-    while !header_complete_raw(&rb[0] as &byte, filled) {
-        if filled >= 8192 {
-            _ = sys_close(fd) catch {};
-            return try http1_async_err_header_large();
+    var rb_cap: usize = 8192;
+    var rb_mem: &void = malloc(rb_cap);
+    if (((rb_mem as &byte) as usize) == 0) {
+        _ = sys_close(fd) catch {};
+        const err_resp: Http1AsyncResponse = try http1_async_err_invalid();
+        return err_resp;
+    }
+    var rb_ptr: &byte = rb_mem as &byte;
+    var rb_len: usize = 0;
+    while !header_complete_raw(rb_ptr, rb_len) {
+        if rb_len >= rb_cap {
+            var next_cap: usize = rb_cap * 2;
+            if next_cap > HTTP1_ASYNC_RESPONSE_HEADER_MAX_CAP {
+                next_cap = HTTP1_ASYNC_RESPONSE_HEADER_MAX_CAP;
+            }
+            if next_cap <= rb_cap {
+                free(rb_ptr as &void);
+                _ = sys_close(fd) catch {};
+                const err_resp: Http1AsyncResponse = try http1_async_err_header_large();
+                return err_resp;
+            }
+            const next_mem: &void = malloc(next_cap);
+            if (((next_mem as &byte) as usize) == 0) {
+                free(rb_ptr as &void);
+                _ = sys_close(fd) catch {};
+                const err_resp: Http1AsyncResponse = try http1_async_err_invalid();
+                return err_resp;
+            }
+            const next_ptr: &byte = next_mem as &byte;
+            var gi: usize = 0;
+            while gi < rb_len {
+                next_ptr[gi] = rb_ptr[gi];
+                gi = gi + 1;
+            }
+            free(rb_ptr as &void);
+            rb_ptr = next_ptr;
+            rb_cap = next_cap;
         }
         try http_check_deadline(deadline_ms);
-        const rn: usize = try @await async_fd_read_future(fd, @ptr_from_usize(@usize_from_ptr(&rb[0] as &void) + filled) as &byte, 8192 - filled);
+        const rn: usize = try @await async_fd_read_future(fd, @ptr_from_usize(@usize_from_ptr(rb_ptr as &void) + rb_len) as &byte, rb_cap - rb_len);
         if rn == 0 {
+            free(rb_ptr as &void);
             _ = sys_close(fd) catch {};
             const err_resp: Http1AsyncResponse = try http1_async_err_closed();
             return err_resp;
         }
-        filled = filled + rn;
+        rb_len = rb_len + rn;
     }
-    const body_start: usize = try find_header_body_start_raw(&rb[0] as &byte, filled);
+    const body_start: usize = try find_header_body_start_raw(rb_ptr, rb_len);
 
-    const meta: ParsedRespMeta = try parse_response_meta_raw(&rb[0] as &byte, body_start - 4);
-    const initial_body: usize = filled - body_start;
+    const meta: ParsedRespMeta = try parse_response_meta_raw(rb_ptr, body_start - 4);
+    const initial_body: usize = rb_len - body_start;
     var body_total: usize = 0;
     if meta.has_content_length {
         body_total = meta.content_length;
@@ -985,12 +1069,14 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
     }
 
     if meta.has_content_length && initial_body > meta.content_length {
+        free(rb_ptr as &void);
         _ = sys_close(fd) catch {};
         const err_resp: Http1AsyncResponse = try http1_async_err_invalid();
         return err_resp;
     }
 
     if body_total == 0 {
+        free(rb_ptr as &void);
         _ = sys_close(fd) catch {};
         var empty_raw: [byte: 4] = [];
         const eb: &[byte] = slice_from_raw(&empty_raw[0] as &byte, 0);
@@ -999,6 +1085,7 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
 
     const mem: &void = malloc(body_total);
     if (((mem as &byte) as usize) == 0) {
+        free(rb_ptr as &void);
         _ = sys_close(fd) catch {};
         const err_resp: Http1AsyncResponse = try http1_async_err_invalid();
         return err_resp;
@@ -1013,7 +1100,7 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
         var i: usize = 0;
         while i < take {
             const pb: &byte = @ptr_from_usize(@usize_from_ptr(base as &void) + copied) as &byte;
-            pb[0] = rb[body_start + i];
+            pb[0] = rb_ptr[body_start + i];
             copied = copied + 1;
             i = i + 1;
         }
@@ -1032,7 +1119,7 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
         var i2: usize = 0;
         while i2 < initial_body && copied < body_total {
             const p2: &byte = @ptr_from_usize(@usize_from_ptr(base as &void) + copied) as &byte;
-            p2[0] = rb[body_start + i2];
+            p2[0] = rb_ptr[body_start + i2];
             copied = copied + 1;
             i2 = i2 + 1;
         }
@@ -1048,6 +1135,7 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest, timeout_ms: u32
         body_total = copied;
     }
 
+    free(rb_ptr as &void);
     _ = sys_close(fd) catch {};
     return Http1AsyncResponse{ status: meta.status, body: slice_from_raw(mem as &byte, body_total), body_storage: mem };
 }
@@ -1388,30 +1476,47 @@ export fn http1_request_streaming(
     }
     
     // 读取响应头
-    var rb: [byte: 8192] = [];
-    const filled_result: !usize = http1_sync_read_headers(fd, &rb[0] as &byte, 8192);
-    var filled: usize = 0;
-    if filled_result.error_id != 0 {
-        _ = sys_close(fd) catch {};
-        return error.ConnectionClosed;
+    var rb: Http1AsyncResponseHeaderBuffer = try http1_response_header_buffer_alloc();
+    while !header_complete_raw(rb.ptr, rb.len) {
+        if rb.len >= rb.cap {
+            http1_response_header_buffer_grow(&rb) catch |err| {
+                http1_response_header_buffer_free(&rb);
+                _ = sys_close(fd) catch {};
+                return err;
+            };
+        }
+        if rb.len >= rb.cap {
+            http1_response_header_buffer_free(&rb);
+            _ = sys_close(fd) catch {};
+            return error.HeaderTooLarge;
+        }
+        const rn: i64 = read(fd, @ptr_from_usize(@usize_from_ptr(rb.ptr as &void) + rb.len) as &byte, 1);
+        if rn <= 0i64 {
+            http1_response_header_buffer_free(&rb);
+            _ = sys_close(fd) catch {};
+            return error.ConnectionClosed;
+        }
+        rb.len = rb.len + 1;
     }
-    filled = filled_result.value;
     
-    const body_start_result: !usize = find_header_body_start_raw(&rb[0] as &byte, filled);
+    const body_start_result: !usize = find_header_body_start_raw(rb.ptr, rb.len);
     var body_start: usize = 0;
     if body_start_result.error_id != 0 {
+        http1_response_header_buffer_free(&rb);
         _ = sys_close(fd) catch {};
         return error.InvalidRequest;
     }
     body_start = body_start_result.value;
     
-    const meta_result: !ParsedRespMeta = parse_response_meta_allow_chunked_raw(&rb[0] as &byte, body_start - 4);
+    const meta_result: !ParsedRespMeta = parse_response_meta_allow_chunked_raw(rb.ptr, body_start - 4);
     var meta: ParsedRespMeta = ParsedRespMeta{ status: 0, content_length: 0, has_content_length: false, read_until_eof: false, transfer_encoding_chunked: false };
     if meta_result.error_id != 0 {
+        http1_response_header_buffer_free(&rb);
         _ = sys_close(fd) catch {};
         return error.InvalidRequest;
     }
     meta = meta_result.value;
+    http1_response_header_buffer_free(&rb);
     
     return Http1StreamResponse{
         headers: Http1ResponseHeaders{
@@ -1474,24 +1579,33 @@ export @async_fn fn http1_request_stream_async(
     try http_check_deadline(deadline_ms);
 
     // 为避免超额读取 body，header 使用逐字节读取（与同步流式接口行为一致）
-    var rb: [byte: 8192] = [];
-    var filled: usize = 0;
-    while !header_complete_raw(&rb[0] as &byte, filled) {
-        if filled >= 8192 {
+    var rb: Http1AsyncResponseHeaderBuffer = try http1_response_header_buffer_alloc();
+    while !header_complete_raw(rb.ptr, rb.len) {
+        if rb.len >= rb.cap {
+            http1_response_header_buffer_grow(&rb) catch |err| {
+                http1_response_header_buffer_free(&rb);
+                _ = sys_close(fd) catch {};
+                return err;
+            };
+        }
+        if rb.len >= rb.cap {
+            http1_response_header_buffer_free(&rb);
             _ = sys_close(fd) catch {};
             return error.HeaderTooLarge;
         }
         try http_check_deadline(deadline_ms);
-        const rn: usize = try @await async_fd_read_future(fd, @ptr_from_usize(@usize_from_ptr(&rb[0] as &void) + filled) as &byte, 1);
+        const rn: usize = try @await async_fd_read_future(fd, @ptr_from_usize(@usize_from_ptr(rb.ptr as &void) + rb.len) as &byte, 1);
         if rn == 0 {
+            http1_response_header_buffer_free(&rb);
             _ = sys_close(fd) catch {};
             return error.ConnectionClosed;
         }
-        filled = filled + rn;
+        rb.len = rb.len + rn;
     }
 
-    const body_start: usize = try find_header_body_start_raw(&rb[0] as &byte, filled);
-    const meta: ParsedRespMeta = try parse_response_meta_allow_chunked_raw(&rb[0] as &byte, body_start - 4);
+    const body_start: usize = try find_header_body_start_raw(rb.ptr, rb.len);
+    const meta: ParsedRespMeta = try parse_response_meta_allow_chunked_raw(rb.ptr, body_start - 4);
+    http1_response_header_buffer_free(&rb);
 
     return Http1StreamResponse{
         headers: Http1ResponseHeaders{

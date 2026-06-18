@@ -12,10 +12,15 @@
 > 2. async 相关资源改成动态或可配置，而不是继续依赖 `16/32/64/512/1024` 这类固定容量。
 > 3. HTTP、DNS、TLS、`async_compute` 与 `Scheduler` 必须被同一套共享 runtime 语义矩阵验证，不能只凭单项主链路测试通过宣称“已完全量产”。
 > 4. 文档口径必须与当前源码和验证闸门一致，不能仅凭本文历史结论宣称“已量产”。
+>
+> 当前这些项都是新的生产阻塞项，不再归入“量产后二阶段”：
+> - 固定容量：`TaskQueue=64`、`LinuxEpoll=1024`、thread pool/async frame/descriptor/meta 表等硬编码上限仍会改变生产行为。
+> - 语法禁区：接口值迭代、nested future 边界、direct err-union await 以外的完整函数体语法矩阵尚未全部证明。
+> - 回退路径：thread `fork()` fallback、frame/debug heap fallback、HTTP scratch buffer 等路径必须被去除、配置化或纳入显式生产验收。
 
 ## 量产定义（历史阶段口径）
 
-以下 `[x]` 仅表示 2026-04 阶段针对 DNS / HTTP / HTTPS 主链路和当时已知 async lowering 缺口的验收结论。它们不覆盖完整 Uya 函数体语法矩阵、动态资源目标，也不覆盖 HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享 runtime 生产收口矩阵；当前是否完成必须回到 `docs/todo_async_full_language_dynamic_resources.md` 与 `docs/async_status_matrix.md` 判断。
+以下 `[x]` 仅表示 2026-04 阶段针对 DNS / HTTP / HTTPS 主链路和当时已知 async lowering 缺口的验收结论。它们不覆盖完整 Uya 函数体语法矩阵、动态资源目标、回退路径收口，也不覆盖 HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享 runtime 生产收口矩阵；当前是否完成必须回到 `docs/todo_async_full_language_dynamic_resources.md` 与 `docs/async_status_matrix.md` 判断。
 
 - [x] `@async_fn` 在常见复杂控制流中稳定：`if/else if`、`while`、`for`、嵌套分支、await 间同步语句、提前返回错误。
 - [x] 异步运行时在 fd 复用、短连接、服务端提前关闭、注册/反注册重复调用等边界下不崩溃、不忙等、不泄漏 fd。

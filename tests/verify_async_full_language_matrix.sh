@@ -80,6 +80,7 @@ baseline_tests=(
     "tests/test_async_await_ready.uya"
     "tests/test_async_multiple_await.uya"
     "tests/test_async_state_machine.uya"
+    "tests/test_async_large_state_machine_syntax.uya"
     "tests/test_async_if_await.uya"
     "tests/test_async_else_if_await.uya"
     "tests/test_async_for_await.uya"
@@ -115,12 +116,13 @@ done
 
 # 规范明确禁止的 @await 位置，必须继续保持失败。
 expect_check_fail "tests/error_await_outside_async.uya" "@await 只能在 @async_fn 函数内使用"
+expect_check_fail "tests/error_await_in_future_returning_non_async.uya" "@await 只能在 @async_fn 函数内使用"
 expect_check_fail "tests/error_async_await_in_while_cond.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_await_in_return.uya" "@async_fn 状态机结构验证失败"
 expect_check_fail "tests/error_async_defer_return.uya" "defer/errdefer 块中不能使用 return 语句"
 expect_check_fail "tests/error_async_errdefer_break.uya" "defer/errdefer 块中不能使用 break 语句"
 expect_check_fail "tests/error_async_defer_continue_nested.uya" "defer/errdefer 块中不能使用 continue 语句"
-expect_compile_fail "tests/error_async_for_iterator_interface_await.uya" "接口类型变量的 for 迭代目前不支持；请使用具体实现迭代器类型"
+expect_check_fail "tests/error_async_for_iterator_interface_await.uya" "接口类型变量的 for 迭代目前不支持；请使用具体实现迭代器类型"
 
 # 2026-06-18: struct 迭代器 ref 绑定现已支持，转为正向回归。
 run_uya_test "tests/test_async_for_iterator_ref_await.uya"
@@ -149,4 +151,4 @@ if ! (
 fi
 rm -f "$macro_log"
 
-echo "verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed"
+echo "verify_async_full_language_matrix: positive async language matrix, iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed"

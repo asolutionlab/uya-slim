@@ -1976,8 +1976,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
         // @await 只能在 @async_fn 函数内使用
         if checker.current_function_decl == null ||
-            (checker.current_function_decl.fn_decl_is_async == 0 &&
-             checker_current_fn_returns_future_error_union(checker) == 0) {
+            checker.current_function_decl.fn_decl_is_async == 0 {
             checker_report_error(checker, expr, "@await 只能在 @async_fn 函数内使用" as &byte);
             return make_void_type();
         }

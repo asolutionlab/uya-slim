@@ -655,3 +655,303 @@
     - 验证：`../uya/bin/uya check tests/error_async_errdefer_break.uya` 按预期失败，诊断包含 `defer/errdefer 块中不能使用 break 语句`。
     - 验证：`../uya/bin/uya check tests/error_async_defer_continue_nested.uya` 按预期失败，诊断包含 `defer/errdefer 块中不能使用 continue 语句`。
     - 相关回归：`bash tests/verify_async_full_language_matrix.sh` 通过。
+
+## 先澄清边界
+
+父级任务路径：
+- “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
+
+  - [x] 建立 async 函数体模式匹配覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`match` 语句/表达式、枚举/联合体模式和 `else` 分支在 `@async_fn` 中与同步函数一致。
+    验证：`../uya/bin/uya test tests/test_async_match_body_coverage.uya` 通过（3 tests, 0 failed）。
+    相关验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过（4 tests, 0 failed）。
+## 先澄清边界
+
+- [x] “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
+  - [x] 建立 async 函数体内建函数体语法覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`@params`、`@func_name`、`@src_*`、`@error_id`、`@error_name` 等本来允许在同步函数体内使用的内建在 `@async_fn` 中语义一致。
+    - 验证命令：`../uya/bin/uya test tests/test_async_builtin_body_coverage.uya`
+    - 验证结果：通过；1 个测试通过，覆盖 `@params.0/.1`、`@func_name`、`@src_name`、`@src_path`、`@src_line`、`@src_col`、`@error_id`、`@error_name` 在 `@async_fn` 中与同步函数体语义对齐。
+    - 相关回归：`../uya/bin/uya test tests/test_async_decl_expr_coverage.uya`、`../uya/bin/uya test tests/test_varargs_full.uya`、`../uya/bin/uya test tests/test_error_id_builtin.uya`、`../uya/bin/uya test tests/test_error_name_builtin.uya`、`../uya/bin/uya test tests/test_src_location.uya` 均通过。
+
+## 先澄清边界
+
+父级任务路径：这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+
+  - [x] `@await` 只能出现在 `@async_fn` 中。
+    验证命令：`../uya/bin/uya check tests/error_await_in_future_returning_non_async.uya`，结果：失败且报告 `@await 只能在 @async_fn 函数内使用`（先确认旧实现曾错误通过，修复后通过负例验证）。
+    验证命令：`../uya/bin/uya check tests/error_await_outside_async.uya`，结果：失败且报告 `@await 只能在 @async_fn 函数内使用`。
+    验证命令：`./tests/verify_async_full_language_matrix.sh`，结果：通过，输出 `forbidden @await positions ... passed`。
+## 先澄清边界
+
+父级任务路径：
+- [ ] 这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+  - [x] `@await` 出现在 `while` 条件等当前明确禁止的位置时，仍应报错，除非后续先修改语言规范。
+    - 验证命令：`../uya/bin/uya check tests/error_async_await_in_while_cond.uya`
+    - 验证结果：通过，命令按预期退出 1，并报告 `@async_fn 状态机结构验证失败，请检查 @await 使用是否规范`。
+    - 验证命令：`bash tests/verify_async_full_language_matrix.sh`
+    - 验证结果：通过，输出 `verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
+
+## 先澄清边界
+
+- [x] 这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+  - [x] async 递归 / 间接递归的限制是否保留，必须由新的大小模型或规范决定，不能在实现里偷偷放开。
+    - 结论：保留限制。现有规范 `docs/uya.md` 仍明确要求 async 状态机大小编译期确定、递归调用编译错误；实现中 `src/checker/check_call.uya` 对直接递归和 async 调用环均有诊断，不能在新大小模型或规范更新前放开。
+    - 验证命令：`../uya/bin/uya check tests/error_async_recursive.uya`
+    - 结果：按预期失败，诊断包含 `@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）`。
+    - 验证命令：`../uya/bin/uya check tests/error_async_indirect_recursive.uya`
+    - 结果：按预期失败，诊断包含 `@async_fn 函数不允许形成递归调用环（待 CPS/状态机大小计算实现）`。
+
+## 先澄清边界
+
+- [x] 本阶段先以 **Linux + C99** 为生产主线；`kqueue` / `IOCP` 不作为阻塞项。
+  - 验证命令：
+    - `sed -n '1,18p' docs/async_status_matrix.md`
+    - `sed -n '1,12p;136,144p' docs/async_production_todo.md`
+    - `sed -n '248,266p' docs/std_async_design.md`
+  - 验证结果：`docs/async_status_matrix.md` 明确当前范围为 Linux + C99 后端；`docs/async_production_todo.md` 将 macOS kqueue / Windows IOCP 后端列为后续待办；`docs/std_async_design.md` 将多平台事件后端列为第三里程碑，Linux 异步 I/O 是第一里程碑。
+
+## 源码现状审计 / 4. 文档口径与源码状态有漂移
+
+- [x] 现有“量产完成”文档没有把上面的固定容量、语法禁区和回退路径当成阻塞项。
+  - 完成内容：`docs/async_production_todo.md` 明确将固定容量、语法禁区和回退路径列为新的生产阻塞项，不再归入“量产后二阶段”；历史量产定义补充“不覆盖回退路径收口”。`docs/async_status_matrix.md` 明确要求后续 release 口径持续保留这些阻塞项，不能把历史“量产完成”升级为当前 async 生产完成结论。
+  - 验证命令：`git diff --check`
+  - 验证结果：通过。
+
+## 源码现状审计 / 4. 文档口径与源码状态有漂移
+
+- [x] 本目标完成前，必须先把“文档真相”与“源码真相”重新对齐，再谈 release 口径。
+  - 完成内容：更新主 todo 审计口径，使其与当前源码常量、nested future 专项验证、迭代器 interface/ref 边界和 async full language matrix 覆盖范围一致。
+  - 验证命令：
+    - `rg -n "Future<Future|nested|too many|C99_ASYNC_MAX_AWAITS|MAX_SEGMENTS|MAX_LOCALS|iterator|接口|release|已知限制|poll" docs/std_async_design.md docs/uya.md docs/grammar_formal.md docs/grammar_quick.md docs/builtin_functions.md tests/verify_async_full_language_matrix.sh tests/verify_async_nested_future_boundary.sh tests/test_async_nested_future_poll.uya tests/test_async_for_iterator_ref_await.uya tests/error_for_iterator_interface_value.uya tests/error_async_for_iterator_interface_await.uya src/codegen/c99/async_transform.uya src/codegen/c99/internal.uya src/checker/check_node_extra.uya src/codegen/c99/function.uya`（通过；确认 `MAX_SEGMENTS=4098`、`MAX_LOCALS=4096`、`C99_ASYNC_MAX_AWAITS=4096`，nested future 已由专项脚本固定为正向回归，iterator interface value for 仍是同步/async 通用边界）
+    - `../uya/bin/uya test tests/test_async_nested.uya`（通过；2 tests passed）
+    - `bash tests/verify_async_nested_future_boundary.sh`（通过；`nested poll subset passes and !Future<Future<T>> C emission compiles`）
+    - `bash tests/verify_async_full_language_matrix.sh`（通过；positive matrix 31 tests、iterator boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo passed）
+    - `git diff --check`（通过）
+  - 完成条件：本 todo 的审计口径与当前源码常量、nested future 专项验证、迭代器 interface/ref 边界和 async full language matrix 覆盖范围一致。
+
+## 完成定义 / `@async_fn` 函数体语法支持范围
+
+- [x] 建立并校验 async/sync 函数体语法覆盖矩阵，明确已有覆盖、缺失覆盖和同步/async 共同限制；最小验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya`、`./tests/verify_async_full_language_matrix.sh`、`git diff --check`。
+  - 父级任务：`@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+  - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过（4 tests，20 assertions）。
+  - 验证：`./tests/verify_async_full_language_matrix.sh` 通过（positive matrix 31 tests、iterator for boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo）。
+  - 验证：`git diff --check` 通过。
+
+## 完成定义 / @async_fn 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制
+
+- [x] 补齐矩阵中缺失的 large state machine 语法回归；最小验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`、`./tests/verify_async_full_language_matrix.sh`。
+  - 变更：`tests/verify_async_full_language_matrix.sh` 已纳入 `tests/test_async_large_state_machine_syntax.uya`，矩阵摘要从 31 tests 更新为 32 tests；主 todo 覆盖快照移除 large state machine 缺失项。
+  - 验证命令：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`
+  - 验证结果：通过，7/7 tests passed。
+  - 验证命令：`./tests/verify_async_full_language_matrix.sh`
+  - 验证结果：通过，输出 `verify_async_full_language_matrix: positive matrix (32 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
+
+## 完成定义
+
+父级任务路径：
+- [ ] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+
+  - [x] 将非显式规范限制的 async 语法缺口转成正向回归或正式 checker 诊断；最小验证：相关 `../uya/bin/uya test ...`、`./tests/verify_async_full_language_matrix.sh`。
+    - 验证：`../uya/bin/uya check tests/error_async_for_iterator_interface_await.uya` 预期失败，命中 checker 诊断：`接口类型变量的 for 迭代目前不支持；请使用具体实现迭代器类型`。
+    - 验证：`../uya/bin/uya test tests/test_async_for_iterator_ref_await.uya` 通过，1 个测试通过。
+    - 验证：`rg -n "尚未支持" src/codegen/c99/function.uya src/codegen/c99/async_transform.uya src/lower/async.uya` 无命中。
+    - 验证：`./tests/verify_async_full_language_matrix.sh` 通过：positive matrix、iterator for boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo passed。
+
+## 完成定义
+
+父级任务路径：`@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+
+- [x] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+  - [x] 汇总 `@async_fn` 函数体语法完成证据并移除已过期的 workaround/限制说明；最小验证：`./tests/verify_async_full_language_matrix.sh`、`git diff --check`。
+    - 完成记录：更新 nested future、iterator ref 绑定与矩阵摘要的当前证据口径；移除已过期的失败边界/未支持说明。
+    - 验证：`./tests/verify_async_full_language_matrix.sh` 通过，输出 `verify_async_full_language_matrix: positive async language matrix, iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
+    - 验证：`git diff --check` 通过。
+
+## 完成定义
+
+父级任务路径：async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+
+  - [x] checker async frame meta 表改为按需扩容，不再由 `MAX_ASYNC_FRAME_METAS` 限制；最小验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 与 `../uya/bin/uya test tests/test_async_frame_type.uya`。
+    - 验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_type.uya` 通过，3 个测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_stack_ok.uya` 通过，2 个测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_inline_temp.uya` 通过，1 个测试通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_methods.uya` 通过，2 个测试通过。
+
+## 完成定义
+
+父级任务：async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+
+  - [x] codegen await 收集/绑定表改为按需扩容，不再由 `C99_ASYNC_MAX_AWAITS` 限制；最小验证：新增超过旧上限的 async await C99 生成回归。
+    - 验证：`bash tests/verify_async_await_capacity.sh` 通过；生成 4097 个 await 的 async C99，并确认最终状态分支 `if (s->state == 4098)` 存在。
+    - 验证：`make uya` 通过，更新 `../uya/bin/uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_await_limits_and_segments.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过。
+    - 额外验证：`bash tests/verify_async_full_language_matrix.sh` 执行到 shared runtime 阶段失败；新增 capacity 回归已通过，失败点为 `test_async_shared_runtime_semantics.uya` 的宿主 C 编译 `invalid initializer`（`GinContext_file_poll` / `Engine_serve_once_poll`），与本轮 4097-await C99 生成路径不同。
+
+## 完成定义
+
+- [x] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
+  - [x] async frame descriptor 发射不再按固定上限截断，descriptor table 大小按 checker meta count 生成；最小验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 与相关 async frame C99 回归。
+    - 验证：`python3 tests/verify_async_compiler_no_fixed_limits.py` 通过。
+    - 验证：`make uya` 通过，已重建 `../uya/bin/uya`。
+    - 验证：`tests/verify_c99_async_frame_descriptors.sh` 通过，生成 `_uya_async_frame_descriptor_entries[7]` 且 count 为 7。
+    - 验证：`tests/verify_c99_async_frame_empty_descriptors.sh` 通过，空表生成占位 `_uya_async_frame_descriptor_entries[1]` 且 count 为 0。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_type.uya` 通过。
+    - 验证：`git diff --check` 通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_event.uya` 的 epoll slot/event 容量改为可配置增长策略，避免 `1024` 固定上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    验证：先运行 `../uya/bin/uya test tests/test_std_async_event.uya`，旧实现因 1025 容量返回码 13 失败；实现后通过。
+    验证：`../uya/bin/uya test tests/test_std_async_event_fd_reuse.uya` 通过，4 个内部用例全部 OK。
+    验证：`../uya/bin/uya test tests/test_async_runtime_shared_dns.uya` 通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_scheduler.uya` 的 `TaskQueue<T>`、frame stack buffer、inline repoll 容量改为动态或可配置策略，避免 `64/8192/1024` 固定产品上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    验证命令与结果：
+    - `../uya/bin/uya test tests/test_std_async_scheduler.uya`：通过，16 tests passed。
+    - `../uya/bin/uya test tests/test_async_scheduler_event_allocator_signature.uya`：通过，1 test passed。
+    - `../uya/bin/uya test tests/test_async_frame_align_pool.uya`：通过，2 tests passed。
+    - `git diff --check`：通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_frame.uya` 的 frame pool bucket、每 bucket 数量、descriptor 表容量改为动态或可配置策略，避免 `128/4096/512` 固定产品上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过（5 tests, 0 failed；覆盖 bucket 数 > 128 与 per bucket > 4096）。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_negative.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_stack_limit_env.uya` 通过。
+    - 验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过（16 tests, 0 failed）。
+    - 验证：`git diff --check` 通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/thread.uya` 的 worker、pending、task slot 容量改为动态或可配置策略，并保留明确的资源失败路径，避免 `32/32/16` 固定产品上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    - 验证：
+      - 先新增失败测试并确认失败：`../uya/bin/uya test tests/test_std_thread.uya`，失败点为 `thread_pool_config_can_exceed_legacy_static_limits` 中 `pool.worker_count` 仍被截断为 `32`，以及资源耗尽测试确认旧 fallback 未报错。
+      - 实现后通过：`../uya/bin/uya test tests/test_std_thread.uya`，23 tests passed，0 failed。
+      - 相关回归通过：`../uya/bin/uya test tests/test_async_compute_generic_wrapper.uya`，2 tests passed，0 failed。
+      - 额外尝试：`../uya/bin/uya test tests/test_async_runtime_shared_semantics.uya` 与 `../uya/bin/uya test tests/test_async_shared_runtime_semantics.uya` 均在宿主 C 链接阶段失败，关键错误为 `std/http/uyagin` 生成代码 `invalid initializer`，非本轮 `std.thread` 路径运行失败。
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 支持调用方配置容量，不再把默认 64 槽作为不可突破边界；最小验证：新增/更新队列容量测试并运行 `../uya/bin/uya test ...`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 验证结果：通过，`task_queue_with_capacity_limits_pushes` 和 `task_queue_capacity_can_exceed_default_capacity` 覆盖可配置容量及超过默认 64 槽场景；总计 16 tests passed。
+
+## 完成定义
+
+父级路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_event.uya` 的 epoll slot/event 容量改为动态或可配置，并避免 `find_slot()` 无界线性扫；最小验证：新增/更新事件循环 slot 容量测试并运行 `../uya/bin/uya test ...`。
+    - 验证：`../uya/bin/uya test tests/test_std_async_event.uya` 通过（1 个测试通过）。
+    - 相关回归：`../uya/bin/uya test tests/test_std_async_event_fd_reuse.uya` 通过（4 个子测试通过）。
+    - 相关回归：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过（16 个子测试通过）。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_scheduler.uya` 的 frame stack buffer 与 inline repoll 容量改为动态或可配置；最小验证：新增/更新 scheduler frame/repoll 测试并运行 `../uya/bin/uya test ...`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 结果：通过，17 tests / 0 failed，新增 `block_on_event_loop_inline_repoll_limit_is_configurable` 覆盖可配置 inline repoll。
+    - 验证命令：`../uya/bin/uya test tests/test_async_frame_stack_limit_env.uya`
+    - 结果：通过，1 test / 0 failed。
+    - 验证命令：`../uya/bin/uya test tests/test_async_frame_stack_ok.uya`
+    - 结果：通过，2 个测试项均 OK。
+
+## 完成定义 / runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_frame.uya` 的 frame pool bucket、per-bucket 容量和 descriptor 表改为动态或可配置；最小验证：新增/更新 frame pool/descriptor 测试并运行 `../uya/bin/uya test ...`。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过；5 个测试通过，覆盖显式 config、超过默认 128 buckets、超过默认 4096 per-bucket。
+    - 验证：`../uya/bin/uya test tests/test_c99_async_frame_empty_descriptors.uya` 通过；空 descriptor 表路径通过。
+    - 验证：`../uya/bin/uya --c99 tests/test_async_frame_pool_stats.uya -o /tmp/uya_async_frame_pool_stats.c && rg -n "_uya_async_frame_descriptor_entries\[|_uya_async_frame_descriptor_count|AsyncFrameDescriptorTable" /tmp/uya_async_frame_pool_stats.c` 通过；生成 `_uya_async_frame_descriptor_entries[6]` 和 `_uya_async_frame_descriptor_count = 6`，未固定为 512。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/thread.uya` 的线程池 worker、pending、task slot 容量改为动态或可配置策略，并移除固定容量导致的产品上限；最小验证：新增/更新 thread pool 容量测试并运行 `../uya/bin/uya test ...`。
+    - 验证：`../uya/bin/uya test tests/test_std_thread.uya`，通过；24 tests passed，0 failed，93 assertions passed。
+    - 验证：`../uya/bin/uya test tests/test_async_compute_types.uya`，通过；11 tests passed，0 failed，11 assertions passed。
+
+## 完成定义
+
+- [x] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+  - [x] 事件循环 epoll slot/event 容量支持实例级配置，并用非线性扫的 fd->slot 索引验证突破 `1024` 默认兼容容量。最小验证：`../uya/bin/uya test tests/test_std_async_event.uya`；完成条件：`linux_epoll_create_config(0, 1025, 1025)` 保留配置容量且 fd 查找不依赖全表线性扫。
+    - 验证：`../uya/bin/uya test tests/test_std_async_event.uya` 通过（总计 1 个测试，通过 1，失败 0）。
+    - 证据：`lib/std/async_event.uya` 已提供 `linux_epoll_create_config(flags, slot_capacity, event_capacity)`，按实例容量分配 slot/event buffer，并通过 fd 哈希表 `fd_keys/fd_slot_indices` 查找 slot；`tests/test_std_async_event.uya` 验证 `1025` 容量保留且 lookup 容量大于 slot 容量。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 调度器 TaskQueue 和 inline repoll/frame buffer 使用动态分配或显式配置，默认值仅作兼容策略。最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+    - 验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过，17/17 tests passed，167 assertions passed。
+## 完成定义
+
+父级任务路径：
+- runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] AsyncFramePool bucket/per-bucket/descriptor 查询按运行时配置或生成表大小执行，不以 `128/4096/512` 作为硬上限。最小验证：`../uya/bin/uya test tests/test_async_frame_align_pool.uya tests/test_c99_async_frame_empty_descriptors.uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_align_pool.uya tests/test_c99_async_frame_empty_descriptors.uya` 通过，5 个 test case、9 个测试计数、0 失败。
+    - 相关回归：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过，5 个 test case、10 个测试计数、0 失败。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] ThreadPool worker/pending/task slot 容量支持显式配置和随 worker 扩展，旧 `32/32/16` 仅为兼容默认。最小验证：`../uya/bin/uya test tests/test_std_thread.uya`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_thread.uya`
+    - 验证结果：通过；24 个测试全部 OK，Assertions Passed: 93。
+
+## 2026-06-18 本轮完成
+
+上下文：完成定义 > runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 默认队列改成自动增长，默认队列超过 `64` 个 ready 任务不再返回 `TaskQueueFull`；最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+    - 验证：先运行 `../uya/bin/uya test tests/test_std_async_scheduler.uya`，旧实现新增用例 `task_queue_default_capacity_grows_past_64` 失败；实现后通过（18 tests）。
+    - 回归：`../uya/bin/uya test tests/test_async_fd.uya` 通过（7 tests）。
+    - 相关宽回归：`../uya/bin/uya test tests/test_async_runtime_shared_semantics.uya` 未通过，宿主 C 编译在既有 `std_http_uyagin_send_context_response_head_only_async` / `std_http_uyagin_accept_async` 生成代码处报 `invalid initializer`，不在本次 `TaskQueue` 路径。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/async_scheduler.uya` 的 `_frame_stack_buffer[8192]` 改成显式配置或动态后备存储策略；最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 验证结果：通过，19 个测试通过，0 个失败。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/async_frame.uya` 的 bucket / slot / descriptor 上限改成动态结构；最小验证：`../uya/bin/uya test tests/test_async_frame_pool_dynamic_growth.uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_frame_pool_dynamic_growth.uya` 通过。
+    - 相关验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya`、`../uya/bin/uya test tests/test_async_frame_pool_negative.uya`、`../uya/bin/uya test tests/test_async_frame_align_pool.uya` 均通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/thread.uya` 的 worker / pending / task slot 数量改成动态或可配置，并去掉默认 `fork()` fallback；最小验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya`。
+    - 验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya` 通过（1/1 tests，26 assertions）。
+    - 相关验证：`../uya/bin/uya test tests/test_std_thread.uya` 通过（24/24 tests，93 assertions）。
+
+## 完成定义
+
+- [x] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
+  - 验证：`../uya/bin/uya test tests/test_http1_async_client.uya` 通过（8 tests passed，包含请求头超过 4 KiB 与响应头超过旧 8 KiB 回归）。
+  - 验证：`../uya/bin/uya --c99 tests/test_http1_async_client.uya` 通过，生成 `a.out`。
+  - 验证：`./a.out` 通过（8 tests passed）。
