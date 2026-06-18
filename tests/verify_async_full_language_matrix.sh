@@ -80,6 +80,7 @@ baseline_tests=(
     "tests/test_async_await_ready.uya"
     "tests/test_async_multiple_await.uya"
     "tests/test_async_state_machine.uya"
+    "tests/test_async_large_state_machine_syntax.uya"
     "tests/test_async_if_await.uya"
     "tests/test_async_else_if_await.uya"
     "tests/test_async_for_await.uya"
@@ -150,4 +151,4 @@ if ! (
 fi
 rm -f "$macro_log"
 
-echo "verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed"
+echo "verify_async_full_language_matrix: positive matrix (32 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed"

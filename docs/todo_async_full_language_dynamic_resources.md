@@ -57,7 +57,6 @@
 ## 完成定义
 
 - [ ] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
-  - [ ] 补齐矩阵中缺失的 large state machine 语法回归；最小验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`、`./tests/verify_async_full_language_matrix.sh`。
   - [ ] 将非显式规范限制的 async 语法缺口转成正向回归或正式 checker 诊断；最小验证：相关 `../uya/bin/uya test ...`、`./tests/verify_async_full_language_matrix.sh`。
   - [ ] 汇总 `@async_fn` 函数体语法完成证据并移除已过期的 workaround/限制说明；最小验证：`./tests/verify_async_full_language_matrix.sh`、`git diff --check`。
 - [ ] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
@@ -95,7 +94,7 @@
 | `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |
 | `for range` / 定长数组值迭代 / 定长数组引用迭代 / 具体 struct 迭代器值迭代 + `@await` | `tests/test_async_for_await.uya` | 已有覆盖 | 已覆盖 `for 0..n`、`for arr |e|`、`for arr |&x|` 与 `for iter |v|` 的 async 体回归 |
 | 迭代器 interface/ref 边界 + `@await` | `tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya`、`tests/test_async_for_iterator_ref_await.uya` | 已有覆盖 | 接口值 `for` 是同步也不支持的通用语言边界；`for iter |&x|` 引用绑定已作为 async 正向回归覆盖 |
-| 复合表达式 / await 绑定跨段重放 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya` | 已有覆盖 | 覆盖 RHS/return 表达式与多段 bind 依赖 |
+| 复合表达式 / await 绑定跨段重放 / 大状态机 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya`、`tests/test_async_large_state_machine_syntax.uya` | 已有覆盖 | 覆盖 RHS/return 表达式、多段 bind 依赖，以及包含顺序 20 awaits、循环、跨段变量、副作用和表达式链的大状态机语法回归 |
 | 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
 | caller-owned inline / frame / 局部定长数组 | `tests/test_async_frame_inline_temp.uya`、`tests/test_async_frame_inline_temp2.uya`、`tests/test_async_fn_local_fixed_array.uya`、`tests/test_async_frame_type.uya` | 已有覆盖 | 更偏 codegen/frame correctness，不等于完整语法 |
 | runtime / scheduler / real client 集成 | `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_http1_async_client.uya` | 已有覆盖 | 是“真实使用链路”证据，但不覆盖全部语法 |
@@ -116,12 +115,12 @@
 > - `src/codegen/c99/main.uya`：frame descriptor 静默截断到 512 → 待 Phase 2 动态化
 > - `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya`：旧人为上限测试 → 待 Phase 2 替换为压力测试
 > - `tests/test_async_defer_errdefer.uya`：已迁入 `try @await` 错误传播触发 `errdefer` 的正向回归；默认回归不再排除旧边界文件
-> - **已有覆盖**（19项）：基础解析、Ready/Pending、err-union await、if/else if、while、for range/array/iter、复合表达式、方法/接口、frame、runtime/scheduler/client、sync/async对齐矩阵、match/catch/defer/errdefer、宏展开、nested future（边界明确）
-> - **缺失覆盖**：large state machine（L140）
+> - **已有覆盖**（20项）：基础解析、Ready/Pending、err-union await、if/else if、while、for range/array/iter、复合表达式、大状态机、方法/接口、frame、runtime/scheduler/client、sync/async对齐矩阵、match/catch/defer/errdefer、宏展开、nested future（边界明确）
+> - **缺失覆盖**：暂无；后续继续审计非显式规范限制的 async 语法缺口
 > - **历史已知限制**：固定上限测试（error_async_too_many_awaits/params）、iterator interface value for 不支持（同步与 async 通用语言边界）
 
 > 建议把 [tests/verify_async_full_language_matrix.sh](../tests/verify_async_full_language_matrix.sh) 当作当前快照入口：
-> 它当前能证明“已有高价值基线 + 明确禁止位置 + nested future 专项 + 迭代器 interface/ref 边界”仍成立，但不能单独替代完整语法矩阵或动态容量闸门。
+> 它当前能证明“已有高价值基线 + large state machine + 明确禁止位置 + nested future 专项 + 迭代器 interface/ref 边界”仍成立，但不能单独替代完整语法矩阵或动态容量闸门。
 
 ### 1.2 先补红测，再动实现
 

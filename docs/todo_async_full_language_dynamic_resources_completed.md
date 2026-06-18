@@ -735,3 +735,12 @@
   - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过（4 tests，20 assertions）。
   - 验证：`./tests/verify_async_full_language_matrix.sh` 通过（positive matrix 31 tests、iterator for boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo）。
   - 验证：`git diff --check` 通过。
+
+## 完成定义 / @async_fn 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制
+
+- [x] 补齐矩阵中缺失的 large state machine 语法回归；最小验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`、`./tests/verify_async_full_language_matrix.sh`。
+  - 变更：`tests/verify_async_full_language_matrix.sh` 已纳入 `tests/test_async_large_state_machine_syntax.uya`，矩阵摘要从 31 tests 更新为 32 tests；主 todo 覆盖快照移除 large state machine 缺失项。
+  - 验证命令：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`
+  - 验证结果：通过，7/7 tests passed。
+  - 验证命令：`./tests/verify_async_full_language_matrix.sh`
+  - 验证结果：通过，输出 `verify_async_full_language_matrix: positive matrix (32 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
