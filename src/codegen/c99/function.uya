@@ -5968,20 +5968,26 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         fprintf(codegen.emit_stream as *void, "        if (p._tag == 0) { return (%s){ ._tag = 0 }; }\n" as *byte, poll_ret_c as *byte);
         if seg_inner_is_err != 0 {
             fprintf(codegen.emit_stream as *void, "        %s r = p.u.Ready;\n" as *byte, seg_ready_payload_c as *byte);
+            const cur_bind_name: &byte = c99_async_bind_name_at(await_bind_names, state_idx);
+            const cur_bind_type: &ASTNode = c99_async_bind_type_at(await_bind_types, state_idx);
+            var bind_full_err_union: i32 = 0;
+            if cur_bind_name != null && cur_bind_type != null && cur_bind_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                bind_full_err_union = 1;
+            }
             var seg_err_use_bridge: i32 = 0;
             if seg_inner_ast != null && seg_ready_payload_c != null && ready_payload_c != null &&
                 outer_err_payload_value_c != null &&
                 strcmp(seg_ready_payload_c as *byte, ready_payload_c as *byte) != 0 {
                 seg_err_use_bridge = 1;
             }
-            if seg_err_use_bridge != 0 {
-                fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = r.error_id, .value = (%s){0} } } }; }\n" as *byte,
-                    poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte, outer_err_payload_value_c as *byte);
-            } else {
-                fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = r } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+            if bind_full_err_union == 0 {
+                if seg_err_use_bridge != 0 {
+                    fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = r.error_id, .value = (%s){0} } } }; }\n" as *byte,
+                        poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte, outer_err_payload_value_c as *byte);
+                } else {
+                    fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = r } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+                }
             }
-            const cur_bind_name: &byte = c99_async_bind_name_at(await_bind_names, state_idx);
-            const cur_bind_type: &ASTNode = c99_async_bind_type_at(await_bind_types, state_idx);
             if cur_bind_name != null && cur_bind_type != null {
                 const bind_safe: &byte = get_safe_c_identifier(codegen, cur_bind_name);
                 if cur_bind_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {

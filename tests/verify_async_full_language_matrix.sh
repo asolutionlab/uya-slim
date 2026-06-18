@@ -90,6 +90,7 @@ baseline_tests=(
     "tests/test_async_await_direct_err_union.uya"
     "tests/test_async_return_error_direct.uya"
     "tests/test_async_compound_try_await.uya"
+    "tests/test_async_catch_await.uya"
     "tests/test_async_fn_multi_segment_unwrap.uya"
     "tests/test_async_await_limits_and_segments.uya"
     "tests/test_async_sync_body_matrix.uya"

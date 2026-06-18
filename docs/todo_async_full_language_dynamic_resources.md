@@ -8,8 +8,12 @@
 
 - [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
-    - 验证：`make tests-uya`
-    - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
+    - [ ] 复查矩阵中剩余 async 函数体语法条目并补齐下一个同步合法但 async 缺失的回归。
+      - 最小验证：相关聚焦 `../uya/bin/uya test ...`
+      - 完成条件：明确一个剩余缺口，新增或迁移正向/负向测试，并更新矩阵口径。
+    - [ ] 收口 async 函数体语法矩阵和历史“已完成”口径。
+      - 验证：`make tests-uya`
+      - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
 - [ ] async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
@@ -122,7 +126,7 @@
 | runtime / scheduler / real client 集成 | `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_http1_async_client.uya` | 已有覆盖 | 是“真实使用链路”证据，但不覆盖全部语法 |
 | sync/async 函数体对齐矩阵 | `tests/test_async_sync_body_matrix.uya`、`tests/verify_async_full_language_matrix.sh` | 已有覆盖 | 用同步/async 成对断言覆盖局部变量、提前 return、分支、循环、`match`、`catch`、`defer/errdefer` 等组合语法 |
 | async 体内 `match` | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已比较同步/async 的 `match` 表达式语义 |
-| async 体内 `catch` 与 `@await` 组合 | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 `try/@await` 后接 `catch` 恢复路径 |
+| async 体内 `catch` 与 `@await` 组合 | `tests/test_async_sync_body_matrix.uya`、`tests/test_async_catch_await.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 `try/@await` 后接 `catch` 恢复、`@await` 错误联合结果交给 `catch`、catch 体内 `@await` 与提前 return |
 | async 体内 `defer / errdefer` | `tests/test_async_sync_body_matrix.uya` | 已有覆盖 | dedicated async-body 回归已覆盖 success/error 两条清理顺序 |
 | 宏展开后的 expr / stmt 进入 async lowering | `tests/test_async_macro_expand.uya`、`tests/programs/test_ai_prompt_async_macro_combo.uya` | 已有覆盖 | 已验证 pre-await 求值不会在 poll/resume 间丢失或重复执行，程序级 macro combo 也可 build/run |
 | `Future<Future<T>>` / nested future poll | `tests/test_async_nested.uya`、`tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh`、`docs/std_async_design.md` | 已收口到真实边界 | 值类型 `Future<Future<T>>` 双层 poll 已有正向回归；无 await 的 `!Future<Future<T>>` + 同步 `try` 返回仍有 C99 codegen 显式失败用例 |
@@ -136,8 +140,9 @@
 > - `src/checker/async_frame_meta.uya:41,49,58`：`MAX_ASYNC_FRAME_METAS=512` 静默截断 → 待 Phase 2 动态化
 > - `src/codegen/c99/main.uya`：frame descriptor 静默截断到 512 → 待 Phase 2 动态化
 > - `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya`：旧人为上限测试 → 待 Phase 2 替换为压力测试
+> - `tests/error_async_errdefer_await_boundary.uya`：运行时已知边界，`try @await` 错误传播尚未触发 `errdefer`；默认回归中显式排除，后续应修复后迁入 `tests/test_async_defer_errdefer.uya`
 > - **已有覆盖**（19项）：基础解析、Ready/Pending、err-union await、if/else if、while、for range/array/iter、复合表达式、方法/接口、frame、runtime/scheduler/client、sync/async对齐矩阵、match/catch/defer/errdefer、宏展开、nested future（边界明确）
-> - **缺失覆盖**：dedicated `match + @await`（L134）、`catch + @await`（L135）、`defer/errdefer + @await`（L136）、large state machine（L140）
+> - **缺失覆盖**：`defer/errdefer + @await` 错误传播边界、large state machine（L140）
 > - **历史已知限制**：固定上限测试（error_async_too_many_awaits/params）、iterator interface/ref await 不支持
 
 > 建议把 [tests/verify_async_full_language_matrix.sh](../tests/verify_async_full_language_matrix.sh) 当作当前快照入口：

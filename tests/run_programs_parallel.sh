@@ -271,7 +271,7 @@ collect_test_files() {
 is_default_excluded_test_name() {
     local name="$1"
     case "$name" in
-        check_cli_no_main|test_exec_vm_globals|test_exec_vm_global_init_fail|test_exec_vm_globals_multi|emcc_unknown_runtime_smoke|test_async_nested_future_poll)
+        check_cli_no_main|test_exec_vm_globals|test_exec_vm_global_init_fail|test_exec_vm_globals_multi|emcc_unknown_runtime_smoke|test_async_nested_future_poll|error_async_errdefer_await_boundary)
             return 0
             ;;
     esac

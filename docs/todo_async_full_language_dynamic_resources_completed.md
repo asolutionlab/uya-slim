@@ -285,3 +285,20 @@
       - 当前：脚本中 `expect_compile_fail` 的预期错误字符串与实际 checker 输出不匹配
       - 验证：`./tests/verify_async_full_language_matrix.sh` 全通过
       - 验证记录（2026-06-18）：`./tests/verify_async_full_language_matrix.sh` 通过；输出摘要：positive matrix (30 tests), iterator for boundaries, forbidden @await positions, nested future boundary, and macro combo passed。
+
+## 2026-06-18
+
+上下文：`@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。 > 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
+
+    - [x] 补齐 async 状态机对 `catch` 作用于 `@await` 错误联合结果的恢复路径。
+      - 最小验证：`../uya/bin/uya test tests/test_async_catch_await.uya`
+      - 完成条件：旧 `tests/error_async_catch_await_boundary.uya` 边界用例迁入 `tests/test_async_catch_await.uya` 正向回归并通过；旧边界文件移除。
+      - 验证命令：`../uya/bin/uya test tests/error_async_catch_await_boundary.uya`
+      - 结果：修复前失败，5/5 用例运行到错误路径；修复并重建 `bin/uya` 后旧边界用例 5/5 通过。
+      - 验证命令：`../uya/bin/uya test tests/test_async_catch_await.uya`
+      - 结果：通过，10/10 测试通过。
+      - 验证命令：`bash tests/verify_async_full_language_matrix.sh`
+      - 结果：通过，positive matrix 30 tests、iterator 边界、禁止 @await 位置、nested future boundary、macro combo 全部通过。
+      - 验证命令：`make tests-uya`
+      - 结果：通过，1012/1012 测试通过，随后 `upm-check` 通过。
+      - 备注：`tests/error_async_errdefer_await_boundary.uya` 是独立的运行时已知边界，直接运行仍失败（`g` 未按 errdefer 期望变为 35）；已从默认回归显式排除并在主 todo 登记，后续应修复后迁入 `tests/test_async_defer_errdefer.uya`。
