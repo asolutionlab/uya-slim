@@ -948,3 +948,10 @@
   - [x] 将 `lib/std/thread.uya` 的 worker / pending / task slot 数量改成动态或可配置，并去掉默认 `fork()` fallback；最小验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya`。
     - 验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya` 通过（1/1 tests，26 assertions）。
     - 相关验证：`../uya/bin/uya test tests/test_std_thread.uya` 通过（24/24 tests，93 assertions）。
+
+## 完成定义
+
+- [x] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
+  - 验证：`../uya/bin/uya test tests/test_http1_async_client.uya` 通过（8 tests passed，包含请求头超过 4 KiB 与响应头超过旧 8 KiB 回归）。
+  - 验证：`../uya/bin/uya --c99 tests/test_http1_async_client.uya` 通过，生成 `a.out`。
+  - 验证：`./a.out` 通过（8 tests passed）。

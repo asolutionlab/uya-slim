@@ -247,6 +247,14 @@ fn wait_child_ok(pid: i32) void {
             write_stderr_msg(&"client:chunked:status"[0: 21]);
         } else if code == 34 {
             write_stderr_msg(&"client:chunked:body"[0: 19]);
+        } else if code == 41 {
+            write_stderr_msg(&"client:large_header:epoll"[0: 25]);
+        } else if code == 42 {
+            write_stderr_msg(&"client:large_header:block_on"[0: 28]);
+        } else if code == 43 {
+            write_stderr_msg(&"client:large_header:status"[0: 26]);
+        } else if code == 44 {
+            write_stderr_msg(&"client:large_header:body"[0: 24]);
         } else {
             write_stderr_msg(&"other"[0: 5]);
         }
@@ -477,6 +485,41 @@ fn run_async_chunked_get_client(port: u16) void {
     sys_exit(0);
 }
 
+fn run_async_large_header_get_client(port: u16) void {
+    const url_buf_cap: usize = 64;
+    var url_buf: [byte: 64] = [];
+    const path: &[byte] = &"/large-header"[0: 13];
+    const url_len: usize = fill_loopback_url(&url_buf[0] as &byte, url_buf_cap, port, path);
+    const url: &[byte] = url_buf[0: url_len];
+
+    const loop: LinuxEpoll = linux_epoll_create(0) catch {
+        write_stderr_msg(&"client:large_header:epoll\n"[0: 26]);
+        sys_exit(41);
+        return;
+    };
+    const fut: Future<!Http1AsyncResponse> = http1_async_get(url, null, 5000);
+    const out: !Http1AsyncResponse = block_on_with_event_loop<Http1AsyncResponse>(&loop, fut, 1000);
+    const resp: Http1AsyncResponse = out catch |err| {
+        write_stderr_msg(&"client:large_header:block_on\n"[0: 29]);
+        write_err_kind(&"client:large_header:block_on err="[0: 33], @error_id(err));
+        write_stderr_msg(&"\n"[0: 1]);
+        sys_exit(42);
+        return;
+    };
+    if resp.status != 200 {
+        write_u16_dec_msg(&"client:large_header:status value="[0: 33], resp.status as u16);
+        write_stderr_msg(&"\n"[0: 1]);
+        http1_async_response_free(&resp);
+        sys_exit(43);
+    }
+    if !response_has_subslice(resp.body, &"large-ok"[0: 8]) {
+        http1_async_response_free(&resp);
+        sys_exit(44);
+    }
+    http1_async_response_free(&resp);
+    sys_exit(0);
+}
+
 fn async_http1_get_server_roundtrip() !void {
     const srv: HttpServer = try listen_loopback_server();
     const child_pid: i32 = fork();
@@ -585,6 +628,45 @@ fn async_http1_get_chunked_roundtrip() !void {
     http_server_close(&srv);
 }
 
+fn async_http1_get_large_response_header_roundtrip() !void {
+    const srv: HttpServer = try listen_loopback_server();
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        http_server_close(&srv);
+        run_async_large_header_get_client(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    const pr: ParseResult = try http_recv_parse_request(sfd);
+    try assert_eq_i32(pr.request.method as i32, Method.GET as i32);
+    try assert_eq_i32(pr.request.path_len, 13);
+
+    const head: &[byte] = &"HTTP/1.1 200 OK\r\nX-Large: "[0: 27];
+    _ = sys_write(sfd, head.ptr, head.len);
+    var chunk: [byte: 1024] = [];
+    fill_repeated(&chunk[0] as &byte, 1024, 'a' as byte);
+    var sent: usize = 0;
+    while sent < 9000 {
+        var n: usize = 1024;
+        if sent + n > 9000 {
+            n = 9000 - sent;
+        }
+        _ = sys_write(sfd, &chunk[0] as &byte, n);
+        sent = sent + n;
+    }
+    const tail: &[byte] = &"\r\nContent-Length: 8\r\nConnection: close\r\n\r\nlarge-ok"[0: 50];
+    _ = sys_write(sfd, tail.ptr, tail.len);
+    _ = sys_close(sfd);
+
+    wait_child_ok(child_pid);
+    http_server_close(&srv);
+}
+
 test "http1_async_get_invalid_url" {
     const bad_url: &[byte] = &"ftp://127.0.0.1/"[0: 16];
     const fut: Future<!Http1AsyncResponse> = http1_async_get(bad_url, null, 0);
@@ -668,6 +750,14 @@ test "http1_async_request_header_buffer_grows_past_inline_cap" {
         try assert_eq_i32(0, 1);
     }
     http1_async_request_header_free(&hdr);
+}
+
+test "http1_async_response_header_buffer_grows_past_legacy_cap" {
+    if !http_loopback_tests_supported() {
+        write_stderr_msg(&"skip:http1_loopback\n"[0: 20]);
+        return;
+    }
+    try async_http1_get_large_response_header_roundtrip();
 }
 
 test "http1_async_get_loopback_roundtrip" {
