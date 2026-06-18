@@ -415,3 +415,12 @@
     - 验证：`make uya` 通过，自举编译器构建完成。
     - 验证：`../uya/bin/uya test tests/test_async_compute_types.uya` 通过，确认 frame meta 上限调整后无段错误。
     - 验证：`bash tests/verify_async_full_language_matrix.sh` 通过，positive matrix、禁止 @await 位置、nested future boundary 和 macro combo 均通过。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 新增 Linux+C99 共享 async 运行时语义冒烟矩阵脚本，覆盖 `Scheduler`、`async_compute`、DNS、HTTP async 与 TLS/HTTPS 相关最小回归。
+    - 最小验证命令：`./tests/verify_async_shared_runtime_matrix.sh`
+    - 完成条件：脚本固定使用 `../uya/bin/uya`，并在当前 Linux+C99 主链路上通过所列共享 async 运行时冒烟用例。
+    - 验证结果：通过。覆盖 `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_std_dns_async_transport.uya`、`tests/test_http1_async_client.uya`、`tests/test_https_bridge_safety.uya`。
