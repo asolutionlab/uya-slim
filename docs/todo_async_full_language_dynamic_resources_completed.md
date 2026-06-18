@@ -331,3 +331,10 @@
   - 验证：`git diff --check`
   - 验证结果：通过。
   - 完成条件：`docs/async_status_matrix.md` 已明确区分“同步合法且 async 已覆盖”“同步合法但 async 未验证/缺失”“规范禁止/同步也不支持”；`docs/async_production_todo.md` 已标明历史量产定义只代表 2026-04 阶段口径，不能代表完整语法和动态资源目标完成。
+
+## 目标 / `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。 / 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。 / 收口 async 函数体语法矩阵和历史“已完成”口径。
+
+      - [x] 按矩阵为第一个“同步合法但 async 未验证/缺失”的函数体语法补最小回归。
+        - 验证：`../uya/bin/uya --c99 tests/test_async_match_await.uya` 通过，生成 `a.out`。
+        - 验证：`./a.out` 通过，4 tests passed，0 failed，4 assertions passed。
+        - 完成条件：已有专用回归 `tests/test_async_match_await.uya` 覆盖矩阵第一个未验证项 `match` 表达式/语句、union 解构分支内 await，并稳定证明当前实现覆盖。
