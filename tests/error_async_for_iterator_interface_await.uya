@@ -1,5 +1,6 @@
 // error_async_for_iterator_interface_await.uya
-// 预期：编译失败，@async_fn 中带 @await 的迭代器 for 当前不支持接口值迭代
+// 预期：编译失败。接口类型变量的 for 迭代是通用语言边界；
+// 同步对照见 error_for_iterator_interface_value.uya，不能误报为 async 独有缺口。
 
 use std.async;
 

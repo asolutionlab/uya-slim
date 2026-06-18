@@ -10,10 +10,6 @@
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
     - 验证：`make tests-uya`
     - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
-    - [ ] 子任务 3：厘清接口值迭代器边界
-      - 当前：`error_async_for_iterator_interface_await.uya` checker 报错
-      - 结论：接口类型 for 循环迭代是通用语言缺口（同步也不支持），非 async 独有
-      - 验证：更新测试注释/标题说明边界，确保不误报为 async 缺口
     - [ ] 子任务 4：更新 `tests/verify_async_full_language_matrix.sh` 预期错误字符串与测试结构
       - 当前：脚本中 `expect_compile_fail` 的预期错误字符串与实际 checker 输出不匹配
       - 验证：`./tests/verify_async_full_language_matrix.sh` 全通过
@@ -55,7 +51,7 @@
 
 | 位置 | 现状 | 证据 |
 |------|------|------|
-| `src/checker/check_node_extra.uya` / `src/codegen/c99/function.uya` | `@async_fn` 中迭代器 `for` 当前只支持“具体 struct + 值迭代”；接口值与 iterator ref 绑定仍未支持，但边界已由正/反回归直接证明 | 正向回归：`tests/test_async_for_await.uya`；反向回归：`tests/error_async_for_iterator_interface_await.uya`（checker 失败）与 `tests/error_async_for_iterator_ref_await.uya`（触发既有 codegen 诊断并在宿主 C 编译阶段失败） |
+| `src/checker/check_node_extra.uya` / `src/codegen/c99/function.uya` | `@async_fn` 中迭代器 `for` 当前只支持“具体 struct + 值迭代”；接口类型变量的 `for` 迭代是同步也不支持的通用语言边界，iterator ref 绑定已转为正向回归 | 正向回归：`tests/test_async_for_await.uya`、`tests/test_async_for_iterator_ref_await.uya`；接口值反向回归：`tests/error_for_iterator_interface_value.uya`（同步 checker 失败）与 `tests/error_async_for_iterator_interface_await.uya`（async checker 失败） |
 | `docs/std_async_design.md` | 历史上把 `Future<Future<T>>.poll` 一概记成已知限制 | 需改成“值类型双层 poll 已验证通过，但 `!Future<Future<T>>` 的无 await + 同步 `try` 返回在 C99 codegen 仍显式失败”的真实边界 |
 | `tests/error_async_too_many_awaits.uya` / `tests/error_async_too_many_params.uya` | 当前测试仍把固定上限失败当成正确行为 | 与“资源动态化”目标正面冲突 |
 | `tests/verify_async_full_language_matrix.sh` | 当前脚本已是高价值基线入口，但还不能单独证明“完整函数体语法已收口” | 它目前覆盖已存在主链路回归与明确禁止位置，不覆盖 nested future、动态容量和迭代器 interface/ref 边界 |
@@ -71,8 +67,8 @@
 
 | 类别 | 具体项 | 位置 |
 |------|--------|------|
-| **语法/语义不支持** | iterator `for` 接口值 + `@await`（checker 失败） | `src/checker/check_node_extra.uya`、`tests/error_async_for_iterator_interface_await.uya` |
-| 语法/语义不支持 | iterator `for` 引用绑定 + `@await`（codegen 失败） | `src/codegen/c99/function.uya:4557`、`tests/error_async_for_iterator_ref_await.uya` |
+| **通用语言边界** | iterator `for` 接口值（同步与 async checker 均失败，非 async 独有缺口） | `src/checker/check_node_extra.uya`、`tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya` |
+| 语法/语义不支持 | iterator `for` 引用绑定 + `@await`（历史缺口，现已转入 `tests/test_async_for_iterator_ref_await.uya` 正向回归） | `src/codegen/c99/function.uya`、`tests/test_async_for_iterator_ref_await.uya` |
 | 语法/语义不支持 | 无 await 的 `!Future<Future<T>>` + 同步 `try` 返回（C99 codegen 生成错误 C） | `tests/test_async_nested_future_poll.uya`、`tests/verify_async_nested_future_boundary.sh` |
 | **编译器内部固定容量** | `MAX_SEGMENTS=258`、`MAX_LOCALS=32` | `src/codegen/c99/async_transform.uya` |
 | 编译器内部固定容量 | `C99_ASYNC_MAX_AWAITS=4096` 静态数组 | `src/codegen/c99/internal.uya` |
@@ -122,7 +118,7 @@
 | `if / else / else if` + `@await` | `tests/test_async_if_await.uya`、`tests/test_async_else_if_await.uya` | 已有覆盖 | 仍只覆盖常见形态，不等于所有分支语法 |
 | `while` / 连续多循环 / await 间同步语句 | `tests/test_async_while_multi_await.uya`、`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_b_sync_between.uya`、`tests/test_async_bug_d_nested_block.uya` | 已有覆盖 | 这些是当前最强的循环 lowering 回归 |
 | `for range` / 定长数组值迭代 / 定长数组引用迭代 / 具体 struct 迭代器值迭代 + `@await` | `tests/test_async_for_await.uya` | 已有覆盖 | 已覆盖 `for 0..n`、`for arr |e|`、`for arr |&x|` 与 `for iter |v|` 的 async 体回归 |
-| 迭代器 interface/ref 边界 + `@await` | `tests/error_async_for_iterator_interface_await.uya`、`tests/error_async_for_iterator_ref_await.uya` | 已有覆盖 | 明确证明 `@async_fn` 中带 `@await` 的 iterator `for` 目前不支持接口值与 `for iter |&x|` 引用绑定 |
+| 迭代器 interface/ref 边界 + `@await` | `tests/error_for_iterator_interface_value.uya`、`tests/error_async_for_iterator_interface_await.uya`、`tests/test_async_for_iterator_ref_await.uya` | 已有覆盖 | 接口值 `for` 是同步也不支持的通用语言边界；`for iter |&x|` 引用绑定已作为 async 正向回归覆盖 |
 | 复合表达式 / await 绑定跨段重放 | `tests/test_async_compound_try_await.uya`、`tests/test_async_fn_multi_segment_unwrap.uya`、`tests/test_async_await_limits_and_segments.uya` | 已有覆盖 | 覆盖 RHS/return 表达式与多段 bind 依赖 |
 | 方法 / 接口 / 局部接口 future | `tests/test_async_method_interface.uya`、`tests/test_async_local_interface_await.uya` | 已有覆盖 | 证明结构体方法、方法块和接口签名主链路可用 |
 | caller-owned inline / frame / 局部定长数组 | `tests/test_async_frame_inline_temp.uya`、`tests/test_async_frame_inline_temp2.uya`、`tests/test_async_fn_local_fixed_array.uya`、`tests/test_async_frame_type.uya` | 已有覆盖 | 更偏 codegen/frame correctness，不等于完整语法 |

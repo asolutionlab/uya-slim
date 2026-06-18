@@ -192,7 +192,7 @@ if (cond) {  // 回跳
 1. **Bug A**：`tests/test_async_bug_a_two_while.uya` 通过
 2. **Bug B**：`tests/test_async_bug_b_sync_between.uya` 通过
 3. **Bug C**：`tests/test_async_bug_c_tail_await.uya` 通过
-4. **`for` + await**：`tests/test_async_for_await.uya`（范围 + 定长数组 + 定长数组引用 + 具体 struct 迭代器值绑定），以及 `tests/error_async_for_iterator_interface_await.uya` / `tests/error_async_for_iterator_ref_await.uya`（明确失败边界）
+4. **`for` + await**：`tests/test_async_for_await.uya`（范围 + 定长数组 + 定长数组引用 + 具体 struct 迭代器值绑定）、`tests/test_async_for_iterator_ref_await.uya`（具体 struct 迭代器引用绑定正向回归），以及 `tests/error_for_iterator_interface_value.uya` / `tests/error_async_for_iterator_interface_await.uya`（接口值 `for` 是同步也不支持的通用失败边界）
 5. **复合表达式 `try @await`**：`tests/test_async_compound_try_await.uya`（赋值 RHS / return 表达式）
 6. **现有 async 测试**：`test_async_while_multi_await.uya`、`test_async_copy.uya` 等不回归
 7. **全量回归**：`make check` / `make tests` 通过

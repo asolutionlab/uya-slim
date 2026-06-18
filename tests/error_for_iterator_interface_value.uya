@@ -1,0 +1,50 @@
+// error_for_iterator_interface_value.uya
+// 预期：编译失败。接口类型变量的 for 迭代是通用语言边界；
+// 同步函数体中也无法从接口值推断具体迭代器类型。
+
+error IterEnd;
+
+interface I32Iterator {
+    fn next(self: &Self) !void;
+    fn value(self: &Self) i32;
+}
+
+struct RangeIterator : I32Iterator {
+    current: i32,
+    end_val: i32,
+    started: i32
+}
+
+RangeIterator {
+    fn next(self: &Self) !void {
+        if self.started == 0 {
+            self.started = 1;
+        } else {
+            self.current = self.current + 1;
+        }
+        if self.current >= self.end_val {
+            return error.IterEnd;
+        }
+    }
+
+    fn value(self: &Self) i32 {
+        return self.current;
+    }
+}
+
+fn make_range_iface(start: i32, end_val: i32) I32Iterator {
+    return RangeIterator{ current: start, end_val: end_val, started: 0 };
+}
+
+fn sum_interface_iterator() i32 {
+    var iter: I32Iterator = make_range_iface(0, 2);
+    var total: i32 = 0;
+    for iter |item| {
+        total = total + item;
+    }
+    return total;
+}
+
+fn main() i32 {
+    return sum_interface_iterator();
+}

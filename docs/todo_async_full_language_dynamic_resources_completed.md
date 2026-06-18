@@ -258,3 +258,21 @@
 - 修复内容：
   - `src/codegen/c99/function.uya`: 帧结构体添加 `uint32_t _uya_frame_error` 字段；frame_start 初始化 `s->_uya_frame_error = 0`；包装函数在 need_wrap 时检查帧错误并传播
   - `src/codegen/c99/expr.uya`: `c99_try_emit_error_return_stmt` 中，当 async poll 上下文 kind==0 且 poll 类型不含 "err_" 时，改为设置帧错误 + 返回零值 Ready（而非尝试将 err_union 嵌入非 err_union 的 Ready）
+
+## 目标 / `@async_fn` 体内支持完整 Uya 函数体语法 / 根据矩阵补齐剩余 async 函数体语法/语义缺口
+
+    - [x] 子任务 3：厘清接口值迭代器边界
+      - 当前：`error_async_for_iterator_interface_await.uya` checker 报错
+      - 结论：接口类型 for 循环迭代是通用语言缺口（同步也不支持），非 async 独有
+      - 验证：更新测试注释/标题说明边界，确保不误报为 async 缺口
+      - 完成记录：新增 `tests/error_for_iterator_interface_value.uya` 同步负回归；更新 `tests/error_async_for_iterator_interface_await.uya` 注释、checker 诊断、矩阵脚本预期和相关文档口径。
+      - 验证命令：`make uya`
+      - 结果：通过；`../uya/bin/uya` 已重建。
+      - 验证命令：`../uya/bin/uya check tests/error_for_iterator_interface_value.uya`
+      - 结果：按预期失败，命中通用 `for` 推断诊断，证明同步接口值迭代也不支持。
+      - 验证命令：`../uya/bin/uya check tests/error_async_for_iterator_interface_await.uya`
+      - 结果：按预期失败，命中 `接口类型变量的 for 迭代目前不支持；请使用具体实现迭代器类型`。
+      - 验证命令：`UYA_ROOT="../uya/lib/" ../uya/bin/uya --c99 --safety-proof tests/error_async_for_iterator_interface_await.uya -o "$work_dir/out"`
+      - 结果：按预期失败，负向编译路径同样命中新诊断。
+      - 验证命令：`git diff --check`
+      - 结果：通过。
