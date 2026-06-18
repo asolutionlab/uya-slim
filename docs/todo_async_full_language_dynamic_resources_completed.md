@@ -1026,3 +1026,13 @@
     - 验证：`../uya/bin/uya test tests/test_async_for_await.uya`，通过；4 个测试全部 OK，包含 `async_for_range_with_await`。
     - 验证：`../uya/bin/uya test tests/test_async_large_state_machine_syntax.uya`，通过；7 个测试全部 OK，包含 `async_for_range_with_await_3`。
     - 结果：已在当前语法覆盖快照中单独登记 `for range` + `@await`，依据 `docs/grammar_formal.md` 的 `for range` 语法和 `docs/uya.md` 第 8 章整数范围形式。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] `for` 定长数组值迭代
+    - 验证：`../uya/bin/uya test tests/test_async_for_await.uya`
+    - 结果：通过；4 个测试全部 OK，包含 `async_for_array_with_await`，覆盖 `@async_fn` 中 `for a |e|` 定长数组值迭代跨 `try @await` 后累加返回。
