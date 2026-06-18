@@ -955,3 +955,13 @@
   - 验证：`../uya/bin/uya test tests/test_http1_async_client.uya` 通过（8 tests passed，包含请求头超过 4 KiB 与响应头超过旧 8 KiB 回归）。
   - 验证：`../uya/bin/uya --c99 tests/test_http1_async_client.uya` 通过，生成 `a.out`。
   - 验证：`./a.out` 通过（8 tests passed）。
+
+## 完成定义
+
+父级任务路径：有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
+
+  - [x] 新增可执行的 async 生产化完整闸门脚本，串联单测、`--uya --c99` 回归、长压测和 `make backup-all`；最小验证：`bash -n tests/verify_async_full_dynamic_resources_gate.sh`。
+    验证命令：`bash -n tests/verify_async_full_dynamic_resources_gate.sh`
+    验证结果：通过。
+    验证命令：`python3 ~/.codex/skills/goal-task-runner/scripts/check_todo.py docs/todo_async_full_language_dynamic_resources.md`
+    验证结果：通过，报告 `ok: docs/todo_async_full_language_dynamic_resources.md has 1 active task`。
