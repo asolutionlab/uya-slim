@@ -457,3 +457,11 @@
   - [x] 将共享 runtime 基线接入 async/full-language 验证入口，避免 HTTP/DNS/TLS/`async_compute` 只作为分散单项测试存在；最小验证命令：`bash tests/verify_async_full_language_matrix.sh`；完成条件：矩阵脚本包含共享 runtime 基线且通过。
     - 验证命令：`bash tests/verify_async_full_language_matrix.sh`
     - 验证结果：通过；输出确认 `verify_async_shared_runtime_matrix` 已作为 full-language 矩阵阶段执行，并以 `shared runtime matrix` 汇总通过。
+
+## 目标
+
+- Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+  - [x] 审计 HTTP/DNS/TLS/`async_compute`/`Scheduler` 是否都通过同一套 `Future` / `Poll` / `Waker` / `EventLoop` / cancellation 语义推进，补齐缺失的失败或取消回归；最小验证命令：相关新增测试加 `bash tests/verify_async_runtime_shared_semantics.sh`；完成条件：缺口有测试或文档化边界。
+    验证记录：已将 `tests/test_async_shared_runtime_semantics.uya` 接入 `tests/verify_async_runtime_shared_semantics.sh`，覆盖 HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享 `TaskQueue_i32`、`EventLoop`、`Waker` 和 cancellation 语义。
+    验证命令：`../uya/bin/uya test tests/test_async_shared_runtime_semantics.uya`，结果：通过，1 个测试、14 个断言通过。
+    验证命令：`bash tests/verify_async_runtime_shared_semantics.sh`，结果：通过，脚本输出 `verify_async_runtime_shared_semantics: shared async runtime baseline passed`。

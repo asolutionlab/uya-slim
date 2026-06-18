@@ -37,6 +37,7 @@ runtime_tests=(
     "tests/test_async_fd.uya"
     "tests/test_std_thread.uya"
     "tests/test_async_compute_types.uya"
+    "tests/test_async_shared_runtime_semantics.uya"
     "tests/test_http1_async_client.uya"
     "tests/test_std_dns_async_transport.uya"
     "tests/test_https_loopback.uya"
