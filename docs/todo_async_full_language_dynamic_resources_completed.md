@@ -1143,3 +1143,12 @@
     - 验证：`../uya/bin/uya test tests/test_generic_async_function_codegen.uya` 通过，覆盖顶层泛型 `@async_fn` codegen。
     - 验证：`../uya/bin/uya test tests/test_async_method_interface.uya` 通过，覆盖接口方法签名、结构体内部 async 方法、结构体外方法块 async 实现与 vtable 调用。
     - 缺口确认：临时正向回归 `AsyncBox { @async_fn fn choose<T>(...) Future<!T> }` 失败于 C99 链接阶段，关键错误为未生成 `uya_AsyncBox_choose_i32` 且 `struct uya_interface_Future_err_i32` 在 `std_block_on_i32` 处不完整；未保留失败测试文件，矩阵中如实标为“部分覆盖，泛型 async 方法仍为缺口”。
+
+## 归档：Phase 1 / 1.2 先补红测，再动实现
+
+父级任务路径：# Uya 异步生产化 TODO（完整语法 + 动态资源） > Phase 1：`@async_fn` 语法完整性 > 1.2 先补红测，再动实现
+
+- [x] 新增 `tests/test_async_match_await.uya`
+  - 验证：`../uya/bin/uya test tests/test_async_match_await.uya` 通过；4 tests passed, 0 failed, 4 assertions passed。
+  - 验证：`../uya/bin/uya test --c99 tests/test_async_match_await.uya` 通过；4 tests passed, 0 failed, 4 assertions passed。
+  - 验证：`../uya/bin/uya test --uya --c99 tests/test_async_match_await.uya` 通过；4 tests passed, 0 failed, 4 assertions passed。

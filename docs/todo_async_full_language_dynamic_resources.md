@@ -104,7 +104,6 @@
 
 ### 1.2 先补红测，再动实现
 
-- [ ] 新增 `tests/test_async_match_await.uya`
 - [ ] 新增 `tests/test_async_catch_await.uya`
 - [ ] 新增 `tests/test_async_defer_errdefer.uya`
 - [ ] 如有必要，从 `tests/test_async_for_await.uya` 拆出 dedicated `for iter |v|` + `@await` 回归；当前主回归已覆盖该组合。
