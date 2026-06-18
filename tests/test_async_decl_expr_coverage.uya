@@ -1,0 +1,74 @@
+// test_async_decl_expr_coverage.uya
+// 覆盖 @async_fn 函数体内声明与基本表达式，并与同步函数结果对齐。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+struct ExprPoint {
+    x: i32,
+    y: i32,
+}
+
+fn expr_add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+fn sync_decl_expr_body(seed: i32) i32 {
+    const base: i32 = expr_add(seed, 3);
+    var p: ExprPoint = ExprPoint{ x: base, y: 5 };
+    var arr: [i32: 4] = [base, base + 1, base + 2, base + 3];
+    const start: usize = 1;
+    const view: &[i32] = arr[start:2];
+    var total: i32 = p.x + p.y;
+
+    total = total + arr[2];
+    total = total + view[0] + view[1];
+    arr[0] = total - base;
+    p.y = arr[0] / 2;
+
+    const arithmetic: i32 = (total * 2) - (p.y % 5);
+    const compared: bool = arithmetic > total && p.x == base;
+    const logical: bool = compared || arr[3] < 0;
+    if logical {
+        total = arithmetic + p.y;
+    } else {
+        total = 0 - arithmetic;
+    }
+
+    return total;
+}
+
+@async_fn
+fn async_decl_expr_body(seed: i32) Future<!i32> {
+    const base: i32 = expr_add(seed, 3);
+    var p: ExprPoint = ExprPoint{ x: base, y: 5 };
+    var arr: [i32: 4] = [base, base + 1, base + 2, base + 3];
+    const start: usize = 1;
+    const view: &[i32] = arr[start:2];
+    var total: i32 = p.x + p.y;
+
+    total = total + arr[2];
+    total = total + view[0] + view[1];
+    arr[0] = total - base;
+    p.y = arr[0] / 2;
+
+    const arithmetic: i32 = (total * 2) - (p.y % 5);
+    const compared: bool = arithmetic > total && p.x == base;
+    const logical: bool = compared || arr[3] < 0;
+    if logical {
+        total = arithmetic + p.y;
+    } else {
+        total = 0 - arithmetic;
+    }
+
+    return total;
+}
+
+test "async decl and basic expressions match sync body" {
+    const sync_result: i32 = sync_decl_expr_body(7);
+    const async_raw: !i32 = block_on<i32>(async_decl_expr_body(7));
+    const async_result: i32 = async_raw catch { 0 - 1; };
+
+    try assert_eq_i32(sync_result, 120);
+    try assert_eq_i32(async_result, sync_result);
+}

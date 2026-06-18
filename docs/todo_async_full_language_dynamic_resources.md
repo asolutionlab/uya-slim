@@ -7,7 +7,6 @@
 ## 先澄清边界
 
 - [ ] “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
-  - [ ] 建立 async 函数体声明与基本表达式覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`const`、`var`、赋值、调用、字段/下标/切片、算术/比较/逻辑表达式在 `@async_fn` 中与同步函数一致。
   - [ ] 建立 async 函数体控制流覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`if`、`while`、`for`、`break`、`continue`、块语句和 `return` 在 `@async_fn` 中与同步函数一致。
   - [ ] 建立 async 函数体错误处理覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`try`、`catch`、错误返回和 `!T` 组合在 `@async_fn` 中与同步函数一致。
   - [ ] 建立 async 函数体清理语句覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`defer`、`errdefer` 及其规范禁止的控制流在 `@async_fn` 中与同步函数一致。
