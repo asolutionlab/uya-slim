@@ -574,6 +574,17 @@ test "task_queue_capacity_can_exceed_default_capacity" {
     }
 }
 
+test "task_queue_default_capacity_grows_past_64" {
+    var queue: TaskQueue_i32 = task_queue_i32_new();
+    var i: i32 = 0;
+    while i < TASK_QUEUE_I32_CAPACITY + 1 {
+        const idx: i32 = try queue.push(ready(i));
+        try assert_eq_i32(idx, i);
+        i = i + 1;
+    }
+    try assert_eq_i32(task_queue_i32_capacity(&queue) > TASK_QUEUE_I32_CAPACITY, true);
+}
+
 test "scheduler_inline_repoll_limit_is_configurable" {
     scheduler_inline_pending_poll_count = 0;
     scheduler_loop_poll_count = 0;

@@ -915,3 +915,12 @@
   - [x] ThreadPool worker/pending/task slot 容量支持显式配置和随 worker 扩展，旧 `32/32/16` 仅为兼容默认。最小验证：`../uya/bin/uya test tests/test_std_thread.uya`。
     - 验证命令：`../uya/bin/uya test tests/test_std_thread.uya`
     - 验证结果：通过；24 个测试全部 OK，Assertions Passed: 93。
+
+## 2026-06-18 本轮完成
+
+上下文：完成定义 > runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] 将 `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 默认队列改成自动增长，默认队列超过 `64` 个 ready 任务不再返回 `TaskQueueFull`；最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+    - 验证：先运行 `../uya/bin/uya test tests/test_std_async_scheduler.uya`，旧实现新增用例 `task_queue_default_capacity_grows_past_64` 失败；实现后通过（18 tests）。
+    - 回归：`../uya/bin/uya test tests/test_async_fd.uya` 通过（7 tests）。
+    - 相关宽回归：`../uya/bin/uya test tests/test_async_runtime_shared_semantics.uya` 未通过，宿主 C 编译在既有 `std_http_uyagin_send_context_response_head_only_async` / `std_http_uyagin_accept_async` 生成代码处报 `invalid initializer`，不在本次 `TaskQueue` 路径。

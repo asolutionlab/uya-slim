@@ -11,7 +11,7 @@
 | 模块 | 现状 | 影响 |
 |------|------|------|
 | `lib/std/async_event.uya` | `LinuxEpoll` 的 slot / event 数组均固定 `1024`，`find_slot()` 线性扫描固定容量 | 并发 fd 上限、退化 O(n)、容量达到上限时只能报错 |
-| `lib/std/async_scheduler.uya` | `TaskQueue<T>` 固定 `64` 槽，scheduler 自带 `_frame_stack_buffer[8192]`，inline repoll 上限固定 `1024` | 队列容量、池后备缓冲和轮询策略都不是动态策略 |
+| `lib/std/async_scheduler.uya` | `TaskQueue<T>` 默认队列已自动增长；scheduler 自带 `_frame_stack_buffer[8192]`，inline repoll 上限默认 `1024` | 池后备缓冲和默认轮询策略仍需继续收口 |
 | `lib/std/thread.uya` | `THREAD_POOL_MAX_WORKERS=32`、`THREAD_POOL_MAX_PENDING=32`、`THREAD_POOL_MAX_TASK_SLOTS=16`，满载后还会回退到 `sys_fork()` one-shot | 线程池容量与退化路径写死，生产行为不可预测 |
 | `lib/std/async_frame.uya` | `ASYNC_FRAME_POOL_MAX_BUCKETS=128`、`ASYNC_FRAME_POOL_MAX_PER_BUCKET=4096`、descriptor 表固定 `512` | frame 元信息和池容量都有硬上限 |
 | `lib/std/http/http1_async.uya` | 多处请求头 scratch buffer 固定 `4096` | 大 header / 扩展请求场景不是真动态 |
@@ -48,7 +48,7 @@
 | 编译器内部固定容量 | `MAX_ASYNC_FRAME_METAS=512` | `src/checker/async_frame_meta.uya` |
 | 编译器内部固定容量 | frame descriptor 静默截断到 `512` | `src/codegen/c99/main.uya` |
 | **运行时/协议层固定容量** | epoll slot/event `1024`、`find_slot()` 线性扫 | `lib/std/async_event.uya` |
-| 运行时/协议层固定容量 | `TaskQueue<T>` 固定 `64` 槽 | `lib/std/async_scheduler.uya` |
+| 运行时/协议层固定容量 | `TaskQueue<T>` 默认队列已自动增长，显式容量队列仍保留调用方配置上限 | `lib/std/async_scheduler.uya` |
 | 运行时/协议层固定容量 | `_frame_stack_buffer[8192]`、inline repoll `1024` | `lib/std/async_scheduler.uya` |
 | 运行时/协议层固定容量 | `ASYNC_FRAME_POOL_MAX_BUCKETS=128`、`MAX_PER_BUCKET=4096`、descriptor 表 `512` | `lib/std/async_frame.uya` |
 | 运行时/协议层固定容量 | `THREAD_POOL_MAX_WORKERS=32`、`MAX_PENDING=32`、`MAX_TASK_SLOTS=16`、`fork()` fallback | `lib/std/thread.uya` |
@@ -57,6 +57,9 @@
 ## 完成定义
 
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+  - [ ] 将 `lib/std/async_scheduler.uya` 的 `_frame_stack_buffer[8192]` 改成显式配置或动态后备存储策略；最小验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya`。
+  - [ ] 将 `lib/std/async_frame.uya` 的 bucket / slot / descriptor 上限改成动态结构；最小验证：`../uya/bin/uya test tests/test_async_frame_pool_dynamic_growth.uya`。
+  - [ ] 将 `lib/std/thread.uya` 的 worker / pending / task slot 数量改成动态或可配置，并去掉默认 `fork()` fallback；最小验证：`../uya/bin/uya test tests/test_async_thread_pool_dynamic_growth.uya`。
 - [ ] 协议层临时 buffer 不再把“4 KiB 头”“单次 4 KiB frame”之类当成默认产品上限。
 - [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
 
@@ -336,7 +339,6 @@
 
 ### 3.2 Scheduler / TaskQueue
 
-- [ ] 将 `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 从固定 `64` 槽改成动态队列。
 - [ ] 把 scheduler 的 `_frame_stack_buffer[8192]` 改成显式配置或动态后备存储策略。
 - [ ] 评估并收口 `SCHEDULER_INLINE_REPOLL_LIMIT=1024` 的策略，让它成为调度策略参数，而不是写死常量。
 

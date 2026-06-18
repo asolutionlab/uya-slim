@@ -17,6 +17,7 @@ use libc.stdlib;
 use libc.syscall;
 
 extern fn malloc(size: usize) &void;
+extern fn realloc(ptr: &void, size: usize) &void;
 
 error TaskQueueFull;
 error TimedOut;
@@ -171,19 +172,12 @@ export struct TaskQueueSlot<T> {
 export struct TaskQueue<T> {
     len: i32,
     capacity: i32,
+    fixed_capacity: i32,
     slots: &TaskQueueSlot<T> = null,
 
     fn push(self: &Self, f: Future<!T>) !i32 {
+        _ = try self.ensure_capacity_for_push();
         const limit: i32 = self.capacity_limit();
-        if self.slots == null {
-            const init_result: !i32 = self.ensure_slots();
-            _ = init_result catch {
-                return init_result as! i32;
-            };
-        }
-        if self.len >= limit {
-            return error.TaskQueueFull;
-        }
 
         const idx: i32 = self.len;
         if idx < 0 || idx >= limit {
@@ -214,6 +208,19 @@ export struct TaskQueue<T> {
         return self.capacity;
     }
 
+    fn ensure_capacity_for_push(self: &Self) !i32 {
+        if self.slots == null {
+            _ = try self.ensure_slots();
+        }
+        if self.len < self.capacity_limit() {
+            return 0;
+        }
+        if self.fixed_capacity != 0 {
+            return error.TaskQueueFull;
+        }
+        return self.grow_slots();
+    }
+
     fn ensure_slots(self: &Self) !i32 {
         if self.slots != null {
             return 0;
@@ -227,6 +234,24 @@ export struct TaskQueue<T> {
             return error.TaskQueueFull;
         }
         self.slots = ptr as &TaskQueueSlot<T>;
+        return 0;
+    }
+
+    fn grow_slots(self: &Self) !i32 {
+        var next_capacity: i32 = self.capacity_limit() * 2;
+        if next_capacity <= self.len {
+            next_capacity = self.len + 1;
+        }
+        if next_capacity <= 0 {
+            return error.TaskQueueFull;
+        }
+        const bytes: usize = (next_capacity as usize) * @size_of(TaskQueueSlot<T>);
+        const ptr: &void = realloc(self.slots as &void, bytes);
+        if ptr == null {
+            return error.TaskQueueFull;
+        }
+        self.slots = ptr as &TaskQueueSlot<T>;
+        self.capacity = next_capacity;
         return 0;
     }
 
@@ -290,14 +315,14 @@ fn task_queue_normalize_capacity(capacity: i32) i32 {
 /// 参数：无。
 /// 返回：容量兼容既有默认值的 TaskQueue<T>。
 export fn task_queue_new<T>() TaskQueue<T> {
-    return TaskQueue<T>{ len: 0, capacity: TASK_QUEUE_CAPACITY, slots: null };
+    return TaskQueue<T>{ len: 0, capacity: TASK_QUEUE_CAPACITY, fixed_capacity: 0, slots: null };
 }
 
 /// 创建指定运行时容量上限的任务队列。
 /// 参数：capacity 为队列可入队任务上限；小于等于 0 时使用默认值。
 /// 返回：带可配置容量上限的 TaskQueue<T>。
 export fn task_queue_new_with_capacity<T>(capacity: i32) TaskQueue<T> {
-    return TaskQueue<T>{ len: 0, capacity: task_queue_normalize_capacity(capacity), slots: null };
+    return TaskQueue<T>{ len: 0, capacity: task_queue_normalize_capacity(capacity), fixed_capacity: 1, slots: null };
 }
 
 fn task_queue_capacity_internal<T>(queue: &TaskQueue<T>) i32 {
