@@ -715,3 +715,15 @@
   - 完成内容：`docs/async_production_todo.md` 明确将固定容量、语法禁区和回退路径列为新的生产阻塞项，不再归入“量产后二阶段”；历史量产定义补充“不覆盖回退路径收口”。`docs/async_status_matrix.md` 明确要求后续 release 口径持续保留这些阻塞项，不能把历史“量产完成”升级为当前 async 生产完成结论。
   - 验证命令：`git diff --check`
   - 验证结果：通过。
+
+## 源码现状审计 / 4. 文档口径与源码状态有漂移
+
+- [x] 本目标完成前，必须先把“文档真相”与“源码真相”重新对齐，再谈 release 口径。
+  - 完成内容：更新主 todo 审计口径，使其与当前源码常量、nested future 专项验证、迭代器 interface/ref 边界和 async full language matrix 覆盖范围一致。
+  - 验证命令：
+    - `rg -n "Future<Future|nested|too many|C99_ASYNC_MAX_AWAITS|MAX_SEGMENTS|MAX_LOCALS|iterator|接口|release|已知限制|poll" docs/std_async_design.md docs/uya.md docs/grammar_formal.md docs/grammar_quick.md docs/builtin_functions.md tests/verify_async_full_language_matrix.sh tests/verify_async_nested_future_boundary.sh tests/test_async_nested_future_poll.uya tests/test_async_for_iterator_ref_await.uya tests/error_for_iterator_interface_value.uya tests/error_async_for_iterator_interface_await.uya src/codegen/c99/async_transform.uya src/codegen/c99/internal.uya src/checker/check_node_extra.uya src/codegen/c99/function.uya`（通过；确认 `MAX_SEGMENTS=4098`、`MAX_LOCALS=4096`、`C99_ASYNC_MAX_AWAITS=4096`，nested future 已由专项脚本固定为正向回归，iterator interface value for 仍是同步/async 通用边界）
+    - `../uya/bin/uya test tests/test_async_nested.uya`（通过；2 tests passed）
+    - `bash tests/verify_async_nested_future_boundary.sh`（通过；`nested poll subset passes and !Future<Future<T>> C emission compiles`）
+    - `bash tests/verify_async_full_language_matrix.sh`（通过；positive matrix 31 tests、iterator boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo passed）
+    - `git diff --check`（通过）
+  - 完成条件：本 todo 的审计口径与当前源码常量、nested future 专项验证、迭代器 interface/ref 边界和 async full language matrix 覆盖范围一致。
