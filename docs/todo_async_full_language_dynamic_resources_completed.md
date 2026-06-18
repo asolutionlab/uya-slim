@@ -992,3 +992,13 @@
     - async 状态：已有覆盖；`tests/test_async_control_flow_body.uya` 覆盖 async 函数体内 `const`/`var` 声明、赋值、入口提前 return 和尾部 return；`tests/test_async_await_var.uya` 覆盖 await 结果绑定后返回。
     - 验证：`../uya/bin/uya test tests/test_async_control_flow_body.uya` 通过，3 tests passed / 0 failed。
     - 验证：`../uya/bin/uya test tests/test_async_await_var.uya` 通过，1 test passed / 0 failed。
+## 追加完成记录：Phase 1 / 1.1 / `if / else if / else`
+
+父级任务路径：Phase 1：`@async_fn` 语法完整性 > 1.1 先建立“完整语法”矩阵 > 以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] `if / else if / else`
+    - 规范依据：`docs/uya.md` 明确 `if condition { statements } [ else { statements } ]`，并支持 `else if`；`docs/grammar_formal.md` 将 `if_stmt` 列入函数体 `statement`。
+    - async 状态：已有覆盖。`tests/test_async_if_await.uya` 覆盖 `if/else` 两分支内 `try @await`；`tests/test_async_else_if_await.uya` 覆盖 `else if` 作为 AST_IF_STMT else 分支、分支内循环 await、以及分支后续执行；`tests/test_async_sync_body_matrix.uya` 还用同步/async 成对断言覆盖普通分支和 `else if`。
+    - 验证命令：`../uya/bin/uya test tests/test_async_if_await.uya`，结果：通过，2 个测试通过、0 失败。
+    - 验证命令：`../uya/bin/uya test tests/test_async_else_if_await.uya`，结果：通过，1 个测试通过、0 失败。
+    - 扩展验证命令：`./tests/verify_async_full_language_matrix.sh`，结果：L65 相关的 `tests/test_async_if_await.uya` 与 `tests/test_async_else_if_await.uya` 均已在脚本中通过；脚本后续在 shared runtime 阶段失败，关键错误为生成 C 中 `std_http_uyagin_send_context_response_head_only_async(...)` / `std_http_uyagin_accept_async(...)` 的 `invalid initializer`，与本轮 `if / else if / else` 语法证据无关。
