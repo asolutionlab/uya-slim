@@ -680,3 +680,12 @@
     验证命令：`../uya/bin/uya check tests/error_await_in_future_returning_non_async.uya`，结果：失败且报告 `@await 只能在 @async_fn 函数内使用`（先确认旧实现曾错误通过，修复后通过负例验证）。
     验证命令：`../uya/bin/uya check tests/error_await_outside_async.uya`，结果：失败且报告 `@await 只能在 @async_fn 函数内使用`。
     验证命令：`./tests/verify_async_full_language_matrix.sh`，结果：通过，输出 `forbidden @await positions ... passed`。
+## 先澄清边界
+
+父级任务路径：
+- [ ] 这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+  - [x] `@await` 出现在 `while` 条件等当前明确禁止的位置时，仍应报错，除非后续先修改语言规范。
+    - 验证命令：`../uya/bin/uya check tests/error_async_await_in_while_cond.uya`
+    - 验证结果：通过，命令按预期退出 1，并报告 `@async_fn 状态机结构验证失败，请检查 @await 使用是否规范`。
+    - 验证命令：`bash tests/verify_async_full_language_matrix.sh`
+    - 验证结果：通过，输出 `verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
