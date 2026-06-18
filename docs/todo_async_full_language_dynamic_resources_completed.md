@@ -504,3 +504,13 @@
   - [x] 为 DNS async transport 增加共享 `Scheduler` / `LinuxEpoll` 组合 smoke，把真实 UDP/TCP fallback future 放进同一 `TaskQueue` 或等价共享调度入口；最小验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_dns.uya`；完成条件：测试能证明 DNS transport 在 shared runtime 中完成 readiness、fallback 和资源清理。
     - 验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_dns.uya` 通过（1 tests passed, 0 failed）。
     - 相关回归：`../uya/bin/uya test --c99 tests/test_std_dns_async_transport.uya` 通过（2 tests passed, 0 failed）；`../uya/bin/uya test --c99 tests/test_async_shared_runtime_semantics.uya` 通过（2 tests passed, 0 failed）。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 为 DNS `A/AAAA` 并发聚合补 async 查询实现和回归，避免继续只验证单 transport future；最小验证：`../uya/bin/uya test --c99 tests/test_std_dns_async_query_aggregate.uya`；完成条件：同一查询入口能聚合 `A` 与 `AAAA` 结果，并覆盖成功、部分失败和超时路径。
+    - 验证：
+      - `../uya/bin/uya test --c99 tests/test_std_dns_async_query_aggregate.uya`：通过，3 个测试覆盖 A/AAAA 并发聚合成功、A 失败保留 AAAA、双查询已发出后的 DnsTimeout 路径。
+      - `../uya/bin/uya test --c99 tests/test_std_dns_async_transport.uya`：通过，2 个测试覆盖 IPv4-only TCP fallback 与 ANY 模式下并发 A/AAAA + A TCP fallback。
+      - `../uya/bin/uya test --c99 tests/test_std_dns.uya`：通过，34 个测试覆盖既有 DNS 同步/异步基础回归。

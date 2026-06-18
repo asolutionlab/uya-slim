@@ -161,6 +161,93 @@ fn dns_serve_single_udp_aaaa(udp_fd: i32) !void {
     _ = try sys_sendto_raw(udp_fd, &aaaa_packet[0], 57, 0, &peer_addr[0], peer_len);
 }
 
+fn dns_query_type(packet: &const byte, packet_len: usize) u16 {
+    if packet_len < 4 {
+        return 0;
+    }
+    return (((packet[packet_len - 4] as u16) << 8) | (packet[packet_len - 3] as u16));
+}
+
+fn dns_send_truncated_udp_response(udp_fd: i32, query: &const byte, peer_addr: &const byte, peer_len: u32) !void {
+    var udp_resp: [byte: 12] = [0x12, 0x34, 0x83, 0x00, 0, 1, 0, 0, 0, 0, 0, 0];
+    udp_resp[0] = query[0];
+    udp_resp[1] = query[1];
+    _ = try sys_sendto_raw(udp_fd, &udp_resp[0], 12, 0, peer_addr, peer_len);
+}
+
+fn dns_send_udp_aaaa_response(udp_fd: i32, query: &const byte, peer_addr: &const byte, peer_len: u32) !void {
+    var aaaa_packet: [byte: 57] = [
+        0x12, 0x34, 0x81, 0x00, 0, 1, 0, 1, 0, 0, 0, 0,
+        7, 101, 120, 97, 109, 112, 108, 101,
+        3, 99, 111, 109, 0,
+        0, 28, 0, 1,
+        0xC0, 0x0C, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    ];
+    aaaa_packet[0] = query[0];
+    aaaa_packet[1] = query[1];
+    _ = try sys_sendto_raw(udp_fd, &aaaa_packet[0], 57, 0, peer_addr, peer_len);
+}
+
+fn dns_serve_tcp_a_for_query(tcp_fd: i32, query: &const byte) !void {
+    var client_addr: [byte: 16] = [0:16];
+    var client_len: u32 = 16;
+    const cfd: i32 = try sys_accept(tcp_fd, &client_addr[0] as &void, &client_len);
+
+    var lenbuf: [byte: 2] = [0:2];
+    try dns_read_exact(cfd, &lenbuf[0], 2);
+    const body_len: usize = (((lenbuf[0] as usize) << 8) | (lenbuf[1] as usize));
+    if body_len > 0 {
+        var req: [byte: 512] = [0:512];
+        try dns_read_exact(cfd, &req[0], body_len);
+    }
+
+    var body: [byte: 45] = [
+        0x12, 0x34, 0x81, 0x00, 0, 1, 0, 1, 0, 0, 0, 0,
+        7, 101, 120, 97, 109, 112, 108, 101,
+        3, 99, 111, 109, 0,
+        0, 1, 0, 1,
+        0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 5, 6, 7, 8,
+    ];
+    body[0] = query[0];
+    body[1] = query[1];
+
+    var framed: [byte: 47] = [0:47];
+    framed[0] = 0;
+    framed[1] = 45;
+    var i: usize = 0;
+    while i < 45 {
+        framed[2 + i] = body[i];
+        i = i + 1;
+    }
+    try dns_write_all(cfd, &framed[0], 47);
+    _ = sys_close(cfd) catch {};
+}
+
+fn dns_serve_concurrent_a_truncated_and_aaaa(udp_fd: i32, tcp_fd: i32) !void {
+    var q1: [byte: 512] = [0:512];
+    var q2: [byte: 512] = [0:512];
+    var a1: [byte: 16] = [0:16];
+    var a2: [byte: 16] = [0:16];
+    var al1: u32 = 16;
+    var al2: u32 = 16;
+    const n1: isize = try sys_recvfrom_raw(udp_fd, &q1[0], 512, 0, &a1[0], &al1);
+    const n2: isize = try sys_recvfrom_raw(udp_fd, &q2[0], 512, 0, &a2[0], &al2);
+    if n1 <= 0 || n2 <= 0 {
+        return error.ConnectionClosed;
+    }
+    var a_query: &byte = &q1[0];
+    if dns_query_type(&q1[0], n1 as usize) == DNS_RECORD_A {
+        try dns_send_truncated_udp_response(udp_fd, &q1[0], &a1[0], al1);
+        try dns_send_udp_aaaa_response(udp_fd, &q2[0], &a2[0], al2);
+    } else {
+        a_query = &q2[0];
+        try dns_send_udp_aaaa_response(udp_fd, &q1[0], &a1[0], al1);
+        try dns_send_truncated_udp_response(udp_fd, &q2[0], &a2[0], al2);
+    }
+    try dns_serve_tcp_a_for_query(tcp_fd, a_query);
+}
+
 fn run_dns_query_all_async_prefer_ipv4_client(port: u16) void {
     var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0, prefer_family: 0 };
     var resolver: [byte: 9] = [49, 50, 55, 46, 48, 46, 48, 46, 49];
@@ -401,14 +488,7 @@ test "dns_query_all_async_any_tcp_fallback_and_aaaa" {
         return;
     }
 
-    dns_serve_single_truncated_then_tcp_a(udp_fd, tcp_fd) catch {
-        _ = sys_close(udp_fd) catch {};
-        _ = sys_close(tcp_fd) catch {};
-        try assert_eq_i32(0, 1);
-        return;
-    };
-
-    dns_serve_single_udp_aaaa(udp_fd) catch {
+    dns_serve_concurrent_a_truncated_and_aaaa(udp_fd, tcp_fd) catch {
         _ = sys_close(udp_fd) catch {};
         _ = sys_close(tcp_fd) catch {};
         try assert_eq_i32(0, 1);

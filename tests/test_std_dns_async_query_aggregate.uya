@@ -1,0 +1,264 @@
+// test_std_dns_async_query_aggregate.uya - DNS A/AAAA async 聚合回归
+
+use std.net.dns;
+use std.async;
+use std.async_scheduler.block_on_with_event_loop;
+use std.async_event.linux_epoll_create;
+use std.async_event.LinuxEpoll;
+use std.http.server.fill_sockaddr_loopback_16;
+use std.http.server.read_port_from_sockaddr_16;
+use std.testing.assert_eq_i32;
+use libc.syscall;
+
+fn sys_recvfrom_raw(sockfd: i32, buf: &byte, len: usize, flags: i32, addr: &byte, addrlen: &u32) !isize {
+    return @syscall(SYS_recvfrom, sockfd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64) as! isize;
+}
+
+fn sys_sendto_raw(sockfd: i32, buf: &const byte, len: usize, flags: i32, addr: &const byte, addrlen: u32) !isize {
+    return @syscall(SYS_sendto, sockfd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64) as! isize;
+}
+
+fn dns_set_recv_timeout(fd: i32, timeout_ms: u32) !void {
+    var tv: [byte: 16] = [0:16];
+    const sec: i64 = ((timeout_ms as i64) / 1000 as i64);
+    const usec: i64 = ((timeout_ms as i64) % 1000 as i64) * 1000 as i64;
+    var i: usize = 0;
+    while i < 8 {
+        const shift: i32 = (i * 8) as i32;
+        tv[i] = ((sec >> shift) & 0xff as i64) as byte;
+        i = i + 1;
+    }
+    i = 0;
+    while i < 8 {
+        const shift: i32 = (i * 8) as i32;
+        tv[8 + i] = ((usec >> shift) & 0xff as i64) as byte;
+        i = i + 1;
+    }
+    _ = try sys_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv[0] as &void, 16);
+}
+
+fn dns_bind_loopback_udp(port_out: &u16) !i32 {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_DGRAM, 0);
+    var addr: [byte: 16] = [0:16];
+    fill_sockaddr_loopback_16(0, &addr[0] as &byte);
+    _ = try sys_bind(fd, &addr[0] as &void, 16 as u32);
+    var bound: [byte: 16] = [0:16];
+    var bound_len: u32 = 16;
+    _ = try sys_getsockname(fd, &bound[0] as &void, &bound_len);
+    port_out[0] = read_port_from_sockaddr_16(&bound[0] as &byte);
+    return fd;
+}
+
+fn dns_query_type(packet: &const byte, packet_len: usize) u16 {
+    if packet_len < 4 {
+        return 0;
+    }
+    return (((packet[packet_len - 4] as u16) << 8) | (packet[packet_len - 3] as u16));
+}
+
+fn dns_make_a_response(query: &const byte, out: &byte) usize {
+    var packet: [byte: 45] = [
+        0x12, 0x34, 0x81, 0x00, 0, 1, 0, 1, 0, 0, 0, 0,
+        7, 101, 120, 97, 109, 112, 108, 101,
+        3, 99, 111, 109, 0,
+        0, 1, 0, 1,
+        0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 5, 6, 7, 8,
+    ];
+    packet[0] = query[0];
+    packet[1] = query[1];
+    var i: usize = 0;
+    while i < 45 {
+        out[i] = packet[i];
+        i = i + 1;
+    }
+    return 45;
+}
+
+fn dns_make_aaaa_response(query: &const byte, out: &byte) usize {
+    var packet: [byte: 57] = [
+        0x12, 0x34, 0x81, 0x00, 0, 1, 0, 1, 0, 0, 0, 0,
+        7, 101, 120, 97, 109, 112, 108, 101,
+        3, 99, 111, 109, 0,
+        0, 28, 0, 1,
+        0xC0, 0x0C, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    ];
+    packet[0] = query[0];
+    packet[1] = query[1];
+    var i: usize = 0;
+    while i < 57 {
+        out[i] = packet[i];
+        i = i + 1;
+    }
+    return 57;
+}
+
+fn dns_make_nxdomain_response(query: &const byte, out: &byte) usize {
+    var packet: [byte: 29] = [
+        0x12, 0x34, 0x81, 0x83, 0, 1, 0, 0, 0, 0, 0, 0,
+        7, 101, 120, 97, 109, 112, 108, 101,
+        3, 99, 111, 109, 0,
+        0, 1, 0, 1,
+    ];
+    packet[0] = query[0];
+    packet[1] = query[1];
+    packet[25] = query[25];
+    packet[26] = query[26];
+    var i: usize = 0;
+    while i < 29 {
+        out[i] = packet[i];
+        i = i + 1;
+    }
+    return 29;
+}
+
+fn dns_recv_two_queries(fd: i32, q1: &byte, q1_len: &usize, a1: &byte, al1: &u32, q2: &byte, q2_len: &usize, a2: &byte, al2: &u32) !void {
+    al1[0] = 16;
+    const n1: isize = try sys_recvfrom_raw(fd, q1, 512, 0, a1, al1);
+    if n1 <= 0 {
+        return error.DnsTimeout;
+    }
+    q1_len[0] = n1 as usize;
+    al2[0] = 16;
+    const n2: isize = try sys_recvfrom_raw(fd, q2, 512, 0, a2, al2);
+    if n2 <= 0 {
+        return error.DnsTimeout;
+    }
+    q2_len[0] = n2 as usize;
+}
+
+fn dns_send_response_for_query(fd: i32, query: &const byte, query_len: usize, addr: &const byte, addr_len: u32, mode: i32) !void {
+    var resp: [byte: 64] = [0:64];
+    var resp_len: usize = 0;
+    const qtype: u16 = dns_query_type(query, query_len);
+    if mode == 1 && qtype == DNS_RECORD_A {
+        resp_len = dns_make_nxdomain_response(query, &resp[0]);
+    } else if qtype == DNS_RECORD_A {
+        resp_len = dns_make_a_response(query, &resp[0]);
+    } else if qtype == DNS_RECORD_AAAA {
+        resp_len = dns_make_aaaa_response(query, &resp[0]);
+    } else {
+        return error.DnsInvalidPacket;
+    }
+    _ = try sys_sendto_raw(fd, &resp[0], resp_len, 0, addr, addr_len);
+}
+
+fn dns_serve_success_or_partial(fd: i32, partial: i32) !void {
+    try dns_set_recv_timeout(fd, 500);
+    var q1: [byte: 512] = [0:512];
+    var q2: [byte: 512] = [0:512];
+    var q1_len: usize = 0;
+    var q2_len: usize = 0;
+    var a1: [byte: 16] = [0:16];
+    var a2: [byte: 16] = [0:16];
+    var al1: u32 = 16;
+    var al2: u32 = 16;
+    try dns_recv_two_queries(fd, &q1[0], &q1_len, &a1[0], &al1, &q2[0], &q2_len, &a2[0], &al2);
+    try dns_send_response_for_query(fd, &q1[0], q1_len, &a1[0], al1, partial);
+    try dns_send_response_for_query(fd, &q2[0], q2_len, &a2[0], al2, partial);
+}
+
+fn dns_serve_timeout_after_two_queries(fd: i32) !void {
+    try dns_set_recv_timeout(fd, 500);
+    var q1: [byte: 512] = [0:512];
+    var q2: [byte: 512] = [0:512];
+    var q1_len: usize = 0;
+    var q2_len: usize = 0;
+    var a1: [byte: 16] = [0:16];
+    var a2: [byte: 16] = [0:16];
+    var al1: u32 = 16;
+    var al2: u32 = 16;
+    try dns_recv_two_queries(fd, &q1[0], &q1_len, &a1[0], &al1, &q2[0], &q2_len, &a2[0], &al2);
+    _ = q1_len;
+    _ = q2_len;
+    _ = al1;
+    _ = al2;
+}
+
+fn dns_run_aggregate_client(port: u16, expect_len: usize, expect_timeout: i32) void {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0, prefer_family: 0 };
+    var resolver: [byte: 9] = [49, 50, 55, 46, 48, 46, 48, 46, 49];
+    dns_client_init(&client, &resolver[0: 9]);
+    client.nameserver_port = port;
+    dns_client_set_timeout_ms(&client, 200);
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    var out: [byte: 20] = [0:20];
+    var out_len: usize = 0;
+    const loop: LinuxEpoll = linux_epoll_create(0) catch {
+        sys_exit(31);
+        return;
+    };
+    const fut: Future<!usize> = dns_client_query_all_async(&client, &host[0], 11, &out[0], 20, &out_len);
+    const bo: !usize = block_on_with_event_loop<usize>(&loop, fut, 600);
+    const n: usize = bo catch |err| {
+        if expect_timeout != 0 && @error_id(err) == @error_id(error.DnsTimeout) {
+            sys_exit(0);
+            return;
+        }
+        sys_exit(32);
+        return;
+    };
+    if expect_timeout != 0 {
+        sys_exit(38);
+    }
+    if n != expect_len || out_len != expect_len {
+        sys_exit(33);
+    }
+    if expect_len == 20 {
+        if out[0] != 5 || out[1] != 6 || out[2] != 7 || out[3] != 8 || out[19] != 1 {
+            sys_exit(34);
+        }
+    } else if expect_len == 16 {
+        if out[15] != 1 {
+            sys_exit(35);
+        }
+    } else if expect_len == 4 {
+        if out[0] != 5 || out[1] != 6 || out[2] != 7 || out[3] != 8 {
+            sys_exit(36);
+        }
+    } else {
+        sys_exit(37);
+    }
+    sys_exit(0);
+}
+
+fn wait_child_exit_ok(pid: i32) !void {
+    var st: i32 = 0;
+    _ = try sys_waitpid(pid, &st, 0);
+    try assert_eq_i32((st & 0xff) as i32, 0);
+    try assert_eq_i32(((st >> 8) & 0xff) as i32, 0);
+}
+
+fn run_aggregate_case(mode: i32, expect_len: usize, expect_timeout: i32) !void {
+    var port: u16 = 0;
+    const fd: i32 = try dns_bind_loopback_udp(&port);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        _ = sys_close(fd) catch {};
+        dns_run_aggregate_client(port, expect_len, expect_timeout);
+    }
+    if child_pid <= 0 {
+        _ = sys_close(fd) catch {};
+        try assert_eq_i32(0, 1);
+        return;
+    }
+    if mode == 2 {
+        try dns_serve_timeout_after_two_queries(fd);
+    } else {
+        try dns_serve_success_or_partial(fd, mode);
+    }
+    _ = sys_close(fd) catch {};
+    try wait_child_exit_ok(child_pid);
+}
+
+test "dns_query_all_async_aggregates_a_and_aaaa_concurrently" {
+    try run_aggregate_case(0, 20, 0);
+}
+
+test "dns_query_all_async_keeps_aaaa_when_a_fails" {
+    try run_aggregate_case(1, 16, 0);
+}
+
+test "dns_query_all_async_times_out_after_sending_both_queries" {
+    try run_aggregate_case(2, 0, 1);
+}
