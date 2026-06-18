@@ -371,3 +371,18 @@
   - [x] 为 `TaskQueue<T>` / `Scheduler` 队列和 inline repoll 上限补充可配置入口，默认兼容既有容量；最小验证：相关 scheduler 测试通过。
     - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
     - 验证结果：通过；14 个 scheduler 测试全部 OK，Tests Failed: 0，Assertions Passed: 61。
+
+## 目标
+
+父级任务路径：async 相关资源改成动态或至少明确可配置，不再依赖小规模写死容量。
+
+  - [x] 为 async frame pool / descriptor 表容量补充可配置入口或动态结构，默认兼容既有容量；最小验证：相关 async frame 测试通过。
+    - 完成记录：新增 `AsyncFramePoolConfig` 与 `async_frame_pool_init_with_config`，并让默认 `async_frame_pool_init` 继续使用兼容容量，同时支持 `ASYNC_FRAME_POOL_MAX_BUCKETS` / `ASYNC_FRAME_POOL_MAX_PER_BUCKET` 环境配置入口。descriptor 表本轮保持既有兼容形态，编译器侧动态化留给后续 compiler async transform / frame meta 任务。
+    - 验证命令：
+      - `../uya/bin/uya test tests/test_async_frame_pool_stats.uya`：通过。
+      - `../uya/bin/uya test tests/test_async_frame_pool_negative.uya`：通过。
+      - `../uya/bin/uya test tests/test_async_frame_stack_limit_env.uya`：通过。
+      - `../uya/bin/uya test tests/test_async_frame_align_pool.uya`：通过。
+      - `../uya/bin/uya test tests/test_async_frame_pool_full.uya`：通过。
+      - `bash tests/verify_c99_async_frame_descriptors.sh`：通过。
+      - `bash tests/verify_c99_async_frame_empty_descriptors.sh`：通过。

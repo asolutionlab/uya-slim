@@ -2,7 +2,9 @@
 // 验证 AsyncFramePool 的统计字段在分配、释放、pool 满 fallback 时正确更新
 
 use std.async_frame.AsyncFramePool;
+use std.async_frame.AsyncFramePoolConfig;
 use std.async_frame.async_frame_pool_init;
+use std.async_frame.async_frame_pool_init_with_config;
 use std.async_frame.async_frame_pool_init_with_buffer;
 use std.async_frame.async_frame_pool_alloc_aligned;
 use std.async_frame.async_frame_pool_free_aligned;
@@ -87,10 +89,49 @@ fn test_pool_buffer_prefers_stack_and_large_heap() !void {
     try expect(heap_fallback >= 1);
 }
 
+fn test_pool_config_limits_bucket_capacity() !void {
+    var storage: [byte: 128] = [];
+    var pool: AsyncFramePool = AsyncFramePool{};
+    var config: AsyncFramePoolConfig = AsyncFramePoolConfig{};
+    config.max_buckets = 1;
+    config.max_per_bucket = 2;
+    config.debug_heap_fallback = 0;
+    config.stack_limit = 65536usize;
+    async_frame_pool_init_with_config(&pool, &config);
+    pool.buffer = &storage[0] as &byte;
+    pool.buffer_size = 128usize;
+    pool.buffer_used = 0usize;
+
+    const first: &byte = async_frame_pool_alloc_aligned(&pool, 32usize, 8usize);
+    const second: &byte = async_frame_pool_alloc_aligned(&pool, 32usize, 8usize);
+    const third: &byte = async_frame_pool_alloc_aligned(&pool, 32usize, 8usize);
+
+    try expect(first != null);
+    try expect(second != null);
+    try expect(third == null);
+
+    async_frame_pool_free_aligned(&pool, first, 32usize, 8usize);
+    async_frame_pool_free_aligned(&pool, second, 32usize, 8usize);
+
+    var total_alloc: i32 = 0;
+    var total_free: i32 = 0;
+    var full_count: i32 = 0;
+    var heap_fallback: i32 = 0;
+    async_frame_pool_stats(&pool, &total_alloc, &total_free, &full_count, &heap_fallback);
+    try expect(total_alloc == 2);
+    try expect(total_free == 2);
+    try expect(full_count == 1);
+    try expect(heap_fallback == 0);
+}
+
 test "async_frame_pool_stats" {
     run_test("async_frame_pool_stats", test_pool_stats);
 }
 
 test "async_frame_pool_buffer_prefers_stack_and_large_heap" {
     run_test("async_frame_pool_buffer_prefers_stack_and_large_heap", test_pool_buffer_prefers_stack_and_large_heap);
+}
+
+test "async_frame_pool_config_limits_bucket_capacity" {
+    run_test("async_frame_pool_config_limits_bucket_capacity", test_pool_config_limits_bucket_capacity);
 }

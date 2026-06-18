@@ -20,6 +20,18 @@ export struct AsyncFrameDescriptor {
 const ASYNC_FRAME_POOL_MAX_BUCKETS: i32 = 128;
 const ASYNC_FRAME_POOL_MAX_PER_BUCKET: i32 = 4096;
 
+/// AsyncFramePool 容量配置。
+///
+/// 参数：max_buckets 为可创建 size class bucket 数；max_per_bucket 为每个 bucket 的最大帧数；
+/// debug_heap_fallback 控制容量耗尽时是否回退到调试堆；stack_limit 控制 buffer 模式下大帧回退阈值。
+/// 返回值：结构体无返回值；传给 async_frame_pool_init_with_config 生效，0 表示使用默认兼容容量。
+export struct AsyncFramePoolConfig {
+    max_buckets: i32,
+    max_per_bucket: i32,
+    debug_heap_fallback: i32,
+    stack_limit: usize,
+}
+
 struct AsyncFramePoolBucket {
     size: usize,
     align: usize,
@@ -53,6 +65,8 @@ export struct AsyncFramePool : IAllocator {
     buffer: &byte = null,
     buffer_size: usize = 0,
     buffer_used: usize = 0,
+    max_buckets: i32,
+    max_per_bucket: i32,
 
     // IAllocator 实现：通过 header 记录 raw_ptr，dealloc 时无需外部传入 size
     fn alloc(self: &Self, size: usize) !&byte {
@@ -130,6 +144,36 @@ extern var _uya_async_frame_heap_fallback: i32;
 var _uya_default_async_frame_pool: &AsyncFramePool = null;
 var _uya_default_async_frame_pool_initialized: i32 = 0;
 
+fn async_frame_pool_normalize_limit(value: i32, default_value: i32, hard_cap: i32) i32 {
+    if value <= 0 {
+        return default_value;
+    }
+    if value > hard_cap {
+        return hard_cap;
+    }
+    return value;
+}
+
+fn async_frame_runtime_default_max_buckets() i32 {
+    var limit: i32 = ASYNC_FRAME_POOL_MAX_BUCKETS;
+    const env: &byte = getenv("ASYNC_FRAME_POOL_MAX_BUCKETS" as &const byte);
+    if env != null && env[0] != 0 as byte {
+        const parsed: i32 = atoi(env as &const byte);
+        limit = async_frame_pool_normalize_limit(parsed, ASYNC_FRAME_POOL_MAX_BUCKETS, ASYNC_FRAME_POOL_MAX_BUCKETS);
+    }
+    return limit;
+}
+
+fn async_frame_runtime_default_max_per_bucket() i32 {
+    var limit: i32 = ASYNC_FRAME_POOL_MAX_PER_BUCKET;
+    const env: &byte = getenv("ASYNC_FRAME_POOL_MAX_PER_BUCKET" as &const byte);
+    if env != null && env[0] != 0 as byte {
+        const parsed: i32 = atoi(env as &const byte);
+        limit = async_frame_pool_normalize_limit(parsed, ASYNC_FRAME_POOL_MAX_PER_BUCKET, ASYNC_FRAME_POOL_MAX_PER_BUCKET);
+    }
+    return limit;
+}
+
 fn async_frame_runtime_default_heap_fallback() i32 {
     var fallback: i32 = 0;
     if _uya_async_frame_heap_fallback != 0 {
@@ -184,7 +228,8 @@ fn async_frame_pool_bucket_ptr(pool: &AsyncFramePool, idx: i32) &AsyncFramePoolB
         return null;
     }
     const bucket_idx: usize = idx as usize;
-    if bucket_idx >= ASYNC_FRAME_POOL_MAX_BUCKETS as usize {
+    const limit: i32 = async_frame_pool_normalize_limit(pool.max_buckets, ASYNC_FRAME_POOL_MAX_BUCKETS, ASYNC_FRAME_POOL_MAX_BUCKETS);
+    if bucket_idx >= limit as usize {
         return null;
     }
     const base: &AsyncFramePoolBucket = &pool.buckets[0];
@@ -221,8 +266,9 @@ fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, al
         return null;
     }
     const bucket_cap: i32 = @len(pool.buckets) as i32;
+    const effective_bucket_cap: i32 = async_frame_pool_normalize_limit(pool.max_buckets, ASYNC_FRAME_POOL_MAX_BUCKETS, bucket_cap);
     var i: i32 = 0;
-    while i < pool.bucket_count && i < bucket_cap {
+    while i < pool.bucket_count && i < effective_bucket_cap {
         const b: &AsyncFramePoolBucket = async_frame_pool_bucket_ptr(pool, i);
         if b == null {
             break;
@@ -232,11 +278,11 @@ fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, al
         }
         i = i + 1;
     }
-    if pool.bucket_count >= bucket_cap {
+    if pool.bucket_count >= effective_bucket_cap {
         return null;
     }
     const idx: i32 = pool.bucket_count;
-    if idx < 0 || idx >= bucket_cap {
+    if idx < 0 || idx >= effective_bucket_cap {
         return null;
     }
     const b: &AsyncFramePoolBucket = async_frame_pool_bucket_ptr(pool, idx);
@@ -244,7 +290,7 @@ fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, al
         b.size = size;
         b.align = align;
         b.slot_count = 0;
-        b.capacity = ASYNC_FRAME_POOL_MAX_PER_BUCKET;
+        b.capacity = async_frame_pool_normalize_limit(pool.max_per_bucket, ASYNC_FRAME_POOL_MAX_PER_BUCKET, ASYNC_FRAME_POOL_MAX_PER_BUCKET);
         b.committed_count = 0;
         b.alloc_count = 0;
         b.free_count = 0;
@@ -256,8 +302,31 @@ fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, al
 
 // 初始化帧池
 export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32, stack_limit: usize) void {
+    var config: AsyncFramePoolConfig = AsyncFramePoolConfig{};
+    config.max_buckets = async_frame_runtime_default_max_buckets();
+    config.max_per_bucket = async_frame_runtime_default_max_per_bucket();
+    config.debug_heap_fallback = debug_heap_fallback;
+    config.stack_limit = stack_limit;
+    async_frame_pool_init_with_config(pool, &config);
+}
+
+/// 使用显式容量配置初始化帧池。
+///
+/// 参数：pool 为待初始化帧池；config 为容量与调试策略配置，null 或 0 容量字段使用默认兼容值。
+/// 返回值：无返回值；初始化后 pool 的 bucket 数和每桶帧数按配置上限裁剪到内置硬上限。
+export fn async_frame_pool_init_with_config(pool: &AsyncFramePool, config: &AsyncFramePoolConfig) void {
     if pool == null {
         return;
+    }
+    var max_buckets: i32 = ASYNC_FRAME_POOL_MAX_BUCKETS;
+    var max_per_bucket: i32 = ASYNC_FRAME_POOL_MAX_PER_BUCKET;
+    var debug_heap_fallback: i32 = 0;
+    var stack_limit: usize = 0;
+    if config != null {
+        max_buckets = async_frame_pool_normalize_limit(config.max_buckets, ASYNC_FRAME_POOL_MAX_BUCKETS, ASYNC_FRAME_POOL_MAX_BUCKETS);
+        max_per_bucket = async_frame_pool_normalize_limit(config.max_per_bucket, ASYNC_FRAME_POOL_MAX_PER_BUCKET, ASYNC_FRAME_POOL_MAX_PER_BUCKET);
+        debug_heap_fallback = config.debug_heap_fallback;
+        stack_limit = config.stack_limit;
     }
     pool.bucket_count = 0;
     pool.total_alloc_count = 0;
@@ -269,6 +338,8 @@ export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32,
     pool.buffer = null;
     pool.buffer_size = 0;
     pool.buffer_used = 0;
+    pool.max_buckets = max_buckets;
+    pool.max_per_bucket = max_per_bucket;
     const bucket_cap: i32 = @len(pool.buckets) as i32;
     var i: i32 = 0;
     while i < bucket_cap {
