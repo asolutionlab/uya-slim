@@ -1075,3 +1075,16 @@
     - 验证结果：通过；4 个测试、20 个断言通过，覆盖同步/async 成对 `match` 表达式语义。
     - 扩展验证命令：`./tests/verify_async_full_language_matrix.sh`
     - 扩展验证结果：非阻塞失败；脚本已跑过 `tests/test_async_sync_body_matrix.uya`，后续在 `verify_async_shared_runtime_matrix` 生成 C99 链接阶段失败，关键错误为 `invalid initializer`，涉及 `std_http_uyagin_send_context_response_head_only_async` 与 `std_http_uyagin_accept_async`，不属于本轮 `match` 专项路径。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] `try / catch`
+    - 规范依据：`docs/grammar_formal.md` 将 `try` 作为 `unary_expr` 前缀，将 `catch` 作为 `postfix_expr` 的 `catch_op`；`docs/uya.md` 第 11 章说明 `try` 错误传播和 `catch` 错误恢复语义。
+    - async 覆盖证据：`tests/test_async_catch_await.uya` 覆盖 `try @await` 成功路径、await 后错误联合再 `catch`、catch 块内 `@await`、catch 后继续执行、多 catch 和 catch 内提前 return；`tests/test_async_sync_body_matrix.uya` 覆盖 async 函数体与同步函数体的 catch 恢复一致性。
+    - 验证：`../uya/bin/uya test tests/test_async_catch_await.uya` 通过，10 tests passed, 0 failed。
+    - 验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过，4 tests passed, 0 failed。
+    - 扩展验证：`bash tests/verify_async_full_language_matrix.sh` 已跑过 async 基线正向测试、禁止 await 位置检查、容量和 nested future 部分；在 `verify_async_shared_runtime_matrix` 阶段失败，关键错误为 `/tmp/uya_output_2841532.c:51021:51: error: invalid initializer` 与 `/tmp/uya_output_2841532.c:51801:63: error: invalid initializer`，涉及 `std_http_uyagin_*_async` 共享 runtime 生成 C，不属于本轮 `try / catch` 语法覆盖本身。
