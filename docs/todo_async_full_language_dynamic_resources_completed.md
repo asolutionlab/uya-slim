@@ -965,3 +965,10 @@
     验证结果：通过。
     验证命令：`python3 ~/.codex/skills/goal-task-runner/scripts/check_todo.py docs/todo_async_full_language_dynamic_resources.md`
     验证结果：通过，报告 `ok: docs/todo_async_full_language_dynamic_resources.md has 1 active task`。
+
+## 完成定义
+
+- 父级任务路径：有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门：
+  - [x] 将 async 动态资源相关单测和无固定容量扫描纳入闸门脚本，并验证聚焦子集可运行；最小验证：运行脚本的单测/扫描阶段。
+    - 验证命令：`bash tests/verify_async_full_dynamic_resources_gate.sh unit-scan`
+    - 验证结果：通过；运行 async await/param 动态容量、frame pool/thread pool 动态增长、async event config、multi fd concurrency 单测，以及 `verify_async_compiler_no_fixed_limits.py` 扫描。
