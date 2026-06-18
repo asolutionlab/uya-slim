@@ -689,3 +689,13 @@
     - 验证结果：通过，命令按预期退出 1，并报告 `@async_fn 状态机结构验证失败，请检查 @await 使用是否规范`。
     - 验证命令：`bash tests/verify_async_full_language_matrix.sh`
     - 验证结果：通过，输出 `verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
+
+## 先澄清边界
+
+- [x] 这**不等于**放开所有 `@await` 位置限制。现有明确非法的规则仍然有效，例如：
+  - [x] async 递归 / 间接递归的限制是否保留，必须由新的大小模型或规范决定，不能在实现里偷偷放开。
+    - 结论：保留限制。现有规范 `docs/uya.md` 仍明确要求 async 状态机大小编译期确定、递归调用编译错误；实现中 `src/checker/check_call.uya` 对直接递归和 async 调用环均有诊断，不能在新大小模型或规范更新前放开。
+    - 验证命令：`../uya/bin/uya check tests/error_async_recursive.uya`
+    - 结果：按预期失败，诊断包含 `@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）`。
+    - 验证命令：`../uya/bin/uya check tests/error_async_indirect_recursive.uya`
+    - 结果：按预期失败，诊断包含 `@async_fn 函数不允许形成递归调用环（待 CPS/状态机大小计算实现）`。
