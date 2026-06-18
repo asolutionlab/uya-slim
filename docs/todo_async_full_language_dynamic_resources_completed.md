@@ -613,3 +613,15 @@
   - 配套修正：`tests/verify_http_bench_async_epoll_compile.sh` 与 `tests/verify_http_bench_async_epoll_runtime.sh` 固定使用 `../uya/bin/uya`，避免使用 `bin/uya` 或环境覆盖编译器。
   - 验证命令：`bash tests/verify_async_production_smoke.sh`
   - 验证结果：通过；输出摘要 `verify_async_production_smoke: full-language, shared runtime, nested future, and HTTP async epoll smoke matrix passed`。
+
+## 2026-06-18 本轮完成
+
+上下文：# Uya 异步生产化 TODO（完整语法 + 动态资源） > ## 先澄清边界 > “完整 Uya 语言语法”指的是：凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作。
+
+  - [x] 将“同步函数体合法语法均应可放入 `@async_fn`”拆成可执行验收清单；最小验证：`sed -n '7,24p' docs/todo_async_full_language_dynamic_resources.md` 确认覆盖声明、表达式、控制流、错误处理、清理语句、模式匹配和内建函数体语法；完成条件：后续子任务不需要重新猜测完整语法边界。
+    验证命令：`sed -n '7,32p' docs/todo_async_full_language_dynamic_resources.md`
+    验证结果：通过，主 todo 中已列出声明/表达式、控制流、错误处理、清理语句、模式匹配和内建函数体语法六个后续叶子任务。
+    验证命令：`rg -n "\\[~\\]|\\[[xf]\\]" docs/todo_async_full_language_dynamic_resources.md`
+    验证结果：通过，归档前仅本叶子为 `[~]`，无遗留 `[x]` / `[f]`。
+    验证命令：`git diff --check -- docs/todo_async_full_language_dynamic_resources.md`
+    验证结果：通过，无空白错误。
