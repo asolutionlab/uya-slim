@@ -7,9 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 将共享 async 运行时矩阵接入面向生产收口的文档说明。
-    - 最小验证命令：`git diff --check`
-    - 完成条件：`docs/async_production_todo.md`、`docs/async_status_matrix.md` 或相关设计文档不再把未验证链路表述为已完全量产。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
 
 ## 先澄清边界

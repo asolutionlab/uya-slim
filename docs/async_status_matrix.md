@@ -1,6 +1,6 @@
 # Uya Async 现状总表
 
-**最后更新**：2026-06-17
+**最后更新**：2026-06-18
 **范围**：Linux + C99 后端；聚焦 `@async_fn` / `@await` / `Future` / `Poll` / `Waker` / `AsyncFd` / `Scheduler` / `async_compute`
 
 > **2026-06-17 注意**
@@ -24,7 +24,7 @@
 | 跨线程 wake / `eventfd` | ✅ 完成 | `Scheduler` 在 `Pending` 时同步注册 `eventfd + io fd`；worker/外部线程 `wake()` 可直接唤醒主 `EventLoop` | 无新增 codegen 依赖 | `test_std_async_scheduler.uya` 外部 wake 场景 | `async_production_todo.md` `todo_async_runtime_and_http.md` |
 | 协作式取消语义 | ✅ 完成 | `Waker.cancel()`、`TaskQueue.cancel()`、统一 deregister / eventfd close / slot cleanup；结果用 `error.Cancelled` 写回 | 无新增关键缺口 | `test_std_async_scheduler.uya` 取消 slot；`test_std_thread.uya` queued/running cancel | `std_async_design.md` `async_production_todo.md` |
 | `std.thread.async_compute<T>` 集成 | ✅ Linux 主路径完成 | 未启动/排队/one-shot 任务可立即取消；运行中的共享槽任务在结果回收时稳定返回 `error.Cancelled` | `Future<!T>` 单态、typedef 装箱、成员调用、`f32/f64` helper 已收口 | `test_std_thread.uya` `test_async_compute_types.uya` | `todo_async_runtime_and_http.md` `todo_mini_to_full.md` |
-| HTTP/DNS/TLS async 客户端主链路 | ✅ 当前量产主链路完成 | HTTP/1.1 nonblocking connect/read/write、DNS async 查询、timeout/deadline 已接通 | async lowering / 变量提升相关缺口已修复到主链路可用 | `test_http1_async_client.uya` `test_std_dns_async_transport.uya` `test_https_loopback.uya` | `async_production_todo.md` `todo_async_runtime_and_http.md` |
+| HTTP/DNS/TLS async 客户端主链路 | ⚠️ 生产收口中 | HTTP/1.1 nonblocking connect/read/write、DNS async 查询、timeout/deadline 已接通；但尚未作为“HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一 runtime 语义”的完整矩阵统一验收 | async lowering / 变量提升相关缺口已修复到主链路可用；仍需把共享 runtime 矩阵纳入生产闸门 | `test_http1_async_client.uya` `test_std_dns_async_transport.uya` `test_https_loopback.uya`；待补共享 runtime 矩阵 | `async_production_todo.md` `todo_async_full_language_dynamic_resources.md` |
 | UyaGin async 服务端协议热路径 | ✅ P6 完成 | request parser 已支持 chunked request 原地解码；response 已支持 `writev` 聚合写、显式 chunked response、Linux x86_64 `sendfile` 优先发送；`Engine` 已补入 access log/metrics/error trace/config/mode 主链路 | 为支撑观测包装，`engine.handle` 现在统一走 request observation wrapper；当前剩余噪音仍是 parser 对 `catch { ... }` 某些写法的假告警，不影响 codegen/run | `test_http_parse.uya` `test_http_server.uya` `test_http_uyagin.uya` `test_https_loopback.uya` | `uyagin_todo.md` `uyagin_design.md` `tls_https_todo.md` |
 
 ## `@async_fn` 函数体语法矩阵
@@ -56,6 +56,19 @@
 - 取消模型是**协作式取消**，future 需要在 `poll()` 中显式检查 `waker.is_cancelled()`
 - `Waker` 当前仍是**单 interest / 单 fd** 模型；多 interest 不是当前实现范围
 - 跨线程唤醒当前依赖 **Linux `eventfd`**，因此这部分能力口径是 **Linux-only**
+- 生产收口必须同时证明 HTTP、DNS、TLS、`async_compute` 与 `Scheduler` 共享同一套 `Future` / `Poll` / `Waker` / `EventLoop` / cancellation 语义；单项测试通过不能再单独视为“异步主链路已完全量产”
+
+## 共享 runtime 生产收口矩阵
+
+本矩阵用于连接当前权威 TODO 的生产收口口径。`✅` 表示对应链路已有独立回归证明，`⚠️` 表示仍缺少跨链路共享语义或端到端组合验证。
+
+| 链路 | 已验证共享语义 | 仍需收口 |
+|------|----------------|----------|
+| `Scheduler` / `TaskQueue<T>` | ✅ `Future` / `Poll` / `Waker` / `LinuxEpoll` 单轮推进、协作式取消与 slot 清理已有回归 | 固定容量 `TaskQueue=64` 仍不是动态资源目标态 |
+| `async_compute<T>` | ✅ worker wake 复用 `eventfd`；取消结果通过共享调度语义回到调用侧 | 运行中取消不抢占宿主计算；仍需纳入跨 HTTP/DNS/TLS 的组合矩阵 |
+| HTTP/1.1 async 客户端 | ✅ nonblocking connect/read/write 复用 `AsyncFd`、`Waker` 与 `LinuxEpoll` readiness | 连接池、keep-alive、真实服务端压力和共享调度组合仍是后续项 |
+| DNS async 查询 | ✅ 上层 async 查询已接入 timeout/deadline 和 async transport 回归 | `A/AAAA` 并发聚合未完成；仍需证明与其他链路共享 `Scheduler` 时的资源边界 |
+| TLS / HTTPS | ⚠️ loopback 与同步 HTTPS 生产基础能力已有回归 | TLS 仍未证明完整接入同一 async runtime；会话复用、handshake async 化与共享调度组合仍未收口 |
 
 ## 已完成但仍需记住的约束
 

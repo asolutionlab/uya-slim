@@ -433,3 +433,12 @@
     - 最小验证命令：`./tests/verify_async_shared_runtime_matrix.sh`
     - 完成条件：矩阵不只验证能编译，还验证各模块通过相同 `LinuxEpoll`、`Waker` 与 `Scheduler` 行为完成可观察协作。
     - 验证记录：2026-06-18 运行 `./tests/verify_async_shared_runtime_matrix.sh` 通过；新增共享语义用例断言 HTTP/DNS/TLS/`async_compute`/`Scheduler` 代表 future 通过同一 `EventLoop`/`Waker` 注册、唤醒并传播 cancellation。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 将共享 async 运行时矩阵接入面向生产收口的文档说明。
+    - 最小验证命令：`git diff --check`
+    - 完成条件：`docs/async_production_todo.md`、`docs/async_status_matrix.md` 或相关设计文档不再把未验证链路表述为已完全量产。
+    - 验证记录：2026-06-18 运行 `git diff --check`，通过；`docs/async_status_matrix.md` 已加入共享 runtime 生产收口矩阵，并将 HTTP/DNS/TLS async 客户端主链路改为“生产收口中”；`docs/async_production_todo.md` 已声明旧历史结论不覆盖共享 runtime 矩阵。
