@@ -842,3 +842,10 @@
       - 实现后通过：`../uya/bin/uya test tests/test_std_thread.uya`，23 tests passed，0 failed。
       - 相关回归通过：`../uya/bin/uya test tests/test_async_compute_generic_wrapper.uya`，2 tests passed，0 failed。
       - 额外尝试：`../uya/bin/uya test tests/test_async_runtime_shared_semantics.uya` 与 `../uya/bin/uya test tests/test_async_shared_runtime_semantics.uya` 均在宿主 C 链接阶段失败，关键错误为 `std/http/uyagin` 生成代码 `invalid initializer`，非本轮 `std.thread` 路径运行失败。
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_scheduler.uya` 的 `TaskQueue<T>` 支持调用方配置容量，不再把默认 64 槽作为不可突破边界；最小验证：新增/更新队列容量测试并运行 `../uya/bin/uya test ...`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 验证结果：通过，`task_queue_with_capacity_limits_pushes` 和 `task_queue_capacity_can_exceed_default_capacity` 覆盖可配置容量及超过默认 64 槽场景；总计 16 tests passed。
