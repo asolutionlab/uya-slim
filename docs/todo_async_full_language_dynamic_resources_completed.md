@@ -587,3 +587,13 @@
     - 验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya` 通过（1 test，9 assertions）。
     - 验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya` 通过（1 test，17 assertions）。
     - 验证：`git diff --check docs/async_runtime_semantics_matrix.md docs/todo_async_full_language_dynamic_resources.md` 通过。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 实现 TLS handshake/read/write async future 并接入同一 `LinuxEpoll` / `Scheduler`；完成条件：TLS I/O 的 would-block 路径返回 `Poll.Pending` 并注册 fd interest，验证命令：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_io.uya`。
+    验证记录：
+    - `../uya/bin/uya test --c99 tests/test_tls_async_runtime_io.uya`：通过，1 个测试、16 个断言通过。
+    - `../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya`：通过，1 个测试、17 个断言通过。
+    - `../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya`：通过，1 个测试、9 个断言通过。

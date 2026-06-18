@@ -1,0 +1,174 @@
+use tls.https;
+use tls.ssl.context;
+use tls.ssl.handshake;
+use tls.ssl.record;
+use std.async;
+use std.async_event;
+use std.async_scheduler;
+use std.testing.assert_eq_i32;
+use libc.syscall;
+
+error PipeCreateFailed;
+error PipeWriteFailed;
+error ChildSpawnFailed;
+error UnexpectedPending;
+error ExpectedPending;
+error TlsAsyncFailed;
+
+const TEST_SYS_PIPE2: i64 = 293;
+const TEST_O_NONBLOCK: i32 = 0x800;
+
+fn test_sys_pipe2(pipefd: &i32, flags: i32) !i32 {
+    return @syscall(TEST_SYS_PIPE2, pipefd as i64, flags as i64) as! i32;
+}
+
+fn spawn_delayed_writer(write_fd: i32, delay_ns: i64) !i32 {
+    const fork_result: !i64 = sys_fork();
+    const child_pid: i64 = fork_result catch {
+        return error.ChildSpawnFailed;
+    };
+    if child_pid == 0 {
+        const req: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: delay_ns };
+        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+        _ = sys_nanosleep(&req, &rem) catch {};
+        var src: [byte: 4] = [ 21, 22, 23, 24 ];
+        _ = sys_write(write_fd, &src[0] as *const byte, 4) catch {};
+        _ = sys_close(write_fd) catch {};
+        sys_exit(0);
+    }
+    return child_pid as i32;
+}
+
+fn wait_child(child_pid: i32) void {
+    if child_pid > 0 {
+        var status: i32 = 0;
+        _ = sys_waitpid(child_pid, &status, 0) catch {};
+    }
+}
+
+fn expect_pending_read_interest(p: Poll<!usize>, w: &Waker, fd: i32) !void {
+    match p {
+        .Ready(_) => { return error.ExpectedPending; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(w.has_io_interest() as i32, 1);
+    try assert_eq_i32(w.io_fd(), fd);
+    try assert_eq_i32(w.io_interest_code(), 1);
+}
+
+fn test_tls_read_future_pending_registers_linux_epoll() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    var buf: [byte: 8] = [];
+    const f: Future<!usize> = https_read_some_async(read_fd, &buf[0], 4);
+    var wk: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
+    const first: Poll<!usize> = f.poll(&wk);
+    try expect_pending_read_interest(first, &wk, read_fd);
+
+    var epoll_impl: LinuxEpoll = try linux_epoll_create(0);
+    const loop: EventLoop = epoll_impl;
+    _ = try loop.register(wk.io_fd(), EventKind.Readable({}), &wk);
+    try assert_eq_i32(linux_epoll_is_registered(&epoll_impl, read_fd) as i32, 1);
+    try assert_eq_i32(linux_epoll_registered_count(&epoll_impl), 1);
+
+    _ = loop.deregister(read_fd) catch {};
+    _ = sys_close(read_fd) catch {};
+    _ = sys_close(write_fd) catch {};
+}
+
+fn test_tls_read_future_scheduler_epoll_ready() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+    const child_pid: i32 = try spawn_delayed_writer(write_fd, 1000000);
+
+    var buf: [byte: 8] = [];
+    var scheduler: Scheduler = scheduler_new();
+    var epoll_impl: LinuxEpoll = try linux_epoll_create(0);
+    const loop: EventLoop = epoll_impl;
+    const f: Future<!usize> = https_read_some_async(read_fd, &buf[0], 4);
+    const read_count: usize = try scheduler_run_with_event_loop<usize>(&scheduler, loop, f, 100);
+    try assert_eq_i32(read_count as i32, 4);
+    try assert_eq_i32(buf[0] as i32, 21);
+    try assert_eq_i32(buf[1] as i32, 22);
+    try assert_eq_i32(buf[2] as i32, 23);
+    try assert_eq_i32(buf[3] as i32, 24);
+
+    wait_child(child_pid);
+    _ = sys_close(read_fd) catch {};
+}
+
+fn test_tls_write_future_pending_sets_writable_interest() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    var fill: [byte: 4096] = [7:4096];
+    var filling: bool = true;
+    while filling {
+        const written: !isize = sys_write(write_fd, &fill[0] as *const byte, 4096);
+        if written.error_id != 0 {
+            filling = false;
+        } else {
+            const n: isize = (written as! isize).value;
+            if n <= 0 {
+                filling = false;
+            }
+        }
+    }
+
+    var src: [byte: 3] = [ 31, 32, 33 ];
+    const f: Future<!usize> = https_write_all_async(write_fd, &src[0] as &const byte, 3);
+    var wk: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
+    const p: Poll<!usize> = f.poll(&wk);
+    match p {
+        .Ready(_) => { return error.ExpectedPending; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(wk.has_io_interest() as i32, 1);
+    try assert_eq_i32(wk.io_fd(), write_fd);
+    try assert_eq_i32(wk.io_interest_code(), 2);
+
+    _ = sys_close(read_fd) catch {};
+    _ = sys_close(write_fd) catch {};
+}
+
+fn test_tls_handshake_future_pending_sets_readable_interest() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    var hs: HandshakeCtx = HandshakeCtx{};
+    var rec: RecordCtx = RecordCtx{};
+    handshake_ctx_init(&hs, HS_ROLE_SERVER);
+    record_ctx_init(&rec, TLS_VERSION_1_2);
+    var ctx: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs, rec: &rec };
+    const f: Future<!usize> = https_handshake_async(read_fd, &ctx, HS_ROLE_SERVER);
+    var wk: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
+    const p: Poll<!usize> = f.poll(&wk);
+    try expect_pending_read_interest(p, &wk, read_fd);
+
+    _ = sys_close(read_fd) catch {};
+    _ = sys_close(write_fd) catch {};
+}
+
+test "tls async runtime io futures register scheduler interests" {
+    try test_tls_read_future_pending_registers_linux_epoll();
+    try test_tls_read_future_scheduler_epoll_ready();
+    try test_tls_write_future_pending_sets_writable_interest();
+    try test_tls_handshake_future_pending_sets_readable_interest();
+}
