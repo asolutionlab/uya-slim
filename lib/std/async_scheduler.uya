@@ -135,6 +135,13 @@ fn scheduler_prepare_waker(waker: &Waker) !i32 {
     return 0;
 }
 
+fn scheduler_normalize_inline_repoll_limit(limit: i32) i32 {
+    if limit < 0 {
+        return 0;
+    }
+    return limit;
+}
+
 fn scheduler_cleanup_waker(loop: EventLoop, waker: &Waker, io_registered_fd: &i32, event_registered_fd: &i32) void {
     _ = scheduler_deregister_fd(loop, io_registered_fd) catch {};
     _ = scheduler_deregister_fd(loop, event_registered_fd) catch {};
@@ -413,11 +420,7 @@ export fn scheduler_set_inline_repoll_limit(self: &Scheduler, limit: i32) void {
     if self == null {
         return;
     }
-    if limit < 0 {
-        self._inline_repoll_limit = 0;
-        return;
-    }
-    self._inline_repoll_limit = limit;
+    self._inline_repoll_limit = scheduler_normalize_inline_repoll_limit(limit);
 }
 
 /// 创建调度器并设置 inline repoll 上限。
@@ -436,10 +439,7 @@ export fn scheduler_inline_repoll_limit(self: &Scheduler) i32 {
     if self == null {
         return SCHEDULER_INLINE_REPOLL_LIMIT;
     }
-    if self._inline_repoll_limit < 0 {
-        return 0;
-    }
-    return self._inline_repoll_limit;
+    return scheduler_normalize_inline_repoll_limit(self._inline_repoll_limit);
 }
 
 /// 获取调度器绑定的 async frame pool。
@@ -779,10 +779,18 @@ export fn scheduler_run_task_queue_usize_with_event_loop(self: &Scheduler, loop:
 /// timeout_ms：-1 无限等待，>0 单次 epoll_wait 最大等待毫秒数（注意：累计无上限）
 /// 如需总超时保护，请使用 block_on_with_event_loop_deadline
 export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms: i32) !T {
+    return block_on_with_event_loop_inline_repoll_limit<T>(loop, f, timeout_ms, SCHEDULER_INLINE_REPOLL_LIMIT);
+}
+
+/// 使用 EventLoop 的 block_on，并显式设置 inline repoll 上限。
+/// 参数：loop 为事件循环；f 为待运行 Future；timeout_ms 为单次 poll 超时；inline_repoll_limit 为无 I/O Pending 连续 repoll 上限。
+/// 返回：Future 的 Ready 结果，或传播运行时错误。
+export fn block_on_with_event_loop_inline_repoll_limit<T>(loop: EventLoop, f: Future<!T>, timeout_ms: i32, inline_repoll_limit: i32) !T {
     var w: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
     var inline_repoll_count: i32 = 0;
+    const repoll_limit: i32 = scheduler_normalize_inline_repoll_limit(inline_repoll_limit);
     defer { scheduler_cleanup_waker(loop, &w, &io_registered_fd, &event_registered_fd); }
 
     while true {
@@ -796,7 +804,7 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
                     inline_repoll_count = 0;
                     continue;
                 }
-                if !w.has_io_interest() && inline_repoll_count < SCHEDULER_INLINE_REPOLL_LIMIT {
+                if !w.has_io_interest() && inline_repoll_count < repoll_limit {
                     inline_repoll_count = inline_repoll_count + 1;
                     continue;
                 }
@@ -832,10 +840,18 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
 /// 每轮循环检查 deadline 是否过期，过期则返回 error.TimedOut。
 /// epoll_wait 的超时取 timeout_ms 和 deadline_remaining 的较小值。
 export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, timeout_ms: i32, deadline_ms: u64) !T {
+    return block_on_with_event_loop_deadline_inline_repoll_limit<T>(loop, f, timeout_ms, deadline_ms, SCHEDULER_INLINE_REPOLL_LIMIT);
+}
+
+/// 使用 EventLoop 的 block_on（带 deadline 总超时保护）并显式设置 inline repoll 上限。
+/// 参数：loop 为事件循环；f 为待运行 Future；timeout_ms 为单次 poll 超时；deadline_ms 为绝对截止时间；inline_repoll_limit 为无 I/O Pending 连续 repoll 上限。
+/// 返回：Future 的 Ready 结果，或传播运行时错误。
+export fn block_on_with_event_loop_deadline_inline_repoll_limit<T>(loop: EventLoop, f: Future<!T>, timeout_ms: i32, deadline_ms: u64, inline_repoll_limit: i32) !T {
     var w: Waker = Waker{ _io_fd: 0 - 1, _event_fd: 0 - 1 };
     var io_registered_fd: i32 = 0 - 1;
     var event_registered_fd: i32 = 0 - 1;
     var inline_repoll_count: i32 = 0;
+    const repoll_limit: i32 = scheduler_normalize_inline_repoll_limit(inline_repoll_limit);
     defer { scheduler_cleanup_waker(loop, &w, &io_registered_fd, &event_registered_fd); }
 
     while true {
@@ -867,7 +883,7 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
                     inline_repoll_count = 0;
                     continue;
                 }
-                if !w.has_io_interest() && inline_repoll_count < SCHEDULER_INLINE_REPOLL_LIMIT {
+                if !w.has_io_interest() && inline_repoll_count < repoll_limit {
                     inline_repoll_count = inline_repoll_count + 1;
                     continue;
                 }

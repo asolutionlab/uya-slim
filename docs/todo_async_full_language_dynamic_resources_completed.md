@@ -858,3 +858,15 @@
     - 验证：`../uya/bin/uya test tests/test_std_async_event.uya` 通过（1 个测试通过）。
     - 相关回归：`../uya/bin/uya test tests/test_std_async_event_fd_reuse.uya` 通过（4 个子测试通过）。
     - 相关回归：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过（16 个子测试通过）。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/async_scheduler.uya` 的 frame stack buffer 与 inline repoll 容量改为动态或可配置；最小验证：新增/更新 scheduler frame/repoll 测试并运行 `../uya/bin/uya test ...`。
+    - 验证命令：`../uya/bin/uya test tests/test_std_async_scheduler.uya`
+    - 结果：通过，17 tests / 0 failed，新增 `block_on_event_loop_inline_repoll_limit_is_configurable` 覆盖可配置 inline repoll。
+    - 验证命令：`../uya/bin/uya test tests/test_async_frame_stack_limit_env.uya`
+    - 结果：通过，1 test / 0 failed。
+    - 验证命令：`../uya/bin/uya test tests/test_async_frame_stack_ok.uya`
+    - 结果：通过，2 个测试项均 OK。

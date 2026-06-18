@@ -581,6 +581,18 @@ test "scheduler_inline_repoll_limit_is_configurable" {
     try assert_eq_i32(scheduler_loop_poll_count, 1);
 }
 
+test "block_on_event_loop_inline_repoll_limit_is_configurable" {
+    scheduler_inline_pending_poll_count = 0;
+    scheduler_loop_poll_count = 0;
+
+    const loop: EventLoop = test_event_loop();
+    const result: i32 = try block_on_with_event_loop_inline_repoll_limit<i32>(loop, InlinePendingThenReady{ ready_after_pending: 2 }, 0, 1);
+
+    try assert_eq_i32(result, 88);
+    try assert_eq_i32(scheduler_inline_pending_poll_count, 2);
+    try assert_eq_i32(scheduler_loop_poll_count, 1);
+}
+
 test "scheduler_run_task_queue_generic_u32_with_shared_event_loop" {
     scheduler_queue_loop_poll_count = 0;
     scheduler_queue_register_count = 0;
