@@ -744,3 +744,14 @@
   - 验证结果：通过，7/7 tests passed。
   - 验证命令：`./tests/verify_async_full_language_matrix.sh`
   - 验证结果：通过，输出 `verify_async_full_language_matrix: positive matrix (32 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed`。
+
+## 完成定义
+
+父级任务路径：
+- [ ] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
+
+  - [x] 将非显式规范限制的 async 语法缺口转成正向回归或正式 checker 诊断；最小验证：相关 `../uya/bin/uya test ...`、`./tests/verify_async_full_language_matrix.sh`。
+    - 验证：`../uya/bin/uya check tests/error_async_for_iterator_interface_await.uya` 预期失败，命中 checker 诊断：`接口类型变量的 for 迭代目前不支持；请使用具体实现迭代器类型`。
+    - 验证：`../uya/bin/uya test tests/test_async_for_iterator_ref_await.uya` 通过，1 个测试通过。
+    - 验证：`rg -n "尚未支持" src/codegen/c99/function.uya src/codegen/c99/async_transform.uya src/lower/async.uya` 无命中。
+    - 验证：`./tests/verify_async_full_language_matrix.sh` 通过：positive matrix、iterator for boundaries、forbidden @await positions、nested future boundary、shared runtime matrix、macro combo passed。

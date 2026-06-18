@@ -4553,7 +4553,6 @@ fn emit_async_for_with_await(codegen: &C99CodeGenerator, for_stmt: &ASTNode, for
     }
     const elem_cb: &byte = c99_async_for_array_elem_type_c(codegen, for_stmt);
     if elem_cb == null {
-        fprintf(stderr as *void, "错误: @async_fn 中 for 数组迭代若为迭代器接口形式，@await 尚未支持\n" as *byte);
         const r7: i32 = emit_async_continue_after_range(codegen, parent_block, for_si + 1, parent_to_si);
         if r7 != 0 {
             fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, codegen.async_collect_count + 1);

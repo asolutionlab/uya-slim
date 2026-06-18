@@ -57,7 +57,6 @@
 ## 完成定义
 
 - [ ] `@async_fn` 对 Uya 函数体语法的支持范围，与同步函数体一致，只保留显式规范限制。
-  - [ ] 将非显式规范限制的 async 语法缺口转成正向回归或正式 checker 诊断；最小验证：相关 `../uya/bin/uya test ...`、`./tests/verify_async_full_language_matrix.sh`。
   - [ ] 汇总 `@async_fn` 函数体语法完成证据并移除已过期的 workaround/限制说明；最小验证：`./tests/verify_async_full_language_matrix.sh`、`git diff --check`。
 - [ ] async codegen / lowering / checker 中不再存在小规模固定上限作为正常路径容量门槛。
 - [ ] runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
@@ -109,7 +108,6 @@
 > 盘点汇总：
 
 > 待清理项登记（silent truncation / emitter stderr / workaround）：
-> - `src/codegen/c99/function.uya:4557`：fprintf(stderr, ...) 提示 iterator `for` 接口形式 `@await` "尚未支持" → 应升级为 checker 正式诊断或移除（若语法补齐后）
 > - `src/codegen/c99/function.uya:758`："简化处理：使用临时缓冲区" → 确认是否仍为临时方案
 > - `src/checker/async_frame_meta.uya:41,49,58`：`MAX_ASYNC_FRAME_METAS=512` 静默截断 → 待 Phase 2 动态化
 > - `src/codegen/c99/main.uya`：frame descriptor 静默截断到 512 → 待 Phase 2 动态化
