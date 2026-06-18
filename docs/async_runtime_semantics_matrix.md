@@ -3,6 +3,8 @@
 **最后更新**：2026-06-18
 **范围**：Linux + C99 主链路；HTTP/DNS/TLS/`async_compute`/`Scheduler` 是否共享同一套稳定 async runtime 语义。
 
+**口径**：本文是共享 runtime 语义的对齐矩阵，不是完成证明。除非“最小验证矩阵草案”中的统一 smoke 落地并通过，否则其他文档里的 HTTP/DNS/TLS/`async_compute`/`Scheduler` 分散回归只能视为阶段性证据，不能表述为 Linux + C99 async 主链路已收口。
+
 ## 共同语义基线
 
 当前可视为共享的 runtime 基线只包括源码中已经落到同一批类型和接口的部分：
@@ -44,3 +46,9 @@
 ## 当前结论
 
 HTTP、DNS、`async_compute` 和 `Scheduler` 已经在源码层共享 `Future` / `Poll` / `Waker` / `LinuxEpoll` 的核心语义，但还没有一个统一回归同时证明这些链路在同一 scheduler/event loop 下工作。TLS/HTTPS 目前只能说 UyaGin handler 层复用了 async handler 形态，TLS I/O 本身尚未接入同一 runtime。因此第 9 行总目标不能标记完成；下一步应先补共享 runtime smoke，再继续推进 DNS/TLS 的真实接入或显式边界拆分。
+
+同步到其他阶段性文档时，应使用以下结论句：
+
+- 分散回归已经证明若干局部主路径可用。
+- 共享 runtime 主链路尚未统一验收。
+- TLS I/O 仍是共享 runtime 语义中的显式缺口。

@@ -7,7 +7,7 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 补齐共享语义文档与既有阶段性文档的口径同步，避免继续把分散回归表述为主链路已收口；最小验证：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`。
+  - [ ] 拆分 TLS I/O 接入共享 runtime 的实现边界与验证任务，避免把 HTTPS loopback 当作 TLS async I/O 已接入 `Waker` / `EventLoop` / `Scheduler`；最小验证：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。
 
 ## 先澄清边界

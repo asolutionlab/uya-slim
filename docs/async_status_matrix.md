@@ -10,7 +10,10 @@
 > 仍未被本表覆盖为“已完成”的关键目标包括：
 > - `@async_fn` 对完整 Uya 函数体语法的支持，而不只是当前回归已覆盖的子集
 > - async 编译器/runtime 资源的动态化，消除 `TaskQueue=64`、`LinuxEpoll=1024`、`ThreadPool=32/16`、descriptor/meta 表固定上限等硬编码
+> - HTTP、DNS、TLS、`async_compute` 与 `Scheduler` 在同一 `Scheduler` / `EventLoop` / cancellation 语义下的统一 smoke 或矩阵验收
 > - 历史“已知限制”与源码现状、验证闸门之间的重新对齐
+>
+> 因此，本表中的 `✅` 只表示单项能力或局部链路已有证据；不得再写成“Linux + C99 async 主链路已完全收口”。共享 runtime 口径以 [async_runtime_semantics_matrix.md](async_runtime_semantics_matrix.md) 的缺口列和最小验证矩阵为准。
 
 ## 总览
 
@@ -26,6 +29,15 @@
 | `std.thread.async_compute<T>` 集成 | ✅ Linux 主路径已覆盖 | 未启动/排队/one-shot 任务可立即取消；运行中的共享槽任务在结果回收时稳定返回 `error.Cancelled` | `Future<!T>` 单态、typedef 装箱、成员调用、`f32/f64` helper 已收口；仍需纳入跨 HTTP/DNS/TLS 的共享 runtime 验收 | `test_std_thread.uya` `test_async_compute_types.uya` | `todo_async_runtime_and_http.md` `todo_mini_to_full.md` |
 | HTTP/DNS/TLS async 客户端主链路 | ⚠️ 生产收口中 | HTTP/1.1 nonblocking connect/read/write、DNS async 查询、timeout/deadline 已接通；但尚未作为“HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一 runtime 语义”的完整矩阵统一验收 | async lowering / 变量提升相关缺口已修复到主链路可用；仍需把共享 runtime 矩阵纳入生产闸门 | `test_http1_async_client.uya` `test_std_dns_async_transport.uya` `test_https_loopback.uya`；待补共享 runtime 矩阵 | `async_production_todo.md` `todo_async_full_language_dynamic_resources.md` |
 | UyaGin async 服务端协议热路径 | ✅ P6 阶段性覆盖 | request parser 已支持 chunked request 原地解码；response 已支持 `writev` 聚合写、显式 chunked response、Linux x86_64 `sendfile` 优先发送；`Engine` 已补入 access log/metrics/error trace/config/mode 主链路 | 为支撑观测包装，`engine.handle` 现在统一走 request observation wrapper；当前剩余噪音仍是 parser 对 `catch { ... }` 某些写法的假告警，不影响 codegen/run；不代表 HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享 runtime 已统一验收 | `test_http_parse.uya` `test_http_server.uya` `test_http_uyagin.uya` `test_https_loopback.uya` | `uyagin_todo.md` `uyagin_design.md` `tls_https_todo.md` |
+
+## 阶段性回归与共享主链路的区别
+
+本表保留历史阶段性验收结果，但从当前生产化 TODO 开始，以下口径必须分开使用：
+
+- **分散回归**：某个测试文件证明一条局部路径可编译、可运行或可处理特定错误。例如 HTTP async client、DNS async transport、`async_compute<T>` 或 `Scheduler` 单独测试。
+- **共享 runtime 收口**：HTTP、DNS、TLS、`async_compute` 与 `Scheduler` 在同一套 `Future` / `Poll` / `Waker` / `EventLoop` / cancellation 语义下组合运行，并有明确 Linux + C99 验证命令。
+
+当前只有前者证据较充分，后者仍依赖 [async_runtime_semantics_matrix.md](async_runtime_semantics_matrix.md) 中列出的 smoke 与缺口补齐。因此历史文档中的“主路径已覆盖”“Linux 主路径已覆盖”“阶段性覆盖”不应升级解读为当前 TODO 的第一个总目标完成。
 
 ## `@async_fn` 函数体语法矩阵
 
@@ -57,6 +69,7 @@
 - `Waker` 当前仍是**单 interest / 单 fd** 模型；多 interest 不是当前实现范围
 - 跨线程唤醒当前依赖 **Linux `eventfd`**，因此这部分能力口径是 **Linux-only**
 - 生产收口必须同时证明 HTTP、DNS、TLS、`async_compute` 与 `Scheduler` 共享同一套 `Future` / `Poll` / `Waker` / `EventLoop` / cancellation 语义；单项测试通过不能再单独视为“异步主链路已完全量产”
+- 共享 runtime 是否收口，以 `docs/async_runtime_semantics_matrix.md` 的链路矩阵和后续统一测试为准；本表不再单独给出“主链路已收口”结论
 
 ## 共享 runtime 生产收口矩阵
 

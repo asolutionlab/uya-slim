@@ -25,6 +25,7 @@
 > 2. 当前 `@async_fn` 的已通过回归不等于已经覆盖完整 Uya 函数体语法。
 > 3. 本文中的“设计原则”包含目标态表述；评估当前真实状态时，应以源码、测试和权威 TODO 为准。
 > 4. HTTP、DNS、TLS、`async_compute` 与 `Scheduler` 的分散回归只能证明各自阶段性主路径，尚不能当作“共享同一套稳定 async runtime 语义”已经统一验收。
+> 5. 共享 runtime 口径以 [async_runtime_semantics_matrix.md](async_runtime_semantics_matrix.md) 为准；在该矩阵补齐统一 smoke 前，本文中的主路径、主链路、生产收口等表述都只表示局部阶段性能力。
 
 ## 架构概览
 
@@ -99,7 +100,9 @@ std/async/
   - `async_print_to(writer: AsyncWriter, text: &const byte) Future<!usize>`
   - `async_println_to(writer: AsyncWriter, text: &const byte) Future<!usize>`
 
-**涉及**：新建 `std/async/io/writer.uya`、`std/async/io/reader.uya`
+**历史计划口径**：早期曾把 `AsyncWriter` / `AsyncReader` 接口作为待新建拆分模块描述；当前实现仍主要集中在 `lib/std/async.uya` 等文件中。下面的“涉及”路径是目标结构说明，不表示这些模块已经按该结构完成落地，也不表示共享 runtime 主链路已收口。
+
+**涉及**：目标结构中的 `std/async/io/writer.uya`、`std/async/io/reader.uya`
 
 ### 实现原理
 
@@ -130,7 +133,7 @@ AsyncFd : AsyncReader {
 }
 ```
 
-**涉及**：新建 `std/async/io/async_fd.uya`
+**涉及**：目标结构中的 `std/async/io/async_fd.uya`
 
 ### 使用示例
 

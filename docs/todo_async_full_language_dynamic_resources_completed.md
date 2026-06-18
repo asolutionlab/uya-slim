@@ -535,3 +535,11 @@
   - [x] 增加 HTTP/DNS/TLS/`async_compute` 共享 runtime 组合闸门，证明同一调度语义下 readiness、eventfd wake、取消和 cleanup 不互相冲突；最小验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya`；完成条件：测试同时覆盖至少一个 I/O future、一个 DNS future、一个 TLS async future 或边界替代项，以及一个 `async_compute` future。
     - 验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya` 通过，3 个测试、29 个断言；覆盖共享调度矩阵、真实 `AsyncFd` I/O future + `async_compute` 同队列，以及 DNS/TLS async future 边界替代项。
     - 相关回归：`../uya/bin/uya test --c99 tests/test_async_shared_runtime_semantics.uya` 通过，2 个测试、19 个断言。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 补齐共享语义文档与既有阶段性文档的口径同步，避免继续把分散回归表述为主链路已收口；最小验证：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`。
+    - 验证命令：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`
+    - 验证结果：通过；命令退出码 0，无输出。
