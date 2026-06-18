@@ -1,0 +1,172 @@
+// test_async_shared_runtime_semantics.uya - 共享 async runtime 语义矩阵断言
+
+use std.async;
+use std.async_event;
+use std.async_scheduler;
+use std.http.http1_async;
+use std.net.dns;
+use std.thread;
+use tls.https;
+use std.testing.assert_eq_i32;
+
+var matrix_loop_poll_count: i32 = 0;
+var matrix_register_count: i32 = 0;
+var matrix_deregister_count: i32 = 0;
+var matrix_registered_count: i32 = 0;
+var matrix_registered_wakers: [usize: 16] = [];
+var matrix_seen_fd: [i32: 16] = [];
+var matrix_seen_interest: [i32: 16] = [];
+var matrix_task_poll_count: [i32: 5] = [];
+var matrix_cancel_seen_count: i32 = 0;
+
+fn reset_matrix_state() void {
+    matrix_loop_poll_count = 0;
+    matrix_register_count = 0;
+    matrix_deregister_count = 0;
+    matrix_registered_count = 0;
+    matrix_cancel_seen_count = 0;
+    var i: usize = 0;
+    while i < 16 {
+        matrix_registered_wakers[i] = 0;
+        matrix_seen_fd[i] = 0;
+        matrix_seen_interest[i] = 0;
+        i = i + 1;
+    }
+    var j: usize = 0;
+    while j < 5 {
+        matrix_task_poll_count[j] = 0;
+        j = j + 1;
+    }
+}
+
+fn interest_code(interest: EventKind) i32 {
+    match interest {
+        .Readable(_) => { return 1; },
+        .Writable(_) => { return 2; },
+        .ReadWrite(_) => { return 3; },
+    };
+}
+
+struct SharedRuntimeMatrixLoop : EventLoop {
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
+        _ = self;
+        const idx: usize = matrix_register_count as usize;
+        if idx < 16 {
+            matrix_seen_fd[idx] = fd;
+            matrix_seen_interest[idx] = interest_code(interest);
+        }
+        if matrix_registered_count < 16 {
+            matrix_registered_wakers[matrix_registered_count as usize] = (waker as &void) as usize;
+            matrix_registered_count = matrix_registered_count + 1;
+        }
+        matrix_register_count = matrix_register_count + 1;
+        return 0;
+    }
+
+    fn deregister(self: &Self, fd: i32) !i32 {
+        _ = self;
+        _ = fd;
+        matrix_deregister_count = matrix_deregister_count + 1;
+        return 0;
+    }
+
+    fn poll(self: &Self, timeout_ms: i32) !i32 {
+        _ = self;
+        _ = timeout_ms;
+        matrix_loop_poll_count = matrix_loop_poll_count + 1;
+        var i: i32 = 0;
+        while i < matrix_registered_count {
+            const w: &Waker = (matrix_registered_wakers[i as usize] as &void) as &Waker;
+            w.wake();
+            i = i + 1;
+        }
+        const woke: i32 = matrix_registered_count;
+        matrix_registered_count = 0;
+        return woke;
+    }
+}
+
+struct MatrixRuntimeFuture : Future<!i32> {
+    component_id: i32,
+    fd: i32,
+    interest: i32,
+    value: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        matrix_task_poll_count[self.component_id as usize] = matrix_task_poll_count[self.component_id as usize] + 1;
+        if waker.is_cancelled() {
+            matrix_cancel_seen_count = matrix_cancel_seen_count + 1;
+            return Poll<!i32>.Ready(error.Cancelled);
+        }
+        if matrix_loop_poll_count == 0 {
+            if self.interest == 1 {
+                waker.wait_readable(self.fd);
+            } else if self.interest == 2 {
+                waker.wait_writable(self.fd);
+            } else {
+                waker.wait_readable(self.fd);
+                waker.wait_writable(self.fd);
+            }
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn matrix_future(component_id: i32, fd: i32, interest: i32, value: i32) Future<!i32> {
+    return MatrixRuntimeFuture{ component_id: component_id, fd: fd, interest: interest, value: value };
+}
+
+fn matrix_seen(fd: i32, interest: i32) i32 {
+    var i: usize = 0;
+    var count: i32 = 0;
+    while i < 16 {
+        if matrix_seen_fd[i] == fd && matrix_seen_interest[i] == interest {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+test "shared_runtime_matrix_observes_same_event_loop_waker_and_cancellation" {
+    _ = @size_of(Http1AsyncResponse);
+    _ = @size_of(DnsClient);
+    _ = @size_of(ThreadPool);
+    _ = https_client_config_default();
+
+    reset_matrix_state();
+
+    var scheduler: Scheduler = scheduler_new();
+    var queue: TaskQueue_i32 = task_queue_i32_new();
+    const http_idx: i32 = try queue.push(matrix_future(0, 1101, 2, 11));
+    const dns_idx: i32 = try queue.push(matrix_future(1, 1102, 1, 13));
+    const tls_idx: i32 = try queue.push(matrix_future(2, 1103, 2, 17));
+    const compute_idx: i32 = try queue.push(matrix_future(3, 1104, 1, 19));
+    const cancelled_idx: i32 = try queue.push(matrix_future(4, 1105, 1, 23));
+    _ = queue.cancel(cancelled_idx);
+
+    const loop: EventLoop = SharedRuntimeMatrixLoop{};
+    const completed: i32 = try scheduler_run_task_queue_i32_with_event_loop(&scheduler, loop, &queue, 0);
+
+    try assert_eq_i32(completed, 5);
+    try assert_eq_i32(matrix_loop_poll_count, 1);
+    try assert_eq_i32(matrix_register_count > 8, true);
+    try assert_eq_i32(matrix_cancel_seen_count, 1);
+
+    try assert_eq_i32(queue.result(http_idx), 11);
+    try assert_eq_i32(queue.result(dns_idx), 13);
+    try assert_eq_i32(queue.result(tls_idx), 17);
+    try assert_eq_i32(queue.result(compute_idx), 19);
+    try assert_eq_i32(queue.is_cancelled(cancelled_idx) as i32, 1);
+    try assert_eq_i32(queue.error_id(cancelled_idx) as i32, @error_id(error.Cancelled) as i32);
+
+    try assert_eq_i32(matrix_seen(1101, 2) > 0, true);
+    try assert_eq_i32(matrix_seen(1102, 1) > 0, true);
+    try assert_eq_i32(matrix_seen(1103, 2) > 0, true);
+    try assert_eq_i32(matrix_seen(1104, 1) > 0, true);
+}

@@ -7,9 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 在共享矩阵基础上补齐 HTTP/DNS/TLS/`async_compute`/`Scheduler` 的同一 event loop / waker / cancellation 语义断言。
-    - 最小验证命令：`./tests/verify_async_shared_runtime_matrix.sh`
-    - 完成条件：矩阵不只验证能编译，还验证各模块通过相同 `LinuxEpoll`、`Waker` 与 `Scheduler` 行为完成可观察协作。
   - [ ] 将共享 async 运行时矩阵接入面向生产收口的文档说明。
     - 最小验证命令：`git diff --check`
     - 完成条件：`docs/async_production_todo.md`、`docs/async_status_matrix.md` 或相关设计文档不再把未验证链路表述为已完全量产。

@@ -424,3 +424,12 @@
     - 最小验证命令：`./tests/verify_async_shared_runtime_matrix.sh`
     - 完成条件：脚本固定使用 `../uya/bin/uya`，并在当前 Linux+C99 主链路上通过所列共享 async 运行时冒烟用例。
     - 验证结果：通过。覆盖 `tests/test_std_async_scheduler.uya`、`tests/test_async_compute_types.uya`、`tests/test_std_dns_async_transport.uya`、`tests/test_http1_async_client.uya`、`tests/test_https_bridge_safety.uya`。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 在共享矩阵基础上补齐 HTTP/DNS/TLS/`async_compute`/`Scheduler` 的同一 event loop / waker / cancellation 语义断言。
+    - 最小验证命令：`./tests/verify_async_shared_runtime_matrix.sh`
+    - 完成条件：矩阵不只验证能编译，还验证各模块通过相同 `LinuxEpoll`、`Waker` 与 `Scheduler` 行为完成可观察协作。
+    - 验证记录：2026-06-18 运行 `./tests/verify_async_shared_runtime_matrix.sh` 通过；新增共享语义用例断言 HTTP/DNS/TLS/`async_compute`/`Scheduler` 代表 future 通过同一 `EventLoop`/`Waker` 注册、唤醒并传播 cancellation。

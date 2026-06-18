@@ -20,6 +20,7 @@ run_uya_test() {
 }
 
 run_uya_test "Scheduler shared EventLoop/Waker semantics" "tests/test_std_async_scheduler.uya"
+run_uya_test "HTTP/DNS/TLS/async_compute/Scheduler shared runtime assertions" "tests/test_async_shared_runtime_semantics.uya"
 run_uya_test "async_compute shares scheduler wakeup path" "tests/test_async_compute_types.uya"
 run_uya_test "DNS async transport on Linux+C99" "tests/test_std_dns_async_transport.uya"
 run_uya_test "HTTP/1 async client runtime path" "tests/test_http1_async_client.uya"
