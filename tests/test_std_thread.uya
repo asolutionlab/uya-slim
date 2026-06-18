@@ -218,10 +218,10 @@ test "thread_pool_new_normalizes_worker_count" {
     const pmax: ThreadPool = thread_pool_new(THREAD_POOL_MAX_WORKERS + 5);
     try assert_eq_i32(p0.worker_count, 1);
     try assert_eq_i32(p1.worker_count, 3);
-    try assert_eq_i32(pmax.worker_count, THREAD_POOL_MAX_WORKERS);
+    try assert_eq_i32(pmax.worker_count, THREAD_POOL_MAX_WORKERS + 5);
 }
 
-test "thread_pool_new_with_config_normalizes_capacities" {
+test "thread_pool_new_with_config_normalizes_invalid_capacities" {
     const p0: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
         worker_count: 0,
         pending_capacity: 0,
@@ -232,7 +232,7 @@ test "thread_pool_new_with_config_normalizes_capacities" {
         pending_capacity: 5,
         task_slot_capacity: 7,
     });
-    const pmax: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
+    const pabove_legacy: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
         worker_count: THREAD_POOL_MAX_WORKERS + 5,
         pending_capacity: THREAD_POOL_MAX_PENDING + 5,
         task_slot_capacity: THREAD_POOL_MAX_TASK_SLOTS + 5,
@@ -244,9 +244,71 @@ test "thread_pool_new_with_config_normalizes_capacities" {
     try assert_eq_i32(p1.worker_count, 3);
     try assert_eq_i32(p1.pending_capacity, 5);
     try assert_eq_i32(p1.task_slot_capacity, 7);
-    try assert_eq_i32(pmax.worker_count, THREAD_POOL_MAX_WORKERS);
-    try assert_eq_i32(pmax.pending_capacity, THREAD_POOL_MAX_PENDING);
-    try assert_eq_i32(pmax.task_slot_capacity, THREAD_POOL_MAX_TASK_SLOTS);
+    try assert_eq_i32(pabove_legacy.worker_count, THREAD_POOL_MAX_WORKERS + 5);
+    try assert_eq_i32(pabove_legacy.pending_capacity, THREAD_POOL_MAX_PENDING + 5);
+    try assert_eq_i32(pabove_legacy.task_slot_capacity, THREAD_POOL_MAX_TASK_SLOTS + 5);
+}
+
+test "thread_pool_config_can_exceed_legacy_static_limits" {
+    var pool: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
+        worker_count: THREAD_POOL_MAX_WORKERS + 1,
+        pending_capacity: THREAD_POOL_MAX_PENDING + 1,
+        task_slot_capacity: THREAD_POOL_MAX_TASK_SLOTS + 1,
+    });
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    try assert_eq_i32(pool.worker_count, THREAD_POOL_MAX_WORKERS + 1);
+    try assert_eq_i32(pool.pending_capacity, THREAD_POOL_MAX_PENDING + 1);
+    try assert_eq_i32(pool.task_slot_capacity, THREAD_POOL_MAX_TASK_SLOTS + 1);
+
+    var first: Future<!i32> = async_compute<i32>(&pool, &delayed_double_i32 as &void, 10);
+    var second: Future<!i32> = async_compute<i32>(&pool, &delayed_triple_i32 as &void, 7);
+    var w0: Waker = Waker{};
+    var w1: Waker = Waker{};
+    _ = first.poll(&w0);
+    _ = second.poll(&w1);
+    _ = first.poll(&w0);
+    _ = second.poll(&w1);
+
+    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
+    try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
+}
+
+test "thread_pool_reports_resource_error_when_configured_slots_are_full" {
+    var pool: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
+        worker_count: 1,
+        pending_capacity: 1,
+        task_slot_capacity: 1,
+    });
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    var first: Future<!i32> = async_compute<i32>(&pool, &delayed_double_i32 as &void, 10);
+    var second: Future<!i32> = async_compute<i32>(&pool, &delayed_triple_i32 as &void, 7);
+    var w0: Waker = Waker{};
+    var w1: Waker = Waker{};
+    _ = first.poll(&w0);
+    _ = first.poll(&w0);
+    _ = second.poll(&w1);
+
+    const second_poll: Poll<!i32> = second.poll(&w1);
+    var saw_error: i32 = 0;
+    match second_poll {
+        .Ready(v) => {
+            const _value: i32 = v catch |_| {
+                saw_error = 1;
+                0;
+            };
+            _ = _value;
+        },
+        .Pending(_) => { },
+    };
+
+    try assert_eq_i32(saw_error, 1);
+    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
 }
 
 test "async_compute_i32_reports_pending_before_ready" {

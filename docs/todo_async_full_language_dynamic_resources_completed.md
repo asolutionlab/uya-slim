@@ -831,3 +831,14 @@
     - 验证：`../uya/bin/uya test tests/test_async_frame_stack_limit_env.uya` 通过。
     - 验证：`../uya/bin/uya test tests/test_std_async_scheduler.uya` 通过（16 tests, 0 failed）。
     - 验证：`git diff --check` 通过。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/thread.uya` 的 worker、pending、task slot 容量改为动态或可配置策略，并保留明确的资源失败路径，避免 `32/32/16` 固定产品上限；最小验证：新增/更新相关测试并运行 `../uya/bin/uya test ...` 或对应程序回归。
+    - 验证：
+      - 先新增失败测试并确认失败：`../uya/bin/uya test tests/test_std_thread.uya`，失败点为 `thread_pool_config_can_exceed_legacy_static_limits` 中 `pool.worker_count` 仍被截断为 `32`，以及资源耗尽测试确认旧 fallback 未报错。
+      - 实现后通过：`../uya/bin/uya test tests/test_std_thread.uya`，23 tests passed，0 failed。
+      - 相关回归通过：`../uya/bin/uya test tests/test_async_compute_generic_wrapper.uya`，2 tests passed，0 failed。
+      - 额外尝试：`../uya/bin/uya test tests/test_async_runtime_shared_semantics.uya` 与 `../uya/bin/uya test tests/test_async_shared_runtime_semantics.uya` 均在宿主 C 链接阶段失败，关键错误为 `std/http/uyagin` 生成代码 `invalid initializer`，非本轮 `std.thread` 路径运行失败。
