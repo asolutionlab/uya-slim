@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 将 TLS handshake/read/write 拆为 `Future<!usize>` 或等价 async leaf primitive，并接入 `Waker.wait_readable/wait_writable`；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya`；完成条件：TLS I/O would-block 时返回 `Poll.Pending`，ready 后通过共享 `LinuxEpoll` 唤醒并返回 `Poll.Ready`。
   - [ ] 增加 HTTP/DNS/TLS/`async_compute` 共享 runtime 组合闸门，证明同一调度语义下 readiness、eventfd wake、取消和 cleanup 不互相冲突；最小验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya`；完成条件：测试同时覆盖至少一个 I/O future、一个 DNS future、一个 TLS async future 或边界替代项，以及一个 `async_compute` future。
   - [ ] 补齐共享语义文档与既有阶段性文档的口径同步，避免继续把分散回归表述为主链路已收口；最小验证：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。

@@ -520,3 +520,11 @@
 
   - [x] 为 TLS/HTTPS I/O 增加显式 async 边界回归，固定 handshake/read/write 尚未返回 `Future` 的当前缺口，避免被 loopback handler 误判为 runtime 已接入；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya`；完成条件：测试或结构性检查能稳定指出 TLS I/O 未接入 `Waker`/`EventLoop`，并随真实接入时反向更新。
     - 验证：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya` 通过，1 个测试通过、8 个断言通过；结构性检查确认 `lib/tls/https.uya` 中 `https_read_some` / `https_write_all` / `https_client_handshake` / `https_server_handshake` 仍为同步签名，且未出现 `Future<!usize>` / `wait_readable` / `wait_writable` / `EventLoop`。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 将 TLS handshake/read/write 拆为 `Future<!usize>` 或等价 async leaf primitive，并接入 `Waker.wait_readable/wait_writable`；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya`；完成条件：TLS I/O would-block 时返回 `Poll.Pending`，ready 后通过共享 `LinuxEpoll` 唤醒并返回 `Poll.Ready`。
+    验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya` 通过（1 test，17 assertions）。
+    相关回归：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya` 通过（1 test，9 assertions）；`../uya/bin/uya test --c99 tests/test_https_loopback.uya` 通过（1 test）。

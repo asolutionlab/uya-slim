@@ -1,8 +1,7 @@
-// 固定 TLS/HTTPS I/O 尚未接入 std.async runtime 的当前边界。
+// 固定 TLS/HTTPS I/O 已接入 std.async runtime 的结构性边界。
 //
 // 这个测试故意检查 lib/tls/https.uya 的结构性签名，而不是 loopback 行为：
-// loopback handler 可以跑通同步 TLS 收发，但不能证明 handshake/read/write 已返回 Future
-// 或通过 Waker/EventLoop readiness 驱动。真实 async TLS I/O 接入后，应反向更新本测试。
+// 行为层面的 Pending/Ready 和 LinuxEpoll 唤醒由 test_tls_async_io_future.uya 覆盖。
 
 use libc.syscall;
 use std.string.strlen;
@@ -64,7 +63,7 @@ fn read_https_source(buf: &byte, cap: usize) !usize {
     return (n as! usize).value;
 }
 
-test "tls_https_io_boundary_is_still_sync" {
+test "tls_https_io_boundary_has_async_leaf_primitives" {
     var src: [byte: HTTPS_SOURCE_MAX] = [0:HTTPS_SOURCE_MAX];
     const len: usize = try read_https_source(&src[0], HTTPS_SOURCE_MAX);
 
@@ -73,8 +72,9 @@ test "tls_https_io_boundary_is_still_sync" {
     try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_client_handshake(fd: i32, ctx: &SslContext) !void\0" as &const byte) as i32, 1);
     try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_server_handshake(fd: i32, ctx: &SslContext) !void\0" as &const byte) as i32, 1);
 
-    try assert_eq_i32(source_contains_cstr(&src[0], len, "Future<!usize>\0" as &const byte) as i32, 0);
-    try assert_eq_i32(source_contains_cstr(&src[0], len, "wait_readable\0" as &const byte) as i32, 0);
-    try assert_eq_i32(source_contains_cstr(&src[0], len, "wait_writable\0" as &const byte) as i32, 0);
-    try assert_eq_i32(source_contains_cstr(&src[0], len, "EventLoop\0" as &const byte) as i32, 0);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_read_some_async(fd: i32, out: &byte, out_max: usize) Future<!usize>\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_write_all_async(fd: i32, src: &const byte, src_len: usize) Future<!usize>\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "export fn https_handshake_async(fd: i32, ctx: &SslContext, role: i32) Future<!usize>\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "waker.wait_readable\0" as &const byte) as i32, 1);
+    try assert_eq_i32(source_contains_cstr(&src[0], len, "waker.wait_writable\0" as &const byte) as i32, 1);
 }

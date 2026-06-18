@@ -5,7 +5,7 @@ use tls.ssl.context;
 use tls.x509.cert.Cert;
 use tls.x509.trust_store;
 use tls.crypto.rsa.RsaPrivateKey;
-use std.async.block_on;
+use std.async;
 use std.http.server;
 use std.http.types;
 use std.http.parse.http_parse_request;
@@ -325,6 +325,113 @@ export fn https_write_all(fd: i32, src: &const byte, src_len: usize) !void {
             break;
         }
     }
+}
+
+struct HttpsReadFuture : Future<!usize> {
+    fd: i32,
+    out: &byte,
+    out_max: usize,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        const n: usize = https_read_some(self.fd, self.out, self.out_max) catch |err| {
+            if @error_id(err) == @error_id(error.ReadWouldBlock) {
+                waker.wait_readable(self.fd);
+                return Poll<!usize>.Pending({});
+            }
+            return Poll<!usize>.Ready(error.ConnectionClosed);
+        };
+        return Poll<!usize>.Ready(ok<usize>(n));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+struct HttpsWriteAllFuture : Future<!usize> {
+    fd: i32,
+    src: &const byte,
+    src_len: usize,
+    off: usize = 0,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        while self.off < self.src_len {
+            const p: *const byte = @ptr_from_usize(@usize_from_ptr(self.src as &void) + self.off) as *const byte;
+            const write_result: !isize = sys_write(self.fd, p, self.src_len - self.off);
+            const n: isize = write_result catch |err| {
+                const eid: i32 = (@error_id(err) as! i32).value;
+                if eid == EINTR {
+                    continue;
+                }
+                if https_is_would_block_errno(eid) {
+                    waker.wait_writable(self.fd);
+                    return Poll<!usize>.Pending({});
+                }
+                return Poll<!usize>.Ready(error.ConnectionClosed);
+            };
+            if n <= 0 {
+                return Poll<!usize>.Ready(error.ConnectionClosed);
+            }
+            self.off = self.off + (n as! usize).value;
+        }
+        return Poll<!usize>.Ready(ok<usize>(self.off));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+struct HttpsHandshakeFuture : Future<!usize> {
+    fd: i32,
+    ctx: &SslContext,
+    role: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        if self.role == HS_ROLE_SERVER {
+            https_server_handshake(self.fd, self.ctx) catch |err| {
+                if @error_id(err) == @error_id(error.ReadWouldBlock) {
+                    waker.wait_readable(self.fd);
+                    return Poll<!usize>.Pending({});
+                }
+                return Poll<!usize>.Ready(error.ConnectionClosed);
+            };
+        } else {
+            https_client_handshake(self.fd, self.ctx) catch |err| {
+                if @error_id(err) == @error_id(error.ReadWouldBlock) {
+                    waker.wait_readable(self.fd);
+                    return Poll<!usize>.Pending({});
+                }
+                return Poll<!usize>.Ready(error.ConnectionClosed);
+            };
+        }
+        return Poll<!usize>.Ready(ok<usize>(0));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+/// 返回 TLS/HTTPS transport 读 future。
+/// 参数：fd 为非阻塞或可设为非阻塞的描述符；out/out_max 为输出缓冲区。
+/// 返回值：Future<!usize>，would-block 时 Pending，ready 时返回读取字节数。
+export fn https_read_some_async(fd: i32, out: &byte, out_max: usize) Future<!usize> {
+    return HttpsReadFuture{ fd: fd, out: out, out_max: out_max };
+}
+
+/// 返回 TLS/HTTPS transport write_all future。
+/// 参数：fd 为非阻塞描述符；src/src_len 为待写入数据。
+/// 返回值：Future<!usize>，would-block 时 Pending，完成时返回写入总字节数。
+export fn https_write_all_async(fd: i32, src: &const byte, src_len: usize) Future<!usize> {
+    return HttpsWriteAllFuture{ fd: fd, src: src, src_len: src_len };
+}
+
+/// 返回 TLS handshake future。
+/// 参数：fd 为非阻塞描述符；ctx 为 TLS 上下文；role 为 HS_ROLE_CLIENT 或 HS_ROLE_SERVER。
+/// 返回值：Future<!usize>，would-block 时 Pending，握手完成时返回 0。
+export fn https_handshake_async(fd: i32, ctx: &SslContext, role: i32) Future<!usize> {
+    return HttpsHandshakeFuture{ fd: fd, ctx: ctx, role: role };
 }
 
 fn https_read_exact(fd: i32, out: &byte, need: usize) !void {

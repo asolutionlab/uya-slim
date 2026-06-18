@@ -1,0 +1,149 @@
+use tls.https;
+use std.async;
+use std.async_event;
+use std.async_scheduler;
+use std.testing.assert_eq_i32;
+use libc.syscall;
+
+error PipeCreateFailed;
+error PipeWriteFailed;
+error ChildSpawnFailed;
+error UnexpectedPending;
+error ExpectedPending;
+error TlsAsyncFailed;
+
+const TEST_SYS_PIPE2: i64 = 293;
+const TEST_O_NONBLOCK: i32 = 0x800;
+
+fn test_sys_pipe2(pipefd: &i32, flags: i32) !i32 {
+    return @syscall(TEST_SYS_PIPE2, pipefd as i64, flags as i64) as! i32;
+}
+
+fn spawn_delayed_writer(write_fd: i32, delay_ns: i64) !i32 {
+    const fork_result: !i64 = sys_fork();
+    const child_pid: i64 = fork_result catch {
+        return error.ChildSpawnFailed;
+    };
+    if child_pid == 0 {
+        const req: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: delay_ns };
+        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+        _ = sys_nanosleep(&req, &rem) catch {};
+        var src: [byte: 4] = [ 21, 22, 23, 24 ];
+        _ = sys_write(write_fd, &src[0] as *const byte, 4) catch {};
+        _ = sys_close(write_fd) catch {};
+        sys_exit(0);
+    }
+    return child_pid as i32;
+}
+
+fn wait_child(child_pid: i32) void {
+    if child_pid > 0 {
+        var status: i32 = 0;
+        _ = sys_waitpid(child_pid, &status, 0) catch {};
+    }
+}
+
+fn test_tls_read_future_pending_then_ready() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    var buf: [byte: 8] = [];
+    const f: Future<!usize> = https_read_some_async(read_fd, &buf[0], 4);
+    const wk: Waker = Waker{};
+
+    const first: Poll<!usize> = f.poll(&wk);
+    var saw_pending: i32 = 0;
+    match first {
+        .Ready(_) => { saw_pending = 0; },
+        .Pending(_) => { saw_pending = 1; },
+    };
+    try assert_eq_i32(saw_pending, 1);
+
+    var src: [byte: 4] = [ 10, 11, 12, 13 ];
+    const written: isize = sys_write(write_fd, &src[0] as *const byte, 4) catch {
+        return error.PipeWriteFailed;
+    };
+    try assert_eq_i32(written as i32, 4);
+
+    const second: Poll<!usize> = f.poll(&wk);
+    var read_count: usize = 0;
+    match second {
+        .Ready(value) => { read_count = value catch { return error.TlsAsyncFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
+    };
+    try assert_eq_i32(read_count as i32, 4);
+    try assert_eq_i32(buf[0] as i32, 10);
+    try assert_eq_i32(buf[1] as i32, 11);
+    try assert_eq_i32(buf[2] as i32, 12);
+    try assert_eq_i32(buf[3] as i32, 13);
+
+    _ = sys_close(read_fd) catch {};
+    _ = sys_close(write_fd) catch {};
+}
+
+fn test_tls_read_future_linux_epoll_wake() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+    const child_pid: i32 = try spawn_delayed_writer(write_fd, 1000000);
+
+    var buf: [byte: 8] = [];
+    var scheduler: Scheduler = scheduler_new();
+    var epoll_impl: LinuxEpoll = try linux_epoll_create(0);
+    const loop: EventLoop = epoll_impl;
+    const f: Future<!usize> = https_read_some_async(read_fd, &buf[0], 4);
+    const read_count: usize = try scheduler_run_with_event_loop<usize>(&scheduler, loop, f, 100);
+    try assert_eq_i32(read_count as i32, 4);
+    try assert_eq_i32(buf[0] as i32, 21);
+    try assert_eq_i32(buf[1] as i32, 22);
+    try assert_eq_i32(buf[2] as i32, 23);
+    try assert_eq_i32(buf[3] as i32, 24);
+
+    wait_child(child_pid);
+    _ = sys_close(read_fd) catch {};
+}
+
+fn test_tls_write_future_ready() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    var src: [byte: 3] = [ 31, 32, 33 ];
+    const f: Future<!usize> = https_write_all_async(write_fd, &src[0] as &const byte, 3);
+    const wk: Waker = Waker{};
+    const p: Poll<!usize> = f.poll(&wk);
+    var written: usize = 0;
+    match p {
+        .Ready(value) => { written = value catch { return error.TlsAsyncFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
+    };
+    try assert_eq_i32(written as i32, 3);
+
+    var out: [byte: 4] = [];
+    const n: isize = sys_read(read_fd, &out[0] as *byte, 3) catch {
+        return error.TlsAsyncFailed;
+    };
+    try assert_eq_i32(n as i32, 3);
+    try assert_eq_i32(out[0] as i32, 31);
+    try assert_eq_i32(out[1] as i32, 32);
+    try assert_eq_i32(out[2] as i32, 33);
+
+    _ = sys_close(read_fd) catch {};
+    _ = sys_close(write_fd) catch {};
+}
+
+test "tls async io future pending ready and epoll wake" {
+    try test_tls_read_future_pending_then_ready();
+    try test_tls_read_future_linux_epoll_wake();
+    try test_tls_write_future_ready();
+}
