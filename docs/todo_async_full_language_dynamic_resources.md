@@ -7,7 +7,6 @@
 ## 目标
 
 - [ ] Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
-  - [ ] 基于审计矩阵补齐一个 Linux+C99 共享 runtime smoke 回归，至少同时覆盖 `Scheduler` + `async_compute` + 一个 AsyncFd/http 路径；最小验证：`../uya/bin/uya test --c99 <新增测试>`。
   - [ ] 将 DNS/TLS 当前同步或半同步边界接入矩阵中的统一语义缺口，拆出可运行的后续实现叶子；最小验证：相关 todo 只保留可执行叶子，且每项包含验证命令。
   - [ ] 补齐共享语义文档与既有阶段性文档的口径同步，避免继续把分散回归表述为主链路已收口；最小验证：`git diff --check docs/std_async_design.md docs/async_status_matrix.md docs/async_runtime_semantics_matrix.md`。
 - [ ] 建立可复现的验证矩阵，保证“能编译”与“生产可用”之间没有空档。

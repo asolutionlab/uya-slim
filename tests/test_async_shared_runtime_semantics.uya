@@ -8,6 +8,17 @@ use std.net.dns;
 use std.thread;
 use tls.https;
 use std.testing.assert_eq_i32;
+use libc.syscall;
+
+error SharedSmokePipeCreateFailed;
+error SharedSmokeChildSpawnFailed;
+
+const SHARED_SMOKE_SYS_PIPE2: i64 = 293;
+const SHARED_SMOKE_O_NONBLOCK: i32 = 0x800;
+
+fn shared_smoke_sys_pipe2(pipefd: &i32, flags: i32) !i32 {
+    return @syscall(SHARED_SMOKE_SYS_PIPE2, pipefd as i64, flags as i64) as! i32;
+}
 
 var matrix_loop_poll_count: i32 = 0;
 var matrix_register_count: i32 = 0;
@@ -133,6 +144,34 @@ fn matrix_seen(fd: i32, interest: i32) i32 {
     return count;
 }
 
+fn shared_smoke_double_usize(v: usize) usize {
+    return v * 2;
+}
+
+fn shared_smoke_spawn_delayed_writer(write_fd: i32, a: byte, b: byte, c: byte, d: byte, delay_ns: i64) !i32 {
+    const fork_result: !i64 = sys_fork();
+    const child_pid: i64 = fork_result catch {
+        return error.SharedSmokeChildSpawnFailed;
+    };
+    if child_pid == 0 {
+        const req: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: delay_ns };
+        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+        _ = sys_nanosleep(&req, &rem) catch {};
+        var src: [byte: 4] = [ a, b, c, d ];
+        _ = sys_write(write_fd, &src[0] as *const byte, 4) catch {};
+        _ = sys_close(write_fd) catch {};
+        sys_exit(0);
+    }
+    return child_pid as i32;
+}
+
+fn shared_smoke_wait_child(child_pid: i32) void {
+    if child_pid > 0 {
+        var status: i32 = 0;
+        _ = sys_waitpid(child_pid, &status, 0) catch {};
+    }
+}
+
 test "shared_runtime_matrix_observes_same_event_loop_waker_and_cancellation" {
     _ = @size_of(Http1AsyncResponse);
     _ = @size_of(DnsClient);
@@ -169,4 +208,43 @@ test "shared_runtime_matrix_observes_same_event_loop_waker_and_cancellation" {
     try assert_eq_i32(matrix_seen(1102, 1) > 0, true);
     try assert_eq_i32(matrix_seen(1103, 2) > 0, true);
     try assert_eq_i32(matrix_seen(1104, 1) > 0, true);
+}
+
+test "shared_runtime_smoke_scheduler_async_compute_and_async_fd_share_linux_epoll" {
+    _ = @size_of(Http1AsyncResponse);
+
+    var fds: [i32: 2] = [];
+    _ = shared_smoke_sys_pipe2(&fds[0], SHARED_SMOKE_O_NONBLOCK) catch {
+        return error.SharedSmokePipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+    const child_pid: i32 = try shared_smoke_spawn_delayed_writer(write_fd, 31, 32, 33, 34, 5 * 1000 * 1000);
+
+    var pool: ThreadPool = thread_pool_new(2);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    var reader: AsyncFd = async_fd_new(read_fd);
+    var buf: [byte: 4] = [];
+    var queue: TaskQueue_usize = task_queue_usize_new();
+    const compute_idx: i32 = try queue.push(async_compute<usize>(&pool, &shared_smoke_double_usize as &void, 21 as usize));
+    const fd_idx: i32 = try queue.push(reader.read_exact(&buf[0], 4));
+
+    var scheduler: Scheduler = scheduler_new();
+    var epoll_impl: LinuxEpoll = try linux_epoll_create(0);
+    const loop: EventLoop = epoll_impl;
+    const completed: i32 = try scheduler_run_task_queue_usize_with_event_loop(&scheduler, loop, &queue, 1000);
+
+    try assert_eq_i32(completed, 2);
+    try assert_eq_i32(queue.result(compute_idx) as i32, 42);
+    try assert_eq_i32(queue.result(fd_idx) as i32, 4);
+    try assert_eq_i32(buf[0] as i32, 31);
+    try assert_eq_i32(buf[3] as i32, 34);
+
+    shared_smoke_wait_child(child_pid);
+    _ = sys_close(read_fd) catch {};
+    _ = sys_close(write_fd) catch {};
+    _ = sys_close(epoll_impl.epfd) catch {};
 }

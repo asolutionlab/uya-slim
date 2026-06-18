@@ -482,3 +482,11 @@
     - 验证命令：`git diff --check docs/todo_async_full_language_dynamic_resources.md docs/async_runtime_semantics_matrix.md`
     - 验证结果：通过，命令退出码 0。
     - 完成记录：新增 `docs/async_runtime_semantics_matrix.md`，记录 HTTP/DNS/TLS/`async_compute`/`Scheduler` 的当前入口、共享 runtime 资源、已覆盖语义、缺口和下一步最小验证。
+
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+  - [x] 基于审计矩阵补齐一个 Linux+C99 共享 runtime smoke 回归，至少同时覆盖 `Scheduler` + `async_compute` + 一个 AsyncFd/http 路径；最小验证：`../uya/bin/uya test --c99 <新增测试>`。
+    - 新增回归：`tests/test_async_shared_runtime_semantics.uya` 中 `shared_runtime_smoke_scheduler_async_compute_and_async_fd_share_linux_epoll`。
+    - 验证命令：`../uya/bin/uya test --c99 tests/test_async_shared_runtime_semantics.uya`；结果：通过，2 个测试通过，0 失败。
+    - 相关验证命令：`./tests/verify_async_runtime_shared_semantics.sh`；结果：通过，shared async runtime baseline passed。
