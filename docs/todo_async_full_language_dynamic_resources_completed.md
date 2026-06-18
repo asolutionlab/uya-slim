@@ -877,3 +877,11 @@
     - 验证：`../uya/bin/uya test tests/test_async_frame_pool_stats.uya` 通过；5 个测试通过，覆盖显式 config、超过默认 128 buckets、超过默认 4096 per-bucket。
     - 验证：`../uya/bin/uya test tests/test_c99_async_frame_empty_descriptors.uya` 通过；空 descriptor 表路径通过。
     - 验证：`../uya/bin/uya --c99 tests/test_async_frame_pool_stats.uya -o /tmp/uya_async_frame_pool_stats.c && rg -n "_uya_async_frame_descriptor_entries\[|_uya_async_frame_descriptor_count|AsyncFrameDescriptorTable" /tmp/uya_async_frame_pool_stats.c` 通过；生成 `_uya_async_frame_descriptor_entries[6]` 和 `_uya_async_frame_descriptor_count = 6`，未固定为 512。
+
+## 完成定义
+
+父级任务路径：runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
+
+  - [x] `lib/std/thread.uya` 的线程池 worker、pending、task slot 容量改为动态或可配置策略，并移除固定容量导致的产品上限；最小验证：新增/更新 thread pool 容量测试并运行 `../uya/bin/uya test ...`。
+    - 验证：`../uya/bin/uya test tests/test_std_thread.uya`，通过；24 tests passed，0 failed，93 assertions passed。
+    - 验证：`../uya/bin/uya test tests/test_async_compute_types.uya`，通过；11 tests passed，0 failed，11 assertions passed。

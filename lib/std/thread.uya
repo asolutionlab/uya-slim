@@ -13,10 +13,13 @@ use libc.stdlib;
 use libc.signal;
 use libc.syscall;
 
+// Legacy compatibility constants: no longer used as product capacity limits.
 export const THREAD_POOL_MAX_WORKERS: i32 = 32;
 export const THREAD_POOL_MAX_PENDING: i32 = 32;
 export const THREAD_POOL_MAX_TASK_SLOTS: i32 = 16;
 const THREAD_POOL_MAX_CONFIG_CAPACITY: i32 = 4096;
+const THREAD_POOL_DEFAULT_PENDING_PER_WORKER: i32 = 4;
+const THREAD_POOL_DEFAULT_SLOT_PER_WORKER: i32 = 4;
 const THREAD_SLOT_STATE_FREE: i32 = 0;
 const THREAD_SLOT_STATE_READY: i32 = 1;
 const THREAD_SLOT_STATE_QUEUED: i32 = 2;
@@ -1313,12 +1316,26 @@ export type AsyncComputeBoolFuture = AsyncComputeFuture<bool>;
 export type AsyncComputeF32Future = AsyncComputeFuture<f32>;
 export type AsyncComputeF64Future = AsyncComputeFuture<f64>;
 
-// 线程池最小构造：当前使用懒启动 worker 池，队列中的任务负载放在动态共享槽位中。
+fn thread_pool_default_scaled_capacity(worker_count: i32, per_worker: i32) i32 {
+    var normalized_workers: i32 = thread_pool_normalize_config_capacity(worker_count);
+    var normalized_per_worker: i32 = per_worker;
+    if normalized_per_worker <= 0 {
+        normalized_per_worker = 1;
+    }
+    if normalized_workers > THREAD_POOL_MAX_CONFIG_CAPACITY / normalized_per_worker {
+        return THREAD_POOL_MAX_CONFIG_CAPACITY;
+    }
+    return thread_pool_normalize_config_capacity(normalized_workers * normalized_per_worker);
+}
+
+// 线程池最小构造：使用懒启动 worker 池，默认 pending/task slot 随 worker 数扩展。
 export fn thread_pool_new(worker_count: i32) ThreadPool {
+    const pending_capacity: i32 = thread_pool_default_scaled_capacity(worker_count, THREAD_POOL_DEFAULT_PENDING_PER_WORKER);
+    const task_slot_capacity: i32 = thread_pool_default_scaled_capacity(worker_count, THREAD_POOL_DEFAULT_SLOT_PER_WORKER);
     return thread_pool_new_with_config(ThreadPoolConfig{
         worker_count: worker_count,
-        pending_capacity: THREAD_POOL_MAX_PENDING,
-        task_slot_capacity: THREAD_POOL_MAX_TASK_SLOTS,
+        pending_capacity: pending_capacity,
+        task_slot_capacity: task_slot_capacity,
     });
 }
 

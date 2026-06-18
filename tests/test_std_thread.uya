@@ -221,6 +221,13 @@ test "thread_pool_new_normalizes_worker_count" {
     try assert_eq_i32(pmax.worker_count, THREAD_POOL_MAX_WORKERS + 5);
 }
 
+test "thread_pool_new_scales_default_capacities_past_legacy_limits" {
+    const pool: ThreadPool = thread_pool_new(THREAD_POOL_MAX_WORKERS + 1);
+    try assert_eq_i32(pool.worker_count, THREAD_POOL_MAX_WORKERS + 1);
+    try expect(pool.pending_capacity > THREAD_POOL_MAX_PENDING);
+    try expect(pool.task_slot_capacity > THREAD_POOL_MAX_TASK_SLOTS);
+}
+
 test "thread_pool_new_with_config_normalizes_invalid_capacities" {
     const p0: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
         worker_count: 0,
@@ -378,7 +385,11 @@ test "async_compute_i32_queues_when_pool_is_full" {
 }
 
 test "async_compute_i32_drains_after_pending_queue_pressure" {
-    var pool: ThreadPool = thread_pool_new(1);
+    var pool: ThreadPool = thread_pool_new_with_config(ThreadPoolConfig{
+        worker_count: 1,
+        pending_capacity: 16,
+        task_slot_capacity: 16,
+    });
     defer {
         thread_pool_shutdown(&pool);
     }
