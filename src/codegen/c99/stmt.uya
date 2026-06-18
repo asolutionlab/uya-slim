@@ -2526,6 +2526,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         c99_emit_indent(codegen);
                         fprintf(codegen.emit_stream as *void, "%s->_uya_loc_%s = " as *byte,
                             codegen.async_state_var as *byte, ls as *byte);
+                        if c99_async_hoisted_local_init_needs_byte_ptr_cast(var_type, init_expr) != 0 {
+                            fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                        }
                         gen_expr(codegen, init_expr);
                         fputs(";\n" as *byte, codegen.emit_stream as *void);
                         handled = 1;

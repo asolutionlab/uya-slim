@@ -1195,3 +1195,20 @@
   - 结果：通过；`async_expr_macro_block_keeps_preawait_eval_once` 通过，1 个测试通过、0 个失败、4 个断言通过。
   - 验证命令：`../uya/bin/uya run tests/programs/test_ai_prompt_async_macro_combo.uya`
   - 结果：通过；程序输出 `加法异步结果 50`、`除法异步结果 5`，退出码 0。
+
+## 归档：失败项修复完成
+
+上下文：`docs/todo_async_full_language_dynamic_resources_failed.md`
+
+- [x] 建立 async 函数体错误处理覆盖测试。
+  - 修复记录：新增 `tests/test_async_error_body_matrix.uya`，用同步函数和 `@async_fn` 成对覆盖正常返回、`try` 传播、`@await` 后 `!T` + `catch` 恢复、await 后直接 `return error`、入口直接 `return error`。
+  - 验证：`./bin/uya test tests/test_async_error_body_matrix.uya` 通过，5 个测试用例通过。
+
+- [x] 修复完整闸门中 C99 async `try @await` / async call 错误联合拆箱路径，并完成从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门。
+  - 修复记录：C99 async 状态机在 inline child / vtable 预发射后恢复 await collection 快照，避免首段 await arm 丢失；按语句源位置和 `try @await` operand 回绑 await 分裂点，避免把 `Future<!T>` 直接初始化成 `err_union_T`；补齐 async hoisted builtin 字符串初始化的 `uint8_t *` cast。
+  - 聚焦验证：`bash tests/verify_c99_struct_array_and_typed_route_regressions.sh` 通过。
+  - 聚焦验证：`./bin/uya test tests/test_async_compound_try_await.uya` 通过。
+  - 聚焦验证：`./bin/uya test tests/test_async_builtin_body_coverage.uya` 通过。
+  - 备份验证：`bash tests/verify_async_full_dynamic_resources_gate.sh backup-all` 通过，并刷新 `backup/uyacache`、`backup/uya.c`、`backup/uya-linux-x86_64.c`、`backup/uya-hosted.c`、`backup/uya-hosted-linux-x86_64.c`。
+  - 完整验证：`bash tests/verify_async_full_dynamic_resources_gate.sh` 通过，输出 `verify_async_full_dynamic_resources_gate: all stages passed`。
+  - 长压测结果：`tests/stress_pthread.sh 100` 通过；`tests/stress_epoll_server.sh 100` 通过；`tests/stress_http_async_epoll.sh 1800 1` 通过，`wrk` 退出码 0，742366957 requests，RSS 4816/4968/4968 KB，FD 159/159/159。
