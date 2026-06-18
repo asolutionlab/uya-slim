@@ -655,3 +655,12 @@
     - 验证：`../uya/bin/uya check tests/error_async_errdefer_break.uya` 按预期失败，诊断包含 `defer/errdefer 块中不能使用 break 语句`。
     - 验证：`../uya/bin/uya check tests/error_async_defer_continue_nested.uya` 按预期失败，诊断包含 `defer/errdefer 块中不能使用 continue 语句`。
     - 相关回归：`bash tests/verify_async_full_language_matrix.sh` 通过。
+
+## 先澄清边界
+
+父级任务路径：
+- “完整 Uya 语言语法”指的是：**凡是同步函数体里合法的 Uya 语法，放进 `@async_fn` 后也应合法并按同样语义工作**，除非语言规范本来就明确禁止。
+
+  - [x] 建立 async 函数体模式匹配覆盖测试；最小验证：`../uya/bin/uya test <新增测试>`；完成条件：`match` 语句/表达式、枚举/联合体模式和 `else` 分支在 `@async_fn` 中与同步函数一致。
+    验证：`../uya/bin/uya test tests/test_async_match_body_coverage.uya` 通过（3 tests, 0 failed）。
+    相关验证：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya` 通过（4 tests, 0 failed）。
