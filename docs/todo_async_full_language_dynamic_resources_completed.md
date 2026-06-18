@@ -1002,3 +1002,16 @@
     - 验证命令：`../uya/bin/uya test tests/test_async_if_await.uya`，结果：通过，2 个测试通过、0 失败。
     - 验证命令：`../uya/bin/uya test tests/test_async_else_if_await.uya`，结果：通过，1 个测试通过、0 失败。
     - 扩展验证命令：`./tests/verify_async_full_language_matrix.sh`，结果：L65 相关的 `tests/test_async_if_await.uya` 与 `tests/test_async_else_if_await.uya` 均已在脚本中通过；脚本后续在 shared runtime 阶段失败，关键错误为生成 C 中 `std_http_uyagin_send_context_response_head_only_async(...)` / `std_http_uyagin_accept_async(...)` 的 `invalid initializer`，与本轮 `if / else if / else` 语法证据无关。
+
+## Phase 1：`@async_fn` 语法完整性
+### 1.1 先建立“完整语法”矩阵
+父级任务路径：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+  - [x] `while`
+    - 状态：已验证覆盖。
+    - 依据：`docs/grammar_formal.md` 将 `while_stmt = 'while' expr '{' statements '}'` 列为函数体 `statement`；`docs/uya.md` 说明 `while condition { statements }`，且 `break` / `continue` 适用于 `while`。
+    - 现有覆盖：`tests/test_async_while_multi_await.uya` 覆盖 while 内连续 `@await`；`tests/test_async_bug_a_two_while.uya` 覆盖两个连续 while+await；`tests/test_async_bug_b_sync_between.uya` 覆盖 while+await 后同步代码再进入后续 await 循环；`tests/test_async_bug_d_nested_block.uya` 覆盖 await 后 `break` / `continue`。
+    - 验证命令：
+      - `../uya/bin/uya test tests/test_async_while_multi_await.uya`：通过，2 tests passed，0 failed。
+      - `../uya/bin/uya test tests/test_async_bug_a_two_while.uya`：通过，1 test passed，0 failed。
+      - `../uya/bin/uya test tests/test_async_bug_b_sync_between.uya`：通过，1 test passed，0 failed。
+      - `../uya/bin/uya test tests/test_async_bug_d_nested_block.uya`：通过，2 tests passed，0 failed。
