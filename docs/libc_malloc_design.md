@@ -4,25 +4,27 @@
 
 本文档记录了 Uya 语言 libc 内存分配器的 musl 风格实现方案。
 
-## 当前实现（v0.6.0）- musl 风格空闲链表
+## 当前实现（与 `lib/libc/heap.uya` 同步，截至 2026-06-19）- musl 风格空闲链表
 
 ### 核心特性
 
 **数据结构：**
 ```uya
-// 内存块头部（24 字节）
+// 内存块头部（16 字节）
 struct ChunkHeader {
     magic: u64,    // 魔数 0xDEADBEEF
     size: usize,   // 块大小，低 1 位=空闲标志
 }
 
-// 空闲块（40 字节，第一个字段必须是 header）
+// 空闲块（32 字节，第一个字段必须是 header）
 struct FreeChunk {
-    header: ChunkHeader,  // 偏移 0-23
-    prev: &FreeChunk,     // 偏移 24
-    next: &FreeChunk,     // 偏移 32
+    header: ChunkHeader,  // 偏移 0-15
+    prev: &FreeChunk,     // 偏移 16
+    next: &FreeChunk,     // 偏移 24
 }
 ```
+
+当前实现没有 footer；每个 chunk 的 `size` 记录 `ChunkHeader + 用户可写 payload` 的总字节数，并使用最低位标记 free 状态。若按 `docs/todo_malloc_perf.md` 阶段 2 引入 footer，需要同步把 chunk 总开销、split 阈值和用户可写空间计算改为新的 `CHUNK_OVERHEAD`。
 
 **malloc:**
 - 使用空闲链表管理已释放的内存块
@@ -70,7 +72,7 @@ if is_null(chunk as &void) { return null; }
 if !is_null(chunk.prev as &void) { ... }
 ```
 
-#### 3. 位运算替代方案
+#### 3. 当前低位标记实现
 
 ```uya
 // 检查奇数（代替 size & 1）
@@ -96,7 +98,7 @@ fn align_up(size: usize) usize {
 ### 内存布局
 
 ```
-内存地址：  [0          24        40      ]
+内存地址：  [0          16        24      32]
             +-----------+---------+--------+
 FreeChunk:  | ChunkHeader | prev  | next   |
             +-----------+---------+--------+
@@ -124,10 +126,12 @@ FreeChunk:  | ChunkHeader | prev  | next   |
 ### free 流程
 
 ```
-1. 获取块头部
-2. 验证魔数
-3. 转换为 FreeChunk
-4. 添加到空闲链表头部
+1. 空指针检查
+2. owns_ptr(ptr) 所属 region 校验
+3. 获取块头部
+4. 验证魔数
+5. 转换为 FreeChunk
+6. 添加到空闲链表头部
 ```
 
 ## 改进建议
@@ -144,11 +148,9 @@ FreeChunk:  | ChunkHeader | prev  | next   |
 
 ## 测试验证
 
-```
-总计：463 个测试
-通过：463
-失败：0
-✓ 验证通过（自举 + 测试）
+```bash
+./bin/uya test tests/test_std_stdlib_malloc.uya
+./tests/run_programs_parallel.sh tests/programs/test_heap.uya
 ```
 
 ## 参考资料
