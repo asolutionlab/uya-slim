@@ -14,6 +14,8 @@
 > - 历史“已知限制”与源码现状、验证闸门之间的重新对齐
 >
 > 因此，本表中的 `✅` 只表示单项能力或局部链路已有证据；不得再写成“Linux + C99 async 主链路已完全收口”。共享 runtime 口径以 [async_runtime_semantics_matrix.md](async_runtime_semantics_matrix.md) 的缺口列和最小验证矩阵为准。
+>
+> 生产阻塞项必须显式保留在后续 release 口径中：固定容量资源没有动态化前、语法禁区没有被转正或规范化前、fallback 路径没有被去除/配置化/验收前，历史“量产完成”结论都不能升级为当前 async 生产完成结论。
 
 ## 总览
 

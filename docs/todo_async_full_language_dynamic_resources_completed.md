@@ -708,3 +708,10 @@
     - `sed -n '1,12p;136,144p' docs/async_production_todo.md`
     - `sed -n '248,266p' docs/std_async_design.md`
   - 验证结果：`docs/async_status_matrix.md` 明确当前范围为 Linux + C99 后端；`docs/async_production_todo.md` 将 macOS kqueue / Windows IOCP 后端列为后续待办；`docs/std_async_design.md` 将多平台事件后端列为第三里程碑，Linux 异步 I/O 是第一里程碑。
+
+## 源码现状审计 / 4. 文档口径与源码状态有漂移
+
+- [x] 现有“量产完成”文档没有把上面的固定容量、语法禁区和回退路径当成阻塞项。
+  - 完成内容：`docs/async_production_todo.md` 明确将固定容量、语法禁区和回退路径列为新的生产阻塞项，不再归入“量产后二阶段”；历史量产定义补充“不覆盖回退路径收口”。`docs/async_status_matrix.md` 明确要求后续 release 口径持续保留这些阻塞项，不能把历史“量产完成”升级为当前 async 生产完成结论。
+  - 验证命令：`git diff --check`
+  - 验证结果：通过。
