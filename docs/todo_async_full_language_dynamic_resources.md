@@ -8,9 +8,6 @@
 
 - [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
   - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
-    - [ ] 复查矩阵中剩余 async 函数体语法条目并补齐下一个同步合法但 async 缺失的回归。
-      - 最小验证：相关聚焦 `../uya/bin/uya test ...`
-      - 完成条件：明确一个剩余缺口，新增或迁移正向/负向测试，并更新矩阵口径。
     - [ ] 收口 async 函数体语法矩阵和历史“已完成”口径。
       - 验证：`make tests-uya`
       - 完成条件：矩阵中除规范明确禁止项外，不再存在“同步合法而 async 缺失/不稳定”的函数体语法条目。
@@ -140,9 +137,9 @@
 > - `src/checker/async_frame_meta.uya:41,49,58`：`MAX_ASYNC_FRAME_METAS=512` 静默截断 → 待 Phase 2 动态化
 > - `src/codegen/c99/main.uya`：frame descriptor 静默截断到 512 → 待 Phase 2 动态化
 > - `tests/error_async_too_many_awaits.uya`、`tests/error_async_too_many_params.uya`：旧人为上限测试 → 待 Phase 2 替换为压力测试
-> - `tests/error_async_errdefer_await_boundary.uya`：运行时已知边界，`try @await` 错误传播尚未触发 `errdefer`；默认回归中显式排除，后续应修复后迁入 `tests/test_async_defer_errdefer.uya`
+> - `tests/test_async_defer_errdefer.uya`：已迁入 `try @await` 错误传播触发 `errdefer` 的正向回归；默认回归不再排除旧边界文件
 > - **已有覆盖**（19项）：基础解析、Ready/Pending、err-union await、if/else if、while、for range/array/iter、复合表达式、方法/接口、frame、runtime/scheduler/client、sync/async对齐矩阵、match/catch/defer/errdefer、宏展开、nested future（边界明确）
-> - **缺失覆盖**：`defer/errdefer + @await` 错误传播边界、large state machine（L140）
+> - **缺失覆盖**：large state machine（L140）
 > - **历史已知限制**：固定上限测试（error_async_too_many_awaits/params）、iterator interface/ref await 不支持
 
 > 建议把 [tests/verify_async_full_language_matrix.sh](../tests/verify_async_full_language_matrix.sh) 当作当前快照入口：

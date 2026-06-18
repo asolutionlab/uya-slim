@@ -302,3 +302,24 @@
       - 验证命令：`make tests-uya`
       - 结果：通过，1012/1012 测试通过，随后 `upm-check` 通过。
       - 备注：`tests/error_async_errdefer_await_boundary.uya` 是独立的运行时已知边界，直接运行仍失败（`g` 未按 errdefer 期望变为 35）；已从默认回归显式排除并在主 todo 登记，后续应修复后迁入 `tests/test_async_defer_errdefer.uya`。
+
+## 2026-06-18 本轮完成：async 函数体语法缺口回归
+
+上下文：
+# Uya 异步生产化 TODO（完整语法 + 动态资源）
+## 目标
+- [ ] `@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。
+  - [ ] 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
+
+    - [x] 复查矩阵中剩余 async 函数体语法条目并补齐下一个同步合法但 async 缺失的回归。
+      - 最小验证：相关聚焦 `../uya/bin/uya test ...`
+      - 完成条件：明确一个剩余缺口，新增或迁移正向/负向测试，并更新矩阵口径。
+      - 明确缺口：`try @await` 传播错误时未触发 `errdefer`，旧边界文件为 `tests/error_async_errdefer_await_boundary.uya`。
+      - 实现：`src/codegen/c99/function.uya` 在 async resume 的 Ready(error) 分支释放 awaited future 后发射 `emit_all_active_scope_cleanup(codegen, 1)`，再返回错误结果。
+      - 回归：旧边界迁入 `tests/test_async_defer_errdefer.uya`，新增 `async_errdefer_await_error_triggers` 与 `async_errdefer_await_success_skips`；删除旧 `tests/error_async_errdefer_await_boundary.uya` 并取消默认回归排除。
+      - 矩阵口径：`tests/verify_async_full_language_matrix.sh` 纳入 `tests/test_async_defer_errdefer.uya`，正向矩阵更新为 31 tests；主 todo 的缺失覆盖移除 `defer/errdefer + @await` 错误传播边界。
+      - 验证：`../uya/bin/uya test tests/error_async_errdefer_await_boundary.uya` 先红，失败为 `g == 35 (actual: 0, expected: 35)`。
+      - 验证：`make uya` 通过，刷新 `bin/uya`。
+      - 验证：`../uya/bin/uya test tests/test_async_defer_errdefer.uya` 通过，8/8 tests，14 assertions。
+      - 验证：`./tests/verify_async_full_language_matrix.sh` 通过，输出 `positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, and macro combo passed`。
+      - 验证：`make tests-uya` 通过，1012/1012 tests，UPM 验证套件通过。

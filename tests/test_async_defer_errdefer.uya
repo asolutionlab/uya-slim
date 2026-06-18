@@ -1,15 +1,15 @@
 // test_async_defer_errdefer.uya
 // 专用回归：@async_fn 体内 defer / errdefer 的清理语义与执行顺序。
-// 已知限制：errdefer 当前不响应 try @await 错误传播（仅响应 return error.X），
-// 见 tests/error_async_errdefer_await_boundary.uya。
 
 use std.async;
 use std.testing.assert_eq_i32;
 
 error DeferTestErr;
+error BoundaryErr;
 
 var g_trace: i32 = 0;
 var g_trace2: i32 = 0;
+var g_trace3: i32 = 0;
 
 struct FlipI32 : Future<!i32> {
     value: i32,
@@ -31,6 +31,32 @@ struct FlipI32 : Future<!i32> {
 
 fn flip_i32(v: i32) Future<!i32> {
     return FlipI32{ value: v, polled: 0 };
+}
+
+struct FlipErr : Future<!i32> {
+    value: i32,
+    fail: i32,
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            self.polled = 1;
+            return Poll<!i32>.Pending({});
+        }
+        if self.fail != 0 {
+            return Poll<!i32>.Ready(error.BoundaryErr);
+        }
+        return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
+}
+
+fn flip_err(v: i32, fail: i32) Future<!i32> {
+    return FlipErr{ value: v, fail: fail, polled: 0 };
 }
 
 fn sync_maybe_err(fail: i32) !i32 {
@@ -100,6 +126,17 @@ fn sync_catch_defer_in_async(fail: i32) Future<!i32> {
     return total + bonus;
 }
 
+// ── errdefer + defer，错误来自 try @await 传播 ──
+
+@async_fn
+fn errdefer_with_await_error(fail: i32) Future<!i32> {
+    errdefer { g_trace3 = g_trace3 * 10 + 5; }
+    defer { g_trace3 = g_trace3 * 10 + 3; }
+
+    const v: i32 = try @await flip_err(42, fail);
+    return v;
+}
+
 // ── 测试用例 ──
 
 test "async_defer_across_awaits_order" {
@@ -159,4 +196,22 @@ test "async_sync_catch_defer_in_async_error_recovery" {
     // base=10, catch: total=10+50=60, bonus=60, total+bonus=120
     try assert_eq_i32(v, 120);
     try assert_eq_i32(g_trace, 1);
+}
+
+test "async_errdefer_await_error_triggers" {
+    g_trace3 = 0;
+    const f: Future<!i32> = errdefer_with_await_error(1);
+    const r: !i32 = block_on<i32>(f);
+    _ = r;
+    // errdefer 优先于 defer 执行: errdefer {*10+5}→5, defer {*10+3}→53
+    try assert_eq_i32(g_trace3, 53);
+}
+
+test "async_errdefer_await_success_skips" {
+    g_trace3 = 0;
+    const f: Future<!i32> = errdefer_with_await_error(0);
+    const r: !i32 = block_on<i32>(f);
+    const v: i32 = r catch { -1; };
+    try assert_eq_i32(v, 42);
+    try assert_eq_i32(g_trace3, 3);
 }
