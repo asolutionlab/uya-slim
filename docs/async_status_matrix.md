@@ -27,6 +27,29 @@
 | HTTP/DNS/TLS async 客户端主链路 | ✅ 当前量产主链路完成 | HTTP/1.1 nonblocking connect/read/write、DNS async 查询、timeout/deadline 已接通 | async lowering / 变量提升相关缺口已修复到主链路可用 | `test_http1_async_client.uya` `test_std_dns_async_transport.uya` `test_https_loopback.uya` | `async_production_todo.md` `todo_async_runtime_and_http.md` |
 | UyaGin async 服务端协议热路径 | ✅ P6 完成 | request parser 已支持 chunked request 原地解码；response 已支持 `writev` 聚合写、显式 chunked response、Linux x86_64 `sendfile` 优先发送；`Engine` 已补入 access log/metrics/error trace/config/mode 主链路 | 为支撑观测包装，`engine.handle` 现在统一走 request observation wrapper；当前剩余噪音仍是 parser 对 `catch { ... }` 某些写法的假告警，不影响 codegen/run | `test_http_parse.uya` `test_http_server.uya` `test_http_uyagin.uya` `test_https_loopback.uya` | `uyagin_todo.md` `uyagin_design.md` `tls_https_todo.md` |
 
+## `@async_fn` 函数体语法矩阵
+
+本节只收口“同步函数体语法放入 `@async_fn` 后是否也可用”的口径。`✅ 已覆盖` 表示已有针对 async 的正向或负向回归；`⚠️ 未验证/待补` 表示同步语法本身合法，但还不能把历史“量产已完成”解读为完整 async 函数体语法已完成；`🚫 非 async 独有缺口` 表示语言规范禁止，或同步函数体也不支持。
+
+| 函数体语法/语义 | async 状态 | 依据 | 后续动作 |
+|-----------------|------------|------|----------|
+| 普通表达式语句、局部 `const` / `var`、赋值、await 间同步语句 | ✅ 已覆盖 | `test_async_bug_b_sync_between.uya`、`test_async_bug_d_nested_block.uya` | 保持回归 |
+| `return value`、`return error.X`、无 await 自动包装 | ✅ 已覆盖 | `test_async_return_value.uya`、`test_async_return_error_direct.uya`、`test_async_nested.uya` | 保持回归 |
+| `try @await` 独立语句、赋值 RHS、return 表达式、direct err-union await 绑定 | ✅ 已覆盖 | `test_async_await_parse.uya`、`test_async_compound_try_await.uya`、`test_async_await_direct_err_union.uya` | 保持回归 |
+| `if` / `else if` / `else`、嵌套块、分支后继续使用局部变量 | ✅ 已覆盖 | `test_async_else_if_await.uya`、`test_async_bug_d_nested_block.uya` | 保持回归 |
+| `while` 循环体内 await、循环间同步语句 | ✅ 已覆盖 | `test_async_bug_b_sync_between.uya`、HTTP async 主链路回归 | 保持回归；不要把调度 workaround 误写成完整语法证明 |
+| 范围 `for`、定长数组值/引用迭代、具体 struct 迭代器值/引用迭代 | ✅ 已覆盖 | `test_async_for_await.uya`、`test_async_for_iterator_ref_await.uya` | 保持回归 |
+| 结构体/联合体内部方法、外部方法块、接口方法签名上的 `@async_fn` | ✅ 已覆盖 | `test_async_method_interface.uya` | 保持回归 |
+| `@frame(fn)` 类型构造器和 `start` / `poll` / `stop` | ✅ 已覆盖 | `test_async_frame_methods.uya`、`test_async_frame_stack_ok.uya`、`test_async_frame_release_path.uya` | 保持回归 |
+| `match` 表达式/语句、union 解构分支内 await | ⚠️ 未验证/待补 | async lowering 的逃逸分析遍历 `match_expr`，但矩阵未列出固定 async 回归 | 补最小 async 正向回归；若失败再修 lowering/codegen |
+| `catch { ... }` 与 `try` 非 await 表达式组合 | ⚠️ 未验证/待补 | 已知 parser 对部分 `catch { ... }` 写法仍有假诊断；未形成完整 async 语法覆盖 | 先补同步/async 对照回归，区分通用 parser 噪音和 async 独有缺口 |
+| `defer`、作用域退出 drop、提前 return/error 与 await 混合 | ⚠️ 未验证/待补 | 规范有 defer/drop 语义，但当前 async 矩阵未列出覆盖 | 补带 await 的 defer/drop 顺序回归 |
+| 指针/数组/切片访问、结构体字面量、数组/tuple 字面量中嵌套 async 调用逃逸 | ⚠️ 未验证/待补 | 逃逸分析覆盖相关 AST，但缺少完整 async 函数体语法证明 | 补组合表达式回归，确认错误诊断或合法 lowering |
+| `@await` 出现在 `while` 条件等非允许位置 | 🚫 规范禁止 | 当前边界说明仍要求禁止 | 保持负向回归，不计入 async 缺口 |
+| 接口值迭代 | 🚫 非 async 独有缺口 | 同步也不支持；已有 `error_for_iterator_interface_value.uya` / `error_async_for_iterator_interface_await.uya` | 不作为 async 生产化阻塞项 |
+| async 递归/间接递归 | 🚫 当前禁止 | 状态机大小要求编译期确定 | 除非先修改大小模型和规范，否则保持禁止 |
+| nested future：无 await 的 `@async_fn` 返回 `!Future<Future<T>>` 且 `return` 中同步 `try` 另一个 `!Future<T>` | ⚠️ 已知边界 | `tests/test_async_nested_future_poll.uya` 与 `tests/verify_async_nested_future_boundary.sh` 明确复现 C99 codegen 错误 | 单独修复 codegen 后再转正 |
+
 ## 当前口径
 
 - `Pending` 仍表示“调度层未就绪”，业务错误走 `!T`

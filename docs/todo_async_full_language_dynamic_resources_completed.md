@@ -323,3 +323,11 @@
       - 验证：`../uya/bin/uya test tests/test_async_defer_errdefer.uya` 通过，8/8 tests，14 assertions。
       - 验证：`./tests/verify_async_full_language_matrix.sh` 通过，输出 `positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, and macro combo passed`。
       - 验证：`make tests-uya` 通过，1012/1012 tests，UPM 验证套件通过。
+
+## 归档：目标 / @async_fn 完整语法 / 矩阵口径
+
+- [x] 梳理 async 函数体语法矩阵现状，明确历史“已完成”只代表阶段性子集。
+  - 父级路径：`@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。 / 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。 / 收口 async 函数体语法矩阵和历史“已完成”口径。
+  - 验证：`git diff --check`
+  - 验证结果：通过。
+  - 完成条件：`docs/async_status_matrix.md` 已明确区分“同步合法且 async 已覆盖”“同步合法但 async 未验证/缺失”“规范禁止/同步也不支持”；`docs/async_production_todo.md` 已标明历史量产定义只代表 2026-04 阶段口径，不能代表完整语法和动态资源目标完成。
