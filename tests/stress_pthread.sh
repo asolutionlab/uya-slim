@@ -3,13 +3,17 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-UYA="${UYA:-./bin/uya}"
+UYA="$ROOT/../uya/bin/uya"
 N="${1:-100}"
 SUITE=(
   tests/test_pthread_api.uya
   tests/test_pthread.uya
   tests/test_pthread_cond.uya
 )
+if [[ ! -x "$UYA" ]]; then
+  echo "错误: 缺少可执行编译器 $UYA（请先 make uya 或 make from-c）" >&2
+  exit 2
+fi
 failed=0
 for i in $(seq 1 "$N"); do
   for test_file in "${SUITE[@]}"; do

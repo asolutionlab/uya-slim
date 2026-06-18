@@ -972,3 +972,11 @@
   - [x] 将 async 动态资源相关单测和无固定容量扫描纳入闸门脚本，并验证聚焦子集可运行；最小验证：运行脚本的单测/扫描阶段。
     - 验证命令：`bash tests/verify_async_full_dynamic_resources_gate.sh unit-scan`
     - 验证结果：通过；运行 async await/param 动态容量、frame pool/thread pool 动态增长、async event config、multi fd concurrency 单测，以及 `verify_async_compiler_no_fixed_limits.py` 扫描。
+
+## 完成定义
+
+父级任务路径：
+- [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门：
+  - [x] 将 async C99 回归和长压测纳入闸门脚本，并验证对应阶段可运行；最小验证：运行脚本的 C99/stress 阶段。
+    验证命令：`ASYNC_GATE_STRESS_PTHREAD_ITERATIONS=1 ASYNC_GATE_STRESS_EPOLL_ITERATIONS=1 ASYNC_GATE_STRESS_HTTP_DURATION_SEC=2 ASYNC_GATE_STRESS_HTTP_SAMPLE_INTERVAL_SEC=1 bash tests/verify_async_full_dynamic_resources_gate.sh c99-stress`
+    验证结果：通过；覆盖 async C99 frame descriptors、empty frame descriptors、nested split-C codegen、http async epoll C99 compile/runtime verify、pthread stress、epoll server stress、http async epoll runtime stress。

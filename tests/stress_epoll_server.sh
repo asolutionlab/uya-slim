@@ -8,8 +8,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 N="${1:-100}"
-if [[ ! -f "$ROOT/bin/uya" ]] || [[ ! -x "$ROOT/bin/uya" ]]; then
-  echo "错误: 缺少可执行编译器 $ROOT/bin/uya（请先 make uya 或 make from-c）" >&2
+COMPILER="$ROOT/../uya/bin/uya"
+if [[ ! -x "$COMPILER" ]]; then
+  echo "错误: 缺少可执行编译器 $COMPILER（请先 make uya 或 make from-c）" >&2
   exit 2
 fi
 logfile=$(mktemp "${TMPDIR:-/tmp}/uya_stress_epoll.XXXXXX")
@@ -17,7 +18,7 @@ trap 'rm -f "$logfile"' EXIT
 failed=0
 for i in $(seq 1 "$N"); do
   set +e
-  ./tests/run_programs_parallel.sh --uya --c99 tests/test_epoll_server.uya >"$logfile" 2>&1
+  UYA_COMPILER="$COMPILER" ./tests/run_programs_parallel.sh --uya --c99 tests/test_epoll_server.uya >"$logfile" 2>&1
   ec=$?
   set -e
   if [[ "$ec" -ne 0 ]]; then

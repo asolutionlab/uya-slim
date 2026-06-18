@@ -58,7 +58,6 @@
 
 - runtime 的队列、slot、descriptor、frame pool、线程池容量为动态或可配置策略，而不是 `16/32/64/512/1024` 这种常量边界。
 - [ ] 有一套从单测、`--uya --c99` 回归、长压测到 `make backup-all` 的完整闸门：
-  - [ ] 将 async C99 回归和长压测纳入闸门脚本，并验证对应阶段可运行；最小验证：运行脚本的 C99/stress 阶段。
   - [ ] 执行完整闸门到 `make backup-all` 并归档最终验证结果；最小验证：`bash tests/verify_async_full_dynamic_resources_gate.sh`。
 
 ## Phase 1：`@async_fn` 语法完整性

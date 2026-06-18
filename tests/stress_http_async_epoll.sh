@@ -11,6 +11,7 @@ PORT=8876
 BIN="/tmp/uya_stress_http_async_epoll"
 REPORT="/tmp/uya_stress_http_async_epoll_report.txt"
 WRK_LOG="/tmp/uya_stress_http_async_epoll_wrk.log"
+COMPILER="$ROOT/../uya/bin/uya"
 
 check_cmd() {
     if ! command -v "$1" &>/dev/null; then
@@ -20,13 +21,13 @@ check_cmd() {
 }
 check_cmd wrk
 
-if [[ ! -f "$ROOT/bin/uya" ]] || [[ ! -x "$ROOT/bin/uya" ]]; then
-    echo "错误: 缺少编译器 $ROOT/bin/uya" >&2
+if [[ ! -x "$COMPILER" ]]; then
+    echo "错误: 缺少编译器 $COMPILER" >&2
     exit 2
 fi
 
 echo "[1/5] 编译 benchmarks/http_bench_async_epoll.uya ..."
-"$ROOT/bin/uya" --c99 "$ROOT/benchmarks/http_bench_async_epoll.uya" -o "$BIN"
+"$COMPILER" --c99 "$ROOT/benchmarks/http_bench_async_epoll.uya" -o "$BIN"
 
 echo "[2/5] 启动服务端 (port=$PORT) ..."
 rm -f "$REPORT" "$WRK_LOG"

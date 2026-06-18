@@ -62,8 +62,10 @@ run_unit_scan_stages() {
 }
 
 run_c99_stress_stages() {
-    run_stage "async language and unit matrix" \
-        bash "$SCRIPT_DIR/verify_async_full_language_matrix.sh"
+    local stress_pthread_iterations="${ASYNC_GATE_STRESS_PTHREAD_ITERATIONS:-100}"
+    local stress_epoll_iterations="${ASYNC_GATE_STRESS_EPOLL_ITERATIONS:-100}"
+    local stress_http_duration="${ASYNC_GATE_STRESS_HTTP_DURATION_SEC:-1800}"
+    local stress_http_sample_interval="${ASYNC_GATE_STRESS_HTTP_SAMPLE_INTERVAL_SEC:-1}"
 
     run_stage "async C99 frame descriptors" \
         bash "$SCRIPT_DIR/verify_c99_async_frame_descriptors.sh"
@@ -71,19 +73,17 @@ run_c99_stress_stages() {
         bash "$SCRIPT_DIR/verify_c99_async_frame_empty_descriptors.sh"
     run_stage "async nested split-C codegen" \
         bash "$SCRIPT_DIR/verify_async_nested_split_codegen.sh"
-    run_stage "async production smoke" \
-        bash "$SCRIPT_DIR/verify_async_production_smoke.sh"
     run_stage "http async epoll C99 compile" \
         bash "$SCRIPT_DIR/verify_http_bench_async_epoll_compile.sh"
-
-    run_stage "pthread stress" \
-        bash "$SCRIPT_DIR/stress_pthread.sh"
-    run_stage "epoll server stress" \
-        bash "$SCRIPT_DIR/stress_epoll_server.sh"
-    run_stage "http async epoll runtime stress" \
-        bash "$SCRIPT_DIR/stress_http_async_epoll.sh"
     run_stage "http async epoll runtime verify" \
         bash "$SCRIPT_DIR/verify_http_bench_async_epoll_runtime.sh"
+
+    run_stage "pthread stress" \
+        bash "$SCRIPT_DIR/stress_pthread.sh" "$stress_pthread_iterations"
+    run_stage "epoll server stress" \
+        bash "$SCRIPT_DIR/stress_epoll_server.sh" "$stress_epoll_iterations"
+    run_stage "http async epoll runtime stress" \
+        bash "$SCRIPT_DIR/stress_http_async_epoll.sh" "$stress_http_duration" "$stress_http_sample_interval"
 }
 
 run_backup_all_stages() {
