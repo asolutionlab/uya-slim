@@ -276,3 +276,12 @@
       - 结果：按预期失败，负向编译路径同样命中新诊断。
       - 验证命令：`git diff --check`
       - 结果：通过。
+
+## 目标
+
+父级路径：`@async_fn` 体内支持完整 Uya 函数体语法，而不是只支持若干 lowering 特判组合。 > 根据矩阵补齐剩余 async 函数体语法/语义缺口，并收口历史“已完成”口径。
+
+    - [x] 子任务 4：更新 `tests/verify_async_full_language_matrix.sh` 预期错误字符串与测试结构
+      - 当前：脚本中 `expect_compile_fail` 的预期错误字符串与实际 checker 输出不匹配
+      - 验证：`./tests/verify_async_full_language_matrix.sh` 全通过
+      - 验证记录（2026-06-18）：`./tests/verify_async_full_language_matrix.sh` 通过；输出摘要：positive matrix (30 tests), iterator for boundaries, forbidden @await positions, nested future boundary, and macro combo passed。

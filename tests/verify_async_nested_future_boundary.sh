@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
+COMPILER="$(cd "$REPO_ROOT" && pwd)/../uya/bin/uya"
 CC_BIN="${CC:-cc}"
 OUT_C="$(mktemp /tmp/async_nested_future_boundary.XXXXXX.c)"
 OUT_O="${OUT_C%.c}.o"
@@ -21,7 +21,11 @@ if [ ! -x "$COMPILER" ]; then
     exit 1
 fi
 
-"$COMPILER" test "$REPO_ROOT/tests/test_async_nested.uya" >/dev/null
+if ! "$COMPILER" test "$REPO_ROOT/tests/test_async_nested.uya" >"$UYA_LOG" 2>&1; then
+    echo "expected supported nested future regression to pass"
+    cat "$UYA_LOG"
+    exit 1
+fi
 
 if ! "$COMPILER" --c99 "$REPO_ROOT/tests/test_async_nested_future_poll.uya" -o "$OUT_C" >"$UYA_LOG" 2>&1; then
     echo "expected C emission success for nested future boundary source"
@@ -35,9 +39,10 @@ if ! grep -Fq "err_union_uya_interface_Future_i32" "$OUT_C"; then
     exit 1
 fi
 
-if "$CC_BIN" -std=c99 -O0 -c "$OUT_C" -o "$OUT_O" >"$CC_LOG" 2>&1; then
-    echo "expected host C compile failure for tests/test_async_nested_future_poll.uya, but cc succeeded"
+if ! "$CC_BIN" -std=c99 -O0 -c "$OUT_C" -o "$OUT_O" >"$CC_LOG" 2>&1; then
+    echo "expected host C compile success for tests/test_async_nested_future_poll.uya"
+    cat "$CC_LOG"
     exit 1
 fi
 
-echo "verify_async_nested_future_boundary: supported nested poll subset passes and unsupported !Future<Future<T>> codegen path still fails explicitly"
+echo "verify_async_nested_future_boundary: nested poll subset passes and !Future<Future<T>> C emission compiles"
