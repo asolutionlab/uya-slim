@@ -1036,3 +1036,16 @@
   - [x] `for` 定长数组值迭代
     - 验证：`../uya/bin/uya test tests/test_async_for_await.uya`
     - 结果：通过；4 个测试全部 OK，包含 `async_for_array_with_await`，覆盖 `@async_fn` 中 `for a |e|` 定长数组值迭代跨 `try @await` 后累加返回。
+
+## Phase 1：`@async_fn` 语法完整性
+
+### 1.1 先建立“完整语法”矩阵
+
+父级任务路径：以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
+
+  - [x] `for` 定长数组引用迭代 `|&x|`
+    - 证据：`docs/uya.md` 第 8 章列出 `for obj |&v| {}` 形式；`tests/test_async_for_await.uya` 中 `mutate_array_for_ref_with_await()` 使用 `@async_fn`、定长数组 `var a: [i32: 3]`、`for a |&item|`、循环体内 `try @await ready_7()`，并通过 `*item` 写回数组后校验结果 54。
+    - 验证命令：`../uya/bin/uya test tests/test_async_for_await.uya`
+    - 验证结果：通过；4 个测试全部 OK，包含 `async_for_array_ref_with_await`。
+    - 验证命令：`../uya/bin/uya test tests/test_async_sync_body_matrix.uya`
+    - 验证结果：通过；4 个测试全部 OK，20 个断言通过。

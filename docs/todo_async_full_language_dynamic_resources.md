@@ -62,7 +62,6 @@
 ### 1.1 先建立“完整语法”矩阵
 
 - [ ] 以 `docs/uya.md` 和 `docs/grammar_formal.md` 为准，列出函数体语法项，并逐项标记 async 状态：
-  - [ ] `for` 定长数组引用迭代 `|&x|`
   - [ ] 迭代器形式 `for obj |v|`
   - [ ] `match`
   - [ ] `try / catch`
