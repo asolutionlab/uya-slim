@@ -128,6 +128,9 @@ bash "$SCRIPT_DIR/verify_async_await_capacity.sh" >/dev/null
 echo "==> verify_async_nested_future_boundary"
 bash "$SCRIPT_DIR/verify_async_nested_future_boundary.sh" >/dev/null
 
+echo "==> verify_async_shared_runtime_matrix"
+bash "$SCRIPT_DIR/verify_async_shared_runtime_matrix.sh" >/dev/null
+
 # 宏展开 async lowering 程序级回归
 echo "==> test_ai_prompt_async_macro_combo build/run"
 macro_log="$(mktemp)"
@@ -142,4 +145,4 @@ if ! (
 fi
 rm -f "$macro_log"
 
-echo "verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, and macro combo passed"
+echo "verify_async_full_language_matrix: positive matrix (31 tests), iterator for boundaries, forbidden @await positions, nested future boundary, shared runtime matrix, and macro combo passed"

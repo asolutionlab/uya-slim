@@ -449,3 +449,11 @@
 
   - [x] 新增共享 async 运行时语义的可复现基线脚本，串行覆盖 `Scheduler`、HTTP、DNS、TLS loopback 与 `async_compute`；最小验证命令：`bash tests/verify_async_runtime_shared_semantics.sh`；完成条件：脚本只使用 `../uya/bin/uya` 并全部通过。
     - 验证：`bash tests/verify_async_runtime_shared_semantics.sh` 通过；覆盖 `test_std_async_scheduler.uya`、`test_async_multi_fd_concurrent.uya`、`test_async_fd.uya`、`test_std_thread.uya`、`test_async_compute_types.uya`、`test_http1_async_client.uya`、`test_std_dns_async_transport.uya`、`test_https_loopback.uya`。
+
+## 2026-06-18
+
+上下文：# Uya 异步生产化 TODO（完整语法 + 动态资源） > ## 目标 > Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 将共享 runtime 基线接入 async/full-language 验证入口，避免 HTTP/DNS/TLS/`async_compute` 只作为分散单项测试存在；最小验证命令：`bash tests/verify_async_full_language_matrix.sh`；完成条件：矩阵脚本包含共享 runtime 基线且通过。
+    - 验证命令：`bash tests/verify_async_full_language_matrix.sh`
+    - 验证结果：通过；输出确认 `verify_async_shared_runtime_matrix` 已作为 full-language 矩阵阶段执行，并以 `shared runtime matrix` 汇总通过。
