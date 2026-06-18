@@ -26,6 +26,7 @@ use cmd.upm.upm_lib.path_utils.upm_path_exists;
 use cmd.upm.upm_lib.manifest.upm_parse_manifest;
 use cmd.upm.upm_lib.resolver.upm_resolve_manifest_path;
 use cmd.upm.upm_lib.resolver.upm_resolve_graph_into_plan;
+use cmd.upm.upm_lib.resolver.upm_resolve_graph_only_into_plan;
 use cmd.upm.upm_lib.lockfile.upm_write_lockfile;
 
 export fn upm_shell_quote(src: &byte, out: &byte, cap: usize) i32 {
@@ -296,5 +297,72 @@ export fn upm_prepare_build_plan_ex(input_path: &byte, manifest_override: &byte,
         return 1;
     }
     cleanup_on_fail = 0;
+    return 0;
+}
+
+fn upm_prepare_source_compile_input(input_path: &byte, root_manifest: &UPMManifest, plan_out: &UPMPackageBuildPlan) i32 {
+    var input_abs: [byte: UPM_PATH_MAX] = [];
+    if upm_realpath_or_copy(input_path, &input_abs[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_is_directory(&input_abs[0] as &byte) != 0 {
+        return upm_string_copy(&plan_out.compile_input[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+    }
+    const root_len: usize = strlen(&root_manifest.source_root[0] as *byte);
+    if root_len > 0usize && strncmp(&input_abs[0] as *byte, &root_manifest.source_root[0] as *byte, root_len) == 0 {
+        return upm_string_copy(&plan_out.compile_input[0] as &byte, UPM_PATH_MAX, &input_abs[0] as &byte);
+    }
+    return upm_string_copy(&plan_out.compile_input[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+}
+
+fn upm_check_root_alias_conflicts(root_manifest: &UPMManifest) i32 {
+    var i: i32 = 0;
+    while i < root_manifest.dep_count {
+        if upm_source_root_contains_alias(&root_manifest.source_root[0] as &byte, &root_manifest.deps[i].alias[0] as &byte) != 0 {
+            fprintf(libc.stderr, "错误: root source root 已存在与依赖 alias 同名的顶层模块（alias=%s, source_root=%s）\n" as *byte,
+                &root_manifest.deps[i].alias[0] as *byte,
+                &root_manifest.source_root[0] as *byte);
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+/// Prepares a package plan for compiler-native package mode without staging roots.
+/// Parameters: `input_path` is the requested build input, `manifest_override` optionally selects a manifest, `plan_out` receives graph and lock state, and `force_git_refresh` refreshes VCS sources.
+/// Returns: `0` on success or when no manifest is found; non-zero on package preparation failure.
+export fn upm_prepare_package_graph_plan(input_path: &byte, manifest_override: &byte, plan_out: &UPMPackageBuildPlan, force_git_refresh: i32) i32 {
+    if input_path == null || plan_out == null {
+        return 1;
+    }
+    plan_out[0] = upm_build_plan_init();
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_resolve_manifest_path(input_path, manifest_override, &manifest_path[0] as &byte) != 0 {
+        return 0;
+    }
+
+    var root_manifest: UPMManifest = upm_manifest_init();
+    if upm_parse_manifest(&manifest_path[0] as &byte, &root_manifest) != 0 {
+        return 1;
+    }
+
+    plan_out.active = 1;
+    _ = upm_string_copy(&plan_out.manifest_path[0] as &byte, UPM_PATH_MAX, &root_manifest.manifest_path[0] as &byte);
+    _ = upm_string_copy(&plan_out.package_root[0] as &byte, UPM_PATH_MAX, &root_manifest.package_root[0] as &byte);
+    _ = upm_string_copy(&plan_out.source_root[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+    _ = upm_string_copy(&plan_out.module_root[0] as &byte, UPM_PATH_MAX, &root_manifest.source_root[0] as &byte);
+    if upm_prepare_source_compile_input(input_path, &root_manifest, plan_out) != 0 {
+        return 1;
+    }
+    if upm_check_root_alias_conflicts(&root_manifest) != 0 {
+        return 1;
+    }
+    if upm_resolve_graph_only_into_plan(&root_manifest, plan_out, force_git_refresh) != 0 {
+        return 1;
+    }
+    if upm_write_lockfile(&root_manifest, plan_out) != 0 {
+        return 1;
+    }
     return 0;
 }

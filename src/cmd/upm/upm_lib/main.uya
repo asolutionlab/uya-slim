@@ -31,6 +31,15 @@ use cmd.upm.upm_lib.build_plan.upm_build_plan_cleanup;
 use cmd.upm.upm_lib.build_plan.upm_prepare_build_plan;
 use cmd.upm.upm_lib.build_plan.upm_prepare_build_plan_ex;
 use cmd.upm.upm_lib.resolver.upm_resolve_manifest_path;
+use cmd.upm.upm_lib.diagnostics.upm_diagnostics_print_graph;
+use cmd.upm.upm_lib.diagnostics.upm_diagnostics_print_why;
+use cmd.upm.upm_lib.diagnostics.upm_diagnostics_doctor;
+use cmd.upm.upm_lib.diagnostics.upm_diagnostics_print_cache_dir;
+use cmd.upm.upm_lib.diagnostics.upm_diagnostics_vendor;
+use cmd.upm.upm_lib.publish.UPMPublishPlan;
+use cmd.upm.upm_lib.publish.upm_publish_plan_init;
+use cmd.upm.upm_lib.publish.upm_publish_prepare_plan;
+use cmd.upm.upm_lib.publish.upm_publish_write_metadata;
 
 
 fn upm_print_usage() void {
@@ -48,6 +57,12 @@ fn upm_print_usage() void {
     fprintf(libc.stdout, "  upm remove <alias> [--manifest-path <path>] [<dir>]\n" as *byte);
     fprintf(libc.stdout, "  upm remove <alias> --dep [--manifest-path <path>] [<dir>]\n" as *byte);
     fprintf(libc.stdout, "  upm remove <alias> --dev [--manifest-path <path>] [<dir>]\n" as *byte);
+    fprintf(libc.stdout, "  upm graph [--manifest-path <path>] [<dir>]\n" as *byte);
+    fprintf(libc.stdout, "  upm why <alias> [--manifest-path <path>] [<dir>]\n" as *byte);
+    fprintf(libc.stdout, "  upm doctor [--manifest-path <path>] [<dir>]\n" as *byte);
+    fprintf(libc.stdout, "  upm cache dir\n" as *byte);
+    fprintf(libc.stdout, "  upm vendor [--manifest-path <path>] [<dir>]\n" as *byte);
+    fprintf(libc.stdout, "  upm publish [--manifest-path <path>] [<dir>]\n" as *byte);
     fprintf(libc.stdout, "  upm build [<uya build args>...]\n" as *byte);
     fprintf(libc.stdout, "\n示例:\n" as *byte);
     fprintf(libc.stdout, "  upm add gui_uya --git https://github.com/uya-lang/gui-uya.git --branch main\n" as *byte);
@@ -928,6 +943,124 @@ fn upm_forward_build(start_index: i32) i32 {
     return exit_code;
 }
 
+fn upm_resolve_manifest_for_diagnostics(input_path: &byte, manifest_path: &byte, out: &byte) i32 {
+    var manifest_override: &byte = null;
+    if manifest_path != null && manifest_path[0] != 0 as byte {
+        manifest_override = manifest_path;
+    }
+    if upm_resolve_manifest_path(input_path, manifest_override, out) != 0 {
+        fprintf(libc.stderr, "错误: 未找到 uya.toml，请在包目录中运行或显式传入 --manifest-path\n" as *byte);
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_diagnostics_graph_command(start_index: i32) i32 {
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    var input_path: [byte: UPM_PATH_MAX] = [];
+    if upm_parse_manifest_flag_and_input(start_index, &manifest_path[0] as &byte, &input_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var resolved_manifest: [byte: UPM_PATH_MAX] = [];
+    if upm_resolve_manifest_for_diagnostics(&input_path[0] as &byte, &manifest_path[0] as &byte, &resolved_manifest[0] as &byte) != 0 {
+        return 1;
+    }
+    return upm_diagnostics_print_graph(&resolved_manifest[0] as &byte);
+}
+
+fn upm_diagnostics_why_command(start_index: i32) i32 {
+    if start_index >= get_argc() {
+        fprintf(libc.stderr, "错误: upm why 需要依赖 alias\n" as *byte);
+        return 1;
+    }
+    const alias: &byte = get_argv(start_index);
+    if alias == null || alias[0] == 0 as byte || alias[0] == 45 as byte {
+        fprintf(libc.stderr, "错误: upm why 需要依赖 alias\n" as *byte);
+        return 1;
+    }
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    var input_path: [byte: UPM_PATH_MAX] = [];
+    if upm_parse_manifest_flag_and_input(start_index + 1, &manifest_path[0] as &byte, &input_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var resolved_manifest: [byte: UPM_PATH_MAX] = [];
+    if upm_resolve_manifest_for_diagnostics(&input_path[0] as &byte, &manifest_path[0] as &byte, &resolved_manifest[0] as &byte) != 0 {
+        return 1;
+    }
+    return upm_diagnostics_print_why(&resolved_manifest[0] as &byte, alias);
+}
+
+fn upm_diagnostics_doctor_command(start_index: i32) i32 {
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    var input_path: [byte: UPM_PATH_MAX] = [];
+    if upm_parse_manifest_flag_and_input(start_index, &manifest_path[0] as &byte, &input_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var resolved_manifest: [byte: UPM_PATH_MAX] = [];
+    if upm_resolve_manifest_for_diagnostics(&input_path[0] as &byte, &manifest_path[0] as &byte, &resolved_manifest[0] as &byte) != 0 {
+        return 1;
+    }
+    return upm_diagnostics_doctor(&resolved_manifest[0] as &byte);
+}
+
+fn upm_diagnostics_vendor_command(start_index: i32) i32 {
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    var input_path: [byte: UPM_PATH_MAX] = [];
+    if upm_parse_manifest_flag_and_input(start_index, &manifest_path[0] as &byte, &input_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var manifest_override: &byte = null;
+    if manifest_path[0] != 0 as byte {
+        manifest_override = &manifest_path[0] as &byte;
+    }
+    return upm_diagnostics_vendor(&input_path[0] as &byte, manifest_override);
+}
+
+fn upm_diagnostics_cache_command(start_index: i32) i32 {
+    if start_index >= get_argc() {
+        fprintf(libc.stderr, "错误: upm cache 需要子命令\n" as *byte);
+        return 1;
+    }
+    const subcmd: &byte = get_argv(start_index);
+    if subcmd != null && strcmp(subcmd as *byte, "dir" as *byte) == 0 {
+        return upm_diagnostics_print_cache_dir();
+    }
+    fprintf(libc.stderr, "错误: 未知 upm cache 子命令\n" as *byte);
+    return 1;
+}
+
+fn upm_publish_command(start_index: i32) i32 {
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    var input_path: [byte: UPM_PATH_MAX] = [];
+    if upm_parse_manifest_flag_and_input(start_index, &manifest_path[0] as &byte, &input_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var resolved_manifest: [byte: UPM_PATH_MAX] = [];
+    if upm_resolve_manifest_for_diagnostics(&input_path[0] as &byte, &manifest_path[0] as &byte, &resolved_manifest[0] as &byte) != 0 {
+        return 1;
+    }
+    var plan: UPMPublishPlan = upm_publish_plan_init();
+    if upm_publish_prepare_plan(&resolved_manifest[0] as &byte, &plan) != 0 {
+        return 1;
+    }
+    var uya_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&plan.package_root[0] as &byte, ".uya" as &byte, &uya_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_shell_mkdir_p(&uya_dir[0] as &byte) != 0 {
+        return 1;
+    }
+    var receipt_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&uya_dir[0] as &byte, "publish.receipt" as &byte, &receipt_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_publish_write_metadata(&plan, &receipt_path[0] as &byte) != 0 {
+        return 1;
+    }
+    fprintf(libc.stdout, "publish metadata: %s\n" as *byte, &receipt_path[0] as *byte);
+    return 0;
+}
+
 /// 处理 `upm` 子命令入口。
 /// 参数说明：`start_index` 为子命令在 `argv` 中的起始位置。
 /// 返回值说明：成功返回 `0`，失败返回非 `0`。
@@ -998,10 +1131,26 @@ export fn upm_cli_main(start_index: i32) i32 {
     if strcmp(cmd as *byte, "remove" as *byte) == 0 {
         return upm_remove_dependency(start_index + 1);
     }
+    if strcmp(cmd as *byte, "graph" as *byte) == 0 {
+        return upm_diagnostics_graph_command(start_index + 1);
+    }
+    if strcmp(cmd as *byte, "why" as *byte) == 0 {
+        return upm_diagnostics_why_command(start_index + 1);
+    }
+    if strcmp(cmd as *byte, "doctor" as *byte) == 0 {
+        return upm_diagnostics_doctor_command(start_index + 1);
+    }
+    if strcmp(cmd as *byte, "cache" as *byte) == 0 {
+        return upm_diagnostics_cache_command(start_index + 1);
+    }
+    if strcmp(cmd as *byte, "vendor" as *byte) == 0 {
+        return upm_diagnostics_vendor_command(start_index + 1);
+    }
+    if strcmp(cmd as *byte, "publish" as *byte) == 0 {
+        return upm_publish_command(start_index + 1);
+    }
     fprintf(libc.stderr, "错误: 未知 upm 子命令: %s\n" as *byte, cmd as *byte);
     fprintf(libc.stderr, "提示: 运行 `upm --help` 查看可用命令\n" as *byte);
     return 1;
 }
-
-
 

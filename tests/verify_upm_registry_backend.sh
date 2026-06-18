@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+CMD_BOOTSTRAP="${UYA_CMD_BOOTSTRAP_COMPILER:-$ROOT_DIR/bin/uya}"
+COMPILER="${UYA_COMPILER:-$ROOT_DIR/bin/uya-upm-stage2}"
+TMP_DIR="$(mktemp -d /tmp/uya_upm_registry_backend.XXXXXX)"
+TMP_HOME="$TMP_DIR/home"
+WORK_DIR="$TMP_DIR/app"
+REGISTRY_ROOT="$TMP_DIR/registry"
+REGISTRY_DEP_DIR="$REGISTRY_ROOT/uya.local/foo/1.2.3"
+OUT_BIN="$TMP_DIR/out"
+BUILD_LOG="$TMP_DIR/build.log"
+RUN_LOG="$TMP_DIR/run.log"
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+if [ "${UYA_UPM_SUITE_PREBUILT:-0}" != "1" ] && [ ! -x "$ROOT_DIR/bin/cmd/upm" ]; then
+    UYA_CMD_BOOTSTRAP_COMPILER="$CMD_BOOTSTRAP" make -C "$ROOT_DIR" cmd-upm >/dev/null
+fi
+
+mkdir -p "$TMP_HOME" "$WORK_DIR/src" "$REGISTRY_DEP_DIR/src"
+cat > "$WORK_DIR/uya.toml" <<'EOF_MANIFEST'
+[package]
+name = "app"
+module = "uya.local/app"
+version = "0.1.0"
+source-dir = "src"
+
+[dependencies]
+foo = { module = "uya.local/foo", version = "1.2.3" }
+EOF_MANIFEST
+cat > "$WORK_DIR/src/main.uya" <<'EOF_MAIN'
+use foo.file.foo_value;
+
+export fn main() i32 {
+    @println("${foo_value()}");
+    return 0;
+}
+EOF_MAIN
+cat > "$REGISTRY_DEP_DIR/uya.toml" <<'EOF_DEP_MANIFEST'
+[package]
+name = "foo"
+module = "uya.local/foo"
+version = "1.2.3"
+source-dir = "src"
+EOF_DEP_MANIFEST
+cat > "$REGISTRY_DEP_DIR/src/file.uya" <<'EOF_DEP_SRC'
+export fn foo_value() i32 {
+    return 13;
+}
+EOF_DEP_SRC
+
+HOME="$TMP_HOME" UYA_UPM_REGISTRY_DIR="$REGISTRY_ROOT" "$COMPILER" build "$WORK_DIR" -o "$OUT_BIN" --no-split-c >"$BUILD_LOG" 2>&1
+"$OUT_BIN" >"$RUN_LOG" 2>&1
+grep -q '13' "$RUN_LOG"
+grep -q 'module = "uya.local/foo"' "$WORK_DIR/uya.lock"
+grep -q 'resolved_version = "1.2.3"' "$WORK_DIR/uya.lock"
+grep -q 'content_hash = "' "$WORK_DIR/uya.lock"
+
+echo "verify_upm_registry_backend: ok"

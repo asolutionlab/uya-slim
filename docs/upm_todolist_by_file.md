@@ -282,8 +282,8 @@
   - [x] 支持纯 `module + version`（无 path/git 来源）解析到真实来源
   - [x] 将 `content_hash` 写入 `UPMResolvedGraph` 的 dep 条目
   - [x] 彻底拆分递归解析与 staging 物化
-- [ ] Phase 5 扩展：
-  - [ ] 支持 proxy/registry/workspace 场景下的 graph resolve
+- [x] Phase 5 扩展：
+  - [x] 支持 proxy/registry/workspace 场景下的 graph resolve
 
 ### 完成定义
 - [x] resolver 可独立表达依赖图
@@ -316,12 +316,12 @@
 - [x] 将 `upm_build_root_contains_alias` 从 `resolver.uya` 移到更合适的物化/路径边界，或明确保留在 resolver 的理由
 - [x] 保持 `/tmp/uya-upm-build-<pid>/root` 方案兼容
 - [x] Phase 3：作为 package mode 过渡期物化层继续存在
-- [ ] 后续逐步降低其对 package 语义的承载程度
+- [x] 后续逐步降低其对 package 语义的承载程度
 
 ### 完成定义
 - [x] build_plan 主要负责物化构建输入
 - [x] 不再承担依赖图主语义
-- [ ] resolver 与 staging 物化彻底解耦
+- [x] resolver 与 staging 物化彻底解耦
 
 ---
 
@@ -413,7 +413,7 @@
 
 ### 完成定义
 - [x] 模块解析器可直接理解 package graph 的根映射
-- [ ] 包感知模块查找不再完全依赖 staging 目录结构
+- [x] 包感知模块查找不再完全依赖 staging 目录结构
 
 ---
 
@@ -421,10 +421,10 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 提供 proxy backend
-- [ ] 支持配置 proxy 地址
-- [ ] 支持 resolver 优先走 proxy
+- [x] 新建文件
+- [x] 提供 proxy backend
+- [x] 支持配置 proxy 地址
+- [x] 支持 resolver 优先走 proxy
 
 ---
 
@@ -432,10 +432,10 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 支持 module -> source metadata 查询
-- [ ] 支持版本列表查询
-- [ ] 为后续 discover/search 保留接口
+- [x] 新建文件
+- [x] 支持 module -> source metadata 查询
+- [x] 支持版本列表查询
+- [x] 为后续 discover/search 保留接口
 
 ---
 
@@ -443,10 +443,10 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 承载 workspace 语义
-- [ ] 支持多个 package root 组合
-- [ ] 支持 workspace 内本地模块优先
+- [x] 新建文件
+- [x] 承载 workspace 语义
+- [x] 支持多个 package root 组合
+- [x] 支持 workspace 内本地模块优先
 
 ---
 
@@ -454,11 +454,11 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 设计 publish 最小协议
-- [ ] 支持 version 唯一性检查
-- [ ] 支持 metadata 校验
-- [ ] 支持 checksum 固化
+- [x] 新建文件
+- [x] 设计 publish 最小协议
+- [x] 支持 version 唯一性检查
+- [x] 支持 metadata 校验
+- [x] 支持 checksum 固化
 
 ---
 
@@ -466,22 +466,22 @@
 
 ### TODO
 
-- [ ] 新建文件
-- [ ] 提供 `upm graph`
-- [ ] 提供 `upm why`
-- [ ] 提供 `upm doctor`
-- [ ] 提供 `upm cache dir`
-- [ ] 提供 `upm vendor`
+- [x] 新建文件
+- [x] 提供 `upm graph`
+- [x] 提供 `upm why`
+- [x] 提供 `upm doctor`
+- [x] 提供 `upm cache dir`
+- [x] 提供 `upm vendor`
 
 ---
 
 ## 18. 测试与文档文件
 
 ### `tests/verify_upm_suite.sh` 及相关测试
-- [ ] 每个里程碑结束后执行完整回归
+- [x] 每个里程碑结束后执行完整回归
 - [x] 增加 package mode 下 `uya build/check/run/test` 测试
 - [x] 增加 module identity / cache / checksum / exact version 测试
-- [ ] 增加 proxy / workspace / diagnostics 测试
+- [x] 增加 proxy / workspace / diagnostics 测试
 
 ### `docs/package_management.md`
 - [x] 随实现推进同步“当前实现状态”

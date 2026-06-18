@@ -1,0 +1,77 @@
+use libc.getenv;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_source_dir_is_safe;
+
+fn upm_fetch_proxy_version_is_safe(version: &byte) i32 {
+    if version == null || version[0] == 0 as byte {
+        return 0;
+    }
+    var i: usize = 0usize;
+    while version[i] != 0 as byte {
+        if version[i] == 47 as byte || version[i] == 92 as byte {
+            return 0;
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}
+
+fn upm_fetch_proxy_package_dir(proxy_root: &byte, module_name: &byte, version: &byte, out: &byte) i32 {
+    if proxy_root == null || module_name == null || version == null || out == null {
+        return 1;
+    }
+    if upm_source_dir_is_safe(module_name) == 0 || upm_fetch_proxy_version_is_safe(version) == 0 {
+        return 1;
+    }
+    var root_abs: [byte: UPM_PATH_MAX] = [];
+    if upm_realpath_or_copy(proxy_root, &root_abs[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    var module_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&root_abs[0] as &byte, module_name, &module_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_join_path(&module_dir[0] as &byte, version, out, UPM_PATH_MAX);
+}
+
+/// Resolves an exact module version from a configured local proxy backend.
+///
+/// Parameters:
+/// - `module_name`: requested module identity.
+/// - `version`: requested exact version.
+/// - `package_root_out`: receives the resolved package root.
+/// - `manifest_path_out`: receives the resolved `uya.toml` path.
+///
+/// Returns: `0` when `UYA_UPM_PROXY_DIR/<module>/<version>/uya.toml` exists; non-zero otherwise.
+export fn upm_fetch_proxy_resolve_module_version(
+    module_name: &byte,
+    version: &byte,
+    package_root_out: &byte,
+    manifest_path_out: &byte
+) i32 {
+    if module_name == null || version == null || package_root_out == null || manifest_path_out == null {
+        return 1;
+    }
+    var proxy_root: &byte = getenv("UYA_UPM_PROXY_DIR" as *byte);
+    if proxy_root == null || proxy_root[0] == 0 as byte {
+        return 1;
+    }
+    var package_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_fetch_proxy_package_dir(proxy_root, module_name, version, &package_dir[0] as &byte) != 0 {
+        return 1;
+    }
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&package_dir[0] as &byte, "uya.toml" as &byte, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_is_file(&manifest_path[0] as &byte) == 0 {
+        return 1;
+    }
+    if upm_realpath_or_copy(&package_dir[0] as &byte, package_root_out, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_realpath_or_copy(&manifest_path[0] as &byte, manifest_path_out, UPM_PATH_MAX);
+}

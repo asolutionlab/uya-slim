@@ -1,0 +1,92 @@
+use libc.getenv;
+use std.string.strcmp;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.upm_manifest_init;
+use cmd.upm.upm_lib.path_utils.upm_bytes_copy;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
+use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.manifest.upm_parse_manifest;
+
+fn upm_workspace_try_package_root(
+    package_root: &byte,
+    module_name: &byte,
+    version: &byte,
+    package_root_out: &byte,
+    manifest_path_out: &byte
+) i32 {
+    if package_root == null || module_name == null || version == null || package_root_out == null || manifest_path_out == null {
+        return 1;
+    }
+    var root_abs: [byte: UPM_PATH_MAX] = [];
+    if upm_realpath_or_copy(package_root, &root_abs[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_is_directory(&root_abs[0] as &byte) == 0 {
+        return 1;
+    }
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&root_abs[0] as &byte, "uya.toml" as &byte, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_is_file(&manifest_path[0] as &byte) == 0 {
+        return 1;
+    }
+    var manifest: UPMManifest = upm_manifest_init();
+    if upm_parse_manifest(&manifest_path[0] as &byte, &manifest) != 0 {
+        return 1;
+    }
+    if strcmp(&manifest.module[0] as *byte, module_name as *byte) != 0 {
+        return 1;
+    }
+    if strcmp(&manifest.version[0] as *byte, version as *byte) != 0 {
+        return 1;
+    }
+    if upm_realpath_or_copy(&manifest.package_root[0] as &byte, package_root_out, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_realpath_or_copy(&manifest.manifest_path[0] as &byte, manifest_path_out, UPM_PATH_MAX);
+}
+
+/// Resolves an exact module version from configured local workspace package roots.
+///
+/// Parameters:
+/// - `module_name`: requested module identity.
+/// - `version`: requested exact version.
+/// - `package_root_out`: receives the matching workspace package root.
+/// - `manifest_path_out`: receives the matching workspace manifest path.
+///
+/// Returns: `0` when a root in `UYA_UPM_WORKSPACE_ROOTS` matches; non-zero otherwise.
+export fn upm_workspace_resolve_module_version(
+    module_name: &byte,
+    version: &byte,
+    package_root_out: &byte,
+    manifest_path_out: &byte
+) i32 {
+    if module_name == null || version == null || package_root_out == null || manifest_path_out == null {
+        return 1;
+    }
+    var roots: &byte = getenv("UYA_UPM_WORKSPACE_ROOTS" as *byte);
+    if roots == null || roots[0] == 0 as byte {
+        return 1;
+    }
+    var start: usize = 0usize;
+    var i: usize = 0usize;
+    while true {
+        const ch: byte = roots[i];
+        if ch == 58 as byte || ch == 0 as byte {
+            if i > start {
+                var root_buf: [byte: UPM_PATH_MAX] = [];
+                if upm_bytes_copy(&root_buf[0] as &byte, UPM_PATH_MAX, (&roots[start]) as &byte, i - start) == 0 {
+                    if upm_workspace_try_package_root(&root_buf[0] as &byte, module_name, version, package_root_out, manifest_path_out) == 0 {
+                        return 0;
+                    }
+                }
+            }
+            if ch == 0 as byte {
+                break;
+            }
+            start = i + 1usize;
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}

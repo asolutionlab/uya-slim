@@ -1,0 +1,144 @@
+use libc.fprintf;
+use std.string.strcmp;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPMResolvedDep;
+use cmd.upm.upm_lib.types.UPMResolvedGraph;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.UPMPackageBuildPlan;
+use cmd.upm.upm_lib.types.upm_manifest_init;
+use cmd.upm.upm_lib.types.upm_build_plan_init;
+use cmd.upm.upm_lib.manifest.upm_parse_manifest;
+use cmd.upm.upm_lib.resolver.upm_resolve_graph;
+use cmd.upm.upm_lib.cache.upm_cache_pkg_root;
+use cmd.upm.upm_lib.cache.upm_cache_vcs_root;
+use cmd.upm.upm_lib.cache.upm_cache_mod_root;
+use cmd.upm.upm_lib.build_plan.upm_prepare_build_plan_ex;
+use cmd.upm.upm_lib.build_plan.upm_build_plan_cleanup;
+
+fn upm_diagnostics_resolve_graph(manifest_path: &byte, manifest: &UPMManifest, graph: &UPMResolvedGraph) i32 {
+    if manifest_path == null || manifest == null || graph == null {
+        return 1;
+    }
+    manifest[0] = upm_manifest_init();
+    if upm_parse_manifest(manifest_path, manifest) != 0 {
+        return 1;
+    }
+    graph[0] = UPMResolvedGraph{};
+    return upm_resolve_graph(manifest, graph, 0);
+}
+
+fn upm_diagnostics_print_dep(dep: &UPMResolvedDep) void {
+    if dep == null {
+        return;
+    }
+    fprintf(libc.stdout, "  alias=%s" as *byte, &dep.alias[0] as *byte);
+    if dep.module[0] != 0 as byte {
+        fprintf(libc.stdout, " module=%s" as *byte, &dep.module[0] as *byte);
+    }
+    if dep.resolved_version[0] != 0 as byte {
+        fprintf(libc.stdout, " version=%s" as *byte, &dep.resolved_version[0] as *byte);
+    }
+    if dep.source_root[0] != 0 as byte {
+        fprintf(libc.stdout, " source_root=%s" as *byte, &dep.source_root[0] as *byte);
+    }
+    if dep.content_hash[0] != 0 as byte {
+        fprintf(libc.stdout, " content_hash=%s" as *byte, &dep.content_hash[0] as *byte);
+    }
+    fprintf(libc.stdout, "\n" as *byte);
+}
+
+/// Prints the resolved dependency graph for a package manifest.
+/// Parameters: `manifest_path` points to the root package manifest.
+/// Returns: `0` on success, otherwise non-zero.
+export fn upm_diagnostics_print_graph(manifest_path: &byte) i32 {
+    var manifest: UPMManifest = upm_manifest_init();
+    var graph: UPMResolvedGraph = UPMResolvedGraph{};
+    if upm_diagnostics_resolve_graph(manifest_path, &manifest, &graph) != 0 {
+        return 1;
+    }
+    fprintf(libc.stdout, "root=%s module=%s version=%s deps=%d\n" as *byte,
+        &manifest.package_name[0] as *byte,
+        &manifest.module[0] as *byte,
+        &manifest.version[0] as *byte,
+        graph.dep_count);
+    var i: i32 = 0;
+    while i < graph.dep_count {
+        upm_diagnostics_print_dep(&graph.deps[i]);
+        i = i + 1;
+    }
+    return 0;
+}
+
+/// Explains why a dependency alias is present in the resolved graph.
+/// Parameters: `manifest_path` is the root manifest and `alias` is the dependency alias.
+/// Returns: `0` when the alias is found, otherwise non-zero.
+export fn upm_diagnostics_print_why(manifest_path: &byte, alias: &byte) i32 {
+    if alias == null || alias[0] == 0 as byte {
+        return 1;
+    }
+    var manifest: UPMManifest = upm_manifest_init();
+    var graph: UPMResolvedGraph = UPMResolvedGraph{};
+    if upm_diagnostics_resolve_graph(manifest_path, &manifest, &graph) != 0 {
+        return 1;
+    }
+    var i: i32 = 0;
+    while i < graph.dep_count {
+        const dep: &UPMResolvedDep = &graph.deps[i];
+        if strcmp(&dep.alias[0] as *byte, alias as *byte) == 0 {
+            fprintf(libc.stdout, "root=%s requires alias=%s\n" as *byte, &manifest.package_name[0] as *byte, alias as *byte);
+            upm_diagnostics_print_dep(dep);
+            return 0;
+        }
+        i = i + 1;
+    }
+    fprintf(libc.stderr, "错误: 未找到依赖 alias: %s\n" as *byte, alias as *byte);
+    return 1;
+}
+
+/// Runs lightweight package diagnostics.
+/// Parameters: `manifest_path` points to the root package manifest.
+/// Returns: `0` when manifest parsing and graph resolution succeed, otherwise non-zero.
+export fn upm_diagnostics_doctor(manifest_path: &byte) i32 {
+    var manifest: UPMManifest = upm_manifest_init();
+    var graph: UPMResolvedGraph = UPMResolvedGraph{};
+    if upm_diagnostics_resolve_graph(manifest_path, &manifest, &graph) != 0 {
+        fprintf(libc.stderr, "upm doctor: failed\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stdout, "upm doctor: ok package=%s deps=%d\n" as *byte, &manifest.package_name[0] as *byte, graph.dep_count);
+    return 0;
+}
+
+/// Prints the active UPM cache directories.
+/// Parameters: none.
+/// Returns: `0` when cache roots can be resolved, otherwise non-zero.
+export fn upm_diagnostics_print_cache_dir() i32 {
+    var pkg_root: [byte: UPM_PATH_MAX] = [];
+    var vcs_root: [byte: UPM_PATH_MAX] = [];
+    var mod_root: [byte: UPM_PATH_MAX] = [];
+    if upm_cache_pkg_root(&pkg_root[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_cache_vcs_root(&vcs_root[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_cache_mod_root(&mod_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    fprintf(libc.stdout, "pkg=%s\n" as *byte, &pkg_root[0] as *byte);
+    fprintf(libc.stdout, "vcs=%s\n" as *byte, &vcs_root[0] as *byte);
+    fprintf(libc.stdout, "mod=%s\n" as *byte, &mod_root[0] as *byte);
+    return 0;
+}
+
+/// Materializes package dependencies without invoking the compiler.
+/// Parameters: `input_path` is the package input and `manifest_override` optionally points to a manifest.
+/// Returns: `0` when dependencies are vendored and lockfile is written, otherwise non-zero.
+export fn upm_diagnostics_vendor(input_path: &byte, manifest_override: &byte) i32 {
+    var plan: UPMPackageBuildPlan = upm_build_plan_init();
+    if upm_prepare_build_plan_ex(input_path, manifest_override, &plan, 0) != 0 {
+        return 1;
+    }
+    if plan.active == 0 {
+        fprintf(libc.stderr, "错误: 未找到 uya.toml，无法 vendor\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stdout, "vendored deps=%d package_root=%s\n" as *byte, plan.resolved_graph.dep_count, &plan.package_root[0] as *byte);
+    return upm_build_plan_cleanup(&plan);
+}

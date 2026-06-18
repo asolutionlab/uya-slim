@@ -29,10 +29,11 @@ use cmd.upm.upm_lib.lockfile.upm_lock_item_record;
 use cmd.upm.upm_lib.lockfile.upm_load_locked_path_content_hash;
 use cmd.upm.upm_lib.checksum.upm_checksum_generate;
 use cmd.upm.upm_lib.manifest.upm_parse_manifest;
-use cmd.upm.upm_lib.git_fetch.upm_fetch_prepare_checkout;
 use cmd.upm.upm_lib.build_plan.upm_build_root_contains_alias;
 use cmd.upm.upm_lib.cache.upm_cache_mod_package_dir;
-use cmd.upm.upm_lib.cache.upm_cache_mod_is_ready;
+use cmd.upm.upm_lib.fetcher.UPMFetchResult;
+use cmd.upm.upm_lib.fetcher.upm_fetch_backend_is_module_version;
+use cmd.upm.upm_lib.fetcher.upm_fetch_dependency_source;
 
 struct UPMPreparedDependency {
     package_root: [byte: UPM_PATH_MAX],
@@ -261,49 +262,6 @@ export fn upm_check_dependency_conflicts(plan: &UPMPackageBuildPlan, manifest: &
     return 0;
 }
 
-fn upm_dependency_is_module_version_only(dep: &UPMDependency) i32 {
-    if dep == null {
-        return 0;
-    }
-    if dep.kind == UPMDependencyKind.UPM_DEP_NONE && dep.module[0] != 0 as byte && dep.version[0] != 0 as byte {
-        return 1;
-    }
-    return 0;
-}
-
-fn upm_prepare_module_cache_dependency(dep: &UPMDependency, dep_package_root: &byte, manifest_path: &byte) i32 {
-    if dep == null || dep_package_root == null || manifest_path == null {
-        return 1;
-    }
-    var cache_dir: [byte: UPM_PATH_MAX] = [];
-    if upm_cache_mod_package_dir(&dep.module[0] as &byte, &dep.version[0] as &byte, &cache_dir[0] as &byte, UPM_PATH_MAX) != 0 {
-        fprintf(libc.stderr, "错误: module+version 依赖缓存路径无效（alias=%s, module=%s, version=%s）\n" as *byte,
-            &dep.alias[0] as *byte,
-            &dep.module[0] as *byte,
-            &dep.version[0] as *byte);
-        return 1;
-    }
-    if upm_cache_mod_is_ready(&dep.module[0] as &byte, &dep.version[0] as &byte) == 0 {
-        fprintf(libc.stderr, "错误: module+version 依赖未在模块缓存中找到（alias=%s, module=%s, version=%s, cache=%s）\n" as *byte,
-            &dep.alias[0] as *byte,
-            &dep.module[0] as *byte,
-            &dep.version[0] as *byte,
-            &cache_dir[0] as *byte);
-        return 1;
-    }
-    if upm_realpath_or_copy(&cache_dir[0] as &byte, dep_package_root, UPM_PATH_MAX) != 0 {
-        return 1;
-    }
-    if upm_join_path(dep_package_root, "uya.toml" as &byte, manifest_path, UPM_PATH_MAX) != 0 ||
-        upm_is_file(manifest_path) == 0 {
-        fprintf(libc.stderr, "错误: module cache 缺少 uya.toml（alias=%s, cache=%s）\n" as *byte,
-            &dep.alias[0] as *byte,
-            dep_package_root as *byte);
-        return 1;
-    }
-    return 0;
-}
-
 fn upm_store_dependency_package_in_mod_cache(manifest: &UPMManifest) i32 {
     if manifest == null {
         return 1;
@@ -331,37 +289,6 @@ fn upm_store_dependency_package_in_mod_cache(manifest: &UPMManifest) i32 {
     return 0;
 }
 
-fn upm_prepare_path_dependency(owner_manifest: &UPMManifest, dep: &UPMDependency, prepared: &UPMPreparedDependency) i32 {
-    if upm_join_path(&owner_manifest.package_root[0] as &byte, &dep.path_value[0] as &byte, &prepared.package_root[0] as &byte, UPM_PATH_MAX) != 0 {
-        fprintf(libc.stderr, "错误: path 依赖路径无效（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
-        return 1;
-    }
-    if upm_realpath_or_copy(&prepared.package_root[0] as &byte, &prepared.package_root[0] as &byte, UPM_PATH_MAX) != 0 ||
-        upm_is_directory(&prepared.package_root[0] as &byte) == 0 {
-        fprintf(libc.stderr, "错误: path 依赖路径不存在（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
-        return 1;
-    }
-    if upm_join_path(&prepared.package_root[0] as &byte, "uya.toml" as &byte, &prepared.manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
-        upm_is_file(&prepared.manifest_path[0] as &byte) == 0 {
-        fprintf(libc.stderr, "错误: 依赖包缺少 uya.toml（alias=%s, package_root=%s）\n" as *byte, &dep.alias[0] as *byte, &prepared.package_root[0] as *byte);
-        return 1;
-    }
-    return 0;
-}
-
-fn upm_prepare_git_dependency(owner_manifest: &UPMManifest, dep: &UPMDependency, force_git_refresh: i32, prepared: &UPMPreparedDependency) i32 {
-    if upm_fetch_prepare_checkout(owner_manifest, dep, force_git_refresh, &prepared.package_root[0] as &byte, &prepared.resolved_commit[0] as &byte, &prepared.content_hash[0] as &byte) != 0 {
-        fprintf(libc.stderr, "错误: git 依赖准备失败（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
-        return 1;
-    }
-    if upm_join_path(&prepared.package_root[0] as &byte, "uya.toml" as &byte, &prepared.manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
-        upm_is_file(&prepared.manifest_path[0] as &byte) == 0 {
-        fprintf(libc.stderr, "错误: git 依赖缺少 uya.toml（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
-        return 1;
-    }
-    return 0;
-}
-
 fn upm_prepare_dependency_source(
     owner_manifest: &UPMManifest,
     dep: &UPMDependency,
@@ -372,18 +299,18 @@ fn upm_prepare_dependency_source(
         return 1;
     }
     prepared[0] = UPMPreparedDependency{};
-    prepared.module_version_only = upm_dependency_is_module_version_only(dep);
-    if dep.kind != UPMDependencyKind.UPM_DEP_PATH && dep.kind != UPMDependencyKind.UPM_DEP_GIT && prepared.module_version_only == 0 {
-        fprintf(libc.stderr, "错误: 未知依赖类型（alias=%s）\n" as *byte, &dep.alias[0] as *byte);
+    var fetch_result: UPMFetchResult = UPMFetchResult{};
+    if upm_fetch_dependency_source(owner_manifest, dep, force_git_refresh, &fetch_result) != 0 {
         return 1;
     }
-    if dep.kind == UPMDependencyKind.UPM_DEP_PATH {
-        return upm_prepare_path_dependency(owner_manifest, dep, prepared);
+    if upm_string_copy(&prepared.package_root[0] as &byte, UPM_PATH_MAX, &fetch_result.package_root[0] as &byte) != 0 ||
+        upm_string_copy(&prepared.manifest_path[0] as &byte, UPM_PATH_MAX, &fetch_result.manifest_path[0] as &byte) != 0 ||
+        upm_string_copy(&prepared.resolved_commit[0] as &byte, UPM_MAX_REF_LEN, &fetch_result.resolved_commit[0] as &byte) != 0 ||
+        upm_string_copy(&prepared.content_hash[0] as &byte, UPM_MAX_REF_LEN, &fetch_result.content_hash[0] as &byte) != 0 {
+        return 1;
     }
-    if dep.kind == UPMDependencyKind.UPM_DEP_GIT {
-        return upm_prepare_git_dependency(owner_manifest, dep, force_git_refresh, prepared);
-    }
-    return upm_prepare_module_cache_dependency(dep, &prepared.package_root[0] as &byte, &prepared.manifest_path[0] as &byte);
+    prepared.module_version_only = upm_fetch_backend_is_module_version(fetch_result.backend);
+    return 0;
 }
 
 fn upm_check_dependency_cycle(dep: &UPMDependency, prepared: &UPMPreparedDependency, visited: &(&byte), visited_count: &i32) i32 {
@@ -626,6 +553,21 @@ export fn upm_resolve_graph_into_plan(
     }
     upm_init_resolved_graph(&plan.resolved_graph, root_manifest);
     return upm_resolve_root_dependencies_into_plan(root_manifest, plan, force_git_refresh);
+}
+
+/// Resolves dependencies into a plan without materializing `.uya/deps` or a staging root.
+/// Parameters: `root_manifest` is the package root, `plan` receives graph and lock items, and `force_git_refresh` refreshes VCS sources.
+/// Returns: `0` on success; non-zero on resolution, identity, checksum, or conflict failure.
+export fn upm_resolve_graph_only_into_plan(
+    root_manifest: &UPMManifest,
+    plan: &UPMPackageBuildPlan,
+    force_git_refresh: i32
+) i32 {
+    if root_manifest == null || plan == null {
+        return 1;
+    }
+    upm_init_resolved_graph(&plan.resolved_graph, root_manifest);
+    return upm_resolve_root_dependencies_graph_only(root_manifest, plan, force_git_refresh);
 }
 
 export fn upm_resolve_graph(

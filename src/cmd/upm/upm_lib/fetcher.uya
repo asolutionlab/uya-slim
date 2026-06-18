@@ -1,0 +1,170 @@
+use libc.fprintf;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
+use cmd.upm.upm_lib.types.UPMDependencyKind;
+use cmd.upm.upm_lib.types.UPMDependency;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
+use cmd.upm.upm_lib.path_utils.upm_is_directory;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.cache.upm_cache_mod_package_dir;
+use cmd.upm.upm_lib.cache.upm_cache_mod_is_ready;
+use cmd.upm.upm_lib.git_fetch.upm_fetch_prepare_checkout;
+use cmd.upm.upm_lib.fetch_proxy.upm_fetch_proxy_resolve_module_version;
+use cmd.upm.upm_lib.registry.upm_registry_resolve_module_version;
+use cmd.upm.upm_lib.workspace.upm_workspace_resolve_module_version;
+
+export enum UPMFetchBackend {
+    UPM_FETCH_BACKEND_NONE,
+    UPM_FETCH_BACKEND_PATH,
+    UPM_FETCH_BACKEND_GIT,
+    UPM_FETCH_BACKEND_WORKSPACE,
+    UPM_FETCH_BACKEND_PROXY,
+    UPM_FETCH_BACKEND_REGISTRY,
+    UPM_FETCH_BACKEND_MODULE_CACHE,
+}
+
+export struct UPMFetchResult {
+    backend: UPMFetchBackend,
+    package_root: [byte: UPM_PATH_MAX],
+    manifest_path: [byte: UPM_PATH_MAX],
+    resolved_commit: [byte: UPM_MAX_REF_LEN],
+    content_hash: [byte: UPM_MAX_REF_LEN],
+}
+
+/// Initializes a dependency fetch result.
+/// Parameters: none.
+/// Returns: an empty result with no backend selected.
+export fn upm_fetch_result_init() UPMFetchResult {
+    return UPMFetchResult{};
+}
+
+/// Returns whether a backend resolves a module-only dependency.
+/// Parameters: `backend` is the source backend that resolved a dependency.
+/// Returns: non-zero for workspace/proxy/registry/module-cache backends, otherwise `0`.
+export fn upm_fetch_backend_is_module_version(backend: UPMFetchBackend) i32 {
+    if backend == UPMFetchBackend.UPM_FETCH_BACKEND_WORKSPACE ||
+        backend == UPMFetchBackend.UPM_FETCH_BACKEND_PROXY ||
+        backend == UPMFetchBackend.UPM_FETCH_BACKEND_REGISTRY ||
+        backend == UPMFetchBackend.UPM_FETCH_BACKEND_MODULE_CACHE {
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_fetch_path_dependency(owner_manifest: &UPMManifest, dep: &UPMDependency, result: &UPMFetchResult) i32 {
+    if upm_join_path(&owner_manifest.package_root[0] as &byte, &dep.path_value[0] as &byte, &result.package_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: path 依赖路径无效（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
+        return 1;
+    }
+    if upm_realpath_or_copy(&result.package_root[0] as &byte, &result.package_root[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_is_directory(&result.package_root[0] as &byte) == 0 {
+        fprintf(libc.stderr, "错误: path 依赖路径不存在（alias=%s, path=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.path_value[0] as *byte);
+        return 1;
+    }
+    if upm_join_path(&result.package_root[0] as &byte, "uya.toml" as &byte, &result.manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_is_file(&result.manifest_path[0] as &byte) == 0 {
+        fprintf(libc.stderr, "错误: 依赖包缺少 uya.toml（alias=%s, package_root=%s）\n" as *byte, &dep.alias[0] as *byte, &result.package_root[0] as *byte);
+        return 1;
+    }
+    result.backend = UPMFetchBackend.UPM_FETCH_BACKEND_PATH;
+    return 0;
+}
+
+fn upm_fetch_git_dependency(owner_manifest: &UPMManifest, dep: &UPMDependency, force_refresh: i32, result: &UPMFetchResult) i32 {
+    if upm_fetch_prepare_checkout(owner_manifest, dep, force_refresh, &result.package_root[0] as &byte, &result.resolved_commit[0] as &byte, &result.content_hash[0] as &byte) != 0 {
+        fprintf(libc.stderr, "错误: git 依赖准备失败（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
+        return 1;
+    }
+    if upm_join_path(&result.package_root[0] as &byte, "uya.toml" as &byte, &result.manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_is_file(&result.manifest_path[0] as &byte) == 0 {
+        fprintf(libc.stderr, "错误: git 依赖缺少 uya.toml（alias=%s, git=%s）\n" as *byte, &dep.alias[0] as *byte, &dep.git_url[0] as *byte);
+        return 1;
+    }
+    result.backend = UPMFetchBackend.UPM_FETCH_BACKEND_GIT;
+    return 0;
+}
+
+fn upm_fetch_module_cache_dependency(dep: &UPMDependency, result: &UPMFetchResult) i32 {
+    var cache_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_cache_mod_package_dir(&dep.module[0] as &byte, &dep.version[0] as &byte, &cache_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: module+version 依赖缓存路径无效（alias=%s, module=%s, version=%s）\n" as *byte,
+            &dep.alias[0] as *byte,
+            &dep.module[0] as *byte,
+            &dep.version[0] as *byte);
+        return 1;
+    }
+    if upm_cache_mod_is_ready(&dep.module[0] as &byte, &dep.version[0] as &byte) == 0 {
+        fprintf(libc.stderr, "错误: module+version 依赖未在模块缓存中找到（alias=%s, module=%s, version=%s, cache=%s）\n" as *byte,
+            &dep.alias[0] as *byte,
+            &dep.module[0] as *byte,
+            &dep.version[0] as *byte,
+            &cache_dir[0] as *byte);
+        return 1;
+    }
+    if upm_realpath_or_copy(&cache_dir[0] as &byte, &result.package_root[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_join_path(&result.package_root[0] as &byte, "uya.toml" as &byte, &result.manifest_path[0] as &byte, UPM_PATH_MAX) != 0 ||
+        upm_is_file(&result.manifest_path[0] as &byte) == 0 {
+        fprintf(libc.stderr, "错误: module cache 缺少 uya.toml（alias=%s, cache=%s）\n" as *byte,
+            &dep.alias[0] as *byte,
+            &result.package_root[0] as *byte);
+        return 1;
+    }
+    result.backend = UPMFetchBackend.UPM_FETCH_BACKEND_MODULE_CACHE;
+    return 0;
+}
+
+fn upm_fetch_module_version_dependency(dep: &UPMDependency, result: &UPMFetchResult) i32 {
+    if upm_workspace_resolve_module_version(&dep.module[0] as &byte, &dep.version[0] as &byte, &result.package_root[0] as &byte, &result.manifest_path[0] as &byte) == 0 {
+        result.backend = UPMFetchBackend.UPM_FETCH_BACKEND_WORKSPACE;
+        return 0;
+    }
+    if upm_fetch_proxy_resolve_module_version(&dep.module[0] as &byte, &dep.version[0] as &byte, &result.package_root[0] as &byte, &result.manifest_path[0] as &byte) == 0 {
+        result.backend = UPMFetchBackend.UPM_FETCH_BACKEND_PROXY;
+        return 0;
+    }
+    if upm_registry_resolve_module_version(&dep.module[0] as &byte, &dep.version[0] as &byte, &result.package_root[0] as &byte, &result.manifest_path[0] as &byte) == 0 {
+        result.backend = UPMFetchBackend.UPM_FETCH_BACKEND_REGISTRY;
+        return 0;
+    }
+    return upm_fetch_module_cache_dependency(dep, result);
+}
+
+fn upm_fetch_dependency_is_module_version_only(dep: &UPMDependency) i32 {
+    if dep == null {
+        return 0;
+    }
+    if dep.kind == UPMDependencyKind.UPM_DEP_NONE && dep.module[0] != 0 as byte && dep.version[0] != 0 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+/// Resolves a dependency source through the unified UPM fetch backend boundary.
+/// Parameters: `owner_manifest` is the requesting package, `dep` is the dependency, `force_refresh` refreshes VCS sources, and `result` receives paths and metadata.
+/// Returns: `0` when a path/git/module-version backend resolves the source, otherwise non-zero.
+export fn upm_fetch_dependency_source(
+    owner_manifest: &UPMManifest,
+    dep: &UPMDependency,
+    force_refresh: i32,
+    result: &UPMFetchResult
+) i32 {
+    if owner_manifest == null || dep == null || result == null {
+        return 1;
+    }
+    result[0] = upm_fetch_result_init();
+    if dep.kind == UPMDependencyKind.UPM_DEP_PATH {
+        return upm_fetch_path_dependency(owner_manifest, dep, result);
+    }
+    if dep.kind == UPMDependencyKind.UPM_DEP_GIT {
+        return upm_fetch_git_dependency(owner_manifest, dep, force_refresh, result);
+    }
+    if upm_fetch_dependency_is_module_version_only(dep) != 0 {
+        return upm_fetch_module_version_dependency(dep, result);
+    }
+    fprintf(libc.stderr, "错误: 未知依赖类型（alias=%s）\n" as *byte, &dep.alias[0] as *byte);
+    return 1;
+}

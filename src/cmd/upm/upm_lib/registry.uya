@@ -1,0 +1,205 @@
+use libc.getenv;
+use libc.DIR;
+use libc.Dirent;
+use libc.opendir;
+use libc.readdir;
+use libc.closedir;
+use std.string.strcmp;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.path_utils.upm_join_path;
+use cmd.upm.upm_lib.path_utils.upm_realpath_or_copy;
+use cmd.upm.upm_lib.path_utils.upm_is_file;
+use cmd.upm.upm_lib.path_utils.upm_source_dir_is_safe;
+
+const UPM_REGISTRY_DIRENT_OFF_D_NAME: usize = 19usize;
+
+fn upm_registry_dirent_get_name(entry_ptr: &byte) &byte {
+    var p: &byte = entry_ptr;
+    p = p + UPM_REGISTRY_DIRENT_OFF_D_NAME;
+    return p;
+}
+
+fn upm_registry_version_is_safe(version: &byte) i32 {
+    if version == null || version[0] == 0 as byte {
+        return 0;
+    }
+    var i: usize = 0usize;
+    while version[i] != 0 as byte {
+        if version[i] == 47 as byte || version[i] == 92 as byte {
+            return 0;
+        }
+        i = i + 1usize;
+    }
+    return 1;
+}
+
+fn upm_registry_module_dir(registry_root: &byte, module_name: &byte, out: &byte) i32 {
+    if registry_root == null || module_name == null || out == null {
+        return 1;
+    }
+    if upm_source_dir_is_safe(module_name) == 0 {
+        return 1;
+    }
+    var root_abs: [byte: UPM_PATH_MAX] = [];
+    if upm_realpath_or_copy(registry_root, &root_abs[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_join_path(&root_abs[0] as &byte, module_name, out, UPM_PATH_MAX);
+}
+
+fn upm_registry_package_dir(registry_root: &byte, module_name: &byte, version: &byte, out: &byte) i32 {
+    if registry_root == null || module_name == null || version == null || out == null {
+        return 1;
+    }
+    if upm_registry_version_is_safe(version) == 0 {
+        return 1;
+    }
+    var module_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_registry_module_dir(registry_root, module_name, &module_dir[0] as &byte) != 0 {
+        return 1;
+    }
+    return upm_join_path(&module_dir[0] as &byte, version, out, UPM_PATH_MAX);
+}
+
+/// Resolves source metadata for an exact module version from a local registry.
+///
+/// Parameters:
+/// - `module_name`: requested module identity.
+/// - `version`: requested exact version.
+/// - `package_root_out`: receives the resolved package root.
+/// - `manifest_path_out`: receives the resolved `uya.toml` path.
+///
+/// Returns: `0` when `UYA_UPM_REGISTRY_DIR/<module>/<version>/uya.toml` exists; non-zero otherwise.
+export fn upm_registry_resolve_module_version(
+    module_name: &byte,
+    version: &byte,
+    package_root_out: &byte,
+    manifest_path_out: &byte
+) i32 {
+    if module_name == null || version == null || package_root_out == null || manifest_path_out == null {
+        return 1;
+    }
+    var registry_root: &byte = getenv("UYA_UPM_REGISTRY_DIR" as *byte);
+    if registry_root == null || registry_root[0] == 0 as byte {
+        return 1;
+    }
+    var package_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_registry_package_dir(registry_root, module_name, version, &package_dir[0] as &byte) != 0 {
+        return 1;
+    }
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&package_dir[0] as &byte, "uya.toml" as &byte, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    if upm_is_file(&manifest_path[0] as &byte) == 0 {
+        return 1;
+    }
+    if upm_realpath_or_copy(&package_dir[0] as &byte, package_root_out, UPM_PATH_MAX) != 0 {
+        return 1;
+    }
+    return upm_realpath_or_copy(&manifest_path[0] as &byte, manifest_path_out, UPM_PATH_MAX);
+}
+
+/// Checks whether a local registry contains an exact module version.
+///
+/// Parameters:
+/// - `module_name`: requested module identity.
+/// - `version`: requested exact version.
+///
+/// Returns: non-zero when the configured registry has the version, otherwise `0`.
+export fn upm_registry_version_exists(module_name: &byte, version: &byte) i32 {
+    var package_root: [byte: UPM_PATH_MAX] = [];
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_registry_resolve_module_version(module_name, version, &package_root[0] as &byte, &manifest_path[0] as &byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_registry_version_name_is_ignored(name: &byte) i32 {
+    if name == null {
+        return 1;
+    }
+    if strcmp(name as *byte, "." as *byte) == 0 || strcmp(name as *byte, ".." as *byte) == 0 {
+        return 1;
+    }
+    if upm_registry_version_is_safe(name) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_registry_append_version(out: &byte, cap: usize, pos: &usize, version: &byte) i32 {
+    if out == null || pos == null || version == null || cap == 0usize {
+        return 1;
+    }
+    if pos[0] > 0usize {
+        if pos[0] + 1usize >= cap {
+            return 1;
+        }
+        out[pos[0]] = 10 as byte;
+        pos[0] = pos[0] + 1usize;
+    }
+    var i: usize = 0usize;
+    while version[i] != 0 as byte {
+        if pos[0] + 1usize >= cap {
+            return 1;
+        }
+        out[pos[0]] = version[i];
+        pos[0] = pos[0] + 1usize;
+        i = i + 1usize;
+    }
+    out[pos[0]] = 0 as byte;
+    return 0;
+}
+
+fn upm_registry_version_has_manifest(module_dir: &byte, version: &byte) i32 {
+    var version_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(module_dir, version, &version_dir[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 0;
+    }
+    var manifest_path: [byte: UPM_PATH_MAX] = [];
+    if upm_join_path(&version_dir[0] as &byte, "uya.toml" as &byte, &manifest_path[0] as &byte, UPM_PATH_MAX) != 0 {
+        return 0;
+    }
+    return upm_is_file(&manifest_path[0] as &byte);
+}
+
+/// Lists exact versions available for a module in the configured local registry.
+/// Parameters: `module_name` is the module identity, `out/cap` receives newline-separated versions, and `count_out` receives the number of entries.
+/// Returns: `0` when `UYA_UPM_REGISTRY_DIR/<module>` can be scanned, otherwise non-zero.
+export fn upm_registry_list_versions(module_name: &byte, out: &byte, cap: usize, count_out: &i32) i32 {
+    if module_name == null || out == null || cap == 0usize || count_out == null {
+        return 1;
+    }
+    out[0] = 0 as byte;
+    count_out[0] = 0;
+    var registry_root: &byte = getenv("UYA_UPM_REGISTRY_DIR" as *byte);
+    if registry_root == null || registry_root[0] == 0 as byte {
+        return 1;
+    }
+    var module_dir: [byte: UPM_PATH_MAX] = [];
+    if upm_registry_module_dir(registry_root, module_name, &module_dir[0] as &byte) != 0 {
+        return 1;
+    }
+    const dir: *DIR = opendir(&module_dir[0] as *byte);
+    if dir == null {
+        return 1;
+    }
+    var pos: usize = 0usize;
+    var entry: *Dirent = readdir(dir);
+    while entry != null {
+        const name: *byte = upm_registry_dirent_get_name(entry as &byte) as *byte;
+        if upm_registry_version_name_is_ignored(name as &byte) == 0 &&
+            upm_registry_version_has_manifest(&module_dir[0] as &byte, name as &byte) != 0 {
+            if upm_registry_append_version(out, cap, &pos, name as &byte) != 0 {
+                closedir(dir);
+                return 1;
+            }
+            count_out[0] = count_out[0] + 1;
+        }
+        entry = readdir(dir);
+    }
+    closedir(dir);
+    return 0;
+}

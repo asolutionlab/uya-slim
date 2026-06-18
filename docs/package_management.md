@@ -1,7 +1,7 @@
 # Uya Package Management v1 Draft
 
-**状态**: design draft, MVP prototype + partial M4 implementation in current branch
-**更新日期**: 2026-06-14
+**状态**: design draft, MVP/M4 implemented + Phase 5 local backend prototype in current branch
+**更新日期**: 2026-06-18
 **适用范围**: `uya.toml`、`uya.lock`、`uya upm`、带依赖的 `uya build/check/run/test`
 **相关文档**:
 
@@ -20,7 +20,7 @@
   - `uya build file.uya`
   - `uya build dir/`
   - `uya run/test/check ...`
-- 中央 registry、纯 `module + version` 来源解析、版本求解、多版本并存、workspace 和 publish 流程都还不是 v1 目标。
+- 中央 registry 服务、版本求解、多版本并存和 publish 流程都还不是 v1 目标；当前分支仅提供本地 proxy/registry/workspace backend 原型。
 
 历史文档与当前源码之间还有几处需要明确拆开的漂移：
 
@@ -69,6 +69,9 @@
 - `.uya/deps/`：已安装依赖
 - `~/.uya/pkg/vcs/`：全局 Git clone/cache
 - `~/.uya/pkg/mod/`：全局模块内容层目录，path/git 依赖带有 `package.module + package.version` 时会写入，纯 `module + version` 依赖可从这里复用
+- `UYA_UPM_WORKSPACE_ROOTS`：本地 workspace package root 列表，使用 `:` 分隔
+- `UYA_UPM_PROXY_DIR`：本地 proxy backend 根目录
+- `UYA_UPM_REGISTRY_DIR`：本地 registry backend 根目录
 
 ### 2.7 lockfile
 
@@ -278,7 +281,7 @@ foo = { path = "../foo", module = "uya.local/foo", version = "1.2.3" }
 - 一个依赖必须二选一：`path` 或 `git`
 - Git 依赖的 `tag` / `branch` / `commit` 三选一
 - 依赖可选携带 `module` 与 `version`，用于校验目标包的 `package.module` 与 exact `package.version`
-- 纯 `foo = { module = "...", version = "..." }` 当前会从 `~/.uya/pkg/mod/<module>/<version>` 内容缓存解析真实包；尚未接入 registry/proxy 自动发现来源
+- 纯 `foo = { module = "...", version = "..." }` 当前按 workspace -> proxy -> registry -> `~/.uya/pkg/mod/<module>/<version>` 顺序解析真实包
 - 不支持字符串 shorthand，如 `http = "../http"`
 - `path` 相对当前 manifest 所在目录解析
 - path 依赖与 git 依赖都要求目标包自身包含 `uya.toml`
@@ -291,6 +294,44 @@ foo = { path = "../foo", module = "uya.local/foo", version = "1.2.3" }
 - 必须在文档中标记为 reserved / future
 - MVP 不要求解析和执行这些字段
 - `package.uya_min_version` 不属于 reserved 字段；当前实现已支持它作为可选 package 字段，且不替代必填的 `package.version`
+
+### 5.7 本地 backend 配置（Phase 5 原型）
+
+当前 Phase 5 原型仅定义本地 backend，不定义远程网络协议。
+
+- `UYA_UPM_WORKSPACE_ROOTS` 是 `:` 分隔的 package root 列表；每个 root 必须包含 `uya.toml`，并通过 `package.module` 与 `package.version` exact match 命中依赖。
+- `UYA_UPM_PROXY_DIR` 使用 `<root>/<module>/<version>/uya.toml` 布局；proxy 命中后直接把该目录作为依赖 package root。
+- `UYA_UPM_REGISTRY_DIR` 使用同样的 `<root>/<module>/<version>/uya.toml` 本地布局；registry 当前提供 module -> source metadata 查询和版本列表查询。
+- 纯 `module + version` 依赖解析顺序为 workspace、proxy、registry、全局 module cache。workspace 用于本地联调，proxy 优先于 registry，cache 作为最后回退。
+- path/git 依赖仍按显式来源解析，不受上述 backend 优先级影响。
+- 当前 workspace 原型不做统一 lockfile、跨包批量 test、版本范围求解或多版本并存；这些能力仍属于后续设计。
+
+### 5.8 Publish 最小协议（Phase 5 原型）
+
+当前 publish 原型只定义本地可验证的发布元数据，不上传源码，也不定义远程认证、签名或 registry 服务协议。
+
+最小发布计划包含：
+
+- `package.name`
+- `package.module`
+- `package.version`
+- `manifest_path`
+- `package_root`
+- `source_root`
+- `content_hash`
+
+发布前必须满足：
+
+- manifest 可解析，且 `package.name`、`package.module`、`package.version` 均存在。
+- `source-dir` 已解析为有效 `source_root`。
+- 若配置了 `UYA_UPM_REGISTRY_DIR`，目标 `module + version` 不能已存在。
+- `content_hash` 由源码树 checksum 生成，并写入发布 metadata receipt，作为后续 registry/proxy 校验输入。
+
+当前不承诺：
+
+- 上传、认证、签名和撤回流程。
+- semver range、版本回溯或多版本求解。
+- 远程 registry 的网络 API。
 
 ---
 
@@ -440,7 +481,8 @@ v1 采用隐藏目录：
 - `.uya/deps/`：安装好的依赖内容
 - `~/.uya/pkg/vcs/`：跨项目复用的 Git 下载缓存
 - `~/.uya/pkg/mod/`：模块内容层缓存目录；当前已可写入并复用
-- package mode 的临时 build root 当前放在 `TMPDIR` 或 `/tmp` 下，例如 `/tmp/uya-upm-build-<pid>/root/`
+- 原生 `uya build/check/run/test` package mode 当前使用 graph-only resolve 与 dependency alias -> source root 映射，不再依赖临时 staging root 进行模块查找
+- `upm build` / `upm vendor` 的过渡物化层仍可使用 `TMPDIR` 或 `/tmp` 下的临时 build root，例如 `/tmp/uya-upm-build-<pid>/root/`
 
 ### 8.2 path 依赖安全规则
 
@@ -477,6 +519,12 @@ v1 的 canonical public UX 是：
 - `upm build`
 - `upm add`
 - `upm remove`
+- `upm graph`
+- `upm why`
+- `upm doctor`
+- `upm cache dir`
+- `upm vendor`
+- `upm publish`
 
 其中 `add/remove` 当前提供的最小 UX 为：
 
@@ -488,18 +536,30 @@ v1 的 canonical public UX 是：
 - `upm remove <alias>`
 - `upm remove <alias> --dep`
 - `upm remove <alias> --dev`
+- `upm graph [--manifest-path <path>] [<dir>]`
+- `upm why <alias> [--manifest-path <path>] [<dir>]`
+- `upm doctor [--manifest-path <path>] [<dir>]`
+- `upm cache dir`
+- `upm vendor [--manifest-path <path>] [<dir>]`
+- `upm publish [--manifest-path <path>] [<dir>]`
 
 ### 9.3 语义
 
 - `upm init`：生成最小 `uya.toml`；默认生成 flat layout，可选生成 `src/` layout
 - `upm install`：解析 manifest / lockfile，安装依赖并写回 lockfile
 - `upm update`：刷新可变 ref（如 branch/tag）并重写 lockfile
-- `upm build`：wrapper，按 package mode 准备依赖后调用现有构建流程
+- `upm build`：wrapper，按 package mode 准备依赖后调用现有构建流程；原生 `uya build/check/run/test` 已可直接使用 graph-only package plan
 - `upm add`：直接改写 `uya.toml` 后自动执行一次 `install`，并同步刷新 `uya.lock`
 - `upm add --dev`：把依赖写入 `[dev-dependencies]`
 - `upm remove`：从 manifest 删除指定 alias 后自动执行一次 `install`
 - `upm remove --dep`：只从 `[dependencies]` 删除
 - `upm remove --dev`：只从 `[dev-dependencies]` 删除
+- `upm graph`：打印当前 manifest 的 resolved graph
+- `upm why <alias>`：解释指定依赖 alias 的 resolved graph 条目
+- `upm doctor`：执行 manifest parse 与 graph resolve 诊断
+- `upm cache dir`：打印 `pkg` / `vcs` / `mod` cache 目录
+- `upm vendor`：只物化依赖到 `.uya/deps/` 并写回 lockfile，不调用编译器
+- `upm publish`：生成本地 `.uya/publish.receipt`，包含 module、version 和 content_hash
 
 ### 9.4 示例
 
@@ -585,6 +645,10 @@ v1 至少要能稳定报出以下错误：
   - `package.module` 解析
   - path/git 依赖携带 `module + version` 时的 identity 与 exact version 校验
   - 纯 `module + version` 依赖从 `~/.uya/pkg/mod/<module>/<version>` 解析
+  - 纯 `module + version` 依赖通过本地 workspace/proxy/registry backend 解析
+  - 本地 registry 版本列表查询
+  - `upm publish` 及 publish 最小 metadata 校验、版本唯一性检查与 checksum receipt 写出
+  - `upm graph` / `upm why` / `upm doctor` / `upm cache dir` / `upm vendor`
   - 全局 git cache：`~/.uya/pkg/vcs/`
   - 模块内容缓存：`~/.uya/pkg/mod/`
   - lockfile v2 头部与完整 lock item 读取入口
@@ -593,13 +657,15 @@ v1 至少要能稳定报出以下错误：
   - path 依赖按旧 lockfile checksum 做强校验
   - `content_hash` 写入 resolved graph 条目
   - graph-only resolve 不再落盘 `.uya/deps` / staging root
+  - 原生 `uya build/check/run/test` package mode 使用 source root 与 dependency alias source-root 映射，不再完全依赖 staging 目录结构
   - `cmd/upm`
   - repo-local `bin/uya-upm-stage2` 调度与 package build 验证入口
   - `upm add`
   - `upm remove`
 - 尚未实现：
-  - registry/proxy 自动发现纯 `module + version` 依赖来源
-  - workspace / publish / diagnostics 等 Phase 5 生态能力
+  - 远程 registry/proxy 网络协议
+  - 远程 publish 服务与更完整 diagnostics 生态
+  - workspace 统一 lockfile、批量 test 与 monorepo 视图
 
 ### 12.3 后续演进与正式设计文档
 
@@ -617,8 +683,8 @@ v1 至少要能稳定报出以下错误：
 
 ### 12.4 明确尚未承诺
 
-- registry
+- 远程 registry 服务
 - publish
 - semver range
 - multi-version
-- workspace
+- workspace 统一锁定与 monorepo 级命令

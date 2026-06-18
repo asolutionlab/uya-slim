@@ -171,42 +171,42 @@
 
 ### TODO
 
-- [ ] 抽象统一 fetcher 接口
-- [ ] 支持 path / git / proxy / registry backend
-- [ ] 新建 `src/cmd/upm/upm_lib/fetch_proxy.uya`
-- [ ] 支持配置 proxy 地址
-- [ ] resolver 优先走 proxy backend
-- [ ] 新建 `src/cmd/upm/upm_lib/registry.uya`
-- [ ] 支持 module -> source metadata 查询
-- [ ] 支持版本列表查询
-- [ ] 设计 workspace 语义
-- [ ] 新建 `src/cmd/upm/upm_lib/workspace.uya`
-- [ ] 支持本地多 package root 联调
-- [ ] 支持 workspace 内本地模块优先策略
-- [ ] 设计 publish 最小协议
-- [ ] 新建 `src/cmd/upm/upm_lib/publish.uya`
-- [ ] 支持 version 唯一性检查 / metadata 校验 / checksum 固化
-- [ ] 新建 `src/cmd/upm/upm_lib/diagnostics.uya`
-- [ ] 增加 `upm graph`
-- [ ] 增加 `upm why`
-- [ ] 增加 `upm doctor`
-- [ ] 增加 `upm cache dir`
-- [ ] 增加 `upm vendor`
-- [ ] 增加 proxy / registry / workspace / diagnostics 相关测试
+- [x] 抽象统一 fetcher 接口
+- [x] 支持 path / git / proxy / registry backend
+- [x] 新建 `src/cmd/upm/upm_lib/fetch_proxy.uya`
+- [x] 支持配置 proxy 地址
+- [x] resolver 优先走 proxy backend
+- [x] 新建 `src/cmd/upm/upm_lib/registry.uya`
+- [x] 支持 module -> source metadata 查询
+- [x] 支持版本列表查询
+- [x] 设计 workspace 语义
+- [x] 新建 `src/cmd/upm/upm_lib/workspace.uya`
+- [x] 支持本地多 package root 联调
+- [x] 支持 workspace 内本地模块优先策略
+- [x] 设计 publish 最小协议
+- [x] 新建 `src/cmd/upm/upm_lib/publish.uya`
+- [x] 支持 version 唯一性检查 / metadata 校验 / checksum 固化
+- [x] 新建 `src/cmd/upm/upm_lib/diagnostics.uya`
+- [x] 增加 `upm graph`
+- [x] 增加 `upm why`
+- [x] 增加 `upm doctor`
+- [x] 增加 `upm cache dir`
+- [x] 增加 `upm vendor`
+- [x] 增加 proxy / registry / workspace / diagnostics 相关测试
 
 ### 完成定义
 
-- [ ] fetch backend 可扩展
-- [ ] proxy / registry 具备最小闭环
-- [ ] workspace 可支持本地多包联调
-- [ ] publish / diagnostics 有最小可用入口
+- [x] fetch backend 可扩展
+- [x] proxy / registry 具备最小闭环
+- [x] workspace 可支持本地多包联调
+- [x] publish / diagnostics 有最小可用入口
 
 ---
 
 ## 全局约束
 
-- [ ] legacy mode 不能回归
-- [ ] 前三阶段优先重构边界，不引入不必要的协议变化
-- [ ] 在 M3 之前不引入大规模 lockfile / cache / identity 协议升级
-- [ ] 生态层能力必须后置于 resolver 与编译器 package mode 稳定之后
-- [ ] 每个里程碑结束后都执行完整 upm 回归测试
+- [x] legacy mode 不能回归
+- [x] 前三阶段优先重构边界，不引入不必要的协议变化
+- [x] 在 M3 之前不引入大规模 lockfile / cache / identity 协议升级
+- [x] 生态层能力必须后置于 resolver 与编译器 package mode 稳定之后
+- [x] 每个里程碑结束后都执行完整 upm 回归测试

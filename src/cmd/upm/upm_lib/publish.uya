@@ -1,0 +1,126 @@
+use libc.FILE;
+use libc.fopen;
+use libc.fclose;
+use libc.fprintf;
+use cmd.upm.upm_lib.types.UPM_PATH_MAX;
+use cmd.upm.upm_lib.types.UPM_MAX_NAME_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_META_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_VERSION_LEN;
+use cmd.upm.upm_lib.types.UPM_MAX_REF_LEN;
+use cmd.upm.upm_lib.types.UPMManifest;
+use cmd.upm.upm_lib.types.upm_manifest_init;
+use cmd.upm.upm_lib.path_utils.upm_string_copy;
+use cmd.upm.upm_lib.manifest.upm_parse_manifest;
+use cmd.upm.upm_lib.checksum.upm_checksum_generate;
+use cmd.upm.upm_lib.registry.upm_registry_version_exists;
+
+export struct UPMPublishPlan {
+    package_name: [byte: UPM_MAX_NAME_LEN],
+    module: [byte: UPM_MAX_META_LEN],
+    version: [byte: UPM_MAX_VERSION_LEN],
+    manifest_path: [byte: UPM_PATH_MAX],
+    package_root: [byte: UPM_PATH_MAX],
+    source_root: [byte: UPM_PATH_MAX],
+    content_hash: [byte: UPM_MAX_REF_LEN],
+}
+
+/// Initializes a publish plan.
+/// Parameters: none.
+/// Returns: an empty publish plan.
+export fn upm_publish_plan_init() UPMPublishPlan {
+    return UPMPublishPlan{};
+}
+
+/// Validates package metadata required by the minimal publish protocol.
+/// Parameters: `manifest` is the parsed package manifest.
+/// Returns: `0` when package name, module, version, and source root are present; otherwise non-zero.
+export fn upm_publish_validate_manifest(manifest: &UPMManifest) i32 {
+    if manifest == null {
+        return 1;
+    }
+    if manifest.package_name[0] == 0 as byte {
+        fprintf(libc.stderr, "错误: publish 要求 package.name\n" as *byte);
+        return 1;
+    }
+    if manifest.module[0] == 0 as byte {
+        fprintf(libc.stderr, "错误: publish 要求 package.module\n" as *byte);
+        return 1;
+    }
+    if manifest.version[0] == 0 as byte {
+        fprintf(libc.stderr, "错误: publish 要求 package.version\n" as *byte);
+        return 1;
+    }
+    if manifest.source_root[0] == 0 as byte {
+        fprintf(libc.stderr, "错误: publish 要求有效 source root\n" as *byte);
+        return 1;
+    }
+    return 0;
+}
+
+/// Checks that a module version is not already present in the configured registry.
+/// Parameters: `module_name` and `version` identify the release candidate.
+/// Returns: `0` when the version is unique or no registry is configured; otherwise non-zero.
+export fn upm_publish_check_version_unique(module_name: &byte, version: &byte) i32 {
+    if module_name == null || version == null || module_name[0] == 0 as byte || version[0] == 0 as byte {
+        return 1;
+    }
+    if upm_registry_version_exists(module_name, version) != 0 {
+        fprintf(libc.stderr, "错误: publish 版本已存在（module=%s, version=%s）\n" as *byte, module_name as *byte, version as *byte);
+        return 1;
+    }
+    return 0;
+}
+
+fn upm_publish_copy_manifest_to_plan(manifest: &UPMManifest, plan_out: &UPMPublishPlan) i32 {
+    if upm_string_copy(&plan_out.package_name[0] as &byte, UPM_MAX_NAME_LEN, &manifest.package_name[0] as &byte) != 0 ||
+        upm_string_copy(&plan_out.module[0] as &byte, UPM_MAX_META_LEN, &manifest.module[0] as &byte) != 0 ||
+        upm_string_copy(&plan_out.version[0] as &byte, UPM_MAX_VERSION_LEN, &manifest.version[0] as &byte) != 0 ||
+        upm_string_copy(&plan_out.manifest_path[0] as &byte, UPM_PATH_MAX, &manifest.manifest_path[0] as &byte) != 0 ||
+        upm_string_copy(&plan_out.package_root[0] as &byte, UPM_PATH_MAX, &manifest.package_root[0] as &byte) != 0 ||
+        upm_string_copy(&plan_out.source_root[0] as &byte, UPM_PATH_MAX, &manifest.source_root[0] as &byte) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+/// Prepares the minimal publish metadata plan for a package manifest.
+/// Parameters: `manifest_path` points to `uya.toml`; `plan_out` receives identity and checksum metadata.
+/// Returns: `0` when metadata is valid, version is unique, and checksum was generated; otherwise non-zero.
+export fn upm_publish_prepare_plan(manifest_path: &byte, plan_out: &UPMPublishPlan) i32 {
+    if manifest_path == null || plan_out == null {
+        return 1;
+    }
+    plan_out[0] = upm_publish_plan_init();
+    var manifest: UPMManifest = upm_manifest_init();
+    if upm_parse_manifest(manifest_path, &manifest) != 0 {
+        return 1;
+    }
+    if upm_publish_validate_manifest(&manifest) != 0 {
+        return 1;
+    }
+    if upm_publish_check_version_unique(&manifest.module[0] as &byte, &manifest.version[0] as &byte) != 0 {
+        return 1;
+    }
+    if upm_publish_copy_manifest_to_plan(&manifest, plan_out) != 0 {
+        return 1;
+    }
+    return upm_checksum_generate(&manifest.source_root[0] as &byte, &plan_out.content_hash[0] as &byte, UPM_MAX_REF_LEN);
+}
+
+/// Writes immutable publish metadata for a prepared plan.
+/// Parameters: `plan` is prepared publish metadata; `output_path` receives a TOML-like receipt.
+/// Returns: `0` on successful write, otherwise non-zero.
+export fn upm_publish_write_metadata(plan: &UPMPublishPlan, output_path: &byte) i32 {
+    if plan == null || output_path == null || plan.module[0] == 0 as byte || plan.version[0] == 0 as byte || plan.content_hash[0] == 0 as byte {
+        return 1;
+    }
+    const file: &FILE = fopen(output_path as *byte, "wb" as *byte);
+    if file == null {
+        return 1;
+    }
+    _ = fprintf(file as *void, "module = \"%s\"\n" as *byte, &plan.module[0] as *byte);
+    _ = fprintf(file as *void, "version = \"%s\"\n" as *byte, &plan.version[0] as *byte);
+    _ = fprintf(file as *void, "content_hash = \"%s\"\n" as *byte, &plan.content_hash[0] as *byte);
+    fclose(file);
+    return 0;
+}

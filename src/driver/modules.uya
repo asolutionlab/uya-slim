@@ -87,6 +87,190 @@ fn package_mode_is_top_level_alias_path(module_path: &byte) i32 {
     return 1;
 }
 
+const PACKAGE_MODE_ALIAS_ROOT_MAX: i32 = 128;
+
+var g_package_mode_alias_root_count: i32 = 0;
+var g_package_mode_alias_names: [[byte: PATH_MAX]: PACKAGE_MODE_ALIAS_ROOT_MAX] = [];
+var g_package_mode_alias_roots: [[byte: PATH_MAX]: PACKAGE_MODE_ALIAS_ROOT_MAX] = [];
+
+fn package_mode_alias_roots_clear() void {
+    g_package_mode_alias_root_count = 0;
+}
+
+fn package_mode_alias_copy_root(src: &byte, out: &byte, out_cap: usize) i32 {
+    if src == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const written: i32 = snprintf(out as *byte, out_cap, "%s" as *byte, src as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    const len: usize = strlen(out as *byte);
+    if len == 0usize {
+        return 1;
+    }
+    if out[len - 1usize] != 47 as byte {
+        if len + 1usize >= out_cap {
+            return 1;
+        }
+        out[len] = 47 as byte;
+        out[len + 1usize] = 0 as byte;
+    }
+    return 0;
+}
+
+fn package_mode_alias_roots_add(alias: &byte, source_root: &byte) i32 {
+    if alias == null || source_root == null || alias[0] == 0 as byte || source_root[0] == 0 as byte {
+        return 1;
+    }
+    if g_package_mode_alias_root_count >= PACKAGE_MODE_ALIAS_ROOT_MAX {
+        return 1;
+    }
+    const idx: i32 = g_package_mode_alias_root_count;
+    const idx_checked: !usize = idx as! usize;
+    const idx_usize: usize = idx_checked catch {
+        return 1;
+    };
+    if idx_usize >= PACKAGE_MODE_ALIAS_ROOT_MAX as usize {
+        return 1;
+    }
+    const alias_written: i32 = snprintf(&g_package_mode_alias_names[idx_usize][0], PATH_MAX, "%s" as *byte, alias as *byte);
+    if alias_written <= 0 || alias_written >= PATH_MAX {
+        return 1;
+    }
+    if package_mode_alias_copy_root(source_root, &g_package_mode_alias_roots[idx_usize][0] as &byte, PATH_MAX as usize) != 0 {
+        return 1;
+    }
+    g_package_mode_alias_root_count = g_package_mode_alias_root_count + 1;
+    return 0;
+}
+
+fn package_mode_alias_matches(module_path: &byte, alias: &byte, alias_len_out: &usize) i32 {
+    if module_path == null || alias == null || alias_len_out == null {
+        return 0;
+    }
+    var i: usize = 0;
+    while alias[i] != 0 as byte {
+        if module_path[i] != alias[i] {
+            return 0;
+        }
+        i = i + 1usize;
+    }
+    if i == 0usize {
+        return 0;
+    }
+    if module_path[i] != 0 as byte && module_path[i] != 46 as byte {
+        return 0;
+    }
+    alias_len_out[0] = i;
+    return 1;
+}
+
+fn package_mode_alias_relative_path(module_path: &byte, alias_len: usize, out: &byte, out_cap: usize) i32 {
+    if module_path == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    out[0] = 0 as byte;
+    if module_path[alias_len] == 0 as byte {
+        return 0;
+    }
+    var src_idx: usize = alias_len + 1usize;
+    var dst_idx: usize = 0;
+    while module_path[src_idx] != 0 as byte {
+        if dst_idx + 1usize >= out_cap {
+            return 1;
+        }
+        if module_path[src_idx] == 46 as byte {
+            out[dst_idx] = 47 as byte;
+        } else {
+            out[dst_idx] = module_path[src_idx];
+        }
+        src_idx = src_idx + 1usize;
+        dst_idx = dst_idx + 1usize;
+    }
+    out[dst_idx] = 0 as byte;
+    return 0;
+}
+
+fn package_mode_dependency_path_for_module(module_path: &byte, out_root: &byte, out_relative: &byte, out_cap: usize) i32 {
+    if module_path == null || out_root == null || out_relative == null {
+        return 1;
+    }
+    var i: i32 = 0;
+    while i < g_package_mode_alias_root_count {
+        var alias_len: usize = 0;
+        const idx_checked: !usize = i as! usize;
+        const idx_usize: usize = idx_checked catch {
+            return 1;
+        };
+        if idx_usize >= PACKAGE_MODE_ALIAS_ROOT_MAX as usize {
+            return 1;
+        }
+        if package_mode_alias_matches(module_path, &g_package_mode_alias_names[idx_usize][0] as &byte, &alias_len) != 0 {
+            if package_mode_alias_copy_root(&g_package_mode_alias_roots[idx_usize][0] as &byte, out_root, out_cap) != 0 {
+                return 1;
+            }
+            return package_mode_alias_relative_path(module_path, alias_len, out_relative, out_cap);
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn package_mode_dependency_module_dir(module_path: &byte, out_dir: &byte, out_cap: usize) i32 {
+    var dep_root: [byte: PATH_MAX] = [];
+    var dep_relative: [byte: PATH_MAX] = [];
+    if package_mode_dependency_path_for_module(module_path, &dep_root[0] as &byte, &dep_relative[0] as &byte, PATH_MAX as usize) != 0 {
+        return 0;
+    }
+    if dep_relative[0] == 0 as byte {
+        if out_dir != null && out_cap > 0usize {
+            if package_mode_alias_copy_root(&dep_root[0] as &byte, out_dir, out_cap) != 0 {
+                return 0;
+            }
+        }
+        return is_directory(&dep_root[0] as &byte);
+    }
+    var candidate: [byte: PATH_MAX] = [];
+    const len: i32 = snprintf(&candidate[0], PATH_MAX, "%s%s" as *byte, &dep_root[0] as *byte, &dep_relative[0] as *byte);
+    if len <= 0 || len >= PATH_MAX {
+        return 0;
+    }
+    if is_directory(&candidate[0] as &byte) == 0 {
+        return 0;
+    }
+    if out_dir != null && out_cap > 0usize && len < out_cap as i32 {
+        strcpy(out_dir as *byte, &candidate[0]);
+    }
+    return 1;
+}
+
+fn package_mode_dependency_module_file(module_path: &byte, out_file: &byte, out_cap: usize) i32 {
+    var dep_root: [byte: PATH_MAX] = [];
+    var dep_relative: [byte: PATH_MAX] = [];
+    if package_mode_dependency_path_for_module(module_path, &dep_root[0] as &byte, &dep_relative[0] as &byte, PATH_MAX as usize) != 0 {
+        return -1;
+    }
+    if dep_relative[0] == 0 as byte {
+        return -1;
+    }
+    var candidate: [byte: PATH_MAX] = [];
+    const len: i32 = snprintf(&candidate[0], PATH_MAX, "%s%s.uya" as *byte, &dep_root[0] as *byte, &dep_relative[0] as *byte);
+    if len <= 0 || len >= PATH_MAX {
+        return -1;
+    }
+    const f: *void = fopen(&candidate[0], "r" as *byte);
+    if f == null {
+        return -1;
+    }
+    fclose(f);
+    if len >= out_cap as i32 {
+        return -1;
+    }
+    strcpy(out_file as *byte, &candidate[0]);
+    return 0;
+}
+
 // 根据模块路径查找文件
 fn find_module_file(
     module_path: &byte,
@@ -97,6 +281,10 @@ fn find_module_file(
 ) i32 {
     if module_path == null || buffer == null || buffer_size == 0 {
         return -1;
+    }
+
+    if package_mode_dependency_module_file(module_path, buffer, buffer_size) == 0 {
+        return 0;
     }
 
     // `use std;` 仅用于引入平台选择器与 `std.cfg` 语义，应该稳定映射到
@@ -243,6 +431,9 @@ fn find_direct_module_file(
     if module_path == null || buffer == null || buffer_size == 0 {
         return -1;
     }
+    if package_mode_dependency_module_file(module_path, buffer, buffer_size) == 0 {
+        return 0;
+    }
     var file_path: [byte: PATH_MAX] = [];
     if module_path_to_file_path(module_path, &file_path[0] as &byte, PATH_MAX) != 0 {
         return -1;
@@ -298,6 +489,9 @@ fn find_direct_module_file(
 fn module_dir_exists(module_path: &byte, module_root: &byte, uya_root: &byte, out_dir: &byte, out_cap: usize) i32 {
     if module_path == null {
         return 0;
+    }
+    if package_mode_dependency_module_dir(module_path, out_dir, out_cap) != 0 {
+        return 1;
     }
     var file_path: [byte: PATH_MAX] = [];
     if module_path_to_file_path(module_path, &file_path[0] as &byte, PATH_MAX) != 0 {
@@ -1076,19 +1270,23 @@ fn collect_module_dependencies(
         }
         var found_dir: i32 = 0;
         var module_dir_path: [byte: PATH_MAX] = [];
-        var ri: i32 = 0;
-        while ri < 2 {
-            var root: &byte = null;
-            if ri == 0 { root = module_root; }
-            if ri == 1 { root = uya_root; }
-            ri = ri + 1;
-            if root == null { continue; }
-            const root_nonnull: &byte = root;  // 为安全证明建立非空引用
-            if root_nonnull[0] == 0 { continue; }
-            const len: i32 = snprintf(&module_dir_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
-            if len > 0 && len < PATH_MAX as i32 && is_directory(&module_dir_path[0] as &byte) != 0 {
-                found_dir = 1;
-                break;
+        if package_mode_dependency_module_dir(&module_names_stack[i][0] as &byte, &module_dir_path[0] as &byte, PATH_MAX as usize) != 0 {
+            found_dir = 1;
+        } else {
+            var ri: i32 = 0;
+            while ri < 2 {
+                var root: &byte = null;
+                if ri == 0 { root = module_root; }
+                if ri == 1 { root = uya_root; }
+                ri = ri + 1;
+                if root == null { continue; }
+                const root_nonnull: &byte = root;  // 为安全证明建立非空引用
+                if root_nonnull[0] == 0 { continue; }
+                const len: i32 = snprintf(&module_dir_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
+                if len > 0 && len < PATH_MAX as i32 && is_directory(&module_dir_path[0] as &byte) != 0 {
+                    found_dir = 1;
+                    break;
+                }
             }
         }
         if found_dir != 0 {
