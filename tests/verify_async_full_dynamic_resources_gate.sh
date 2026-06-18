@@ -6,12 +6,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPILER="$(cd "$REPO_ROOT" && pwd)/../uya/bin/uya"
 export UYA_ROOT="${UYA_ROOT:-$REPO_ROOT/lib/}"
 
-if [ ! -x "$COMPILER" ]; then
-    echo "missing compiler: $COMPILER"
-    echo "hint: run 'make uya' first"
-    exit 1
-fi
-
 MODE="${1:-all}"
 
 case "$MODE" in
@@ -28,6 +22,14 @@ run_stage() {
     shift
     echo "==> $name"
     "$@"
+}
+
+require_compiler() {
+    if [ ! -x "$COMPILER" ]; then
+        echo "missing compiler: $COMPILER"
+        echo "hint: run 'make uya' first"
+        exit 1
+    fi
 }
 
 run_uya_test() {
@@ -94,10 +96,12 @@ run_backup_all_stages() {
 }
 
 if [ "$MODE" = "all" ] || [ "$MODE" = "unit-scan" ]; then
+    require_compiler
     run_unit_scan_stages
 fi
 
 if [ "$MODE" = "all" ] || [ "$MODE" = "c99-stress" ]; then
+    require_compiler
     run_c99_stress_stages
 fi
 
