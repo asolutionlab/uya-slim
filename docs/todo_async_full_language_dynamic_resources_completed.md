@@ -528,3 +528,10 @@
   - [x] 将 TLS handshake/read/write 拆为 `Future<!usize>` 或等价 async leaf primitive，并接入 `Waker.wait_readable/wait_writable`；最小验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya`；完成条件：TLS I/O would-block 时返回 `Poll.Pending`，ready 后通过共享 `LinuxEpoll` 唤醒并返回 `Poll.Ready`。
     验证：`../uya/bin/uya test --c99 tests/test_tls_async_io_future.uya` 通过（1 test，17 assertions）。
     相关回归：`../uya/bin/uya test --c99 tests/test_tls_async_runtime_boundary.uya` 通过（1 test，9 assertions）；`../uya/bin/uya test --c99 tests/test_https_loopback.uya` 通过（1 test）。
+## 目标
+
+父级任务路径：Linux + C99 主链路下，HTTP/DNS/TLS/`async_compute`/`Scheduler` 共享同一套稳定的 async 运行时语义。
+
+  - [x] 增加 HTTP/DNS/TLS/`async_compute` 共享 runtime 组合闸门，证明同一调度语义下 readiness、eventfd wake、取消和 cleanup 不互相冲突；最小验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya`；完成条件：测试同时覆盖至少一个 I/O future、一个 DNS future、一个 TLS async future 或边界替代项，以及一个 `async_compute` future。
+    - 验证：`../uya/bin/uya test --c99 tests/test_async_runtime_shared_semantics.uya` 通过，3 个测试、29 个断言；覆盖共享调度矩阵、真实 `AsyncFd` I/O future + `async_compute` 同队列，以及 DNS/TLS async future 边界替代项。
+    - 相关回归：`../uya/bin/uya test --c99 tests/test_async_shared_runtime_semantics.uya` 通过，2 个测试、19 个断言。
