@@ -173,6 +173,27 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         if program.type != ASTNodeType.AST_PROGRAM {
             return -1;
         }
+        // 优先走程序级声明名索引（O(1)+ 命中），避免 O(N) 线性扫描。
+        progdecl_index_ensure(program);
+        if progdecl_index_ready(program) != 0 {
+            const decl: &ASTNode = progdecl_index_find_const_var_decl(program, expr.identifier_name);
+            if decl != null {
+                if decl.type == ASTNodeType.AST_VAR_DECL {
+                    const init: &ASTNode = decl.var_decl_init;
+                    if init != null {
+                        return checker_eval_const_expr(checker, init);
+                    }
+                    return -1;
+                }
+                const init_ex: &ASTNode = decl.extern_var_decl_init_expr;
+                if init_ex != null {
+                    return checker_eval_const_expr(checker, init_ex);
+                }
+                return -1;
+            }
+            return -1;
+        }
+        // 索引不可用（声明数超限）时回退线性扫描。
         var i: i32 = 0;
         while i < program.program_decl_count {
             const decl: &ASTNode = program.program_decls[i];

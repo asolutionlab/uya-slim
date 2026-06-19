@@ -28,6 +28,7 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     // `uya` 可能在同一进程里连续做两次完整编译（例如 exec unsupported 后回退 C99）。
     // 这些全局缓存若不清空，会因 arena 地址复用把上一轮 AST/Type 结果错误复用到下一轮。
     reset_program_lookup_caches();
+    reset_symbol_lookup_cache();
     type_from_ast_reset_cache();
     mono_instance_index_reset();
     
@@ -93,6 +94,7 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
         i = i + 1;
     }
     checker.fn_call_edge_count = 0;
+    reset_function_edge_cache();
     i = 0;
     while i < @len(checker.fn_root_decls) {
         checker.fn_root_decls[i] = null;
@@ -183,6 +185,12 @@ fn checker_find_reachable_fn_decl_by_name(checker: &TypeChecker, name: &byte) &A
         checker.program_node.type != ASTNodeType.AST_PROGRAM {
         return null;
     }
+    // 优先走程序级声明名索引（O(1)+ 命中），避免两遍 O(N) 线性扫描。
+    progdecl_index_ensure(checker.program_node);
+    if progdecl_index_ready(checker.program_node) != 0 {
+        return progdecl_index_find_reachable_fn(checker.program_node, name);
+    }
+    // 索引不可用（声明数超限）时回退线性扫描。
     var i: i32 = 0;
     while i < checker.program_node.program_decl_count {
         const decl: &ASTNode = checker.program_node.program_decls[i];
@@ -405,6 +413,32 @@ fn checker_add_function_root_by_name(checker: &TypeChecker, name: &byte) i32 {
     return checker_add_function_root_decl(checker, fn_decl);
 }
 
+const FUNCTION_EDGE_CACHE_SIZE: i32 = 32768;
+const FUNCTION_EDGE_CACHE_MASK: i32 = 32767;
+
+var g_function_edge_cache_from: [&ASTNode: FUNCTION_EDGE_CACHE_SIZE] = [];
+var g_function_edge_cache_to: [&ASTNode: FUNCTION_EDGE_CACHE_SIZE] = [];
+var g_function_edge_cache_valid: [i32: FUNCTION_EDGE_CACHE_SIZE] = [];
+
+fn reset_function_edge_cache() void {
+    var i: i32 = 0;
+    while i < FUNCTION_EDGE_CACHE_SIZE {
+        g_function_edge_cache_from[i] = null;
+        g_function_edge_cache_to[i] = null;
+        g_function_edge_cache_valid[i] = 0;
+        i = i + 1;
+    }
+}
+
+fn function_edge_cache_slot(from_decl: &ASTNode, to_decl: &ASTNode) i32 {
+    if from_decl == null || to_decl == null {
+        return 0;
+    }
+    const from_hash: usize = (@usize_from_ptr(from_decl as &void) / 8 as usize);
+    const to_hash: usize = (@usize_from_ptr(to_decl as &void) / 8 as usize);
+    return (((from_hash * 131usize) + to_hash) & 32767usize) as i32;
+}
+
 fn checker_add_function_edge(checker: &TypeChecker, from_decl: &ASTNode, to_decl: &ASTNode) i32 {
     const canonical_from_decl: &ASTNode = checker_canonicalize_fn_decl(checker, from_decl);
     const canonical_to_decl: &ASTNode = checker_canonicalize_fn_decl(checker, to_decl);
@@ -412,12 +446,20 @@ fn checker_add_function_edge(checker: &TypeChecker, from_decl: &ASTNode, to_decl
         canonical_from_decl.type != ASTNodeType.AST_FN_DECL || canonical_to_decl.type != ASTNodeType.AST_FN_DECL {
         return 0;
     }
-    var i: i32 = 0;
-    while i < checker.fn_call_edge_count {
-        if checker.fn_call_edge_from[i] == canonical_from_decl && checker.fn_call_edge_to[i] == canonical_to_decl {
+    var free_slot: i32 = -1;
+    var edge_slot: i32 = function_edge_cache_slot(canonical_from_decl, canonical_to_decl);
+    var probe: i32 = 0;
+    while probe < FUNCTION_EDGE_CACHE_SIZE && edge_slot >= 0 && edge_slot < FUNCTION_EDGE_CACHE_SIZE {
+        if g_function_edge_cache_valid[edge_slot] == 0 {
+            free_slot = edge_slot;
+            break;
+        }
+        if g_function_edge_cache_from[edge_slot] == canonical_from_decl &&
+            g_function_edge_cache_to[edge_slot] == canonical_to_decl {
             return 1;
         }
-        i = i + 1;
+        edge_slot = (edge_slot + 1) & FUNCTION_EDGE_CACHE_MASK;
+        probe = probe + 1;
     }
     if checker.fn_call_edge_count >= MAX_FN_CALL_EDGES {
         checker_report_error(checker, canonical_from_decl, "顶层函数 call edge 容量已满" as *byte);
@@ -428,6 +470,11 @@ fn checker_add_function_edge(checker: &TypeChecker, from_decl: &ASTNode, to_decl
         checker.fn_call_edge_from[edge_idx] = canonical_from_decl;
         checker.fn_call_edge_to[edge_idx] = canonical_to_decl;
         checker.fn_call_edge_count = edge_idx + 1;
+        if free_slot >= 0 && free_slot < FUNCTION_EDGE_CACHE_SIZE {
+            g_function_edge_cache_from[free_slot] = canonical_from_decl;
+            g_function_edge_cache_to[free_slot] = canonical_to_decl;
+            g_function_edge_cache_valid[free_slot] = 1;
+        }
         return 1;
     }
     return 0;
@@ -558,11 +605,62 @@ fn checker_get_error_count(checker: &TypeChecker) i32 {
 
 // ===== 符号表操作 =====
 
+const SYMBOL_LOOKUP_CACHE_SIZE: i32 = 8192;
+const SYMBOL_LOOKUP_CACHE_MASK: i32 = 8191;
+
+var g_symbol_lookup_cache_checker: [&TypeChecker: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_key: [&byte: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_hash: [i32: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_scope: [i32: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_count: [i32: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_generation: [i32: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_value: [&Symbol: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_cache_valid: [i32: SYMBOL_LOOKUP_CACHE_SIZE] = [];
+var g_symbol_lookup_generation: i32 = 1;
+
+fn reset_symbol_lookup_cache() void {
+    var i: i32 = 0;
+    while i < SYMBOL_LOOKUP_CACHE_SIZE {
+        g_symbol_lookup_cache_checker[i] = null;
+        g_symbol_lookup_cache_key[i] = null;
+        g_symbol_lookup_cache_hash[i] = 0;
+        g_symbol_lookup_cache_scope[i] = -1;
+        g_symbol_lookup_cache_count[i] = -1;
+        g_symbol_lookup_cache_generation[i] = 0;
+        g_symbol_lookup_cache_value[i] = null;
+        g_symbol_lookup_cache_valid[i] = 0;
+        i = i + 1;
+    }
+    g_symbol_lookup_generation = g_symbol_lookup_generation + 1;
+}
+
+fn symbol_lookup_cache_slot(name_hash: i32) i32 {
+    return (name_hash & SYMBOL_LOOKUP_CACHE_MASK) as i32;
+}
+
+fn symbol_lookup_cache_bump_generation() void {
+    g_symbol_lookup_generation = g_symbol_lookup_generation + 1;
+}
+
 // 符号表查找函数（支持作用域查找，返回最内层匹配的符号）
 // 优化：使用作用域链表，从当前作用域向外查找
 fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
     if checker == null || name == null {
         return null;
+    }
+    const name_hash: i32 = hash_string(name);
+    const cache_slot: i32 = symbol_lookup_cache_slot(name_hash);
+    if cache_slot >= 0 && cache_slot < SYMBOL_LOOKUP_CACHE_SIZE &&
+        g_symbol_lookup_cache_valid[cache_slot] != 0 &&
+        g_symbol_lookup_cache_checker[cache_slot] == checker &&
+        g_symbol_lookup_cache_hash[cache_slot] == name_hash &&
+        g_symbol_lookup_cache_scope[cache_slot] == checker.scope_level &&
+        g_symbol_lookup_cache_count[cache_slot] == checker.symbol_table.count &&
+        g_symbol_lookup_cache_generation[cache_slot] == g_symbol_lookup_generation {
+        const cached_key: &byte = g_symbol_lookup_cache_key[cache_slot];
+        if cached_key == name || str_equals(cached_key, name) != 0 {
+            return g_symbol_lookup_cache_value[cache_slot];
+        }
     }
 
     // 从当前作用域开始向外查找
@@ -580,6 +678,16 @@ fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
         while symbol != null {
             // 使用优化的 str_equals（先比较指针）
             if str_equals(symbol.name, name) != 0 {
+                if cache_slot >= 0 && cache_slot < SYMBOL_LOOKUP_CACHE_SIZE {
+                    g_symbol_lookup_cache_checker[cache_slot] = checker;
+                    g_symbol_lookup_cache_key[cache_slot] = name;
+                    g_symbol_lookup_cache_hash[cache_slot] = name_hash;
+                    g_symbol_lookup_cache_scope[cache_slot] = checker.scope_level;
+                    g_symbol_lookup_cache_count[cache_slot] = checker.symbol_table.count;
+                    g_symbol_lookup_cache_generation[cache_slot] = g_symbol_lookup_generation;
+                    g_symbol_lookup_cache_value[cache_slot] = symbol;
+                    g_symbol_lookup_cache_valid[cache_slot] = 1;
+                }
                 return symbol;  // 找到最内层匹配
             }
             symbol = symbol.next_in_scope;
@@ -587,6 +695,16 @@ fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
         scope = scope - 1;
     }
 
+    if cache_slot >= 0 && cache_slot < SYMBOL_LOOKUP_CACHE_SIZE {
+        g_symbol_lookup_cache_checker[cache_slot] = checker;
+        g_symbol_lookup_cache_key[cache_slot] = name;
+        g_symbol_lookup_cache_hash[cache_slot] = name_hash;
+        g_symbol_lookup_cache_scope[cache_slot] = checker.scope_level;
+        g_symbol_lookup_cache_count[cache_slot] = checker.symbol_table.count;
+        g_symbol_lookup_cache_generation[cache_slot] = g_symbol_lookup_generation;
+        g_symbol_lookup_cache_value[cache_slot] = null;
+        g_symbol_lookup_cache_valid[cache_slot] = 1;
+    }
     return null;
 }
 
@@ -633,6 +751,7 @@ fn symbol_table_insert(checker: &TypeChecker, symbol: &Symbol) i32 {
                     checker_scope_head_set(checker, scope, symbol);
                 }
             }
+            symbol_lookup_cache_bump_generation();
 
             return 0;
         }
@@ -782,6 +901,7 @@ fn function_table_insert(checker: &TypeChecker, sig: &FunctionSignature) i32 {
 fn checker_enter_scope(checker: &TypeChecker) void {
     if checker != null {
         checker.scope_level = checker.scope_level + 1;
+        symbol_lookup_cache_bump_generation();
     }
 }
 
@@ -834,6 +954,7 @@ fn checker_exit_scope(checker: &TypeChecker) void {
     }
     
     checker.scope_level = checker.scope_level - 1;
+    symbol_lookup_cache_bump_generation();
 }
 
 // ===== 字符串工具 =====
@@ -859,6 +980,33 @@ fn str_equals(s1: &byte, s2: &byte) i32 {
             return 0;
         }
         if c1 == 0 {
+            return 1;
+        }
+        i = i + 1;
+        const c1b: byte = s1[i] as byte;
+        const c2b: byte = s2[i] as byte;
+        if c1b != c2b {
+            return 0;
+        }
+        if c1b == 0 {
+            return 1;
+        }
+        i = i + 1;
+        const c1c: byte = s1[i] as byte;
+        const c2c: byte = s2[i] as byte;
+        if c1c != c2c {
+            return 0;
+        }
+        if c1c == 0 {
+            return 1;
+        }
+        i = i + 1;
+        const c1d: byte = s1[i] as byte;
+        const c2d: byte = s2[i] as byte;
+        if c1d != c2d {
+            return 0;
+        }
+        if c1d == 0 {
             return 1;
         }
         i = i + 1;

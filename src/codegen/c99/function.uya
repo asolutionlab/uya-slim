@@ -583,14 +583,23 @@ fn get_private_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename
     return get_safe_c_identifier(codegen, result);
 }
 
-const C99_PRIVATE_FN_SCOPE_CACHE_BITS: i32 = 12;
-const C99_PRIVATE_FN_SCOPE_CACHE_SIZE: i32 = 4096;
-const C99_PRIVATE_FN_SCOPE_CACHE_MASK: i32 = 4095;
+const C99_PRIVATE_FN_SCOPE_CACHE_BITS: i32 = 13;
+const C99_PRIVATE_FN_SCOPE_CACHE_SIZE: i32 = 8192;
+const C99_PRIVATE_FN_SCOPE_CACHE_MASK: i32 = 8191;
+
+const C99_STATIC_TOP_FN_CACHE_BITS: i32 = 13;
+const C99_STATIC_TOP_FN_CACHE_SIZE: i32 = 8192;
+const C99_STATIC_TOP_FN_CACHE_MASK: i32 = 8191;
 
 var g_c99_private_fn_scope_cached_codegen: &C99CodeGenerator = null;
 var g_c99_private_fn_scope_keys: [&ASTNode: C99_PRIVATE_FN_SCOPE_CACHE_SIZE] = [];
 var g_c99_private_fn_scope_values: [i32: C99_PRIVATE_FN_SCOPE_CACHE_SIZE] = [];
 var g_c99_private_fn_scope_valid: [i32: C99_PRIVATE_FN_SCOPE_CACHE_SIZE] = [];
+var g_c99_static_top_fn_cached_codegen: &C99CodeGenerator = null;
+var g_c99_static_top_fn_keys: [&ASTNode: C99_STATIC_TOP_FN_CACHE_SIZE] = [];
+var g_c99_static_top_fn_split_enabled: [i32: C99_STATIC_TOP_FN_CACHE_SIZE] = [];
+var g_c99_static_top_fn_values: [i32: C99_STATIC_TOP_FN_CACHE_SIZE] = [];
+var g_c99_static_top_fn_valid: [i32: C99_STATIC_TOP_FN_CACHE_SIZE] = [];
 
 fn c99_private_fn_scope_cache_reset(codegen: &C99CodeGenerator) void {
     var i: i32 = 0;
@@ -618,7 +627,37 @@ fn c99_private_fn_scope_cache_slot(fn_decl: &ASTNode) i32 {
         return 0;
     }
     const node_hash: usize = (@usize_from_ptr(fn_decl as &void) / 8 as usize);
-    return (node_hash & 4095usize) as i32;
+    return (node_hash & 8191usize) as i32;
+}
+
+fn c99_static_top_fn_cache_reset(codegen: &C99CodeGenerator) void {
+    var i: i32 = 0;
+    while i < C99_STATIC_TOP_FN_CACHE_SIZE {
+        g_c99_static_top_fn_keys[i] = null;
+        g_c99_static_top_fn_split_enabled[i] = 0;
+        g_c99_static_top_fn_values[i] = 0;
+        g_c99_static_top_fn_valid[i] = 0;
+        i = i + 1;
+    }
+    g_c99_static_top_fn_cached_codegen = codegen;
+}
+
+fn c99_static_top_fn_cache_ensure(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+    if g_c99_static_top_fn_cached_codegen == codegen {
+        return;
+    }
+    c99_static_top_fn_cache_reset(codegen);
+}
+
+fn c99_static_top_fn_cache_slot(fn_decl: &ASTNode) i32 {
+    if fn_decl == null {
+        return 0;
+    }
+    const node_hash: usize = (@usize_from_ptr(fn_decl as &void) / 8 as usize);
+    return (node_hash & 8191usize) as i32;
 }
 
 fn c99_private_function_needs_file_scope_name_uncached(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
@@ -628,6 +667,10 @@ fn c99_private_function_needs_file_scope_name_uncached(codegen: &C99CodeGenerato
         fn_decl.fn_decl_extern_lib_name != null ||
         codegen.program_node == null || codegen.program_node.type != ASTNodeType.AST_PROGRAM {
         return 0;
+    }
+    const indexed_conflict: i32 = progdecl_index_private_fn_body_conflicts(codegen.program_node, fn_decl);
+    if indexed_conflict >= 0 {
+        return indexed_conflict;
     }
     var i: i32 = 0;
     while i < codegen.program_node.program_decl_count {
@@ -879,7 +922,7 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
 
 // 生成函数原型（前向声明）
 // 注意：此函数在 main.uya 中被调用，但由于 function.uya 在 main.uya 之前编译，函数已经可见
-fn c99_should_emit_static_top_level_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+fn c99_should_emit_static_top_level_function_uncached(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
     if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return 0;
     }
@@ -896,17 +939,46 @@ fn c99_should_emit_static_top_level_function(codegen: &C99CodeGenerator, fn_decl
         return 0;
     }
     if fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
-        var di: i32 = 0;
-        while di < codegen.program_node.program_decl_count {
-            const d: &ASTNode = codegen.program_node.program_decls[di];
-            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
-               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
+        const indexed_decl_without_body: i32 = progdecl_index_has_fn_decl_without_body(codegen.program_node, fn_decl.fn_decl_name);
+        if indexed_decl_without_body >= 0 {
+            if indexed_decl_without_body != 0 {
                 return 0;
             }
-            di = di + 1;
+        } else {
+            var di: i32 = 0;
+            while di < codegen.program_node.program_decl_count {
+                const d: &ASTNode = codegen.program_node.program_decls[di];
+                if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+                   strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
+                    return 0;
+                }
+                di = di + 1;
+            }
         }
     }
     return 1;
+}
+
+fn c99_should_emit_static_top_level_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+    if codegen == null || fn_decl == null {
+        return c99_should_emit_static_top_level_function_uncached(codegen, fn_decl);
+    }
+    c99_static_top_fn_cache_ensure(codegen);
+    const static_slot: i32 = c99_static_top_fn_cache_slot(fn_decl);
+    if static_slot >= 0 && static_slot < C99_STATIC_TOP_FN_CACHE_SIZE &&
+        g_c99_static_top_fn_valid[static_slot] != 0 &&
+        g_c99_static_top_fn_keys[static_slot] == fn_decl &&
+        g_c99_static_top_fn_split_enabled[static_slot] == codegen.split_enabled {
+        return g_c99_static_top_fn_values[static_slot];
+    }
+    const result: i32 = c99_should_emit_static_top_level_function_uncached(codegen, fn_decl);
+    if static_slot >= 0 && static_slot < C99_STATIC_TOP_FN_CACHE_SIZE {
+        g_c99_static_top_fn_keys[static_slot] = fn_decl;
+        g_c99_static_top_fn_split_enabled[static_slot] = codegen.split_enabled;
+        g_c99_static_top_fn_values[static_slot] = result;
+        g_c99_static_top_fn_valid[static_slot] = 1;
+    }
+    return result;
 }
 
 fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {

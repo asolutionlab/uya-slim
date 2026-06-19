@@ -34,6 +34,8 @@ fn c99_path_buf_char_at(buf: &byte, idx: i32) byte {
 extern fn getcwd(buf: *byte, size: usize) *byte;
 extern fn strstr(haystack: *byte, needle: *byte) *byte;
 extern fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void;
+extern fn c99_private_fn_scope_cache_reset(codegen: &C99CodeGenerator) void;
+extern fn c99_static_top_fn_cache_reset(codegen: &C99CodeGenerator) void;
 
 extern fn hash_string(str: &byte) i32;
 
@@ -60,6 +62,10 @@ var g_c99_enum_context_result_names: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
 var g_c99_enum_context_result_filenames: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
 var g_c99_enum_context_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
 var g_c99_enum_context_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context2_result_names: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context2_result_filenames: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context2_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context2_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
 var g_c99_struct_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
 var g_c99_struct_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
 var g_c99_struct_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
@@ -181,6 +187,10 @@ fn c99_decl_result_cache_reset(codegen: &C99CodeGenerator) void {
         g_c99_enum_context_result_filenames[i] = null;
         g_c99_enum_context_result_values[i] = null;
         g_c99_enum_context_result_valid[i] = 0;
+        g_c99_enum_context2_result_names[i] = null;
+        g_c99_enum_context2_result_filenames[i] = null;
+        g_c99_enum_context2_result_values[i] = null;
+        g_c99_enum_context2_result_valid[i] = 0;
         g_c99_struct_result_keys[i] = null;
         g_c99_struct_result_values[i] = null;
         g_c99_struct_result_valid[i] = 0;
@@ -323,6 +333,8 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
     c99_utils_reset_caches(codegen);
     c99_decl_result_cache_reset(codegen);
     c99_ident_ref_cache_reset();
+    c99_private_fn_scope_cache_reset(codegen);
+    c99_static_top_fn_cache_reset(codegen);
     codegen.arena = arena;
     codegen.checker = null;
     codegen.output = out_file;

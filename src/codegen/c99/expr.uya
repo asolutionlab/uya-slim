@@ -1676,14 +1676,10 @@ fn c99_find_function_decl_for_unqualified_call(codegen: &C99CodeGenerator, name:
         codegen.current_function_decl.filename != null &&
         codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
         const cur_file: &byte = codegen.current_function_decl.filename;
-        var i: i32 = 0;
-        while i < codegen.program_node.program_decl_count {
-            const decl: &ASTNode = codegen.program_node.program_decls[i];
-            if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
-                decl.fn_decl_name != null && decl.filename != null &&
-                decl.fn_decl_body != null &&
-                strcmp(decl.fn_decl_name as *byte, name as *byte) == 0 &&
-                strcmp(decl.filename as *byte, cur_file as *byte) == 0 {
+        progdecl_index_ensure(codegen.program_node);
+        if progdecl_index_ready(codegen.program_node) != 0 {
+            const decl: &ASTNode = progdecl_index_find_fn_in_file_with_body(codegen.program_node, name, cur_file);
+            if decl != null {
                 if unqualified_slot >= 0 && unqualified_slot < C99_DECL_RESULT_CACHE_SIZE {
                     g_c99_unqualified_fn_result_names[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, name);
                     g_c99_unqualified_fn_result_filenames[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, cur_file_for_cache);
@@ -1692,7 +1688,25 @@ fn c99_find_function_decl_for_unqualified_call(codegen: &C99CodeGenerator, name:
                 }
                 return decl;
             }
-            i = i + 1;
+        } else {
+            var i: i32 = 0;
+            while i < codegen.program_node.program_decl_count {
+                const decl: &ASTNode = codegen.program_node.program_decls[i];
+                if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
+                    decl.fn_decl_name != null && decl.filename != null &&
+                    decl.fn_decl_body != null &&
+                    strcmp(decl.fn_decl_name as *byte, name as *byte) == 0 &&
+                    strcmp(decl.filename as *byte, cur_file as *byte) == 0 {
+                    if unqualified_slot >= 0 && unqualified_slot < C99_DECL_RESULT_CACHE_SIZE {
+                        g_c99_unqualified_fn_result_names[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, name);
+                        g_c99_unqualified_fn_result_filenames[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, cur_file_for_cache);
+                        g_c99_unqualified_fn_result_values[unqualified_slot] = decl;
+                        g_c99_unqualified_fn_result_valid[unqualified_slot] = 1;
+                    }
+                    return decl;
+                }
+                i = i + 1;
+            }
         }
     }
     const fallback: &ASTNode = find_function_decl_c99(codegen, name);
@@ -6283,6 +6297,16 @@ fn c99_find_identifier_type_node_uncached(codegen: &C99CodeGenerator, name: &byt
         }
     }
     if codegen.program_node != null && codegen.program_node.program_decls != null {
+        // 优先程序级声明名索引（O(1)+ 命中）。
+        progdecl_index_ensure(codegen.program_node);
+        if progdecl_index_ready(codegen.program_node) != 0 {
+            const decl: &ASTNode = progdecl_index_find_typed(codegen.program_node, name, ASTNodeType.AST_VAR_DECL);
+            if decl != null {
+                return decl.var_decl_type;
+            }
+            return null;
+        }
+        // 索引不可用时回退线性扫描。
         var i: i32 = 0;
         while i < codegen.program_node.program_decl_count {
             const decl: &ASTNode = codegen.program_node.program_decls[i];

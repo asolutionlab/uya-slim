@@ -35,6 +35,17 @@ fn find_enum_decl_c99(codegen: &C99CodeGenerator, enum_name: &byte) &ASTNode {
             return cached;
         }
     }
+
+    progdecl_index_ensure(codegen.program_node);
+    if progdecl_index_ready(codegen.program_node) != 0 {
+        const indexed_decl: &ASTNode = progdecl_index_find_typed(codegen.program_node, enum_name, ASTNodeType.AST_ENUM_DECL);
+        if enum_result_slot >= 0 && enum_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+            g_c99_enum_result_keys[enum_result_slot] = c99_decl_result_cache_key_copy(codegen, enum_name);
+            g_c99_enum_result_values[enum_result_slot] = indexed_decl;
+            g_c99_enum_result_valid[enum_result_slot] = 1;
+        }
+        return indexed_decl;
+    }
     
     const decl_count: i32 = codegen.program_node.program_decl_count;
     
@@ -158,13 +169,12 @@ fn c99_find_enum_decl_in_context_uncached(codegen: &C99CodeGenerator, enum_name:
     }
     const decl_count: i32 = codegen.program_node.program_decl_count;
     if context_filename != null {
-        var i_alias: i32 = 0;
-        while i_alias < decl_count {
-            const decl_alias: &ASTNode = codegen.program_node.program_decls[i_alias];
+        progdecl_index_ensure(codegen.program_node);
+        const progdecl_ready: i32 = progdecl_index_ready(codegen.program_node);
+        if progdecl_ready != 0 {
+            const decl_alias: &ASTNode = progdecl_index_find_typed_in_file(codegen.program_node,
+                enum_name, ASTNodeType.AST_TYPE_ALIAS, context_filename);
             if decl_alias != null && decl_alias.type == ASTNodeType.AST_TYPE_ALIAS &&
-                decl_alias.type_alias_name != null && decl_alias.filename != null &&
-                strcmp(decl_alias.type_alias_name as *byte, enum_name as *byte) == 0 &&
-                strcmp(decl_alias.filename as *byte, context_filename as *byte) == 0 &&
                 decl_alias.type_alias_target_type != null &&
                 decl_alias.type_alias_target_type.type == ASTNodeType.AST_TYPE_NAMED &&
                 decl_alias.type_alias_target_type.type_named_name != null &&
@@ -172,19 +182,44 @@ fn c99_find_enum_decl_in_context_uncached(codegen: &C99CodeGenerator, enum_name:
                 return c99_find_enum_decl_in_context(codegen,
                     decl_alias.type_alias_target_type.type_named_name, context_filename);
             }
-            i_alias = i_alias + 1;
+        } else {
+            var i_alias: i32 = 0;
+            while i_alias < decl_count {
+                const decl_alias: &ASTNode = codegen.program_node.program_decls[i_alias];
+                if decl_alias != null && decl_alias.type == ASTNodeType.AST_TYPE_ALIAS &&
+                    decl_alias.type_alias_name != null && decl_alias.filename != null &&
+                    strcmp(decl_alias.type_alias_name as *byte, enum_name as *byte) == 0 &&
+                    strcmp(decl_alias.filename as *byte, context_filename as *byte) == 0 &&
+                    decl_alias.type_alias_target_type != null &&
+                    decl_alias.type_alias_target_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                    decl_alias.type_alias_target_type.type_named_name != null &&
+                    strcmp(decl_alias.type_alias_target_type.type_named_name as *byte, enum_name as *byte) != 0 {
+                    return c99_find_enum_decl_in_context(codegen,
+                        decl_alias.type_alias_target_type.type_named_name, context_filename);
+                }
+                i_alias = i_alias + 1;
+            }
         }
 
-        var i_local: i32 = 0;
-        while i_local < decl_count {
-            const decl_local: &ASTNode = codegen.program_node.program_decls[i_local];
+        if progdecl_ready != 0 {
+            const decl_local: &ASTNode = progdecl_index_find_typed_in_file(codegen.program_node,
+                enum_name, ASTNodeType.AST_ENUM_DECL, context_filename);
             if decl_local != null && decl_local.type == ASTNodeType.AST_ENUM_DECL &&
-                decl_local.enum_decl_name != null && decl_local.filename != null &&
-                strcmp(decl_local.enum_decl_name as *byte, enum_name as *byte) == 0 &&
-                strcmp(decl_local.filename as *byte, context_filename as *byte) == 0 {
+                decl_local.enum_decl_name != null {
                 return decl_local;
             }
-            i_local = i_local + 1;
+        } else {
+            var i_local: i32 = 0;
+            while i_local < decl_count {
+                const decl_local: &ASTNode = codegen.program_node.program_decls[i_local];
+                if decl_local != null && decl_local.type == ASTNodeType.AST_ENUM_DECL &&
+                    decl_local.enum_decl_name != null && decl_local.filename != null &&
+                    strcmp(decl_local.enum_decl_name as *byte, enum_name as *byte) == 0 &&
+                    strcmp(decl_local.filename as *byte, context_filename as *byte) == 0 {
+                    return decl_local;
+                }
+                i_local = i_local + 1;
+            }
         }
 
         var i_use: i32 = 0;
@@ -227,12 +262,30 @@ fn c99_find_enum_decl_in_context(codegen: &C99CodeGenerator, enum_name: &byte, c
             enum_name, context_filename) != 0 {
         return g_c99_enum_context_result_values[enum_context_slot];
     }
+    if enum_context_slot >= 0 && enum_context_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        c99_decl_result_cache_pair_matches(g_c99_enum_context2_result_valid[enum_context_slot],
+            g_c99_enum_context2_result_names[enum_context_slot],
+            g_c99_enum_context2_result_filenames[enum_context_slot],
+            enum_name, context_filename) != 0 {
+        return g_c99_enum_context2_result_values[enum_context_slot];
+    }
     const result: &ASTNode = c99_find_enum_decl_in_context_uncached(codegen, enum_name, context_filename);
     if enum_context_slot >= 0 && enum_context_slot < C99_DECL_RESULT_CACHE_SIZE {
-        g_c99_enum_context_result_names[enum_context_slot] = c99_decl_result_cache_key_copy(codegen, enum_name);
-        g_c99_enum_context_result_filenames[enum_context_slot] = c99_decl_result_cache_key_copy(codegen, context_filename);
-        g_c99_enum_context_result_values[enum_context_slot] = result;
-        g_c99_enum_context_result_valid[enum_context_slot] = 1;
+        if g_c99_enum_context_result_valid[enum_context_slot] == 0 ||
+            c99_decl_result_cache_pair_matches(g_c99_enum_context_result_valid[enum_context_slot],
+                g_c99_enum_context_result_names[enum_context_slot],
+                g_c99_enum_context_result_filenames[enum_context_slot],
+                enum_name, context_filename) != 0 {
+            g_c99_enum_context_result_names[enum_context_slot] = c99_decl_result_cache_key_copy(codegen, enum_name);
+            g_c99_enum_context_result_filenames[enum_context_slot] = c99_decl_result_cache_key_copy(codegen, context_filename);
+            g_c99_enum_context_result_values[enum_context_slot] = result;
+            g_c99_enum_context_result_valid[enum_context_slot] = 1;
+        } else {
+            g_c99_enum_context2_result_names[enum_context_slot] = c99_decl_result_cache_key_copy(codegen, enum_name);
+            g_c99_enum_context2_result_filenames[enum_context_slot] = c99_decl_result_cache_key_copy(codegen, context_filename);
+            g_c99_enum_context2_result_values[enum_context_slot] = result;
+            g_c99_enum_context2_result_valid[enum_context_slot] = 1;
+        }
     }
     return result;
 }

@@ -49,6 +49,10 @@ var g_lookup_method_block_union_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_
 var g_lookup_owned_method_result_keys: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
 var g_lookup_owned_method_result_values: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
 var g_lookup_owned_method_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owner_type_result_keys: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owner_type_result_names: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owner_type_result_is_union: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owner_type_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
 
 fn reset_program_lookup_caches() void {
     var i: i32 = 0;
@@ -95,11 +99,22 @@ fn reset_program_lookup_caches() void {
         g_lookup_owned_method_result_keys[i] = null;
         g_lookup_owned_method_result_values[i] = 0;
         g_lookup_owned_method_result_valid[i] = 0;
+        g_lookup_owner_type_result_keys[i] = null;
+        g_lookup_owner_type_result_names[i] = null;
+        g_lookup_owner_type_result_is_union[i] = 0;
+        g_lookup_owner_type_result_valid[i] = 0;
         i = i + 1;
     }
     g_lookup_cached_program = null;
     g_lookup_cached_decl_count = -1;
     g_lookup_cache_initialized = 0;
+    // 同步重置程序级声明名索引（避免 arena 复用同指针时命中过期索引）
+    g_progdecl_program = null;
+    g_progdecl_program_decl_count = -1;
+    g_progdecl_count = 0;
+    g_progdecl_overflow = 0;
+    g_progdecl_variant_count = 0;
+    g_progdecl_variant_overflow = 0;
 }
 
 fn lookup_decl_cache_slot(name: &byte) i32 {
@@ -134,6 +149,15 @@ fn lookup_node_result_cache_slot(node: &ASTNode) i32 {
     return (node_hash & 8191usize) as i32;
 }
 
+fn lookup_owner_type_cache_store(slot: i32, fn_decl: &ASTNode, owner_name: &byte, is_union: i32) void {
+    if slot >= 0 && slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_owner_type_result_keys[slot] = fn_decl;
+        g_lookup_owner_type_result_names[slot] = owner_name;
+        g_lookup_owner_type_result_is_union[slot] = is_union;
+        g_lookup_owner_type_result_valid[slot] = 1;
+    }
+}
+
 fn lookup_name_matches_exact_or_generic_base(decl_name: &byte, query_name: &byte) i32 {
     if decl_name == null || query_name == null {
         return 0;
@@ -150,6 +174,389 @@ fn lookup_name_matches_exact_or_generic_base(decl_name: &byte, query_name: &byte
         return 1;
     }
     return 0;
+}
+
+// ===== 程序级声明名索引 =====
+// 把「按名线性扫描 program_decls」改为按名哈希索引查找（O(1)+命中）。
+// 仅索引「确切名」声明（fn/var/extern var/enum/union/type_alias/macro）；
+// 带泛型参数的名（如 Future<T>）仍走原有 scan_struct/interface 缓存路径。
+// 不同声明类型可能同名，故索引按名保留同名的全部声明链，调用方再做类型/过滤判定。
+const PROGDECL_INDEX_SLOTS: i32 = 16384;
+const PROGDECL_INDEX_MASK: i32 = 16383;
+const PROGDECL_INDEX_ENTRIES: i32 = 32768;
+
+var g_progdecl_program: &ASTNode = null;
+var g_progdecl_program_decl_count: i32 = -1;
+var g_progdecl_count: i32 = 0;
+var g_progdecl_overflow: i32 = 0;  // 声明数超限，降级为线性扫描
+var g_progdecl_slot_head: [i32: PROGDECL_INDEX_SLOTS] = [];
+var g_progdecl_slot_tail: [i32: PROGDECL_INDEX_SLOTS] = [];
+var g_progdecl_name: [&byte: PROGDECL_INDEX_ENTRIES] = [];
+var g_progdecl_decl: [&ASTNode: PROGDECL_INDEX_ENTRIES] = [];
+var g_progdecl_next: [i32: PROGDECL_INDEX_ENTRIES] = [];
+var g_progdecl_variant_count: i32 = 0;
+var g_progdecl_variant_overflow: i32 = 0;
+var g_progdecl_variant_slot_head: [i32: PROGDECL_INDEX_SLOTS] = [];
+var g_progdecl_variant_slot_tail: [i32: PROGDECL_INDEX_SLOTS] = [];
+var g_progdecl_variant_name: [&byte: PROGDECL_INDEX_ENTRIES] = [];
+var g_progdecl_variant_next: [i32: PROGDECL_INDEX_ENTRIES] = [];
+
+// 取某声明的「确切名」；返回 null 表示不纳入索引（如带泛型参数的名）。
+fn progdecl_index_name_of(decl: &ASTNode) &byte {
+    if decl == null {
+        return null;
+    }
+    if decl.type == ASTNodeType.AST_FN_DECL {
+        return decl.fn_decl_name;
+    }
+    if decl.type == ASTNodeType.AST_VAR_DECL {
+        return decl.var_decl_name;
+    }
+    if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return decl.extern_var_decl_name;
+    }
+    if decl.type == ASTNodeType.AST_ENUM_DECL {
+        return decl.enum_decl_name;
+    }
+    if decl.type == ASTNodeType.AST_UNION_DECL {
+        return decl.union_decl_name;
+    }
+    if decl.type == ASTNodeType.AST_TYPE_ALIAS {
+        return decl.type_alias_name;
+    }
+    if decl.type == ASTNodeType.AST_MACRO_DECL {
+        return decl.macro_decl_name;
+    }
+    return null;
+}
+
+fn progdecl_index_add_enum_variant(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    if g_progdecl_variant_count >= PROGDECL_INDEX_ENTRIES {
+        g_progdecl_variant_overflow = 1;
+        return -1;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    const entry: i32 = g_progdecl_variant_count;
+    if entry >= 0 && entry < PROGDECL_INDEX_ENTRIES &&
+        slot >= 0 && slot < PROGDECL_INDEX_SLOTS {
+        g_progdecl_variant_name[entry] = name;
+        g_progdecl_variant_next[entry] = -1;
+        if g_progdecl_variant_slot_head[slot] < 0 {
+            g_progdecl_variant_slot_head[slot] = entry;
+            g_progdecl_variant_slot_tail[slot] = entry;
+        } else {
+            const tail: i32 = g_progdecl_variant_slot_tail[slot];
+            if tail >= 0 && tail < PROGDECL_INDEX_ENTRIES {
+                g_progdecl_variant_next[tail] = entry;
+            }
+            g_progdecl_variant_slot_tail[slot] = entry;
+        }
+        g_progdecl_variant_count = g_progdecl_variant_count + 1;
+        return 0;
+    }
+    g_progdecl_variant_overflow = 1;
+    return -1;
+}
+
+// 构建程序级声明名索引（幂等：同一 program 不重建）。
+fn progdecl_index_ensure(program_node: &ASTNode) void {
+    if program_node == null {
+        return;
+    }
+    if g_progdecl_program == program_node && g_progdecl_program_decl_count == program_node.program_decl_count {
+        return;
+    }
+    // 重置
+    var s: i32 = 0;
+    while s < PROGDECL_INDEX_SLOTS {
+        g_progdecl_slot_head[s] = -1;
+        g_progdecl_slot_tail[s] = -1;
+        g_progdecl_variant_slot_head[s] = -1;
+        g_progdecl_variant_slot_tail[s] = -1;
+        s = s + 1;
+    }
+    g_progdecl_count = 0;
+    g_progdecl_overflow = 0;
+    g_progdecl_variant_count = 0;
+    g_progdecl_variant_overflow = 0;
+    g_progdecl_program = program_node;
+    g_progdecl_program_decl_count = program_node.program_decl_count;
+
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        const name: &byte = progdecl_index_name_of(decl);
+        if name != null {
+            if g_progdecl_count >= PROGDECL_INDEX_ENTRIES {
+                // 超出条目上限：放弃索引，调用方回退线性扫描。
+                g_progdecl_overflow = 1;
+                g_progdecl_program = null;
+                return;
+            }
+            const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+            const entry: i32 = g_progdecl_count;
+            g_progdecl_name[entry] = name;
+            g_progdecl_decl[entry] = decl;
+            g_progdecl_next[entry] = -1;
+            if g_progdecl_slot_head[slot] < 0 {
+                g_progdecl_slot_head[slot] = entry;
+                g_progdecl_slot_tail[slot] = entry;
+            } else {
+                const tail: i32 = g_progdecl_slot_tail[slot];
+                if tail >= 0 && tail < PROGDECL_INDEX_ENTRIES {
+                    g_progdecl_next[tail] = entry;
+                }
+                g_progdecl_slot_tail[slot] = entry;
+            }
+            g_progdecl_count = g_progdecl_count + 1;
+        }
+        if g_progdecl_variant_overflow == 0 &&
+            decl != null && decl.type == ASTNodeType.AST_ENUM_DECL && decl.enum_decl_variants != null {
+            var vi: i32 = 0;
+            while vi < decl.enum_decl_variant_count {
+                const variant_name: &byte = decl.enum_decl_variants[vi].name;
+                if variant_name != null {
+                    _ = progdecl_index_add_enum_variant(variant_name);
+                }
+                vi = vi + 1;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// 索引是否可用（已为 program_node 构建，未溢出）。
+fn progdecl_index_ready(program_node: &ASTNode) i32 {
+    if program_node == null {
+        return 0;
+    }
+    if g_progdecl_program != program_node {
+        return 0;
+    }
+    if g_progdecl_overflow != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn progdecl_index_has_enum_variant(program_node: &ASTNode, name: &byte) i32 {
+    if program_node == null || name == null {
+        return 0;
+    }
+    progdecl_index_ensure(program_node);
+    if g_progdecl_program != program_node || g_progdecl_variant_overflow != 0 {
+        return -1;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_variant_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_variant_name[idx] != null && str_equals(g_progdecl_variant_name[idx], name) != 0 {
+            return 1;
+        }
+        idx = g_progdecl_variant_next[idx];
+    }
+    return 0;
+}
+
+// 按名查找：返回匹配确切名的「第一个」声明（保持 program_decls 顺序）。
+fn progdecl_index_find_first(program_node: &ASTNode, name: &byte) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        // 哈希碰撞：链上可能混入不同名条目，需逐条 str_equals 校验。
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            return g_progdecl_decl[idx];
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return null;
+}
+
+// 链上首个「指定类型 + 确切名」声明（保持 program_decls 顺序）。
+fn progdecl_index_find_typed(program_node: &ASTNode, name: &byte, decl_type: ASTNodeType) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null && decl.type == decl_type {
+                return decl;
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return null;
+}
+
+fn progdecl_index_find_typed_in_file(program_node: &ASTNode, name: &byte, decl_type: ASTNodeType, filename: &byte) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null || filename == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null && decl.type == decl_type && decl.filename != null &&
+                str_equals(decl.filename, filename) != 0 {
+                return decl;
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return null;
+}
+
+fn progdecl_index_find_fn_in_file_with_body(program_node: &ASTNode, name: &byte, filename: &byte) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null || filename == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
+                decl.fn_decl_body != null && decl.filename != null &&
+                str_equals(decl.filename, filename) != 0 {
+                return decl;
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return null;
+}
+
+fn progdecl_index_has_fn_decl_without_body(program_node: &ASTNode, name: &byte) i32 {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null {
+        return -1;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body == null {
+                return 1;
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return 0;
+}
+
+fn progdecl_index_private_fn_body_conflicts(program_node: &ASTNode, fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.fn_decl_name == null || fn_decl.filename == null {
+        return -1;
+    }
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 {
+        return -1;
+    }
+    const slot: i32 = (hash_string(fn_decl.fn_decl_name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], fn_decl.fn_decl_name) != 0 {
+            const other: &ASTNode = g_progdecl_decl[idx];
+            if other != null && other != fn_decl && other.type == ASTNodeType.AST_FN_DECL &&
+                other.fn_decl_name != null && other.filename != null &&
+                other.fn_decl_body != null && other.fn_decl_is_export == 0 &&
+                other.fn_decl_extern_lib_name == null &&
+                str_equals(other.filename, fn_decl.filename) == 0 {
+                return 1;
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return 0;
+}
+
+// 首个变量声明（AST_VAR_DECL 或 AST_EXTERN_VAR_DECL）——供 checker_eval_const_expr
+// 与 c99_find_identifier_type_node 的全局变量扫描使用。
+fn progdecl_index_find_var_decl(program_node: &ASTNode, name: &byte) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null && (decl.type == ASTNodeType.AST_VAR_DECL || decl.type == ASTNodeType.AST_EXTERN_VAR_DECL) {
+                return decl;
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return null;
+}
+
+// 首个函数声明；优先返回带函数体的（定义），否则返回首个（extern 声明）。
+// 等价于 checker_find_reachable_fn_decl_by_name 原两遍扫描的语义。
+fn progdecl_index_find_reachable_fn(program_node: &ASTNode, name: &byte) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    var first_fn: &ASTNode = null;
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+                if first_fn == null {
+                    first_fn = decl;
+                }
+                if decl.fn_decl_body != null {
+                    return decl;  // 优先带体的定义
+                }
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return first_fn;
+}
+
+// 首个「同名 const 变量声明」（VAR_DECL 或 EXTERN_VAR_DECL，且 is_const）。
+// 等价于 checker_eval_const_expr 中 program_decls 线性扫描的语义。
+fn progdecl_index_find_const_var_decl(program_node: &ASTNode, name: &byte) &ASTNode {
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) == 0 || name == null {
+        return null;
+    }
+    const slot: i32 = (hash_string(name) & PROGDECL_INDEX_MASK) as i32;
+    var idx: i32 = g_progdecl_slot_head[slot];
+    while idx >= 0 && idx < PROGDECL_INDEX_ENTRIES {
+        if g_progdecl_name[idx] != null && str_equals(g_progdecl_name[idx], name) != 0 {
+            const decl: &ASTNode = g_progdecl_decl[idx];
+            if decl != null {
+                if decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_is_const != 0 {
+                    return decl;
+                }
+                if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL && decl.extern_var_decl_is_const != 0 {
+                    return decl;
+                }
+            }
+        }
+        idx = g_progdecl_next[idx];
+    }
+    return null;
 }
 
 fn scan_enum_decl_from_program(program_node: &ASTNode, enum_name: &byte) &ASTNode {
@@ -381,6 +788,15 @@ fn is_enum_variant_name_in_program(program_node: &ASTNode, name: &byte) i32 {
             g_lookup_enum_variant_result_keys[enum_variant_result_slot], name) != 0 {
         return g_lookup_enum_variant_result_values[enum_variant_result_slot];
     }
+    const indexed_variant_result: i32 = progdecl_index_has_enum_variant(program_node, name);
+    if indexed_variant_result >= 0 {
+        if enum_variant_result_slot >= 0 && enum_variant_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_enum_variant_result_keys[enum_variant_result_slot] = name;
+            g_lookup_enum_variant_result_values[enum_variant_result_slot] = indexed_variant_result;
+            g_lookup_enum_variant_result_valid[enum_variant_result_slot] = 1;
+        }
+        return indexed_variant_result;
+    }
     var i: i32 = 0;
     while i < program_node.program_decl_count {
         const decl: &ASTNode = program_node.program_decls[i];
@@ -474,7 +890,13 @@ fn find_type_alias_from_program(program_node: &ASTNode, alias_name: &byte) &ASTN
         }
         return cached;
     }
-    const scanned: &ASTNode = scan_type_alias_from_program(program_node, alias_name);
+    var scanned: &ASTNode = null;
+    progdecl_index_ensure(program_node);
+    if progdecl_index_ready(program_node) != 0 {
+        scanned = progdecl_index_find_typed(program_node, alias_name, ASTNodeType.AST_TYPE_ALIAS);
+    } else {
+        scanned = scan_type_alias_from_program(program_node, alias_name);
+    }
     if type_alias_result_slot >= 0 && type_alias_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
         g_lookup_type_alias_result_keys[type_alias_result_slot] = alias_name;
         g_lookup_type_alias_result_values[type_alias_result_slot] = scanned;
@@ -1061,6 +1483,16 @@ fn checker_fn_decl_owner_type_name(checker: &TypeChecker, fn_decl: &ASTNode, out
     if out_is_union != null {
         out_is_union[0] = 0;
     }
+    ensure_program_lookup_caches(checker.program_node);
+    const owner_slot: i32 = lookup_node_result_cache_slot(fn_decl);
+    if owner_slot >= 0 && owner_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        g_lookup_owner_type_result_valid[owner_slot] != 0 &&
+        g_lookup_owner_type_result_keys[owner_slot] == fn_decl {
+        if out_is_union != null {
+            out_is_union[0] = g_lookup_owner_type_result_is_union[owner_slot];
+        }
+        return g_lookup_owner_type_result_names[owner_slot];
+    }
     var i: i32 = 0;
     while i < checker.program_node.program_decl_count {
         const decl: &ASTNode = checker.program_node.program_decls[i];
@@ -1069,6 +1501,7 @@ fn checker_fn_decl_owner_type_name(checker: &TypeChecker, fn_decl: &ASTNode, out
                 var j: i32 = 0;
                 while j < decl.struct_decl_method_count {
                     if decl.struct_decl_methods[j] == fn_decl {
+                        lookup_owner_type_cache_store(owner_slot, fn_decl, decl.struct_decl_name, 0);
                         return decl.struct_decl_name;
                     }
                     j = j + 1;
@@ -1080,6 +1513,7 @@ fn checker_fn_decl_owner_type_name(checker: &TypeChecker, fn_decl: &ASTNode, out
                         if out_is_union != null {
                             out_is_union[0] = 1;
                         }
+                        lookup_owner_type_cache_store(owner_slot, fn_decl, decl.union_decl_name, 1);
                         return decl.union_decl_name;
                     }
                     k = k + 1;
@@ -1092,8 +1526,10 @@ fn checker_fn_decl_owner_type_name(checker: &TypeChecker, fn_decl: &ASTNode, out
                             if out_is_union != null {
                                 out_is_union[0] = 1;
                             }
+                            lookup_owner_type_cache_store(owner_slot, fn_decl, decl.method_block_union_name, 1);
                             return decl.method_block_union_name;
                         }
+                        lookup_owner_type_cache_store(owner_slot, fn_decl, decl.method_block_struct_name, 0);
                         return decl.method_block_struct_name;
                     }
                     m = m + 1;
@@ -1102,6 +1538,7 @@ fn checker_fn_decl_owner_type_name(checker: &TypeChecker, fn_decl: &ASTNode, out
         }
         i = i + 1;
     }
+    lookup_owner_type_cache_store(owner_slot, fn_decl, null, 0);
     return null;
 }
 
