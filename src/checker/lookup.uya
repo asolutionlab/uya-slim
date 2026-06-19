@@ -60,6 +60,118 @@ fn lookup_name_matches_exact_or_generic_base(decl_name: &byte, query_name: &byte
     return 0;
 }
 
+fn scan_enum_decl_from_program(program_node: &ASTNode, enum_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_ENUM_DECL {
+            if decl.enum_decl_name != null && str_equals(decl.enum_decl_name, enum_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_struct_decl_from_program(program_node: &ASTNode, struct_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
+            if lookup_name_matches_exact_or_generic_base(decl.struct_decl_name, struct_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_type_alias_from_program(program_node: &ASTNode, alias_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_TYPE_ALIAS {
+            if decl.type_alias_name != null && str_equals(decl.type_alias_name, alias_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_union_decl_from_program(program_node: &ASTNode, union_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_UNION_DECL {
+            if decl.union_decl_name != null && str_equals(decl.union_decl_name, union_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_interface_decl_from_program(program_node: &ASTNode, interface_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL && decl.interface_decl_name != null {
+            if lookup_name_matches_exact_or_generic_base(decl.interface_decl_name, interface_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_fn_decl_from_program(program_node: &ASTNode, fn_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+            if decl.fn_decl_name != null && str_equals(decl.fn_decl_name, fn_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_method_block_for_struct(program_node: &ASTNode, struct_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
+            if decl.method_block_struct_name != null && str_equals(decl.method_block_struct_name, struct_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn scan_method_block_for_union(program_node: &ASTNode, union_name: &byte) &ASTNode {
+    var i: i32 = 0;
+    while i < program_node.program_decl_count {
+        const decl: &ASTNode = program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
+            if decl.method_block_union_name != null && str_equals(decl.method_block_union_name, union_name) != 0 {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
 fn ensure_program_lookup_caches(program_node: &ASTNode) void {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM {
         return;
@@ -145,19 +257,7 @@ fn find_enum_decl_from_program(program_node: &ASTNode, enum_name: &byte) &ASTNod
         cached.enum_decl_name != null && str_equals(cached.enum_decl_name, enum_name) != 0 {
         return cached;
     }
-    
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_ENUM_DECL {
-            if decl.enum_decl_name != null && str_equals(decl.enum_decl_name, enum_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    
-    return null;
+    return scan_enum_decl_from_program(program_node, enum_name);
 }
 
 // 检查 name 是否是程序中任意枚举的变体名
@@ -200,17 +300,7 @@ export fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &by
         lookup_name_matches_exact_or_generic_base(cached.struct_decl_name, struct_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
-            if lookup_name_matches_exact_or_generic_base(decl.struct_decl_name, struct_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_struct_decl_from_program(program_node, struct_name);
 }
 
 // ===== 类型别名查找 =====
@@ -230,17 +320,7 @@ fn find_type_alias_from_program(program_node: &ASTNode, alias_name: &byte) &ASTN
         cached.type_alias_name != null && str_equals(cached.type_alias_name, alias_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_TYPE_ALIAS {
-            if decl.type_alias_name != null && str_equals(decl.type_alias_name, alias_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_type_alias_from_program(program_node, alias_name);
 }
 
 // ===== 联合体查找 =====
@@ -260,17 +340,7 @@ fn find_union_decl_from_program(program_node: &ASTNode, union_name: &byte) &ASTN
         cached.union_decl_name != null && str_equals(cached.union_decl_name, union_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_UNION_DECL {
-            if decl.union_decl_name != null && str_equals(decl.union_decl_name, union_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_union_decl_from_program(program_node, union_name);
 }
 
 // ===== 接口查找 =====
@@ -290,17 +360,7 @@ fn find_interface_decl_from_program(program_node: &ASTNode, interface_name: &byt
         lookup_name_matches_exact_or_generic_base(cached.interface_decl_name, interface_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL && decl.interface_decl_name != null {
-            if lookup_name_matches_exact_or_generic_base(decl.interface_decl_name, interface_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_interface_decl_from_program(program_node, interface_name);
 }
 
 // 在接口及其组合接口中递归查找方法签名
@@ -399,17 +459,7 @@ fn find_fn_decl_from_program(program_node: &ASTNode, fn_name: &byte) &ASTNode {
         cached.fn_decl_name != null && str_equals(cached.fn_decl_name, fn_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
-            if decl.fn_decl_name != null && str_equals(decl.fn_decl_name, fn_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_fn_decl_from_program(program_node, fn_name);
 }
 
 // ===== 方法查找 =====
@@ -495,17 +545,7 @@ fn find_method_block_for_struct(program_node: &ASTNode, struct_name: &byte) &AST
         str_equals(cached.method_block_struct_name, struct_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
-            if decl.method_block_struct_name != null && str_equals(decl.method_block_struct_name, struct_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_method_block_for_struct(program_node, struct_name);
 }
 
 // 查找结构体方法
@@ -612,17 +652,7 @@ fn find_method_block_for_union(program_node: &ASTNode, union_name: &byte) &ASTNo
         str_equals(cached.method_block_union_name, union_name) != 0 {
         return cached;
     }
-    var i: i32 = 0;
-    while i < program_node.program_decl_count {
-        const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
-            if decl.method_block_union_name != null && str_equals(decl.method_block_union_name, union_name) != 0 {
-                return decl;
-            }
-        }
-        i = i + 1;
-    }
-    return null;
+    return scan_method_block_for_union(program_node, union_name);
 }
 
 // 查找联合体方法
