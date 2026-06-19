@@ -1,5 +1,5 @@
 #!/bin/bash
-# 验证 macOS hosted 单文件 seed 输出保留 read/write 的 C99 extern 声明。
+# 验证 macOS hosted 单文件 seed 输出保留关键 C99 extern/shim 声明。
 # 由 make check / make check-hosted 调用。
 
 set -euo pipefail
@@ -27,13 +27,34 @@ UYA_SINGLE_FILE_C=1 UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= UYA_MULTI_FILE_C= UYA_SPLIT_C
 UYA_BOOTSTRAP_PROFILE=darwin-hosted UYA_NATIVE_BOOTSTRAP=0 \
 "$COMPILER" --c99 "$REPO_ROOT/src/main.uya" -o "$OUT_C" >/dev/null 2>&1
 
-if ! grep -Fqx 'extern ssize_t read(int, void *, size_t);' "$OUT_C"; then
-    echo "✗ 生成的 uya-hosted.c 缺少 read extern 声明"
+require_line() {
+    local expected="$1"
+    local label="$2"
+
+    if ! grep -Fqx "$expected" "$OUT_C"; then
+        echo "✗ 生成的 uya-hosted.c 缺少 $label"
+        exit 1
+    fi
+}
+
+require_line 'extern ssize_t read(int, void *, size_t);' 'read extern 声明'
+require_line 'extern ssize_t write(int, const void *, size_t);' 'write extern 声明'
+require_line 'extern int uya_host_getsockname(int, void *, uint32_t *) __asm__("_getsockname");' 'getsockname host extern 声明'
+require_line 'extern int uya_host_getpeername(int, void *, uint32_t *) __asm__("_getpeername");' 'getpeername host extern 声明'
+require_line 'extern int uya_host_poll(void *, uint32_t, int) __asm__("_poll");' 'poll host extern 声明'
+
+if ! grep -Fq 'struct err_union_int32_t uya_macos_getsockname(int32_t sockfd, void *addr, uint32_t *addrlen) {' "$OUT_C"; then
+    echo "✗ 生成的 uya-hosted.c 缺少 uya_macos_getsockname shim"
     exit 1
 fi
 
-if ! grep -Fqx 'extern ssize_t write(int, const void *, size_t);' "$OUT_C"; then
-    echo "✗ 生成的 uya-hosted.c 缺少 write extern 声明"
+if ! grep -Fq 'struct err_union_int32_t uya_macos_getpeername(int32_t sockfd, void *addr, uint32_t *addrlen) {' "$OUT_C"; then
+    echo "✗ 生成的 uya-hosted.c 缺少 uya_macos_getpeername shim"
+    exit 1
+fi
+
+if ! grep -Fq 'struct err_union_int32_t uya_macos_poll(struct PollFd *fds, size_t nfds, int32_t timeout_ms) {' "$OUT_C"; then
+    echo "✗ 生成的 uya-hosted.c 缺少 uya_macos_poll shim"
     exit 1
 fi
 
