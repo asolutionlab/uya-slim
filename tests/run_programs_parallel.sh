@@ -723,6 +723,7 @@ SERIAL_TESTS=(
     test_https_production
     test_epoll_server
     test_std_dns_async_transport
+    test_std_dns_async_query_aggregate
     test_http1_async_client
     test_http_server
     test_raw_tls
@@ -747,6 +748,7 @@ LOOPBACK_SKIP_TESTS=(
     test_tcp_basic
     test_std_dns
     test_std_dns_async_transport
+    test_std_dns_async_query_aggregate
     test_https_loopback
     test_epoll_server
     test_http_server
@@ -840,6 +842,7 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
         test_std_dns
         test_std_async_event
         test_std_dns_async_transport
+        test_std_dns_async_query_aggregate
         test_std_thread
         test_task_std_async
         test_block_on
