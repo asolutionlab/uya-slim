@@ -143,13 +143,20 @@ export struct Waker {
     _io_fd: i32,
     _io_interest: i32,
     _event_fd: i32,
+    _event_write_fd: i32,
     _event_fd_bound: atomic i32,
     _cancelled: atomic i32,
 
     fn wake(self: &Self) void {
         self._wake_count = self._wake_count + 1;
-        if self._event_fd_bound != 0 && self._event_fd >= 0 {
-            waker_eventfd_notify(self._event_fd);
+        if self._event_fd_bound != 0 {
+            var notify_fd: i32 = self._event_write_fd;
+            if notify_fd < 0 {
+                notify_fd = self._event_fd;
+            }
+            if notify_fd >= 0 {
+                waker_eventfd_notify(notify_fd);
+            }
         }
     }
 
@@ -204,7 +211,18 @@ export struct Waker {
 
     fn bind_event_fd(self: &Self, fd: i32) void {
         self._event_fd = fd;
+        self._event_write_fd = fd;
         if fd >= 0 {
+            self._event_fd_bound = 1;
+            return;
+        }
+        self._event_fd_bound = 0;
+    }
+
+    fn bind_event_fd_pair(self: &Self, read_fd: i32, write_fd: i32) void {
+        self._event_fd = read_fd;
+        self._event_write_fd = write_fd;
+        if read_fd >= 0 && write_fd >= 0 {
             self._event_fd_bound = 1;
             return;
         }
@@ -213,12 +231,16 @@ export struct Waker {
 
     fn clear_event_fd(self: &Self) void {
         self._event_fd = 0 - 1;
+        self._event_write_fd = 0 - 1;
         self._event_fd_bound = 0;
     }
 
     fn close_event_fd(self: &Self) void {
         if self._event_fd_bound != 0 && self._event_fd >= 0 {
             _ = sys_close(self._event_fd) catch {};
+        }
+        if self._event_fd_bound != 0 && self._event_write_fd >= 0 && self._event_write_fd != self._event_fd {
+            _ = sys_close(self._event_write_fd) catch {};
         }
         self.clear_event_fd();
     }

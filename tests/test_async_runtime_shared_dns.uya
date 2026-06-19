@@ -10,11 +10,11 @@ use std.testing.assert_eq_i32;
 use libc.syscall;
 
 fn shared_dns_recvfrom(sockfd: i32, buf: &byte, len: usize, flags: i32, addr: &byte, addrlen: &u32) !isize {
-    return @syscall(SYS_recvfrom, sockfd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64) as! isize;
+    return sys_recvfrom(sockfd, buf as *byte, len, flags, addr as *byte, addrlen as *u32);
 }
 
 fn shared_dns_sendto(sockfd: i32, buf: &const byte, len: usize, flags: i32, addr: &const byte, addrlen: u32) !isize {
-    return @syscall(SYS_sendto, sockfd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64) as! isize;
+    return sys_sendto(sockfd, buf as *const byte, len, flags, addr as *const byte, addrlen);
 }
 
 fn shared_dns_read_exact(fd: i32, buf: &byte, want: usize) !void {

@@ -9,6 +9,7 @@
 // - eventfd 驱动的跨线程/跨执行上下文 wake
 // - cooperative cancel 状态传播（Future 在 poll 中显式检查 waker.is_cancelled()）
 
+use std;
 use std.async;
 use std.async_event;
 use std.async_frame;
@@ -131,9 +132,16 @@ fn scheduler_prepare_waker(waker: &Waker) !i32 {
     if waker.has_event_fd() {
         return 0;
     }
+    std.cfg(std.target_os == .tos_macos, {
+        var pipe_fds: [i32: 2] = [];
+        _ = try sys_pipe2(&pipe_fds[0], O_NONBLOCK | O_CLOEXEC);
+        waker.bind_event_fd_pair(pipe_fds[0], pipe_fds[1]);
+        return 0;
+    }, {
     const event_fd: i32 = try sys_eventfd(0 as u32, EFD_NONBLOCK | EFD_CLOEXEC);
     waker.bind_event_fd(event_fd);
     return 0;
+    })
 }
 
 fn scheduler_normalize_inline_repoll_limit(limit: i32) i32 {

@@ -69,6 +69,7 @@ std.cfg(std.target_os == .tos_macos, {
     export const SYS_gettimeofday: i64 = 116;
     export const SYS_fcntl: i64 = 0;
     export const SYS_pipe2: i64 = 0;
+    export const SYS_poll: i64 = 0;
     export const SYS_socket: i64 = 97;
     export const SYS_bind: i64 = 104;
     export const SYS_listen: i64 = 106;
@@ -152,6 +153,7 @@ std.cfg(std.target_os == .tos_linux, {
         export const SYS_gettimeofday: i64 = 96;
         export const SYS_fcntl: i64 = 72;
         export const SYS_pipe2: i64 = 293;
+        export const SYS_poll: i64 = 7;
         export const SYS_socket: i64 = 41;
         export const SYS_bind: i64 = 49;
         export const SYS_listen: i64 = 50;
@@ -234,6 +236,7 @@ std.cfg(std.target_os == .tos_linux, {
             export const SYS_gettimeofday: i64 = 78;
             export const SYS_fcntl: i64 = 55;
             export const SYS_pipe2: i64 = 359;
+            export const SYS_poll: i64 = 168;
             export const SYS_socket: i64 = 281;
             export const SYS_bind: i64 = 282;
             export const SYS_listen: i64 = 284;
@@ -316,6 +319,7 @@ std.cfg(std.target_os == .tos_linux, {
                 export const SYS_gettimeofday: i64 = 169;
                 export const SYS_fcntl: i64 = 25;
                 export const SYS_pipe2: i64 = 59;
+                export const SYS_poll: i64 = 0;
                 export const SYS_socket: i64 = 198;
                 export const SYS_bind: i64 = 200;
                 export const SYS_listen: i64 = 201;
@@ -398,6 +402,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_gettimeofday: i64 = 169;
                     export const SYS_fcntl: i64 = 25;
                     export const SYS_pipe2: i64 = 59;
+                    export const SYS_poll: i64 = 0;
                     export const SYS_socket: i64 = 198;
                     export const SYS_bind: i64 = 200;
                     export const SYS_listen: i64 = 201;
@@ -478,6 +483,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_gettimeofday: i64 = 96;
                     export const SYS_fcntl: i64 = 72;
                     export const SYS_pipe2: i64 = 293;
+                    export const SYS_poll: i64 = 7;
                     export const SYS_socket: i64 = 41;
                     export const SYS_bind: i64 = 49;
                     export const SYS_listen: i64 = 50;
@@ -563,6 +569,7 @@ std.cfg(std.target_os == .tos_linux, {
     export const SYS_gettimeofday: i64 = 96;
     export const SYS_fcntl: i64 = 72;
     export const SYS_pipe2: i64 = 293;
+    export const SYS_poll: i64 = 7;
     export const SYS_socket: i64 = 41;
     export const SYS_bind: i64 = 49;
     export const SYS_listen: i64 = 50;
@@ -712,6 +719,14 @@ std.cfg(std.target_os == .tos_macos, {
     export const EFD_CLOEXEC: i32 = 0x80000;
 })
 
+// poll(2) 事件标志
+export const POLLIN: i16 = 0x0001;
+export const POLLPRI: i16 = 0x0002;
+export const POLLOUT: i16 = 0x0004;
+export const POLLERR: i16 = 0x0008;
+export const POLLHUP: i16 = 0x0010;
+export const POLLNVAL: i16 = 0x0020;
+
 // fcntl 命令
 export const F_DUPFD: i32 = 0;
 export const F_GETFD: i32 = 1;
@@ -837,6 +852,15 @@ export struct IOVec {
     iov_len: usize,
 }
 
+/// poll(2) 使用的文件描述符事件条目。
+/// 字段：fd 为文件描述符，events 为关注事件，revents 为返回的就绪事件。
+/// 返回值：结构体本身不返回值，由 sys_poll 填充 revents。
+export struct PollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
+
 extern "libc" fn uya_macos_stat(pathname: *const byte, statbuf: &Stat) !i32;
 extern "libc" fn uya_macos_fstat(fd: i32, statbuf: &Stat) !i32;
 extern "libc" fn uya_macos_lstat(pathname: &const byte, statbuf: &Stat) !i32;
@@ -862,6 +886,9 @@ extern "libc" fn uya_macos_sendto(sockfd: i32, buf: *const byte, len: usize, fla
 extern "libc" fn uya_macos_recvfrom(sockfd: i32, buf: *byte, len: usize, flags: i32, src: *void, srclen: *u32) !i64;
 extern "libc" fn uya_macos_shutdown(sockfd: i32, how: i32) !i32;
 extern "libc" fn uya_macos_setsockopt(sockfd: i32, level: i32, optname: i32, optval: *void, optlen: u32) !i32;
+extern "libc" fn uya_macos_getsockname(sockfd: i32, addr: *void, addrlen: *u32) !i32;
+extern "libc" fn uya_macos_getpeername(sockfd: i32, addr: *void, addrlen: *u32) !i32;
+extern "libc" fn uya_macos_poll(fds: &PollFd, nfds: usize, timeout_ms: i32) !i32;
 extern "libc" fn uya_macos_fork() !i64;
 extern "libc" fn uya_macos_waitpid(pid: i32, status: &i32, options: i32) !i32;
 extern "libc" fn uya_macos_getpid() i32;
@@ -1687,6 +1714,17 @@ export fn sys_pipe2(pipefd: &i32, flags: i32) !i32 {
     })
 }
 
+/// 轮询一组文件描述符的就绪状态。
+/// 参数：fds 为 pollfd 数组，nfds 为数组长度，timeout_ms 为等待超时毫秒。
+/// 返回值：成功时返回就绪 fd 数，失败时返回系统错误。
+export fn sys_poll(fds: &PollFd, nfds: usize, timeout_ms: i32) !i32 {
+    std.cfg(std.target_os == .tos_macos, {
+        return uya_macos_poll(fds, nfds, timeout_ms);
+    }, {
+        return @syscall(SYS_poll, fds as i64, nfds as i64, timeout_ms as i64) as! i32;
+    })
+}
+
 // sys_eventfd - 创建 eventfd（当前 SYS_eventfd 对应 Linux eventfd2 ABI，支持 flags）
 export fn sys_eventfd(initval: u32, flags: i32) !i32 {
     return @syscall(SYS_eventfd, initval as i64, flags as i64) as! i32;
@@ -1874,6 +1912,28 @@ export extern "libc" fn sys_recv(sockfd: i32, buf: *byte, len: usize, flags: i32
     })
 }
 
+/// 向指定 socket 地址发送数据。
+/// 参数：sockfd 为 socket fd，buf/len 为待发送缓冲区，flags 为发送标志，dest/destlen 为目标地址。
+/// 返回值：成功时返回发送字节数，失败时返回系统错误。
+export extern "libc" fn sys_sendto(sockfd: i32, buf: *const byte, len: usize, flags: i32, dest: *const byte, destlen: u32) !isize {
+    std.cfg(std.target_os == .tos_macos, {
+        return uya_macos_sendto(sockfd, buf, len, flags, dest as *void, destlen) as! isize;
+    }, {
+        return @syscall(SYS_sendto, sockfd as i64, buf as i64, len as i64, flags as i64, dest as i64, destlen as i64) as! isize;
+    })
+}
+
+/// 从 socket 接收数据并返回来源地址。
+/// 参数：sockfd 为 socket fd，buf/len 为接收缓冲区，flags 为接收标志，src/srclen 为来源地址输出。
+/// 返回值：成功时返回接收字节数，失败时返回系统错误。
+export extern "libc" fn sys_recvfrom(sockfd: i32, buf: *byte, len: usize, flags: i32, src: *byte, srclen: *u32) !isize {
+    std.cfg(std.target_os == .tos_macos, {
+        return uya_macos_recvfrom(sockfd, buf, len, flags, src as *void, srclen) as! isize;
+    }, {
+        return @syscall(SYS_recvfrom, sockfd as i64, buf as i64, len as i64, flags as i64, src as i64, srclen as i64) as! isize;
+    })
+}
+
 // sys_shutdown - 关闭 socket
 export extern "libc" fn sys_shutdown(sockfd: i32, how: i32) !i32 {
     std.cfg(std.target_os == .tos_macos, {
@@ -1899,11 +1959,19 @@ export extern "libc" fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, op
 
 // sys_getsockname - 获取本地 socket 地址
 export extern "libc" fn sys_getsockname(sockfd: i32, addr: *void, addrlen: *u32) !i32 {
-    return @syscall(SYS_getsockname, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+    std.cfg(std.target_os == .tos_macos, {
+        return uya_macos_getsockname(sockfd, addr, addrlen) as! i32;
+    }, {
+        return @syscall(SYS_getsockname, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+    })
 }
 
 // sys_getpeername - 获取远程 socket 地址
 export extern "libc" fn sys_getpeername(sockfd: i32, addr: *void, addrlen: *u32) !i32 {
-    return @syscall(SYS_getpeername, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+    std.cfg(std.target_os == .tos_macos, {
+        return uya_macos_getpeername(sockfd, addr, addrlen) as! i32;
+    }, {
+        return @syscall(SYS_getpeername, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+    })
 }
 })

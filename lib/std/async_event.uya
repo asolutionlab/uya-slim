@@ -44,6 +44,15 @@ fn event_kind_to_epoll(k: EventKind) i32 {
     })
 }
 
+fn event_kind_to_poll(k: EventKind) i16 {
+    match k {
+        .Readable(_) => { return POLLIN; },
+        .Writable(_) => { return POLLOUT; },
+        .ReadWrite(_) => { return POLLIN | POLLOUT; },
+    };
+    return 0 as i16;
+}
+
 fn epoll_interest_or_default(fd: i32, interest: EventKind) EpollEvent {
     return EpollEvent{
         events: event_kind_to_epoll(interest) as u32,
@@ -71,6 +80,7 @@ export struct LinuxEpoll : EventLoop {
     slot_states: &i32,                  // SLOT_STATE_EMPTY / SLOT_STATE_REGISTERED
     slot_fds: &i32,                     // 关联的文件描述符
     slot_wakers: &usize,                // Waker 指针（0 表示无）
+    slot_interests: &i16,               // poll(2) 事件关注掩码（macOS fallback 使用）
     slot_generations: &u32,             // 代际计数，防止 fd 复用混淆
     slot_next_free: &i32,               // 空闲 slot 链表
     fd_keys: &i32,                      // fd -> slot 哈希表 key
@@ -78,6 +88,7 @@ export struct LinuxEpoll : EventLoop {
     fd_map_capacity: i32,               // fd 哈希表容量
     free_slot_head: i32,                // 空闲 slot 链表头
     events: &EpollEvent,                // 单次 poll 复用的 event buffer
+    poll_fds: &PollFd,                  // macOS poll(2) fallback 复用的 fd buffer
     next_generation: u32,               // 全局代际计数器
 
     /// 查找指定 fd 的 slot（通过 fd 哈希索引查找）
@@ -120,13 +131,14 @@ export struct LinuxEpoll : EventLoop {
     }
 
     /// 初始化 slot 为注册状态
-    fn init_slot(self: &Self, slot_idx: i32, fd: i32, waker: &Waker) void {
+    fn init_slot(self: &Self, slot_idx: i32, fd: i32, interest: EventKind, waker: &Waker) void {
         const idx: usize = (slot_idx as! usize).value;
         const gen: u32 = self.next_generation;
         self.next_generation = self.next_generation + 1;
         self.slot_states[idx] = SLOT_STATE_REGISTERED;
         self.slot_fds[idx] = fd;
         self.slot_wakers[idx] = (waker as &void) as usize;
+        self.slot_interests[idx] = event_kind_to_poll(interest);
         self.slot_generations[idx] = gen;
         linux_epoll_fd_map_put(self, fd, slot_idx);
     }
@@ -142,6 +154,7 @@ export struct LinuxEpoll : EventLoop {
         self.slot_states[idx] = SLOT_STATE_EMPTY;
         self.slot_fds[idx] = 0;
         self.slot_wakers[idx] = 0 as usize;
+        self.slot_interests[idx] = 0 as i16;
         self.slot_generations[idx] = 0;
         self.slot_next_free[idx] = self.free_slot_head;
         self.free_slot_head = slot_idx;
@@ -159,13 +172,14 @@ export struct LinuxEpoll : EventLoop {
             const slot: i32 = self.find_slot(fd);
             if slot >= 0 {
                 self.slot_wakers[slot] = (waker as &void) as usize;
+                self.slot_interests[slot] = event_kind_to_poll(interest);
                 return 0;
             }
             const new_slot: i32 = self.alloc_slot();
             if new_slot < 0 {
                 return error.EventLoopSlotsFull;
             }
-            self.init_slot(new_slot, fd, waker);
+            self.init_slot(new_slot, fd, interest, waker);
             return 0;
         }, {
         var ev: EpollEvent = epoll_interest_or_default(fd, interest);
@@ -182,6 +196,7 @@ export struct LinuxEpoll : EventLoop {
                 }
             } else {
                 self.slot_wakers[slot] = (waker as &void) as usize;
+                self.slot_interests[slot] = event_kind_to_poll(interest);
                 return 0;
             }
         }
@@ -206,12 +221,12 @@ export struct LinuxEpoll : EventLoop {
                         return mod_result as! i32;
                     }
                 }
-                self.init_slot(slot, fd, waker);
+                self.init_slot(slot, fd, interest, waker);
                 return 0;
             }
             return add_result as! i32;
         }
-        self.init_slot(slot, fd, waker);
+        self.init_slot(slot, fd, interest, waker);
         return 0;
         })
     }
@@ -249,18 +264,39 @@ export struct LinuxEpoll : EventLoop {
     /// 轮询 epoll 事件并唤醒对应的 waker
     fn poll(self: &Self, timeout_ms: i32) !i32 {
         std.cfg(std.target_os == .tos_macos, {
-            _ = timeout_ms;
             var i: i32 = 0;
-            var n: i32 = 0;
+            var poll_count: i32 = 0;
             while i < self.slot_capacity {
                 if self.slot_states[i] == SLOT_STATE_REGISTERED && self.slot_wakers[i] != 0 as usize {
-                    const waker: &Waker = (self.slot_wakers[i] as &void) as &Waker;
-                    waker.wake();
-                    n = n + 1;
+                    self.poll_fds[poll_count].fd = self.slot_fds[i];
+                    self.poll_fds[poll_count].events = self.slot_interests[i];
+                    self.poll_fds[poll_count].revents = 0 as i16;
+                    poll_count = poll_count + 1;
                 }
                 i = i + 1;
             }
-            return n;
+            if poll_count <= 0 {
+                return 0;
+            }
+            const ready_count: i32 = try sys_poll(self.poll_fds, poll_count as usize, timeout_ms);
+            if ready_count <= 0 {
+                return ready_count;
+            }
+            var woke_count: i32 = 0;
+            i = 0;
+            while i < poll_count {
+                if self.poll_fds[i].revents != 0 as i16 {
+                    const fd: i32 = self.poll_fds[i].fd;
+                    const slot_idx: i32 = self.find_slot(fd);
+                    if slot_idx >= 0 && self.slot_wakers[slot_idx] != 0 as usize {
+                        const waker: &Waker = (self.slot_wakers[slot_idx] as &void) as &Waker;
+                        waker.wake();
+                        woke_count = woke_count + 1;
+                    }
+                }
+                i = i + 1;
+            }
+            return woke_count;
         }, {
         const wait_result: !i32 = sys_epoll_wait(self.epfd, self.events, self.event_capacity, timeout_ms);
         const n: i32 = wait_result catch |err| {
@@ -389,6 +425,15 @@ fn linux_epoll_alloc_i32(count: i32) !&i32 {
     return ptr as &i32;
 }
 
+fn linux_epoll_alloc_i16(count: i32) !&i16 {
+    const bytes: usize = @size_of(i16) * (count as usize);
+    const ptr: &void = calloc(1 as usize, bytes);
+    if ptr == null {
+        return error.EventLoopAllocFailed;
+    }
+    return ptr as &i16;
+}
+
 fn linux_epoll_alloc_u32(count: i32) !&u32 {
     const bytes: usize = @size_of(u32) * (count as usize);
     const ptr: &void = calloc(1 as usize, bytes);
@@ -416,6 +461,15 @@ fn linux_epoll_alloc_events(count: i32) !&EpollEvent {
     return ptr as &EpollEvent;
 }
 
+fn linux_epoll_alloc_pollfds(count: i32) !&PollFd {
+    const bytes: usize = @size_of(PollFd) * (count as usize);
+    const ptr: &void = calloc(1 as usize, bytes);
+    if ptr == null {
+        return error.EventLoopAllocFailed;
+    }
+    return ptr as &PollFd;
+}
+
 /// 创建 Linux epoll 实例（flags 传 0 或 EPOLL_CLOEXEC，默认容量 1024）
 export fn linux_epoll_create(flags: i32) !LinuxEpoll {
     return linux_epoll_create_config(flags, LINUX_EPOLL_DEFAULT_CAPACITY, LINUX_EPOLL_DEFAULT_CAPACITY);
@@ -436,11 +490,13 @@ export fn linux_epoll_create_config(flags: i32, slot_capacity: i32, event_capaci
     const slot_states: &i32 = try linux_epoll_alloc_i32(slot_capacity);
     const slot_fds: &i32 = try linux_epoll_alloc_i32(slot_capacity);
     const slot_wakers: &usize = try linux_epoll_alloc_usize(slot_capacity);
+    const slot_interests: &i16 = try linux_epoll_alloc_i16(slot_capacity);
     const slot_generations: &u32 = try linux_epoll_alloc_u32(slot_capacity);
     const slot_next_free: &i32 = try linux_epoll_alloc_i32(slot_capacity);
     const fd_keys: &i32 = try linux_epoll_alloc_i32(fd_map_capacity);
     const fd_slot_indices: &i32 = try linux_epoll_alloc_i32(fd_map_capacity);
     const events: &EpollEvent = try linux_epoll_alloc_events(event_capacity);
+    const poll_fds: &PollFd = try linux_epoll_alloc_pollfds(slot_capacity);
     linux_epoll_init_free_slots(slot_next_free, slot_capacity);
     linux_epoll_init_fd_keys(fd_keys, fd_map_capacity);
     std.cfg(std.target_os == .tos_macos, {
@@ -452,6 +508,7 @@ export fn linux_epoll_create_config(flags: i32, slot_capacity: i32, event_capaci
             slot_states: slot_states,
             slot_fds: slot_fds,
             slot_wakers: slot_wakers,
+            slot_interests: slot_interests,
             slot_generations: slot_generations,
             slot_next_free: slot_next_free,
             fd_keys: fd_keys,
@@ -459,6 +516,7 @@ export fn linux_epoll_create_config(flags: i32, slot_capacity: i32, event_capaci
             fd_map_capacity: fd_map_capacity,
             free_slot_head: 0,
             events: events,
+            poll_fds: poll_fds,
             next_generation: 1,
         };
     }, {
@@ -470,6 +528,7 @@ export fn linux_epoll_create_config(flags: i32, slot_capacity: i32, event_capaci
         slot_states: slot_states,
         slot_fds: slot_fds,
         slot_wakers: slot_wakers,
+        slot_interests: slot_interests,
         slot_generations: slot_generations,
         slot_next_free: slot_next_free,
         fd_keys: fd_keys,
@@ -477,6 +536,7 @@ export fn linux_epoll_create_config(flags: i32, slot_capacity: i32, event_capaci
         fd_map_capacity: fd_map_capacity,
         free_slot_head: 0,
         events: events,
+        poll_fds: poll_fds,
         next_generation: 1,
     };
     })

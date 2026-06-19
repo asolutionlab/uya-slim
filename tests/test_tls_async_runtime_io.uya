@@ -15,13 +15,6 @@ error UnexpectedPending;
 error ExpectedPending;
 error TlsAsyncFailed;
 
-const TEST_SYS_PIPE2: i64 = 293;
-const TEST_O_NONBLOCK: i32 = 0x800;
-
-fn test_sys_pipe2(pipefd: &i32, flags: i32) !i32 {
-    return @syscall(TEST_SYS_PIPE2, pipefd as i64, flags as i64) as! i32;
-}
-
 fn spawn_delayed_writer(write_fd: i32, delay_ns: i64) !i32 {
     const fork_result: !i64 = sys_fork();
     const child_pid: i64 = fork_result catch {
@@ -58,7 +51,7 @@ fn expect_pending_read_interest(p: Poll<!usize>, w: &Waker, fd: i32) !void {
 
 fn test_tls_read_future_pending_registers_linux_epoll() !void {
     var fds: [i32: 2] = [];
-    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+    _ = sys_pipe2(&fds[0], O_NONBLOCK) catch {
         return error.PipeCreateFailed;
     };
     const read_fd: i32 = fds[0];
@@ -83,7 +76,7 @@ fn test_tls_read_future_pending_registers_linux_epoll() !void {
 
 fn test_tls_read_future_scheduler_epoll_ready() !void {
     var fds: [i32: 2] = [];
-    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+    _ = sys_pipe2(&fds[0], O_NONBLOCK) catch {
         return error.PipeCreateFailed;
     };
     const read_fd: i32 = fds[0];
@@ -108,7 +101,7 @@ fn test_tls_read_future_scheduler_epoll_ready() !void {
 
 fn test_tls_write_future_pending_sets_writable_interest() !void {
     var fds: [i32: 2] = [];
-    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+    _ = sys_pipe2(&fds[0], O_NONBLOCK) catch {
         return error.PipeCreateFailed;
     };
     const read_fd: i32 = fds[0];
@@ -146,7 +139,7 @@ fn test_tls_write_future_pending_sets_writable_interest() !void {
 
 fn test_tls_handshake_future_pending_sets_readable_interest() !void {
     var fds: [i32: 2] = [];
-    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+    _ = sys_pipe2(&fds[0], O_NONBLOCK) catch {
         return error.PipeCreateFailed;
     };
     const read_fd: i32 = fds[0];
