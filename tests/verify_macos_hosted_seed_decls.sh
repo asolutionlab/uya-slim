@@ -42,6 +42,7 @@ require_line 'extern ssize_t write(int, const void *, size_t);' 'write extern �
 require_line 'extern int uya_host_getsockname(int, void *, uint32_t *) __asm__("_getsockname");' 'getsockname host extern 声明'
 require_line 'extern int uya_host_getpeername(int, void *, uint32_t *) __asm__("_getpeername");' 'getpeername host extern 声明'
 require_line 'extern int uya_host_poll(void *, uint32_t, int) __asm__("_poll");' 'poll host extern 声明'
+require_line 'struct PollFd;' 'PollFd 前向声明'
 
 if ! grep -Fq 'struct err_union_int32_t uya_macos_getsockname(int32_t sockfd, void *addr, uint32_t *addrlen) {' "$OUT_C"; then
     echo "✗ 生成的 uya-hosted.c 缺少 uya_macos_getsockname shim"
@@ -55,6 +56,13 @@ fi
 
 if ! grep -Fq 'struct err_union_int32_t uya_macos_poll(struct PollFd *fds, size_t nfds, int32_t timeout_ms) {' "$OUT_C"; then
     echo "✗ 生成的 uya-hosted.c 缺少 uya_macos_poll shim"
+    exit 1
+fi
+
+pollfd_decl_line="$(grep -Fn 'struct PollFd;' "$OUT_C" | head -n 1 | cut -d: -f1)"
+poll_shim_line="$(grep -Fn 'struct err_union_int32_t uya_macos_poll(struct PollFd *fds, size_t nfds, int32_t timeout_ms) {' "$OUT_C" | head -n 1 | cut -d: -f1)"
+if [ -z "$pollfd_decl_line" ] || [ -z "$poll_shim_line" ] || [ "$pollfd_decl_line" -ge "$poll_shim_line" ]; then
+    echo "✗ PollFd 前向声明必须早于 uya_macos_poll shim"
     exit 1
 fi
 

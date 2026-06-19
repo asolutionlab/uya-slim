@@ -2744,6 +2744,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, input_ast: &ASTNode, output_
     fputs("extern int uya_macos_real_lstat(const char *, struct uya_macos_native_stat_call *) __asm__(\"_lstat\");\n" as *byte, codegen.emit_stream as *void);
     fputs("struct Stat;\n" as *byte, codegen.emit_stream as *void);
     fputs("struct TimeSpec;\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct PollFd;\n" as *byte, codegen.emit_stream as *void);
     fputs("struct uya_macos_native_timespec { int64_t tv_sec; int64_t tv_nsec; };\n" as *byte, codegen.emit_stream as *void);
     fputs("struct uya_macos_uya_timespec { int64_t tv_sec; int64_t tv_nsec; };\n" as *byte, codegen.emit_stream as *void);
     fputs("struct uya_macos_uya_stat {\n" as *byte, codegen.emit_stream as *void);
