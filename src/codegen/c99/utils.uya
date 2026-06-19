@@ -43,12 +43,48 @@ const C99_SAFE_IDENT_CACHE_MASK: i32 = 2047;
 const C99_STRING_CONST_CACHE_BITS: i32 = 12;
 const C99_STRING_CONST_CACHE_SIZE: i32 = 4096;
 const C99_STRING_CONST_CACHE_MASK: i32 = 4095;
+const C99_DECL_RESULT_CACHE_BITS: i32 = 13;
+const C99_DECL_RESULT_CACHE_SIZE: i32 = 8192;
+const C99_DECL_RESULT_CACHE_MASK: i32 = 8191;
 
 var g_c99_utils_cached_codegen: &C99CodeGenerator = null;
 var g_c99_safe_ident_keys: [&byte: C99_SAFE_IDENT_CACHE_SIZE] = [];
 var g_c99_safe_ident_values: [&byte: C99_SAFE_IDENT_CACHE_SIZE] = [];
 var g_c99_string_const_keys: [&byte: C99_STRING_CONST_CACHE_SIZE] = [];
 var g_c99_string_const_values: [&byte: C99_STRING_CONST_CACHE_SIZE] = [];
+var g_c99_decl_result_cached_codegen: &C99CodeGenerator = null;
+var g_c99_enum_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context_result_names: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context_result_filenames: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_enum_context_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_struct_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_struct_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_struct_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_struct_result_mono_count: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_union_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_union_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_union_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_union_result_mono_count: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_interface_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_interface_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_interface_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_fn_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_fn_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_fn_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_fn_result_family: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_unqualified_fn_result_names: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_unqualified_fn_result_filenames: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_unqualified_fn_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_unqualified_fn_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_method_block_struct_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_method_block_struct_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_method_block_struct_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_method_block_union_result_keys: [&byte: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_method_block_union_result_values: [&ASTNode: C99_DECL_RESULT_CACHE_SIZE] = [];
+var g_c99_method_block_union_result_valid: [i32: C99_DECL_RESULT_CACHE_SIZE] = [];
 
 fn c99_utils_reset_caches(codegen: &C99CodeGenerator) void {
     var i: i32 = 0;
@@ -74,6 +110,115 @@ fn c99_utils_cache_ensure(codegen: &C99CodeGenerator) void {
         return;
     }
     c99_utils_reset_caches(codegen);
+}
+
+fn c99_decl_result_cache_slot(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    return (hash_string(name) & C99_DECL_RESULT_CACHE_MASK) as i32;
+}
+
+fn c99_decl_result_cache_key_matches(valid: i32, cached_key: &byte, query_name: &byte) i32 {
+    if valid == 0 || cached_key == null || query_name == null {
+        return 0;
+    }
+    if strcmp(cached_key as *byte, query_name as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_decl_result_cache_pair_slot(name: &byte, context: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    var h: i32 = hash_string(name);
+    if context != null {
+        h = h + (hash_string(context) * 37);
+    } else {
+        h = h + 17;
+    }
+    return (h & C99_DECL_RESULT_CACHE_MASK) as i32;
+}
+
+fn c99_decl_result_cache_pair_matches(valid: i32, cached_name: &byte, cached_context: &byte, query_name: &byte, query_context: &byte) i32 {
+    if c99_decl_result_cache_key_matches(valid, cached_name, query_name) == 0 {
+        return 0;
+    }
+    if query_context == null {
+        if cached_context == null {
+            return 1;
+        }
+        return 0;
+    }
+    if cached_context == null {
+        return 0;
+    }
+    if strcmp(cached_context as *byte, query_context as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_decl_result_cache_key_copy(codegen: &C99CodeGenerator, name: &byte) &byte {
+    if codegen != null && codegen.arena != null && name != null {
+        const copy: &byte = c99_arena_strdup(codegen.arena, name);
+        if copy != null {
+            return copy;
+        }
+    }
+    return name;
+}
+
+fn c99_decl_result_cache_reset(codegen: &C99CodeGenerator) void {
+    var i: i32 = 0;
+    while i < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_enum_result_keys[i] = null;
+        g_c99_enum_result_values[i] = null;
+        g_c99_enum_result_valid[i] = 0;
+        g_c99_enum_context_result_names[i] = null;
+        g_c99_enum_context_result_filenames[i] = null;
+        g_c99_enum_context_result_values[i] = null;
+        g_c99_enum_context_result_valid[i] = 0;
+        g_c99_struct_result_keys[i] = null;
+        g_c99_struct_result_values[i] = null;
+        g_c99_struct_result_valid[i] = 0;
+        g_c99_struct_result_mono_count[i] = -1;
+        g_c99_union_result_keys[i] = null;
+        g_c99_union_result_values[i] = null;
+        g_c99_union_result_valid[i] = 0;
+        g_c99_union_result_mono_count[i] = -1;
+        g_c99_interface_result_keys[i] = null;
+        g_c99_interface_result_values[i] = null;
+        g_c99_interface_result_valid[i] = 0;
+        g_c99_fn_result_keys[i] = null;
+        g_c99_fn_result_values[i] = null;
+        g_c99_fn_result_valid[i] = 0;
+        g_c99_fn_result_family[i] = -1;
+        g_c99_unqualified_fn_result_names[i] = null;
+        g_c99_unqualified_fn_result_filenames[i] = null;
+        g_c99_unqualified_fn_result_values[i] = null;
+        g_c99_unqualified_fn_result_valid[i] = 0;
+        g_c99_method_block_struct_result_keys[i] = null;
+        g_c99_method_block_struct_result_values[i] = null;
+        g_c99_method_block_struct_result_valid[i] = 0;
+        g_c99_method_block_union_result_keys[i] = null;
+        g_c99_method_block_union_result_values[i] = null;
+        g_c99_method_block_union_result_valid[i] = 0;
+        i = i + 1;
+    }
+    g_c99_decl_result_cached_codegen = codegen;
+}
+
+fn c99_decl_result_cache_ensure(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+    if g_c99_decl_result_cached_codegen == codegen {
+        return;
+    }
+    c99_decl_result_cache_reset(codegen);
 }
 
 fn c99_safe_ident_cache_store(codegen: &C99CodeGenerator, name: &byte, safe_name: &byte) void {
@@ -176,6 +321,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
 
     // 初始化字段
     c99_utils_reset_caches(codegen);
+    c99_decl_result_cache_reset(codegen);
     c99_ident_ref_cache_reset();
     codegen.arena = arena;
     codegen.checker = null;

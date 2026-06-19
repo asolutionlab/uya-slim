@@ -1656,6 +1656,21 @@ fn c99_find_function_decl_for_unqualified_call(codegen: &C99CodeGenerator, name:
     if codegen == null || name == null {
         return null;
     }
+    var cur_file_for_cache: &byte = null;
+    if codegen.current_function_decl != null &&
+        codegen.current_function_decl.type == ASTNodeType.AST_FN_DECL &&
+        codegen.current_function_decl.filename != null {
+        cur_file_for_cache = codegen.current_function_decl.filename;
+    }
+    c99_decl_result_cache_ensure(codegen);
+    const unqualified_slot: i32 = c99_decl_result_cache_pair_slot(name, cur_file_for_cache);
+    if unqualified_slot >= 0 && unqualified_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        c99_decl_result_cache_pair_matches(g_c99_unqualified_fn_result_valid[unqualified_slot],
+            g_c99_unqualified_fn_result_names[unqualified_slot],
+            g_c99_unqualified_fn_result_filenames[unqualified_slot],
+            name, cur_file_for_cache) != 0 {
+        return g_c99_unqualified_fn_result_values[unqualified_slot];
+    }
     if codegen.current_function_decl != null &&
         codegen.current_function_decl.type == ASTNodeType.AST_FN_DECL &&
         codegen.current_function_decl.filename != null &&
@@ -1669,12 +1684,25 @@ fn c99_find_function_decl_for_unqualified_call(codegen: &C99CodeGenerator, name:
                 decl.fn_decl_body != null &&
                 strcmp(decl.fn_decl_name as *byte, name as *byte) == 0 &&
                 strcmp(decl.filename as *byte, cur_file as *byte) == 0 {
+                if unqualified_slot >= 0 && unqualified_slot < C99_DECL_RESULT_CACHE_SIZE {
+                    g_c99_unqualified_fn_result_names[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, name);
+                    g_c99_unqualified_fn_result_filenames[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, cur_file_for_cache);
+                    g_c99_unqualified_fn_result_values[unqualified_slot] = decl;
+                    g_c99_unqualified_fn_result_valid[unqualified_slot] = 1;
+                }
                 return decl;
             }
             i = i + 1;
         }
     }
-    return find_function_decl_c99(codegen, name);
+    const fallback: &ASTNode = find_function_decl_c99(codegen, name);
+    if unqualified_slot >= 0 && unqualified_slot < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_unqualified_fn_result_names[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, name);
+        g_c99_unqualified_fn_result_filenames[unqualified_slot] = c99_decl_result_cache_key_copy(codegen, cur_file_for_cache);
+        g_c99_unqualified_fn_result_values[unqualified_slot] = fallback;
+        g_c99_unqualified_fn_result_valid[unqualified_slot] = 1;
+    }
+    return fallback;
 }
 
 fn c99_expected_pointer_const_drop_type_c(codegen: &C99CodeGenerator, source_type_c: &byte) &byte {
@@ -6124,7 +6152,90 @@ fn c99_gen_simd_reduce_max_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 
     return 1;
 }
 
-fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
+const C99_IDENTIFIER_TYPE_NODE_CACHE_BITS: i32 = 12;
+const C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE: i32 = 4096;
+const C99_IDENTIFIER_TYPE_NODE_CACHE_MASK: i32 = 4095;
+
+var g_c99_identifier_type_node_cached_codegen: &C99CodeGenerator = null;
+var g_c99_identifier_type_node_keys: [&byte: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+var g_c99_identifier_type_node_values: [&ASTNode: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+var g_c99_identifier_type_node_valid: [i32: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+var g_c99_identifier_type_node_functions: [&ASTNode: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+var g_c99_identifier_type_node_local_counts: [i32: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+var g_c99_identifier_type_node_global_counts: [i32: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+var g_c99_identifier_type_node_method_structs: [&byte: C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE] = [];
+
+fn c99_identifier_type_node_cache_reset() void {
+    var i: i32 = 0;
+    while i < C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE {
+        g_c99_identifier_type_node_keys[i] = null;
+        g_c99_identifier_type_node_values[i] = null;
+        g_c99_identifier_type_node_valid[i] = 0;
+        g_c99_identifier_type_node_functions[i] = null;
+        g_c99_identifier_type_node_local_counts[i] = 0;
+        g_c99_identifier_type_node_global_counts[i] = 0;
+        g_c99_identifier_type_node_method_structs[i] = null;
+        i = i + 1;
+    }
+    g_c99_identifier_type_node_cached_codegen = null;
+}
+
+fn c99_identifier_type_node_cache_ensure(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+    if g_c99_identifier_type_node_cached_codegen == codegen {
+        return;
+    }
+    c99_identifier_type_node_cache_reset();
+    g_c99_identifier_type_node_cached_codegen = codegen;
+}
+
+fn c99_identifier_type_node_cache_slot(codegen: &C99CodeGenerator, name: &byte) i32 {
+    var h: i32 = hash_string(name);
+    if codegen != null && codegen.current_function_decl != null {
+        h = h + ((@usize_from_ptr(codegen.current_function_decl as &void) & 65535usize) as i32);
+    }
+    if codegen != null {
+        h = h + (codegen.local_variable_count * 17);
+        h = h + (codegen.global_variable_count * 29);
+        if codegen.current_method_struct_name != null {
+            h = h + (hash_string(codegen.current_method_struct_name) * 37);
+        }
+    }
+    return (h & C99_IDENTIFIER_TYPE_NODE_CACHE_MASK) as i32;
+}
+
+fn c99_identifier_type_node_method_context_matches(cached_method: &byte, current_method: &byte) i32 {
+    if cached_method == null {
+        if current_method == null {
+            return 1;
+        }
+        return 0;
+    }
+    if current_method == null {
+        return 0;
+    }
+    if str_equals(cached_method, current_method) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_identifier_type_node_cache_can_use(codegen: &C99CodeGenerator) i32 {
+    if codegen == null {
+        return 0;
+    }
+    if codegen.current_type_param_count > 0 || codegen.struct_type_param_count > 0 {
+        return 0;
+    }
+    if codegen.async_state_var != null {
+        return 0;
+    }
+    return 1;
+}
+
+fn c99_find_identifier_type_node_uncached(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
     if codegen == null || name == null {
         return null;
     }
@@ -6183,6 +6294,44 @@ fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNo
         }
     }
     return null;
+}
+
+fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
+    if codegen == null || name == null {
+        return null;
+    }
+    var use_node_cache: i32 = c99_identifier_type_node_cache_can_use(codegen);
+    var slot: i32 = 0;
+    if use_node_cache != 0 {
+        c99_identifier_type_node_cache_ensure(codegen);
+        slot = c99_identifier_type_node_cache_slot(codegen, name);
+        if slot < 0 || slot >= C99_IDENTIFIER_TYPE_NODE_CACHE_SIZE {
+            use_node_cache = 0;
+        }
+    }
+    if use_node_cache != 0 {
+        if g_c99_identifier_type_node_valid[slot] != 0 &&
+            g_c99_identifier_type_node_keys[slot] != null &&
+            str_equals(g_c99_identifier_type_node_keys[slot], name) != 0 &&
+            g_c99_identifier_type_node_functions[slot] == codegen.current_function_decl &&
+            g_c99_identifier_type_node_local_counts[slot] == codegen.local_variable_count &&
+            g_c99_identifier_type_node_global_counts[slot] == codegen.global_variable_count &&
+            c99_identifier_type_node_method_context_matches(g_c99_identifier_type_node_method_structs[slot],
+                codegen.current_method_struct_name) != 0 {
+            return g_c99_identifier_type_node_values[slot];
+        }
+    }
+    const result: &ASTNode = c99_find_identifier_type_node_uncached(codegen, name);
+    if use_node_cache != 0 {
+        g_c99_identifier_type_node_keys[slot] = c99_decl_result_cache_key_copy(codegen, name);
+        g_c99_identifier_type_node_values[slot] = result;
+        g_c99_identifier_type_node_valid[slot] = 1;
+        g_c99_identifier_type_node_functions[slot] = codegen.current_function_decl;
+        g_c99_identifier_type_node_local_counts[slot] = codegen.local_variable_count;
+        g_c99_identifier_type_node_global_counts[slot] = codegen.global_variable_count;
+        g_c99_identifier_type_node_method_structs[slot] = c99_decl_result_cache_key_copy(codegen, codegen.current_method_struct_name);
+    }
+    return result;
 }
 
 fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &ASTNode {

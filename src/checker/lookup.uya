@@ -4,6 +4,9 @@
 const CHECKER_LOOKUP_CACHE_BITS: i32 = 11;
 const CHECKER_LOOKUP_CACHE_SIZE: i32 = 2048;
 const CHECKER_LOOKUP_CACHE_MASK: i32 = 2047;
+const CHECKER_LOOKUP_RESULT_CACHE_BITS: i32 = 13;
+const CHECKER_LOOKUP_RESULT_CACHE_SIZE: i32 = 8192;
+const CHECKER_LOOKUP_RESULT_CACHE_MASK: i32 = 8191;
 
 var g_lookup_cached_program: &ASTNode = null;
 var g_lookup_cached_decl_count: i32 = -1;
@@ -16,6 +19,36 @@ var g_lookup_interface_decl_cache: [&ASTNode: CHECKER_LOOKUP_CACHE_SIZE] = [];
 var g_lookup_fn_decl_cache: [&ASTNode: CHECKER_LOOKUP_CACHE_SIZE] = [];
 var g_lookup_method_block_struct_cache: [&ASTNode: CHECKER_LOOKUP_CACHE_SIZE] = [];
 var g_lookup_method_block_union_cache: [&ASTNode: CHECKER_LOOKUP_CACHE_SIZE] = [];
+var g_lookup_enum_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_enum_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_enum_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_enum_variant_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_enum_variant_result_values: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_enum_variant_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_struct_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_struct_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_struct_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_type_alias_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_type_alias_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_type_alias_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_union_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_union_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_union_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_interface_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_interface_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_interface_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_fn_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_fn_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_fn_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_method_block_struct_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_method_block_struct_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_method_block_struct_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_method_block_union_result_keys: [&byte: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_method_block_union_result_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_method_block_union_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owned_method_result_keys: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owned_method_result_values: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_lookup_owned_method_result_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
 
 fn reset_program_lookup_caches() void {
     var i: i32 = 0;
@@ -30,6 +63,40 @@ fn reset_program_lookup_caches() void {
         g_lookup_method_block_union_cache[i] = null;
         i = i + 1;
     }
+    i = 0;
+    while i < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_enum_result_keys[i] = null;
+        g_lookup_enum_result_values[i] = null;
+        g_lookup_enum_result_valid[i] = 0;
+        g_lookup_enum_variant_result_keys[i] = null;
+        g_lookup_enum_variant_result_values[i] = 0;
+        g_lookup_enum_variant_result_valid[i] = 0;
+        g_lookup_struct_result_keys[i] = null;
+        g_lookup_struct_result_values[i] = null;
+        g_lookup_struct_result_valid[i] = 0;
+        g_lookup_type_alias_result_keys[i] = null;
+        g_lookup_type_alias_result_values[i] = null;
+        g_lookup_type_alias_result_valid[i] = 0;
+        g_lookup_union_result_keys[i] = null;
+        g_lookup_union_result_values[i] = null;
+        g_lookup_union_result_valid[i] = 0;
+        g_lookup_interface_result_keys[i] = null;
+        g_lookup_interface_result_values[i] = null;
+        g_lookup_interface_result_valid[i] = 0;
+        g_lookup_fn_result_keys[i] = null;
+        g_lookup_fn_result_values[i] = null;
+        g_lookup_fn_result_valid[i] = 0;
+        g_lookup_method_block_struct_result_keys[i] = null;
+        g_lookup_method_block_struct_result_values[i] = null;
+        g_lookup_method_block_struct_result_valid[i] = 0;
+        g_lookup_method_block_union_result_keys[i] = null;
+        g_lookup_method_block_union_result_values[i] = null;
+        g_lookup_method_block_union_result_valid[i] = 0;
+        g_lookup_owned_method_result_keys[i] = null;
+        g_lookup_owned_method_result_values[i] = 0;
+        g_lookup_owned_method_result_valid[i] = 0;
+        i = i + 1;
+    }
     g_lookup_cached_program = null;
     g_lookup_cached_decl_count = -1;
     g_lookup_cache_initialized = 0;
@@ -40,6 +107,31 @@ fn lookup_decl_cache_slot(name: &byte) i32 {
         return 0;
     }
     return (hash_string(name) & CHECKER_LOOKUP_CACHE_MASK) as i32;
+}
+
+fn lookup_result_cache_slot(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    return (hash_string(name) & CHECKER_LOOKUP_RESULT_CACHE_MASK) as i32;
+}
+
+fn lookup_result_cache_key_matches(valid: i32, cached_key: &byte, query_name: &byte) i32 {
+    if valid == 0 || cached_key == null || query_name == null {
+        return 0;
+    }
+    if str_equals(cached_key, query_name) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn lookup_node_result_cache_slot(node: &ASTNode) i32 {
+    if node == null {
+        return 0;
+    }
+    const node_hash: usize = (@usize_from_ptr(node as &void) / 8 as usize);
+    return (node_hash & 8191usize) as i32;
 }
 
 fn lookup_name_matches_exact_or_generic_base(decl_name: &byte, query_name: &byte) i32 {
@@ -248,6 +340,12 @@ fn find_enum_decl_from_program(program_node: &ASTNode, enum_name: &byte) &ASTNod
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const enum_result_slot: i32 = lookup_result_cache_slot(enum_name);
+    if enum_result_slot >= 0 && enum_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_enum_result_valid[enum_result_slot],
+            g_lookup_enum_result_keys[enum_result_slot], enum_name) != 0 {
+        return g_lookup_enum_result_values[enum_result_slot];
+    }
     var cached: &ASTNode = null;
     const enum_slot: i32 = lookup_decl_cache_slot(enum_name);
     if enum_slot >= 0 && enum_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -255,15 +353,33 @@ fn find_enum_decl_from_program(program_node: &ASTNode, enum_name: &byte) &ASTNod
     }
     if cached != null && cached.type == ASTNodeType.AST_ENUM_DECL &&
         cached.enum_decl_name != null && str_equals(cached.enum_decl_name, enum_name) != 0 {
+        if enum_result_slot >= 0 && enum_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_enum_result_keys[enum_result_slot] = enum_name;
+            g_lookup_enum_result_values[enum_result_slot] = cached;
+            g_lookup_enum_result_valid[enum_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_enum_decl_from_program(program_node, enum_name);
+    const scanned: &ASTNode = scan_enum_decl_from_program(program_node, enum_name);
+    if enum_result_slot >= 0 && enum_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_enum_result_keys[enum_result_slot] = enum_name;
+        g_lookup_enum_result_values[enum_result_slot] = scanned;
+        g_lookup_enum_result_valid[enum_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // 检查 name 是否是程序中任意枚举的变体名
 fn is_enum_variant_name_in_program(program_node: &ASTNode, name: &byte) i32 {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || name == null {
         return 0;
+    }
+    ensure_program_lookup_caches(program_node);
+    const enum_variant_result_slot: i32 = lookup_result_cache_slot(name);
+    if enum_variant_result_slot >= 0 && enum_variant_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_enum_variant_result_valid[enum_variant_result_slot],
+            g_lookup_enum_variant_result_keys[enum_variant_result_slot], name) != 0 {
+        return g_lookup_enum_variant_result_values[enum_variant_result_slot];
     }
     var i: i32 = 0;
     while i < program_node.program_decl_count {
@@ -273,12 +389,22 @@ fn is_enum_variant_name_in_program(program_node: &ASTNode, name: &byte) i32 {
             while j < decl.enum_decl_variant_count {
                 if decl.enum_decl_variants[j].name != null &&
                     str_equals(decl.enum_decl_variants[j].name, name) != 0 {
+                    if enum_variant_result_slot >= 0 && enum_variant_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+                        g_lookup_enum_variant_result_keys[enum_variant_result_slot] = name;
+                        g_lookup_enum_variant_result_values[enum_variant_result_slot] = 1;
+                        g_lookup_enum_variant_result_valid[enum_variant_result_slot] = 1;
+                    }
                     return 1;
                 }
                 j = j + 1;
             }
         }
         i = i + 1;
+    }
+    if enum_variant_result_slot >= 0 && enum_variant_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_enum_variant_result_keys[enum_variant_result_slot] = name;
+        g_lookup_enum_variant_result_values[enum_variant_result_slot] = 0;
+        g_lookup_enum_variant_result_valid[enum_variant_result_slot] = 1;
     }
     return 0;
 }
@@ -291,6 +417,12 @@ export fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &by
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const struct_result_slot: i32 = lookup_result_cache_slot(struct_name);
+    if struct_result_slot >= 0 && struct_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_struct_result_valid[struct_result_slot],
+            g_lookup_struct_result_keys[struct_result_slot], struct_name) != 0 {
+        return g_lookup_struct_result_values[struct_result_slot];
+    }
     var cached: &ASTNode = null;
     const struct_slot: i32 = lookup_decl_cache_slot(struct_name);
     if struct_slot >= 0 && struct_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -298,9 +430,20 @@ export fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &by
     }
     if cached != null && cached.type == ASTNodeType.AST_STRUCT_DECL &&
         lookup_name_matches_exact_or_generic_base(cached.struct_decl_name, struct_name) != 0 {
+        if struct_result_slot >= 0 && struct_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_struct_result_keys[struct_result_slot] = struct_name;
+            g_lookup_struct_result_values[struct_result_slot] = cached;
+            g_lookup_struct_result_valid[struct_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_struct_decl_from_program(program_node, struct_name);
+    const scanned: &ASTNode = scan_struct_decl_from_program(program_node, struct_name);
+    if struct_result_slot >= 0 && struct_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_struct_result_keys[struct_result_slot] = struct_name;
+        g_lookup_struct_result_values[struct_result_slot] = scanned;
+        g_lookup_struct_result_valid[struct_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // ===== 类型别名查找 =====
@@ -311,6 +454,12 @@ fn find_type_alias_from_program(program_node: &ASTNode, alias_name: &byte) &ASTN
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const type_alias_result_slot: i32 = lookup_result_cache_slot(alias_name);
+    if type_alias_result_slot >= 0 && type_alias_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_type_alias_result_valid[type_alias_result_slot],
+            g_lookup_type_alias_result_keys[type_alias_result_slot], alias_name) != 0 {
+        return g_lookup_type_alias_result_values[type_alias_result_slot];
+    }
     var cached: &ASTNode = null;
     const type_alias_slot: i32 = lookup_decl_cache_slot(alias_name);
     if type_alias_slot >= 0 && type_alias_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -318,9 +467,20 @@ fn find_type_alias_from_program(program_node: &ASTNode, alias_name: &byte) &ASTN
     }
     if cached != null && cached.type == ASTNodeType.AST_TYPE_ALIAS &&
         cached.type_alias_name != null && str_equals(cached.type_alias_name, alias_name) != 0 {
+        if type_alias_result_slot >= 0 && type_alias_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_type_alias_result_keys[type_alias_result_slot] = alias_name;
+            g_lookup_type_alias_result_values[type_alias_result_slot] = cached;
+            g_lookup_type_alias_result_valid[type_alias_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_type_alias_from_program(program_node, alias_name);
+    const scanned: &ASTNode = scan_type_alias_from_program(program_node, alias_name);
+    if type_alias_result_slot >= 0 && type_alias_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_type_alias_result_keys[type_alias_result_slot] = alias_name;
+        g_lookup_type_alias_result_values[type_alias_result_slot] = scanned;
+        g_lookup_type_alias_result_valid[type_alias_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // ===== 联合体查找 =====
@@ -331,6 +491,12 @@ fn find_union_decl_from_program(program_node: &ASTNode, union_name: &byte) &ASTN
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const union_result_slot: i32 = lookup_result_cache_slot(union_name);
+    if union_result_slot >= 0 && union_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_union_result_valid[union_result_slot],
+            g_lookup_union_result_keys[union_result_slot], union_name) != 0 {
+        return g_lookup_union_result_values[union_result_slot];
+    }
     var cached: &ASTNode = null;
     const union_slot: i32 = lookup_decl_cache_slot(union_name);
     if union_slot >= 0 && union_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -338,9 +504,20 @@ fn find_union_decl_from_program(program_node: &ASTNode, union_name: &byte) &ASTN
     }
     if cached != null && cached.type == ASTNodeType.AST_UNION_DECL &&
         cached.union_decl_name != null && str_equals(cached.union_decl_name, union_name) != 0 {
+        if union_result_slot >= 0 && union_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_union_result_keys[union_result_slot] = union_name;
+            g_lookup_union_result_values[union_result_slot] = cached;
+            g_lookup_union_result_valid[union_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_union_decl_from_program(program_node, union_name);
+    const scanned: &ASTNode = scan_union_decl_from_program(program_node, union_name);
+    if union_result_slot >= 0 && union_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_union_result_keys[union_result_slot] = union_name;
+        g_lookup_union_result_values[union_result_slot] = scanned;
+        g_lookup_union_result_valid[union_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // ===== 接口查找 =====
@@ -351,6 +528,12 @@ fn find_interface_decl_from_program(program_node: &ASTNode, interface_name: &byt
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const interface_result_slot: i32 = lookup_result_cache_slot(interface_name);
+    if interface_result_slot >= 0 && interface_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_interface_result_valid[interface_result_slot],
+            g_lookup_interface_result_keys[interface_result_slot], interface_name) != 0 {
+        return g_lookup_interface_result_values[interface_result_slot];
+    }
     var cached: &ASTNode = null;
     const interface_slot: i32 = lookup_decl_cache_slot(interface_name);
     if interface_slot >= 0 && interface_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -358,9 +541,20 @@ fn find_interface_decl_from_program(program_node: &ASTNode, interface_name: &byt
     }
     if cached != null && cached.type == ASTNodeType.AST_INTERFACE_DECL &&
         lookup_name_matches_exact_or_generic_base(cached.interface_decl_name, interface_name) != 0 {
+        if interface_result_slot >= 0 && interface_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_interface_result_keys[interface_result_slot] = interface_name;
+            g_lookup_interface_result_values[interface_result_slot] = cached;
+            g_lookup_interface_result_valid[interface_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_interface_decl_from_program(program_node, interface_name);
+    const scanned: &ASTNode = scan_interface_decl_from_program(program_node, interface_name);
+    if interface_result_slot >= 0 && interface_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_interface_result_keys[interface_result_slot] = interface_name;
+        g_lookup_interface_result_values[interface_result_slot] = scanned;
+        g_lookup_interface_result_valid[interface_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // 在接口及其组合接口中递归查找方法签名
@@ -450,6 +644,12 @@ fn find_fn_decl_from_program(program_node: &ASTNode, fn_name: &byte) &ASTNode {
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const fn_result_slot: i32 = lookup_result_cache_slot(fn_name);
+    if fn_result_slot >= 0 && fn_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_fn_result_valid[fn_result_slot],
+            g_lookup_fn_result_keys[fn_result_slot], fn_name) != 0 {
+        return g_lookup_fn_result_values[fn_result_slot];
+    }
     var cached: &ASTNode = null;
     const fn_slot: i32 = lookup_decl_cache_slot(fn_name);
     if fn_slot >= 0 && fn_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -457,9 +657,20 @@ fn find_fn_decl_from_program(program_node: &ASTNode, fn_name: &byte) &ASTNode {
     }
     if cached != null && cached.type == ASTNodeType.AST_FN_DECL &&
         cached.fn_decl_name != null && str_equals(cached.fn_decl_name, fn_name) != 0 {
+        if fn_result_slot >= 0 && fn_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_fn_result_keys[fn_result_slot] = fn_name;
+            g_lookup_fn_result_values[fn_result_slot] = cached;
+            g_lookup_fn_result_valid[fn_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_fn_decl_from_program(program_node, fn_name);
+    const scanned: &ASTNode = scan_fn_decl_from_program(program_node, fn_name);
+    if fn_result_slot >= 0 && fn_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_fn_result_keys[fn_result_slot] = fn_name;
+        g_lookup_fn_result_values[fn_result_slot] = scanned;
+        g_lookup_fn_result_valid[fn_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // ===== 方法查找 =====
@@ -535,6 +746,12 @@ fn find_method_block_for_struct(program_node: &ASTNode, struct_name: &byte) &AST
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const method_block_struct_result_slot: i32 = lookup_result_cache_slot(struct_name);
+    if method_block_struct_result_slot >= 0 && method_block_struct_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_method_block_struct_result_valid[method_block_struct_result_slot],
+            g_lookup_method_block_struct_result_keys[method_block_struct_result_slot], struct_name) != 0 {
+        return g_lookup_method_block_struct_result_values[method_block_struct_result_slot];
+    }
     var cached: &ASTNode = null;
     const method_block_struct_slot: i32 = lookup_decl_cache_slot(struct_name);
     if method_block_struct_slot >= 0 && method_block_struct_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -543,9 +760,20 @@ fn find_method_block_for_struct(program_node: &ASTNode, struct_name: &byte) &AST
     if cached != null && cached.type == ASTNodeType.AST_METHOD_BLOCK &&
         cached.method_block_struct_name != null &&
         str_equals(cached.method_block_struct_name, struct_name) != 0 {
+        if method_block_struct_result_slot >= 0 && method_block_struct_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_method_block_struct_result_keys[method_block_struct_result_slot] = struct_name;
+            g_lookup_method_block_struct_result_values[method_block_struct_result_slot] = cached;
+            g_lookup_method_block_struct_result_valid[method_block_struct_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_method_block_for_struct(program_node, struct_name);
+    const scanned: &ASTNode = scan_method_block_for_struct(program_node, struct_name);
+    if method_block_struct_result_slot >= 0 && method_block_struct_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_method_block_struct_result_keys[method_block_struct_result_slot] = struct_name;
+        g_lookup_method_block_struct_result_values[method_block_struct_result_slot] = scanned;
+        g_lookup_method_block_struct_result_valid[method_block_struct_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // 查找结构体方法
@@ -642,6 +870,12 @@ fn find_method_block_for_union(program_node: &ASTNode, union_name: &byte) &ASTNo
         return null;
     }
     ensure_program_lookup_caches(program_node);
+    const method_block_union_result_slot: i32 = lookup_result_cache_slot(union_name);
+    if method_block_union_result_slot >= 0 && method_block_union_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        lookup_result_cache_key_matches(g_lookup_method_block_union_result_valid[method_block_union_result_slot],
+            g_lookup_method_block_union_result_keys[method_block_union_result_slot], union_name) != 0 {
+        return g_lookup_method_block_union_result_values[method_block_union_result_slot];
+    }
     var cached: &ASTNode = null;
     const method_block_union_slot: i32 = lookup_decl_cache_slot(union_name);
     if method_block_union_slot >= 0 && method_block_union_slot < CHECKER_LOOKUP_CACHE_SIZE {
@@ -650,9 +884,20 @@ fn find_method_block_for_union(program_node: &ASTNode, union_name: &byte) &ASTNo
     if cached != null && cached.type == ASTNodeType.AST_METHOD_BLOCK &&
         cached.method_block_union_name != null &&
         str_equals(cached.method_block_union_name, union_name) != 0 {
+        if method_block_union_result_slot >= 0 && method_block_union_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+            g_lookup_method_block_union_result_keys[method_block_union_result_slot] = union_name;
+            g_lookup_method_block_union_result_values[method_block_union_result_slot] = cached;
+            g_lookup_method_block_union_result_valid[method_block_union_result_slot] = 1;
+        }
         return cached;
     }
-    return scan_method_block_for_union(program_node, union_name);
+    const scanned: &ASTNode = scan_method_block_for_union(program_node, union_name);
+    if method_block_union_result_slot >= 0 && method_block_union_result_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_method_block_union_result_keys[method_block_union_result_slot] = union_name;
+        g_lookup_method_block_union_result_values[method_block_union_result_slot] = scanned;
+        g_lookup_method_block_union_result_valid[method_block_union_result_slot] = 1;
+    }
+    return scanned;
 }
 
 // 查找联合体方法
@@ -746,6 +991,13 @@ fn checker_fn_decl_is_owned_method(checker: &TypeChecker, fn_decl: &ASTNode) i32
         checker.program_node == null || checker.program_node.type != ASTNodeType.AST_PROGRAM {
         return 0;
     }
+    ensure_program_lookup_caches(checker.program_node);
+    const owned_slot: i32 = lookup_node_result_cache_slot(fn_decl);
+    if owned_slot >= 0 && owned_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        g_lookup_owned_method_result_valid[owned_slot] != 0 &&
+        g_lookup_owned_method_result_keys[owned_slot] == fn_decl {
+        return g_lookup_owned_method_result_values[owned_slot];
+    }
     var i: i32 = 0;
     while i < checker.program_node.program_decl_count {
         const decl: &ASTNode = checker.program_node.program_decls[i];
@@ -754,6 +1006,11 @@ fn checker_fn_decl_is_owned_method(checker: &TypeChecker, fn_decl: &ASTNode) i32
                 var j: i32 = 0;
                 while j < decl.struct_decl_method_count {
                     if decl.struct_decl_methods[j] == fn_decl {
+                        if owned_slot >= 0 && owned_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+                            g_lookup_owned_method_result_keys[owned_slot] = fn_decl;
+                            g_lookup_owned_method_result_values[owned_slot] = 1;
+                            g_lookup_owned_method_result_valid[owned_slot] = 1;
+                        }
                         return 1;
                     }
                     j = j + 1;
@@ -762,6 +1019,11 @@ fn checker_fn_decl_is_owned_method(checker: &TypeChecker, fn_decl: &ASTNode) i32
                 var k: i32 = 0;
                 while k < decl.union_decl_method_count {
                     if decl.union_decl_methods[k] == fn_decl {
+                        if owned_slot >= 0 && owned_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+                            g_lookup_owned_method_result_keys[owned_slot] = fn_decl;
+                            g_lookup_owned_method_result_values[owned_slot] = 1;
+                            g_lookup_owned_method_result_valid[owned_slot] = 1;
+                        }
                         return 1;
                     }
                     k = k + 1;
@@ -770,6 +1032,11 @@ fn checker_fn_decl_is_owned_method(checker: &TypeChecker, fn_decl: &ASTNode) i32
                 var m: i32 = 0;
                 while m < decl.method_block_method_count {
                     if decl.method_block_methods[m] == fn_decl {
+                        if owned_slot >= 0 && owned_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+                            g_lookup_owned_method_result_keys[owned_slot] = fn_decl;
+                            g_lookup_owned_method_result_values[owned_slot] = 1;
+                            g_lookup_owned_method_result_valid[owned_slot] = 1;
+                        }
                         return 1;
                     }
                     m = m + 1;
@@ -777,6 +1044,11 @@ fn checker_fn_decl_is_owned_method(checker: &TypeChecker, fn_decl: &ASTNode) i32
             }
         }
         i = i + 1;
+    }
+    if owned_slot >= 0 && owned_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_lookup_owned_method_result_keys[owned_slot] = fn_decl;
+        g_lookup_owned_method_result_values[owned_slot] = 0;
+        g_lookup_owned_method_result_valid[owned_slot] = 1;
     }
     return 0;
 }

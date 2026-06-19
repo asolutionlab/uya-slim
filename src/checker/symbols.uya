@@ -204,7 +204,40 @@ fn checker_find_reachable_fn_decl_by_name(checker: &TypeChecker, name: &byte) &A
     return null;
 }
 
-fn checker_canonicalize_fn_decl(checker: &TypeChecker, fn_decl: &ASTNode) &ASTNode {
+var g_checker_canonical_fn_cached_program: &ASTNode = null;
+var g_checker_canonical_fn_cached_decl_count: i32 = -1;
+var g_checker_canonical_fn_keys: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_checker_canonical_fn_values: [&ASTNode: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+var g_checker_canonical_fn_valid: [i32: CHECKER_LOOKUP_RESULT_CACHE_SIZE] = [];
+
+fn checker_canonical_fn_cache_reset(program: &ASTNode) void {
+    var i: i32 = 0;
+    while i < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_checker_canonical_fn_keys[i] = null;
+        g_checker_canonical_fn_values[i] = null;
+        g_checker_canonical_fn_valid[i] = 0;
+        i = i + 1;
+    }
+    g_checker_canonical_fn_cached_program = program;
+    if program != null {
+        g_checker_canonical_fn_cached_decl_count = program.program_decl_count;
+    } else {
+        g_checker_canonical_fn_cached_decl_count = -1;
+    }
+}
+
+fn checker_canonical_fn_cache_ensure(program: &ASTNode) void {
+    if program == null {
+        return;
+    }
+    if g_checker_canonical_fn_cached_program == program &&
+        g_checker_canonical_fn_cached_decl_count == program.program_decl_count {
+        return;
+    }
+    checker_canonical_fn_cache_reset(program);
+}
+
+fn checker_canonicalize_fn_decl_uncached(checker: &TypeChecker, fn_decl: &ASTNode) &ASTNode {
     if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
         fn_decl.fn_decl_name == null || checker.program_node == null ||
         checker.program_node.type != ASTNodeType.AST_PROGRAM {
@@ -240,6 +273,27 @@ fn checker_canonicalize_fn_decl(checker: &TypeChecker, fn_decl: &ASTNode) &ASTNo
         i = i + 1;
     }
     return fn_decl;
+}
+
+fn checker_canonicalize_fn_decl(checker: &TypeChecker, fn_decl: &ASTNode) &ASTNode {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        checker.program_node == null || checker.program_node.type != ASTNodeType.AST_PROGRAM {
+        return checker_canonicalize_fn_decl_uncached(checker, fn_decl);
+    }
+    checker_canonical_fn_cache_ensure(checker.program_node);
+    const canonical_slot: i32 = lookup_node_result_cache_slot(fn_decl);
+    if canonical_slot >= 0 && canonical_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE &&
+        g_checker_canonical_fn_valid[canonical_slot] != 0 &&
+        g_checker_canonical_fn_keys[canonical_slot] == fn_decl {
+        return g_checker_canonical_fn_values[canonical_slot];
+    }
+    const result: &ASTNode = checker_canonicalize_fn_decl_uncached(checker, fn_decl);
+    if canonical_slot >= 0 && canonical_slot < CHECKER_LOOKUP_RESULT_CACHE_SIZE {
+        g_checker_canonical_fn_keys[canonical_slot] = fn_decl;
+        g_checker_canonical_fn_values[canonical_slot] = result;
+        g_checker_canonical_fn_valid[canonical_slot] = 1;
+    }
+    return result;
 }
 
 fn checker_fn_root_decl_at(checker: &TypeChecker, idx: i32) &ASTNode {

@@ -1798,6 +1798,7 @@ fn reset_decl_caches(codegen: &C99CodeGenerator) void {
         i = i + 1;
     }
     codegen.decl_cache_initialized = 0;
+    c99_decl_result_cache_reset(codegen);
 }
 
 fn cache_decl_for_lookup(codegen: &C99CodeGenerator, decl: &ASTNode) void {

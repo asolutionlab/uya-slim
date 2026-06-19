@@ -75,6 +75,14 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
     if codegen == null || struct_name == null || codegen.program_node == null {
         return null;
     }
+    c99_decl_result_cache_ensure(codegen);
+    const struct_result_slot: i32 = c99_decl_result_cache_slot(struct_name);
+    if struct_result_slot >= 0 && struct_result_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        g_c99_struct_result_mono_count[struct_result_slot] == codegen.mono_instance_count &&
+        c99_decl_result_cache_key_matches(g_c99_struct_result_valid[struct_result_slot],
+            g_c99_struct_result_keys[struct_result_slot], struct_name) != 0 {
+        return g_c99_struct_result_values[struct_result_slot];
+    }
     if codegen.decl_cache_initialized == 0 {
         build_decl_caches(codegen);
     }
@@ -84,6 +92,12 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
         if cached != null && cached.type == ASTNodeType.AST_STRUCT_DECL &&
             cached.struct_decl_name != null &&
             strcmp(cached.struct_decl_name as *byte, struct_name as *byte) == 0 {
+            if struct_result_slot >= 0 && struct_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                g_c99_struct_result_keys[struct_result_slot] = c99_decl_result_cache_key_copy(codegen, struct_name);
+                g_c99_struct_result_values[struct_result_slot] = cached;
+                g_c99_struct_result_valid[struct_result_slot] = 1;
+                g_c99_struct_result_mono_count[struct_result_slot] = codegen.mono_instance_count;
+            }
             return cached;
         }
     }
@@ -96,6 +110,12 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
         if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
             const decl_name: &byte = decl.struct_decl_name;
             if decl_name != null && strcmp(decl_name as *byte, struct_name as *byte) == 0 {
+                if struct_result_slot >= 0 && struct_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                    g_c99_struct_result_keys[struct_result_slot] = c99_decl_result_cache_key_copy(codegen, struct_name);
+                    g_c99_struct_result_values[struct_result_slot] = decl;
+                    g_c99_struct_result_valid[struct_result_slot] = 1;
+                    g_c99_struct_result_mono_count[struct_result_slot] = codegen.mono_instance_count;
+                }
                 return decl;
             }
         }
@@ -116,6 +136,12 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
                     const mono_name: &byte = get_mono_struct_name(codegen, decl.struct_decl_name,
                         codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count);
                     if mono_name != null && strcmp(mono_name as *byte, struct_name as *byte) == 0 {
+                        if struct_result_slot >= 0 && struct_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                            g_c99_struct_result_keys[struct_result_slot] = c99_decl_result_cache_key_copy(codegen, struct_name);
+                            g_c99_struct_result_values[struct_result_slot] = decl;
+                            g_c99_struct_result_valid[struct_result_slot] = 1;
+                            g_c99_struct_result_mono_count[struct_result_slot] = codegen.mono_instance_count;
+                        }
                         return decl;
                     }
                 }
@@ -125,6 +151,12 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
         i = i + 1;
     }
     
+    if struct_result_slot >= 0 && struct_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_struct_result_keys[struct_result_slot] = c99_decl_result_cache_key_copy(codegen, struct_name);
+        g_c99_struct_result_values[struct_result_slot] = null;
+        g_c99_struct_result_valid[struct_result_slot] = 1;
+        g_c99_struct_result_mono_count[struct_result_slot] = codegen.mono_instance_count;
+    }
     return null;
 }
 
@@ -132,6 +164,14 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
 fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
     if codegen == null || union_name == null || codegen.program_node == null {
         return null;
+    }
+    c99_decl_result_cache_ensure(codegen);
+    const union_result_slot: i32 = c99_decl_result_cache_slot(union_name);
+    if union_result_slot >= 0 && union_result_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        g_c99_union_result_mono_count[union_result_slot] == codegen.mono_instance_count &&
+        c99_decl_result_cache_key_matches(g_c99_union_result_valid[union_result_slot],
+            g_c99_union_result_keys[union_result_slot], union_name) != 0 {
+        return g_c99_union_result_values[union_result_slot];
     }
     if codegen.decl_cache_initialized == 0 {
         build_decl_caches(codegen);
@@ -142,6 +182,12 @@ fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
         if cached != null && cached.type == ASTNodeType.AST_UNION_DECL &&
             cached.union_decl_name != null &&
             strcmp(cached.union_decl_name as *byte, union_name as *byte) == 0 {
+            if union_result_slot >= 0 && union_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                g_c99_union_result_keys[union_result_slot] = c99_decl_result_cache_key_copy(codegen, union_name);
+                g_c99_union_result_values[union_result_slot] = cached;
+                g_c99_union_result_valid[union_result_slot] = 1;
+                g_c99_union_result_mono_count[union_result_slot] = codegen.mono_instance_count;
+            }
             return cached;
         }
     }
@@ -152,6 +198,12 @@ fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
         if decl != null && decl.type == ASTNodeType.AST_UNION_DECL {
             const decl_name: &byte = decl.union_decl_name;
             if decl_name != null && strcmp(decl_name as *byte, union_name as *byte) == 0 {
+                if union_result_slot >= 0 && union_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                    g_c99_union_result_keys[union_result_slot] = c99_decl_result_cache_key_copy(codegen, union_name);
+                    g_c99_union_result_values[union_result_slot] = decl;
+                    g_c99_union_result_valid[union_result_slot] = 1;
+                    g_c99_union_result_mono_count[union_result_slot] = codegen.mono_instance_count;
+                }
                 return decl;
             }
         }
@@ -170,6 +222,12 @@ fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
                     const mono_name: &byte = get_mono_union_name(codegen, decl.union_decl_name,
                         codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count);
                     if mono_name != null && strcmp(mono_name as *byte, union_name as *byte) == 0 {
+                        if union_result_slot >= 0 && union_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                            g_c99_union_result_keys[union_result_slot] = c99_decl_result_cache_key_copy(codegen, union_name);
+                            g_c99_union_result_values[union_result_slot] = decl;
+                            g_c99_union_result_valid[union_result_slot] = 1;
+                            g_c99_union_result_mono_count[union_result_slot] = codegen.mono_instance_count;
+                        }
                         return decl;
                     }
                 }
@@ -177,6 +235,12 @@ fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
             }
         }
         i = i + 1;
+    }
+    if union_result_slot >= 0 && union_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_union_result_keys[union_result_slot] = c99_decl_result_cache_key_copy(codegen, union_name);
+        g_c99_union_result_values[union_result_slot] = null;
+        g_c99_union_result_valid[union_result_slot] = 1;
+        g_c99_union_result_mono_count[union_result_slot] = codegen.mono_instance_count;
     }
     return null;
 }
@@ -186,6 +250,13 @@ fn find_method_block_for_union_c99(codegen: &C99CodeGenerator, union_name: &byte
     if codegen == null || union_name == null || codegen.program_node == null {
         return null;
     }
+    c99_decl_result_cache_ensure(codegen);
+    const method_block_result_slot: i32 = c99_decl_result_cache_slot(union_name);
+    if method_block_result_slot >= 0 && method_block_result_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        c99_decl_result_cache_key_matches(g_c99_method_block_union_result_valid[method_block_result_slot],
+            g_c99_method_block_union_result_keys[method_block_result_slot], union_name) != 0 {
+        return g_c99_method_block_union_result_values[method_block_result_slot];
+    }
     const decl_count: i32 = codegen.program_node.program_decl_count;
     var i: i32 = 0;
     while i < decl_count {
@@ -193,10 +264,20 @@ fn find_method_block_for_union_c99(codegen: &C99CodeGenerator, union_name: &byte
         if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
             if decl.method_block_union_name != null &&
                 strcmp(decl.method_block_union_name as *byte, union_name as *byte) == 0 {
+                if method_block_result_slot >= 0 && method_block_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                    g_c99_method_block_union_result_keys[method_block_result_slot] = c99_decl_result_cache_key_copy(codegen, union_name);
+                    g_c99_method_block_union_result_values[method_block_result_slot] = decl;
+                    g_c99_method_block_union_result_valid[method_block_result_slot] = 1;
+                }
                 return decl;
             }
         }
         i = i + 1;
+    }
+    if method_block_result_slot >= 0 && method_block_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_method_block_union_result_keys[method_block_result_slot] = c99_decl_result_cache_key_copy(codegen, union_name);
+        g_c99_method_block_union_result_values[method_block_result_slot] = null;
+        g_c99_method_block_union_result_valid[method_block_result_slot] = 1;
     }
     return null;
 }
@@ -1191,6 +1272,13 @@ fn find_interface_decl_c99(codegen: &C99CodeGenerator, interface_name: &byte) &A
     if codegen == null || interface_name == null || codegen.program_node == null {
         return null;
     }
+    c99_decl_result_cache_ensure(codegen);
+    const interface_result_slot: i32 = c99_decl_result_cache_slot(interface_name);
+    if interface_result_slot >= 0 && interface_result_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        c99_decl_result_cache_key_matches(g_c99_interface_result_valid[interface_result_slot],
+            g_c99_interface_result_keys[interface_result_slot], interface_name) != 0 {
+        return g_c99_interface_result_values[interface_result_slot];
+    }
     // 使用缓存（O(1) 查找）
     if codegen.decl_cache_initialized == 0 {
         build_decl_caches(codegen);
@@ -1201,6 +1289,11 @@ fn find_interface_decl_c99(codegen: &C99CodeGenerator, interface_name: &byte) &A
         if cached != null && cached.type == ASTNodeType.AST_INTERFACE_DECL &&
             cached.interface_decl_name != null &&
             strcmp(cached.interface_decl_name as *byte, interface_name as *byte) == 0 {
+            if interface_result_slot >= 0 && interface_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                g_c99_interface_result_keys[interface_result_slot] = c99_decl_result_cache_key_copy(codegen, interface_name);
+                g_c99_interface_result_values[interface_result_slot] = cached;
+                g_c99_interface_result_valid[interface_result_slot] = 1;
+            }
             return cached;
         }
     }
@@ -1212,10 +1305,20 @@ fn find_interface_decl_c99(codegen: &C99CodeGenerator, interface_name: &byte) &A
         if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL {
             const decl_name: &byte = decl.interface_decl_name;
             if decl_name != null && strcmp(decl_name as *byte, interface_name as *byte) == 0 {
+                if interface_result_slot >= 0 && interface_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                    g_c99_interface_result_keys[interface_result_slot] = c99_decl_result_cache_key_copy(codegen, interface_name);
+                    g_c99_interface_result_values[interface_result_slot] = decl;
+                    g_c99_interface_result_valid[interface_result_slot] = 1;
+                }
                 return decl;
             }
         }
         i = i + 1;
+    }
+    if interface_result_slot >= 0 && interface_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_interface_result_keys[interface_result_slot] = c99_decl_result_cache_key_copy(codegen, interface_name);
+        g_c99_interface_result_values[interface_result_slot] = null;
+        g_c99_interface_result_valid[interface_result_slot] = 1;
     }
     return null;
 }
@@ -1261,6 +1364,13 @@ fn find_method_block_for_struct_c99(codegen: &C99CodeGenerator, struct_name: &by
     if codegen == null || struct_name == null || codegen.program_node == null {
         return null;
     }
+    c99_decl_result_cache_ensure(codegen);
+    const method_block_result_slot: i32 = c99_decl_result_cache_slot(struct_name);
+    if method_block_result_slot >= 0 && method_block_result_slot < C99_DECL_RESULT_CACHE_SIZE &&
+        c99_decl_result_cache_key_matches(g_c99_method_block_struct_result_valid[method_block_result_slot],
+            g_c99_method_block_struct_result_keys[method_block_result_slot], struct_name) != 0 {
+        return g_c99_method_block_struct_result_values[method_block_result_slot];
+    }
     const decl_count: i32 = codegen.program_node.program_decl_count;
     var i: i32 = 0;
     while i < decl_count {
@@ -1268,10 +1378,20 @@ fn find_method_block_for_struct_c99(codegen: &C99CodeGenerator, struct_name: &by
         if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
             if decl.method_block_struct_name != null &&
                 strcmp(decl.method_block_struct_name as *byte, struct_name as *byte) == 0 {
+                if method_block_result_slot >= 0 && method_block_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+                    g_c99_method_block_struct_result_keys[method_block_result_slot] = c99_decl_result_cache_key_copy(codegen, struct_name);
+                    g_c99_method_block_struct_result_values[method_block_result_slot] = decl;
+                    g_c99_method_block_struct_result_valid[method_block_result_slot] = 1;
+                }
                 return decl;
             }
         }
         i = i + 1;
+    }
+    if method_block_result_slot >= 0 && method_block_result_slot < C99_DECL_RESULT_CACHE_SIZE {
+        g_c99_method_block_struct_result_keys[method_block_result_slot] = c99_decl_result_cache_key_copy(codegen, struct_name);
+        g_c99_method_block_struct_result_values[method_block_result_slot] = null;
+        g_c99_method_block_struct_result_valid[method_block_result_slot] = 1;
     }
     return null;
 }

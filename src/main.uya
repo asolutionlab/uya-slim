@@ -2717,7 +2717,11 @@ fn compile_files(
 
     // 创建优化配置
     var opt_config: OptimizationConfig = create_optimization_config(opt_level);
-    opt_config.verbose = 1;  // 启用详细输出
+    opt_config.verbose = 0;
+    const opt_verbose_env: *byte = getenv("UYA_OPT_VERBOSE" as *byte);
+    if opt_verbose_env != null && opt_verbose_env[0] != 0 as byte {
+        opt_config.verbose = 1;
+    }
 
     if opt_level > 0 {
         fprintf(libc.stderr, "\n=== 优化阶段 (级别: %d) ===\n" as *byte, opt_level);
