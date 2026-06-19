@@ -11,7 +11,7 @@ PORT=8876
 BIN="/tmp/uya_stress_http_async_epoll"
 REPORT="/tmp/uya_stress_http_async_epoll_report.txt"
 WRK_LOG="/tmp/uya_stress_http_async_epoll_wrk.log"
-COMPILER="$ROOT/../uya/bin/uya"
+COMPILER="${UYA_COMPILER:-$ROOT/bin/uya}"
 
 check_cmd() {
     if ! command -v "$1" &>/dev/null; then

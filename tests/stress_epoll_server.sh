@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 N="${1:-100}"
-COMPILER="$ROOT/../uya/bin/uya"
+COMPILER="${UYA_COMPILER:-$ROOT/bin/uya}"
 if [[ ! -x "$COMPILER" ]]; then
   echo "错误: 缺少可执行编译器 $COMPILER（请先 make uya 或 make from-c）" >&2
   exit 2

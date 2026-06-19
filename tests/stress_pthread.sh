@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-UYA="$ROOT/../uya/bin/uya"
+UYA="${UYA_COMPILER:-$ROOT/bin/uya}"
 N="${1:-100}"
 SUITE=(
   tests/test_pthread_api.uya

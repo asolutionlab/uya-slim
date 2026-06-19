@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="$REPO_ROOT/../uya/bin/uya"
+COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
 export UYA_ROOT="${UYA_ROOT:-$REPO_ROOT/lib/}"
 BUILD_DIR="$SCRIPT_DIR/build"
 mkdir -p "$BUILD_DIR"

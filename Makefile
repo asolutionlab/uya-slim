@@ -1124,6 +1124,8 @@ backup-all:backup backup-all-seed
 
 # 发布前检查：确保本地 release 结果可作为“一键最终验证”
 # 要求工作树干净；否则直接失败，避免把“本地脏状态”误当成可发布结果
+# 注意：release-flow 首步会执行 clean，因此忽略目录 bin/ 下的陈旧种子不应拦截 release；
+# 真正需要收口的是 Git 已跟踪的 backup/* 种子与已提交快照的一致性。
 release-preflight:
 	@echo "=========================================="
 	@echo "发布前检查 (release-preflight)"
@@ -1149,9 +1151,8 @@ release-preflight:
 		if cmp -s bin/uya.c backup/uya.c; then \
 			echo "✓ bin/uya.c 与 backup/uya.c 一致"; \
 		else \
-			echo "错误: bin/uya.c 与 backup/uya.c 不一致；拒绝执行 make release。"; \
-			echo "请先运行 'make backup-seed' 同步种子，或改用 'make release-clean'。"; \
-			exit 1; \
+			echo "提示: bin/uya.c 与 backup/uya.c 不一致；release-flow 会先 clean 并按已跟踪 seed 重建。"; \
+			echo "若要同步本地单文件种子，可运行 'make backup-seed'。"; \
 		fi; \
 	else \
 		echo "提示: bin/uya.c 或 backup/uya.c 缺失，release 过程中可能触发恢复/重生成"; \

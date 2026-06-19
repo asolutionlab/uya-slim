@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="$REPO_ROOT/../uya/bin/uya"
+COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
 OUT_C="$(mktemp /tmp/uya-async-frame-desc.XXXXXX.c)"
 OUT_BIN="$(mktemp /tmp/uya-async-frame-desc.XXXXXX)"
 

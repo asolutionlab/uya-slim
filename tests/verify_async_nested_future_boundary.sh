@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPILER="$(cd "$REPO_ROOT" && pwd)/../uya/bin/uya"
+COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
 CC_BIN="${CC:-cc}"
 OUT_C="$(mktemp /tmp/async_nested_future_boundary.XXXXXX.c)"
 OUT_O="${OUT_C%.c}.o"
