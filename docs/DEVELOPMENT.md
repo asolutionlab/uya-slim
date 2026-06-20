@@ -3,7 +3,7 @@
 **版本**：v0.3.4+  
 **更新日期**：2026-05-20
 
-本文档定义 Uya 编译器的开发流程。自 v0.3.4 起，**C 编译器（compiler-c/）已退役**，仅维护自举编译器。
+本文档定义 Uya 编译器的开发流程。自 v0.3.4 起，旧 C 编译器路线已退役，当前仅维护 `src/` 下的自举编译器。
 
 ---
 
@@ -12,8 +12,10 @@
 ### 自举编译架构
 
 ```
-bin/uya.c (已提交的 C99 代码)
-    ↓ gcc -std=c99
+backup/uya.c 或平台 seed (已提交的 C99 备份)
+    ↓ make from-c / make from-c-native
+bin/uya.c (本地构建副本)
+    ↓ cc -std=c99
 bin/uya (可执行编译器)
     ↓ 编译 src/*.uya
 bin/uya.c (新生成的 C99 代码)
@@ -24,7 +26,7 @@ bin/uya.c (新生成的 C99 代码)
 ### 关键原则
 
 1. **单一编译器源**：`src/` 目录是唯一的编译器源代码
-2. **C99 代码作为引导**：`bin/uya.c` 是自举编译器输出的 C99 代码，作为仓库的"种子"
+2. **C99 代码作为引导**：`backup/uya.c` 和平台相关 `backup/uya-*.c` 是仓库跟踪的种子；`bin/uya.c` 是本地构建副本
 3. **自举验证必须通过**：每次修改后必须运行 `make b` 验证自举一致性
 
 ---
@@ -149,12 +151,14 @@ cat .codebuddy/skills/uya-development.md
 git clone https://github.com/uya-lang/uya.git
 cd uya
 
-# 方式一：从 C99 代码构建（推荐，零依赖）
-gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm
-make tests-uya  # 验证构建
+# Linux：从 C99 seed 构建
+make from-c
 
-# 方式二：使用 Makefile
-make from-c     # 从 bin/uya.c 构建
+# macOS：从本机 hosted seed 构建
+make from-c-native
+
+# 验证构建
+make tests-uya
 ```
 
 ### 开发流程
@@ -170,7 +174,7 @@ make uya        # bin/uya 编译 src/*.uya → bin/uya.c
 make b          # 新编译器编译自身，输出与 bin/uya.c 对比
 
 # 4. 运行测试
-make tests-uya  # 348 个测试
+make tests-uya
 
 # 5. 提交
 git add -A && git commit -m "fix: 描述修复内容"
@@ -183,15 +187,19 @@ git add -A && git commit -m "fix: 描述修复内容"
 | 目标 | 说明 |
 |------|------|
 | `make from-c` | 从 `bin/uya.c` 构建 `bin/uya`；若缺失则优先挑选 `backup/uya-hosted-<host_os>-<host_arch>.c` / `backup/uya-<host_os>-<host_arch>.c`，再回退到通用备份；Linux x86_64 的 nostdlib `_start` 仍走 `crti.o`+`.o`+`crtn.o` 链接 |
-| `make uya-c` | 构建 C 编译器 bin/uya-c（用于编译 src/*.uya） |
-| `make uya` | 使用 bin/uya-c 编译 src/*.uya → bin/uya.c，然后构建 bin/uya |
+| `make from-c-native` | 从本机平台 seed 构建 `bin/uya`；macOS 主线使用 hosted seed，不回退 Linux seed |
+| `make uya` | 构建 full 兼容入口 `bin/uya`，包含 release、UPM、formatter、exec VM 等迁移期能力 |
+| `make uya-core` | 构建精简 core 入口 `bin/uya-core`，只覆盖 `check` / `build` / `run` / `test` |
+| `make uya-hosted` | 构建 hosted 主线编译器 |
 | `make b` | 自举验证：编译器编译自身，验证输出一致性 |
+| `make check-core` | core 门禁：验证 `uya-core`、package mode、`@c_import` 与 split-C smoke |
+| `make check` | full 门禁：完整仓库验证，不更新备份 |
 | `make tests-uya` | 运行自举编译器测试 |
 | `make tests-emcc` | 运行独立 emcc/unknown target smoke（需本机安装 emcc 与 node；不默认包含在 `make check` / `make release-dirty`） |
 | `make release` | 最终 release 验证：要求工作树干净，执行 clean + 自举 + 测试 + 备份 + 发布构建 |
 | `make release-dirty` | 本地调试用的完整 release 流程；会先 clean，再执行 release 步骤，但不要求工作树干净 |
 | `make release-clean` | 在 Git HEAD 干净快照中执行 `make release`，忽略未提交修改，适合作为 CI 对照 |
-| `make tests-c` | （已废弃）运行 C 编译器测试 |
+| `make backup-all` | 提交前完整备份：full 验证后更新多文件和单文件 seed |
 | `make clean` | 清理构建产物 |
 
 ---
@@ -201,8 +209,9 @@ git add -A && git commit -m "fix: 描述修复内容"
 ```
 uya/
 ├── bin/
-│   ├── uya          # 可执行编译器
-│   └── uya.c        # 自举编译器输出的 C99 代码（已提交）
+│   ├── uya          # full 兼容入口（本地构建产物）
+│   ├── uya-core     # core 编译器入口（本地构建产物）
+│   └── uya.c        # 自举编译器输出的本地 C99 副本
 ├── src/             # 编译器源代码（唯一维护源）
 │   ├── main.uya     # 入口
 │   ├── lexer.uya    # 词法分析
@@ -215,9 +224,8 @@ uya/
 │   ├── std/         # 核心库
 │   └── libc/        # C 库绑定
 ├── tests/           # 测试文件
-│   └── programs/    # 348 个测试程序
 ├── docs/            # 文档
-└── compiler-c/      # （已退役）C 编译器，仅供参考
+└── backup/          # 仓库跟踪的 C99 seed 与平台备份
 ```
 
 ---
@@ -227,13 +235,8 @@ uya/
 ### `make b` 流程
 
 ```bash
-# 1. 当前编译器编译自身 → bin/uya_bootstrap.c
-bin/uya --c99 src/*.uya -o bin/uya_bootstrap.c
-
-# 2. 对比新旧 C99 代码
-diff bin/uya.c bin/uya_bootstrap.c
-
-# 3. 一致则通过（验证自举能力）
+make uya
+make b
 ```
 
 ### 验证失败处理
@@ -250,7 +253,8 @@ diff bin/uya.c bin/uya_bootstrap.c
 
 ```bash
 # 1. 确保测试通过
-make tests-uya && make b
+make check-core
+make check
 
 # 2. 更新版本号（如 v0.3.5）
 # 编辑相关文档
@@ -271,14 +275,9 @@ git push origin main --tags
 
 ## 注意事项
 
-### 已退役组件
-
-- **compiler-c/**：C 语言实现的编译器，自 v0.3.4 起不再维护
-- **make tests-c**：已废弃，仅保留 `make tests-uya`
-
 ### 禁止操作
 
-- ❌ 不要修改 `compiler-c/` 目录（已退役）
+- ❌ 不要重新引入或维护退役的 C 编译器路线
 - ❌ 不要跳过自举验证（`make b`）
 - ❌ 不要在测试失败时提交代码
 - ❌ 不要删除有意义的测试（测试是回归保护）
@@ -291,31 +290,28 @@ git push origin main --tags
 - 常见陷阱和解决方案
 - 代码模式最佳实践
 
-### bin/uya.c 必须提交
+### seed 必须同步
 
-- 这是仓库的"种子"，新克隆者从此开始
-- 每次 `make uya` 后，如自举验证通过，应提交新的 bin/uya.c
-- 确保提交的 bin/uya.c 能通过 `make tests-uya`
+- `backup/uya.c` 与平台相关 `backup/uya-*.c` 是仓库跟踪的 seed，新克隆者通过 `make from-c` 或 `make from-c-native` 冷启动
+- `bin/uya.c` 位于忽略的 `bin/` 目录，是本地构建副本，不手动加入提交
+- 提交前按仓库规则运行 `make clean && make backup-all`，并提交被更新的 `backup/` seed
 
 ### uya.c 备份机制
 
-`bin/uya.c` 是自举编译器的种子文件，会被 `make clean` 删除。备份机制确保安全：
+`make clean` 会删除 `bin/` 下的本地构建副本。备份机制确保可以从 `backup/` 冷启动：
 
 ```bash
-# 自动备份（make uya 完成后）
-make uya        # 自动备份 bin/uya.c → backup/uya.c.zip
-
-# 自动恢复（make from-c 时 bin/uya.c 不存在）
-make from-c     # 自动从 backup/uya.c.zip 恢复
-
-# 手动操作
-make backup     # 手动备份
-make restore    # 手动恢复
+make from-c         # Linux：从 backup seed 恢复并构建 bin/uya
+make from-c-native  # macOS：从本机 hosted seed 恢复并构建 bin/uya
+make backup-all     # 完整验证并更新 tracked seed
+make restore        # 从 backup/uya.c 恢复 bin/uya.c
 ```
 
 | 操作 | 说明 |
 |------|------|
-| `make backup` | 备份 `bin/uya.c` 到 `backup/uya.c.zip` |
+| `make backup` | full 验证后备份多文件 C 目录到 `backup/uyacache` |
+| `make backup-seed` | 更新 `bin/uya.c`、`backup/uya.c` 与 host/arch 单文件 seed |
+| `make backup-all` | 提交前完整备份入口 |
 | `make restore` | 从备份恢复 `bin/uya.c` |
 | `make clean && make from-c` | 清理后从备份恢复构建 |
 

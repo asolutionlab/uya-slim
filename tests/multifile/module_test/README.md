@@ -19,13 +19,12 @@
 
 ```bash
 # 编译 module_a 和 module_b（目录即模块）
-cd compiler-mini
-./build/compiler-mini --c99 tests/programs/multifile/module_test/module_a/module_a.uya tests/programs/multifile/module_test/module_b.uya -o test.c
+cd /path/to/uya
+./bin/uya build tests/multifile/module_test/module_a/module_a.uya tests/multifile/module_test/module_b.uya --c99 -o test.c
 gcc -std=c99 -o test test.c tests/bridge.c
 ./test
 
 # 测试错误检测（预期编译失败）
-./build/compiler-mini --c99 tests/programs/multifile/module_test/module_a/module_a.uya tests/programs/multifile/module_test/error_use_private.uya -o test_error.c
+./bin/uya build tests/multifile/module_test/module_a/module_a.uya tests/multifile/module_test/error_use_private.uya --c99 -o test_error.c
 # 应该报错：模块 'module_a' 中未找到导出项 'private_func'
 ```
-

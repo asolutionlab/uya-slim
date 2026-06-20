@@ -1,5 +1,7 @@
 # @asm 内置函数实施 TODO 清单
 
+> 历史路径说明：本文档中出现的 `compiler-c/`、`compiler-mini/`、`bin/uya-c`、`make tests-c` 等旧路径仅用于版本记录，不代表当前开发入口；当前入口以 `Makefile`、`docs/DEVELOPMENT.md` 和 `AGENTS.md` 为准。
+
 **创建日期**: 2026-02-22
 **预计完成**: 2026-03-15 (3周)
 **优先级**: P0 (核心功能)

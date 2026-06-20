@@ -22,14 +22,6 @@ declare -A HOST_RUN_SKIP=(
     ["examples/uyagin_websocket_chat_session.uya"]=1
     ["examples/uyagin_websocket_echo.uya"]=1
     ["examples/uyagin_websocket_json_echo.uya"]=1
-    ["examples/microapp/microcontainer_alloc_yield_source.uya"]=1
-    ["examples/microapp/microcontainer_bss_source.uya"]=1
-    ["examples/microapp/microcontainer_hello_build.uya"]=1
-    ["examples/microapp/microcontainer_hello_load.uya"]=1
-    ["examples/microapp/microcontainer_hello_source.uya"]=1
-    ["examples/microapp/microcontainer_reloc_data_source.uya"]=1
-    ["examples/microapp/microcontainer_reloc_source.uya"]=1
-    ["examples/microapp/microcontainer_time_source.uya"]=1
     ["examples/package_example/flat/main.uya"]=1
     ["examples/package_example/path_dep/app/src/main.uya"]=1
     ["examples/package_example/src_layout/src/main.uya"]=1
@@ -343,39 +335,6 @@ verify_host_examples() {
     done
 }
 
-verify_microapp_source_builds() {
-    log "验证 microapp source 示例可打包"
-    local rel
-    for rel in "$ROOT_DIR"/examples/microapp/*_source.uya; do
-        local name
-        name="$(basename "$rel" .uya)"
-        local out="$TMP_DIR/bin/${name}.uapp"
-        local log_file="$TMP_DIR/logs/${name}.microapp.log"
-        UYA_ROOT="$ROOT_DIR/lib" "$UYA_BIN" build --app microapp "$rel" -o "$out" >"$log_file" 2>&1 || {
-            cat "$log_file" >&2
-            fail "microapp source 打包失败: $(basename "$rel")"
-        }
-        log "microapp 打包通过: $(basename "$rel")"
-    done
-}
-
-verify_microapp_build_and_load_examples() {
-    log "验证 microapp build/load 示例（隔离目录）"
-    local case_root="$TMP_DIR/cases"
-    mkdir -p "$case_root/examples"
-    cp -R "$ROOT_DIR/examples/microapp" "$case_root/examples/"
-
-    local build_rel="examples/microapp/microcontainer_hello_build.uya"
-    local load_rel="examples/microapp/microcontainer_hello_load.uya"
-    local build_bin
-    build_bin="$(build_host_example "$build_rel")"
-    local load_bin
-    load_bin="$(build_host_example "$load_rel")"
-    run_binary_expect_rc "$build_bin" 0 "$TMP_DIR/logs/microcontainer_hello_build.run.log" "$case_root"
-    run_binary_expect_rc "$load_bin" 0 "$TMP_DIR/logs/microcontainer_hello_load.run.log" "$case_root"
-    [[ -f "$case_root/examples/microapp/microcontainer_hello.uapp" ]] || fail "microcontainer_hello.uapp 未在隔离目录生成"
-}
-
 verify_package_examples() {
     log "验证 package examples（隔离目录）"
     local case_root="$TMP_DIR/cases/package"
@@ -441,8 +400,6 @@ verify_ws_example "examples/uyagin_websocket_echo.uya" 8766 "/ws" "ping" "ping" 
 verify_ws_example "examples/uyagin_websocket_chat_session.uya" 8767 "/chat" "hi" "room[lobby] hi" 0
 verify_ws_example "examples/uyagin_websocket_json_echo.uya" 8772 "/json" '{"x":1}' '{"ok":true,"kind":"json"}' 0
 verify_ws_example "examples/https_websocket_echo.uya" 8771 "/ws" "secure" "secure" 1
-verify_microapp_source_builds
-verify_microapp_build_and_load_examples
 verify_package_examples
 
 echo "examples suite ok"

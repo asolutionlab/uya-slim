@@ -15,7 +15,6 @@ enum ExecUnsupportedReason {
     EXEC_UNSUPPORTED_STRING_INTERP,
     EXEC_UNSUPPORTED_ASM,
     EXEC_UNSUPPORTED_SIMD,
-    EXEC_UNSUPPORTED_MICROAPP,
 }
 
 var g_exec_last_error_message: [byte: 512] = [];
@@ -130,9 +129,6 @@ fn exec_backend_reason_name(reason: ExecUnsupportedReason) &byte {
     if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD {
         return "simd" as &byte;
     }
-    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_MICROAPP {
-        return "microapp" as &byte;
-    }
     return "unknown" as &byte;
 }
 
@@ -169,9 +165,6 @@ fn exec_backend_reason_allows_fallback(reason: ExecUnsupportedReason) i32 {
         return 1;
     }
     if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_SIMD {
-        return 1;
-    }
-    if reason == ExecUnsupportedReason.EXEC_UNSUPPORTED_MICROAPP {
         return 1;
     }
     return 0;

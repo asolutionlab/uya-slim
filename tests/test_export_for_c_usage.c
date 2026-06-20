@@ -2,7 +2,7 @@
  * 示例：如何在 C 代码中调用 Uya 导出的函数
  * 
  * 编译步骤：
- * 1. 编译 Uya 代码：uya-c test_export_for_c_complete.uya -o test_export_for_c_complete.c
+ * 1. 编译 Uya 代码：./bin/uya build tests/test_export_for_c_complete.uya --c99 -o test_export_for_c_complete.c
  * 2. 编译 C 代码：gcc test_export_for_c_complete.c test_export_for_c_usage.c -o test
  * 3. 运行：./test
  */
@@ -29,4 +29,3 @@ int main(void) {
     
     return 0;
 }
-

@@ -10,12 +10,9 @@ use main;
 use parser;
 use checker;  // 包含 checker 目录下所有文件（包括 optimizer.uya）
 use driver;
-use microapp;
 use exec;
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
-use kernel.image;
-use kernel.payload;
 use std;
 // C 程序入口由编译器自动注入 std.runtime.entry；此处仅导入堆栈上限设置（避免与局部名 entry 冲突）
 use std.runtime.entry.set_process_stack_limit_bytes;
@@ -96,9 +93,6 @@ enum CommandType {
     COMMAND_CHECK,   // uya check - 只执行到 checker
     COMMAND_RUN,     // uya run - 编译并运行
     COMMAND_TEST,    // uya test - 编译测试并运行
-    COMMAND_PACK_IMAGE, // uya pack-image - 将 .pobj 打包为 .uapp
-    COMMAND_INSPECT_IMAGE, // uya inspect-image - 打印 .pobj/.uapp 头信息
-    COMMAND_VERIFY_IMAGE, // uya verify-image - 校验 .pobj/.uapp
     COMMAND_VERSION, // uya --version - 显示版本信息
     COMMAND_OUTLIBC,  // uya --outlibc - 生成独立 libc
     COMMAND_FMT       // uya fmt - 格式化代码
@@ -127,61 +121,11 @@ var g_split_c_lock_active: i32 = 0;
 // --async-frame-heap=on：async frame pool 满时回退到调试 heap
 var g_async_frame_heap_fallback: i32 = 0;
 
-// 微应用模式：在 app 基础上额外收紧限制
-// 说明：当前默认行为就是 app；microapp 只是在此基础上启用更严格检查
-var g_container_mode: i32 = 0;
-// --app microapp: 微应用模式
-var g_app_mode_microapp: i32 = 0;
-var g_microapp_softvm_mode: i32 = 0;
-var g_microapp_target_profile_override: [byte: 128] = [];
-var g_microapp_target_profile_override_active: i32 = 0;
-
 // package mode / command split 预留：允许显式覆盖模块根与 manifest。
 var g_module_root_override: [byte: PATH_MAX] = [];
 var g_module_root_override_active: i32 = 0;
 var g_manifest_path_override: [byte: PATH_MAX] = [];
 var g_manifest_path_override_active: i32 = 0;
-
-const MICROAPP_REQUIRED_CAP_IO_UART: u32 = 1u32 << 0;
-const MICROAPP_REQUIRED_CAP_IO_GPIO: u32 = 1u32 << 1;
-const MICROAPP_REQUIRED_CAP_IO_TIMER: u32 = 1u32 << 2;
-
-fn set_microapp_target_profile_override(name: &byte) i32 {
-    if name == null || name[0] == 0 as byte {
-        g_microapp_target_profile_override_active = 0;
-        g_microapp_target_profile_override[0] = 0 as byte;
-        return 0;
-    }
-    const name_len: usize = strlen(name as *byte);
-    if name_len == 0 || name_len >= @len(g_microapp_target_profile_override) {
-        return -1;
-    }
-    strcpy(&g_microapp_target_profile_override[0] as *byte, name as *byte);
-    g_microapp_target_profile_override_active = 1;
-    return 0;
-}
-
-fn microapp_target_profile_name_is_supported(name: &byte) i32 {
-    if name == null || name[0] == 0 as byte {
-        return 0;
-    }
-    if strcmp(name, "linux_x86_64_hardvm" as *byte) == 0 {
-        return 1;
-    }
-    if strcmp(name, "linux_aarch64_hardvm" as *byte) == 0 {
-        return 1;
-    }
-    if strcmp(name, "macos_arm64_hardvm" as *byte) == 0 {
-        return 1;
-    }
-    if strcmp(name, "rv32_baremetal_softvm" as *byte) == 0 {
-        return 1;
-    }
-    if strcmp(name, "xtensa_baremetal_softvm" as *byte) == 0 {
-        return 1;
-    }
-    return 0;
-}
 
 fn split_c_set_default_dir() void {
     const def: &byte = ".uyacache" as &byte;
@@ -483,101 +427,6 @@ fn split_c_release_lock() void {
     _ = rmdir(&g_split_c_lock_dir[0] as *byte);
     split_c_lock_reset();
 }
-
-fn is_pobj_output(path: &byte) i32 {
-    if path == null {
-        return 0;
-    }
-    const len: usize = strlen(path);
-    if len < 5 {
-        return 0;
-    }
-    if strcmp(path + (len - 5), ".pobj" as *byte) == 0 {
-        return 1;
-    }
-    return 0;
-}
-
-fn is_uapp_output(path: &byte) i32 {
-    if path == null {
-        return 0;
-    }
-    const len: usize = strlen(path);
-    if len < 5 {
-        return 0;
-    }
-    if strcmp(path + (len - 5), ".uapp" as *byte) == 0 {
-        return 1;
-    }
-    return 0;
-}
-
-const POBJ_MAGIC: u32 = 0x4A424F50;  // "POBJ"
-const POBJ_HEADER_SIZE_V1: u32 = 40;
-const POBJ_HEADER_SIZE: u32 = 68;
-const POBJ_HEADER_SIZE_V2: u32 = 84;
-const POBJ_VERSION: u16 = 8;
-const POBJ_BUILD_MODE_MICROAPP: u32 = 1;
-const MICROAPP_TARGET_ARCH_RV32_RAW: u32 = 1u32;
-const MICROAPP_TARGET_ARCH_X86_64_RAW: u32 = 2u32;
-const MICROAPP_TARGET_ARCH_AARCH64_RAW: u32 = 3u32;
-const MICROAPP_TARGET_ARCH_XTENSA_RAW: u32 = 4u32;
-const MICROAPP_PROFILE_UNKNOWN_RAW: u32 = 0u32;
-const MICROAPP_PROFILE_LINUX_X86_64_HARDVM_RAW: u32 = 1u32;
-const MICROAPP_PROFILE_LINUX_AARCH64_HARDVM_RAW: u32 = 2u32;
-const MICROAPP_PROFILE_RV32_BAREMETAL_SOFTVM_RAW: u32 = 3u32;
-const MICROAPP_PROFILE_XTENSA_BAREMETAL_SOFTVM_RAW: u32 = 4u32;
-const MICROAPP_PROFILE_MACOS_ARM64_HARDVM_RAW: u32 = 5u32;
-const MICROAPP_BRIDGE_UNKNOWN_RAW: u32 = 0u32;
-const MICROAPP_BRIDGE_TRAP_RAW: u32 = 1u32;
-const MICROAPP_BRIDGE_CALL_GATE_RAW: u32 = 2u32;
-const MICROAPP_VADDR_BASE: u32 = 65536u32;
-const MICROAPP_DEFAULT_STACK_HINT_BYTES: u32 = 65536u32;
-const ELF64_HEADER_SIZE: usize = 64usize;
-const ELF64_SECTION_HEADER_SIZE: usize = 64usize;
-const ELF64_SYMBOL_SIZE: usize = 24usize;
-const ELF64_RELA_SIZE: usize = 24usize;
-const ELFCLASS64_RAW: byte = 2 as byte;
-const ELFDATA2LSB_RAW: byte = 1 as byte;
-const ELF64_SECTION_TYPE_SYMTAB_RAW: u32 = 2u32;
-const ELF64_SECTION_TYPE_RELA_RAW: u32 = 4u32;
-const ELF64_SECTION_TYPE_DYNSYM_RAW: u32 = 11u32;
-const ELF64_SECTION_TYPE_PROGBITS_RAW: u32 = 1u32;
-const ELF64_SECTION_TYPE_NOBITS_RAW: u32 = 8u32;
-const ELF64_SECTION_FLAG_WRITE_RAW: u64 = 1u64;
-const ELF64_SECTION_FLAG_ALLOC_RAW: u64 = 2u64;
-const ELF64_SECTION_FLAG_EXEC_RAW: u64 = 4u64;
-const ELF_MACHINE_X86_64_RAW: u16 = 62u16;
-const ELF_MACHINE_AARCH64_RAW: u16 = 183u16;
-const ELF_RELOC_X86_64_PC32_RAW: u32 = 2u32;
-const ELF_RELOC_X86_64_PLT32_RAW: u32 = 4u32;
-const ELF_RELOC_X86_64_64_RAW: u32 = 1u32;
-const ELF_RELOC_X86_64_GLOB_DAT_RAW: u32 = 6u32;
-const ELF_RELOC_X86_64_RELATIVE_RAW: u32 = 8u32;
-const ELF_RELOC_AARCH64_ABS64_RAW: u32 = 257u32;
-const ELF_RELOC_AARCH64_LD_PREL_LO19_RAW: u32 = 273u32;
-const ELF_RELOC_AARCH64_ADR_PREL_LO21_RAW: u32 = 274u32;
-const ELF_RELOC_AARCH64_ADR_PREL_PG_HI21_RAW: u32 = 275u32;
-const ELF_RELOC_AARCH64_ADR_PREL_PG_HI21_NC_RAW: u32 = 276u32;
-const ELF_RELOC_AARCH64_ADD_ABS_LO12_NC_RAW: u32 = 277u32;
-const ELF_RELOC_AARCH64_LDST8_ABS_LO12_NC_RAW: u32 = 278u32;
-const ELF_RELOC_AARCH64_JUMP26_RAW: u32 = 282u32;
-const ELF_RELOC_AARCH64_CALL26_RAW: u32 = 283u32;
-const ELF_RELOC_AARCH64_LDST16_ABS_LO12_NC_RAW: u32 = 284u32;
-const ELF_RELOC_AARCH64_LDST32_ABS_LO12_NC_RAW: u32 = 285u32;
-const ELF_RELOC_AARCH64_LDST64_ABS_LO12_NC_RAW: u32 = 286u32;
-const ELF_RELOC_AARCH64_GLOB_DAT_RAW: u32 = 1025u32;
-const ELF_RELOC_AARCH64_RELATIVE_RAW: u32 = 1027u32;
-const ELF_RELOC_AARCH64_LDST128_ABS_LO12_NC_RAW: u32 = 299u32;
-const MACHO_MAGIC_64_RAW: u32 = 4277009103u32;
-const MACHO_CPU_TYPE_ARM64_RAW: u32 = 16777228u32;
-const MACHO_FILETYPE_OBJECT_RAW: u32 = 1u32;
-const MACHO_LOAD_COMMAND_SYMTAB_RAW: u32 = 2u32;
-const MACHO_LOAD_COMMAND_SEGMENT_64_RAW: u32 = 25u32;
-const MACHO_SEGMENT_COMMAND_64_SIZE: usize = 72usize;
-const MACHO_SECTION_64_SIZE: usize = 80usize;
-const MACHO_NLIST_64_SIZE: usize = 16usize;
-const MACHO_ARM64_RELOC_UNSIGNED_RAW: u32 = 0u32;
 
 // 编译器全局缓冲区（替代 C 的 static 数组，零初始化）
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
@@ -1070,10 +919,6 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件或中间产物\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s check <文件> [选项]              仅做词法/语法/类型检查，不执行代码生成\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s build --app microapp <文件> -o <xxx.pobj|xxx.uapp>  输出 microapp 载荷对象或镜像\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s pack-image <xxx.pobj> -o <xxx.uapp>  将 microapp 载荷对象打包为 .uapp\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s inspect-image <xxx.pobj|xxx.uapp>  打印 microapp 头信息\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s verify-image <xxx.pobj|xxx.uapp>   校验 microapp 镜像或载荷对象\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行（子进程栈：--stack-size 或默认 65536 KB）\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s fmt <文件> [选项]                格式化 Uya 源文件\n" as *byte, name as *byte);
@@ -1082,21 +927,14 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "\n示例:\n" as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s check lib/foo.uya\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s pack-image hello.pobj -o hello.uapp\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s inspect-image hello.uapp\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s verify-image hello.uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run main.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s fmt src/main.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s upm init --src-layout demo_pkg\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s build --app microapp main.uya -o microapp.uapp  # 微应用模式\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_PROFILE=linux_x86_64_hardvm %s build --app microapp main.uya -o microapp.uapp\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  TARGET_OS=macos TARGET_ARCH=arm64 %s build --app microapp main.uya -o microapp.uapp  # 按目标平台自动推导 profile\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n选项:\n" as *byte);
     fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
-    fprintf(libc.stderr, "  --app <app|microapp>  选择应用类型；app 为默认行为，microapp 会启用更严格检查\n" as *byte);
-    fprintf(libc.stderr, "  --microapp-profile <name>  覆盖 microapp target profile（推荐优先使用；优先于 MICROAPP_TARGET_PROFILE）\n" as *byte);
+    fprintf(libc.stderr, "  --app app            选择普通应用类型（默认行为；保留兼容选项）\n" as *byte);
     fprintf(libc.stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
     fprintf(libc.stderr, "  --opt=<0-3>          优化级别（0=禁用, 1=默认, 2=+证明优化, 3=+内联）\n" as *byte);
@@ -1105,8 +943,6 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  --async-frame-heap=on  async frame pool 满时回退到调试 heap（默认关闭）\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_CFLAGS  microapp 目标 gcc 编译旗标；call_gate profile 默认 -std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fpie -ffunction-sections -fdata-sections -flto=auto，trap profile 默认改为 -fno-pie（均不含 -g）\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_LDFLAGS microapp 目标 gcc 链接旗标；call_gate profile 默认 -pie -Wl,--gc-sections -flto=auto，trap profile 默认改为 -no-pie\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
     fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
     fprintf(libc.stderr, "  --split-c-dir [<dir>]  多文件 C 输出；省略或 --split-c-dir= 时目录默认为 .uyacache\n" as *byte);
@@ -1117,15 +953,6 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  同一 split-C 输出目录不支持并发写入；并发时会直接报 busy，避免共享 cache 损坏\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
     fprintf(libc.stderr, "  -v, --version        显示版本信息\n" as *byte);
-    fprintf(libc.stderr, "\n微应用环境变量:\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_PROFILE microapp 目标 profile；推荐优先使用；可选 linux_x86_64_hardvm / linux_aarch64_hardvm / macos_arm64_hardvm / rv32_baremetal_softvm / xtensa_baremetal_softvm\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH    microapp 目标架构；仅在未显式指定 profile 时参与回退推导\n" as *byte);
-    fprintf(libc.stderr, "  TARGET_OS/TARGET_ARCH  未显式指定 profile 时，优先按目标平台组合推导默认 profile\n" as *byte);
-    fprintf(libc.stderr, "  HOST_OS/HOST_ARCH      若 TARGET_OS/TARGET_ARCH 缺省，则继续回退到宿主平台信息\n" as *byte);
-    fprintf(libc.stderr, "  MICROAPP_TARGET_GCC   microapp 专用 gcc；优先于 TARGET_GCC\n" as *byte);
-    fprintf(libc.stderr, "  TARGET_GCC            通用 gcc；仅在未设 MICROAPP_TARGET_GCC 时生效\n" as *byte);
-    fprintf(libc.stderr, "  默认 profile 推导优先级：--microapp-profile > MICROAPP_TARGET_PROFILE > MICROAPP_TARGET_ARCH(+TARGET_OS) > TARGET_OS/TARGET_ARCH > HOST_OS/HOST_ARCH > linux_x86_64_hardvm\n" as *byte);
-    fprintf(libc.stderr, "  默认 profile 三元组：linux_x86_64_hardvm=x86_64-linux-gnu, linux_aarch64_hardvm=aarch64-linux-gnu, macos_arm64_hardvm=arm64-apple-darwin, rv32_baremetal_softvm=riscv32-unknown-elf, xtensa_baremetal_softvm=xtensa-unknown-elf\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
     fprintf(libc.stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
@@ -1629,33 +1456,6 @@ fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
     return host_fill_temp_path(buf, cap, "uya_out" as *byte, exe_suffix, -1);
 }
 
-fn host_fill_temp_microapp_loader_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
-    return host_fill_temp_path(buf, cap, "uya_microapp_loader" as *byte, exe_suffix, -1);
-}
-
-fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte, payload_exe_path: &byte) i32 {
-    if loader_exe == null || uapp_path == null {
-        return 1;
-    }
-    var cmd: [byte: 4096] = [];
-    var cmd_len: i32 = 0;
-    if payload_exe_path != null && payload_exe_path[0] != 0 as byte {
-        cmd_len = snprintf(&cmd[0] as *byte, 4096,
-            "\"%s\" \"%s\" \"%s\"" as *byte,
-            loader_exe as *byte,
-            uapp_path as *byte,
-            payload_exe_path as *byte,
-            );
-    } else {
-        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte);
-    }
-    if cmd_len <= 0 || cmd_len >= 4096 {
-        fprintf(libc.stderr, "错误：无法生成微容器运行命令\n" as *byte);
-        return 1;
-    }
-    return system(&cmd[0] as *byte);
-}
-
 
 // 解析命令行参数
 // command: 输出命令类型
@@ -1709,9 +1509,6 @@ fn parse_args(
     g_split_c_dir_active = 0;
     g_split_c_dir[0] = 0 as byte;
     g_split_c_disabled_cli = 0;
-    g_app_mode_microapp = 0;
-    g_microapp_target_profile_override_active = 0;
-    g_microapp_target_profile_override[0] = 0 as byte;
     g_module_root_override_active = 0;
     g_module_root_override[0] = 0 as byte;
     g_manifest_path_override_active = 0;
@@ -1741,14 +1538,14 @@ fn parse_args(
             command[0] = CommandType.COMMAND_TEST;
             start_idx = 2;
         } else if strcmp(first_arg, "pack-image" as *byte) == 0 {
-            command[0] = CommandType.COMMAND_PACK_IMAGE;
-            start_idx = 2;
+            fprintf(libc.stderr, "错误: microcontainer/microapp 功能已删除，pack-image 不再可用\n" as *byte);
+            return -1;
         } else if strcmp(first_arg, "inspect-image" as *byte) == 0 {
-            command[0] = CommandType.COMMAND_INSPECT_IMAGE;
-            start_idx = 2;
+            fprintf(libc.stderr, "错误: microcontainer/microapp 功能已删除，inspect-image 不再可用\n" as *byte);
+            return -1;
         } else if strcmp(first_arg, "verify-image" as *byte) == 0 {
-            command[0] = CommandType.COMMAND_VERIFY_IMAGE;
-            start_idx = 2;
+            fprintf(libc.stderr, "错误: microcontainer/microapp 功能已删除，verify-image 不再可用\n" as *byte);
+            return -1;
         } else if strcmp(first_arg, "--version" as *byte) == 0 || strcmp(first_arg, "-v" as *byte) == 0 {
             command[0] = CommandType.COMMAND_VERSION;
             start_idx = 2;
@@ -1864,45 +1661,23 @@ fn parse_args(
                 i = i + 1;
                 const app_arg: *byte = get_argv(i);
                 if app_arg != null && strcmp(app_arg, "microapp" as *byte) == 0 {
-                    g_app_mode_microapp = 1;
-                    g_container_mode = 1;
+                    fprintf(libc.stderr, "错误: microcontainer/microapp 功能已删除；--app 仅支持 app\n" as *byte);
+                    return -1;
                 } else if app_arg != null && strcmp(app_arg, "app" as *byte) == 0 {
-                    g_app_mode_microapp = 0;
-                    g_container_mode = 0;
                 } else {
-                    fprintf(libc.stderr, "错误: --app 仅支持 app 或 microapp\n" as *byte);
+                    fprintf(libc.stderr, "错误: --app 仅支持 app\n" as *byte);
                     return -1;
                 }
             } else {
-                fprintf(libc.stderr, "错误: --app 选项需要指定 app 或 microapp\n" as *byte);
+                fprintf(libc.stderr, "错误: --app 选项需要指定 app\n" as *byte);
                 return -1;
             }
         } else if strcmp(arg, "--microapp-profile" as *byte) == 0 {
-            if i + 1 < argc {
-                i = i + 1;
-                const profile_arg: *byte = get_argv(i);
-                if microapp_target_profile_name_is_supported(profile_arg as &byte) == 0 {
-                    fprintf(libc.stderr, "错误: 不支持的 microapp profile: %s\n" as *byte, profile_arg);
-                    return -1;
-                }
-                if set_microapp_target_profile_override(profile_arg as &byte) != 0 {
-                    fprintf(libc.stderr, "错误: microapp profile 名称过长\n" as *byte);
-                    return -1;
-                }
-            } else {
-                fprintf(libc.stderr, "错误: --microapp-profile 需要指定 profile 名称\n" as *byte);
-                return -1;
-            }
+            fprintf(libc.stderr, "错误: microcontainer/microapp 功能已删除，--microapp-profile 不再可用\n" as *byte);
+            return -1;
         } else if strncmp(arg as &const byte, "--microapp-profile=" as &const byte, 19) == 0 {
-            const profile_arg: &byte = (arg + 19) as &byte;
-            if microapp_target_profile_name_is_supported(profile_arg) == 0 {
-                fprintf(libc.stderr, "错误: 不支持的 microapp profile: %s\n" as *byte, profile_arg as *byte);
-                return -1;
-            }
-            if set_microapp_target_profile_override(profile_arg) != 0 {
-                fprintf(libc.stderr, "错误: microapp profile 名称过长\n" as *byte);
-                return -1;
-            }
+            fprintf(libc.stderr, "错误: microcontainer/microapp 功能已删除，--microapp-profile 不再可用\n" as *byte);
+            return -1;
         } else if strcmp(arg, "--outlibc" as *byte) == 0 {
             if i + 1 < argc {
                 outlibc_index[0] = i + 1;
@@ -2650,7 +2425,7 @@ fn compile_files(
     }
     // 设置内存安全证明开关
     checker.enable_safety_proof = enable_safety_proof;
-    checker.container_mode = g_container_mode;
+    checker.container_mode = 0;
 
     if checker_check(checker, merged_ast) != 0 {
         fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(checker));
@@ -2830,8 +2605,8 @@ fn compile_files(
     } else {
         c99_codegen_set_c_import_plan(c99_codegen, null);
     }
-    c99_codegen.container_mode = g_container_mode;
-    c99_codegen.microapp_softvm_mode = g_microapp_softvm_mode;
+    c99_codegen.container_mode = 0;
+    c99_codegen.microapp_softvm_mode = 0;
     if c99_codegen_generate(c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
         c99_codegen_free(c99_codegen);
@@ -2951,55 +2726,6 @@ export fn main() i32 {
         return result;
     }
 
-    if command == CommandType.COMMAND_INSPECT_IMAGE {
-        if input_file_count != 1 {
-            fprintf(libc.stderr, "错误: inspect-image 只接受一个输入文件\n" as *byte);
-            return 1;
-        }
-        const input_path: *byte = get_argv(input_file_indices[0]);
-        if input_path == null {
-            fprintf(libc.stderr, "错误: 无法获取 inspect-image 输入路径\n" as *byte);
-            return 1;
-        }
-        return inspect_microapp_image(input_path as &byte);
-    }
-
-    if command == CommandType.COMMAND_VERIFY_IMAGE {
-        if input_file_count != 1 {
-            fprintf(libc.stderr, "错误: verify-image 只接受一个输入文件\n" as *byte);
-            return 1;
-        }
-        const input_path: *byte = get_argv(input_file_indices[0]);
-        if input_path == null {
-            fprintf(libc.stderr, "错误: 无法获取 verify-image 输入路径\n" as *byte);
-            return 1;
-        }
-        return verify_microapp_image(input_path as &byte);
-    }
-
-    if command == CommandType.COMMAND_PACK_IMAGE {
-        if input_file_count != 1 {
-            fprintf(libc.stderr, "错误: pack-image 只接受一个 .pobj 输入文件\n" as *byte);
-            return 1;
-        }
-        if output_file_index < 0 {
-            fprintf(libc.stderr, "错误: pack-image 需要 -o 指定输出 .uapp 路径\n" as *byte);
-            return 1;
-        }
-        const pobj_path: *byte = get_argv(input_file_indices[0]);
-        const uapp_path: *byte = get_argv(output_file_index);
-        if pobj_path == null || uapp_path == null {
-            fprintf(libc.stderr, "错误: 无法获取 pack-image 输入或输出路径\n" as *byte);
-            return 1;
-        }
-        const pack_result: i32 = pack_microapp_pobj_to_uapp(pobj_path as &byte, uapp_path as &byte);
-        if pack_result != 0 {
-            return pack_result;
-        }
-        fprintf(libc.stderr, "pack-image 完成: %s -> %s\n" as *byte, pobj_path, uapp_path);
-        return 0;
-    }
-
     // fmt 命令：格式化代码文件
     if command == CommandType.COMMAND_FMT {
         const fmt_result: i32 = fmt_main();
@@ -3035,7 +2761,7 @@ export fn main() i32 {
 
     // run/test 紧接着就要调用宿主工具链并执行产物，需要稳定的单文件 C 路径。
     // 默认 split-C 会让 auto_output_path 只成为一个占位路径，并让后续 link/run 依赖额外的
-    // 子 make 环境；microapp loader 的递归 `run` 也会因此拿不到真正生成的可执行文件。
+    // 子 make 环境。
     // split-C 仍可通过 build 路径使用，run/test 统一固定为单文件 C。
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         g_split_c_dir_active = 0;
@@ -3051,10 +2777,6 @@ export fn main() i32 {
     if command == CommandType.COMMAND_BUILD && output_file_index >= 0 {
         const out_path: *byte = get_argv(output_file_index);
         if out_path != null {
-            // microapp 模式需要保留用户显式输出路径，哪怕是 .c
-            if g_app_mode_microapp != 0 {
-                user_output_path = out_path;
-            }
             if is_c_output(out_path as &byte) == 0 {
                 // 输出不是 .c 文件，保存用户指定的路径，生成临时 C 文件路径
                 user_output_path = out_path;
@@ -3065,43 +2787,6 @@ export fn main() i32 {
                 output_file_index = -2;  // 标记为自动生成的路径
                 backend = BackendType.BACKEND_C99;
             }
-        }
-    }
-
-    if g_app_mode_microapp != 0 {
-        const active_profile: MicroAppTargetProfile = resolve_microapp_target_profile();
-        if active_profile.bridge_kind_raw == MICROAPP_BRIDGE_TRAP_RAW {
-            g_microapp_softvm_mode = 1;
-        } else {
-            g_microapp_softvm_mode = 0;
-        }
-        if command == CommandType.COMMAND_BUILD {
-            fprintf(libc.stderr, "信息：microapp active profile=%s, bridge=%s, target_os=%s, 目标架构=%s\n" as *byte,
-                active_profile.name as *byte,
-                microapp_bridge_kind_name(active_profile.bridge_kind_raw) as *byte,
-                resolve_microapp_target_platform_os_name() as *byte,
-                microapp_target_arch_name(active_profile.arch_raw) as *byte);
-        }
-    } else {
-        g_microapp_softvm_mode = 0;
-    }
-
-    // microapp 模式下，build 仍然先完成宿主编译检查，
-    // 但现在可以在后处理阶段直接产出 .pobj / .uapp。
-    if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 {
-        if user_output_path == null {
-            fprintf(libc.stderr, "错误: --app microapp 的 build 需要显式输出 .c / .pobj / .uapp\n" as *byte);
-            return 1;
-        }
-        if is_c_output(user_output_path as &byte) == 0 &&
-           is_pobj_output(user_output_path as &byte) == 0 &&
-           is_uapp_output(user_output_path as &byte) == 0 {
-            fprintf(libc.stderr, "错误: --app microapp 的 build 目前只支持输出 .c / .pobj / .uapp\n" as *byte);
-            return 1;
-        }
-        if is_pobj_output(user_output_path as &byte) != 0 || is_uapp_output(user_output_path as &byte) != 0 {
-            // 目标 gcc 需要单文件 C 输入；microapp 的后处理阶段不走 split-C。
-            g_split_c_disabled_cli = 1;
         }
     }
 
@@ -3208,106 +2893,6 @@ export fn main() i32 {
         return 1;
     }
     backend = selected_backend;
-
-    if command == CommandType.COMMAND_RUN && g_app_mode_microapp != 0 {
-        const source_path: *byte = get_argv(input_file_indices[0]);
-        if source_path == null {
-            fprintf(libc.stderr, "错误：无法获取 microapp 源文件路径\n" as *byte);
-            return 1;
-        }
-        const run_profile: MicroAppTargetProfile = resolve_microapp_target_profile();
-        if microapp_profile_supports_runtime_execution(&run_profile) == 0 {
-            fprintf(libc.stderr, "错误: microapp profile '%s' 当前尚未接线 run --app microapp 运行时\n" as *byte, run_profile.name as *byte);
-            return 1;
-        }
-        fprintf(libc.stderr, "\n=== microapp run: 编译 payload ===\n" as *byte);
-        var microapp_uapp_path: [byte: PATH_MAX] = [];
-        if host_fill_temp_microapp_loader_path(&microapp_uapp_path[0], PATH_MAX, ".uapp" as *byte) != 0 {
-            fprintf(libc.stderr, "错误：无法生成 microapp 临时输出路径\n" as *byte);
-            return 1;
-        }
-        var microapp_pobj_path: [byte: PATH_MAX] = [];
-        if host_fill_temp_microapp_loader_path(&microapp_pobj_path[0], PATH_MAX, ".pobj" as *byte) != 0 {
-            fprintf(libc.stderr, "错误：无法生成 microapp 临时 payload_obj 路径\n" as *byte);
-            return 1;
-        }
-        const payload_c_path: &byte = artifacts.generated_c_path;
-        const manifest_result: i32 = write_microapp_payload_obj(&microapp_pobj_path[0] as &byte, source_path as &byte, payload_c_path);
-        if manifest_result != 0 {
-            return manifest_result;
-        }
-        const pack_result: i32 = pack_microapp_pobj_to_uapp(&microapp_pobj_path[0] as &byte, &microapp_uapp_path[0] as &byte);
-        if pack_result != 0 {
-            return pack_result;
-        }
-        const loader_source_path: &byte = "lib/std/runtime/microapp/loader_main.uya" as *byte;
-        var microapp_exe_path: [byte: PATH_MAX] = [];
-        const microapp_exe_len: i32 = snprintf(&microapp_exe_path[0] as *byte, PATH_MAX, "%s.text.bin.elf" as *byte, &microapp_pobj_path[0] as *byte);
-        if microapp_exe_len <= 0 || microapp_exe_len >= PATH_MAX {
-            fprintf(libc.stderr, "错误：无法生成 microapp payload 可执行文件路径\n" as *byte);
-            return 1;
-        }
-        fprintf(libc.stderr, "=== microapp run: 编译并运行 loader ===\n" as *byte);
-        var loader_cmd: [byte: 4096] = [];
-        const loader_cmd_len: i32 = snprintf(&loader_cmd[0] as *byte, 4096,
-            "\"%s\" run \"%s\" -- \"%s\" \"%s\"" as *byte,
-            get_argv(0),
-            loader_source_path as *byte,
-            &microapp_uapp_path[0] as *byte,
-            &microapp_exe_path[0] as *byte);
-        if loader_cmd_len <= 0 || loader_cmd_len >= 4096 {
-            fprintf(libc.stderr, "错误：无法生成 microapp loader 运行命令\n" as *byte);
-            return 1;
-        }
-        // 复用普通 `run` 路径，避免在 seed 编译器上走单独的 `build loader` 分支。
-        const run_result: i32 = system(&loader_cmd[0] as *byte);
-        const child_exit: i32 = exit_code_from_system_status(run_result);
-        if child_exit != 0 {
-            fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
-        }
-        return child_exit;
-    }
-
-    if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 && user_output_path != null && is_pobj_output(user_output_path as &byte) != 0 {
-        const source_path: *byte = get_argv(input_file_indices[0]);
-        if source_path == null {
-            fprintf(libc.stderr, "错误: 无法获取 microapp 源文件路径\n" as *byte);
-            return 1;
-        }
-        const manifest_result: i32 = write_microapp_payload_obj(user_output_path as &byte, source_path as &byte, artifacts.generated_c_path);
-        if manifest_result != 0 {
-            return manifest_result;
-        }
-        fprintf(libc.stderr, "\n=== microapp payload_obj 已输出 ===\n" as *byte);
-        fprintf(libc.stderr, "输出文件: %s\n" as *byte, user_output_path);
-        fprintf(libc.stderr, "注意: 代码段来自 target gcc 的 .text 输出\n" as *byte);
-        return 0;
-    }
-
-    if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 && user_output_path != null && is_uapp_output(user_output_path as &byte) != 0 {
-        const source_path: *byte = get_argv(input_file_indices[0]);
-        if source_path == null {
-            fprintf(libc.stderr, "错误: 无法获取 microapp 源文件路径\n" as *byte);
-            return 1;
-        }
-        var temp_pobj_path: [byte: PATH_MAX] = [];
-        const temp_pobj_len: i32 = snprintf(&temp_pobj_path[0] as *byte, PATH_MAX, "%s.pobj" as *byte, user_output_path as *byte);
-        if temp_pobj_len <= 0 || temp_pobj_len >= PATH_MAX {
-            fprintf(libc.stderr, "错误: 无法生成 microapp 临时 payload_obj 路径\n" as *byte);
-            return 1;
-        }
-        const manifest_result: i32 = write_microapp_payload_obj(&temp_pobj_path[0] as &byte, source_path as &byte, artifacts.generated_c_path);
-        if manifest_result != 0 {
-            return manifest_result;
-        }
-        const pack_result: i32 = pack_microapp_pobj_to_uapp(&temp_pobj_path[0] as &byte, user_output_path as &byte);
-        if pack_result != 0 {
-            return pack_result;
-        }
-        fprintf(libc.stderr, "\n=== microapp .uapp 已输出 ===\n" as *byte);
-        fprintf(libc.stderr, "输出文件: %s\n" as *byte, user_output_path);
-        return 0;
-    }
 
     // build 命令：检测输出类型（C 文件或可执行文件）
     // 注意：output_file_index 可能是 -2（自动生成路径），此时用户指定了非 .c 输出
@@ -3583,7 +3168,7 @@ fn generate_libc(output_dir: &byte) i32 {
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "#endif\n\n" as *byte);
 
-    fprintf(header_file, "/* std.thread / microapp：函数指针间接调用（与 codegen 前导一致；勿用 inline 以免 -O2 内联退化） */\n" as *byte);
+    fprintf(header_file, "/* std.thread：函数指针间接调用（与 codegen 前导一致；勿用 inline 以免 -O2 内联退化） */\n" as *byte);
     fprintf(header_file, "static int32_t uya_call0_i32(void *fn) {\n" as *byte);
     fprintf(header_file, "    typedef int32_t (*uya_fn0_i32)(void);\n" as *byte);
     fprintf(header_file, "    return ((uya_fn0_i32)fn)();\n" as *byte);

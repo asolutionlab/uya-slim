@@ -764,7 +764,6 @@ fn upm_build_arg_value_mode(arg: &byte) UPMBuildArgValueMode {
         strcmp(arg as *byte, "--manifest-path" as *byte) == 0 ||
         strcmp(arg as *byte, "--project-root" as *byte) == 0 ||
         strcmp(arg as *byte, "--app" as *byte) == 0 ||
-        strcmp(arg as *byte, "--microapp-profile" as *byte) == 0 ||
         strcmp(arg as *byte, "--outlibc" as *byte) == 0 ||
         strcmp(arg as *byte, "--stack-size" as *byte) == 0 {
         return UPMBuildArgValueMode.UPM_BUILD_ARG_VALUE_REQUIRED;
@@ -1153,4 +1152,3 @@ export fn upm_cli_main(start_index: i32) i32 {
     fprintf(libc.stderr, "提示: 运行 `upm --help` 查看可用命令\n" as *byte);
     return 1;
 }
-

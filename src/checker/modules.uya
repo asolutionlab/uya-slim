@@ -8,9 +8,164 @@
 //   "path/to/main.uya" -> "main" (模块根目录)
 // 注意：当前实现支持多级路径，提取从第一个目录到最后一个目录的所有目录名，用 '.' 连接
 // 如果模块根目录已设置，文件在模块根目录下时返回 "main"
+const CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX: i32 = 128;
+
+var g_checker_package_mode_alias_root_count: i32 = 0;
+var g_checker_package_mode_alias_names: [[byte: PATH_MAX]: CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX] = [];
+var g_checker_package_mode_alias_roots: [[byte: PATH_MAX]: CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX] = [];
+
+fn checker_package_mode_alias_roots_clear() void {
+    g_checker_package_mode_alias_root_count = 0;
+}
+
+fn checker_package_mode_alias_copy_root(src: &byte, out: &byte, out_cap: usize) i32 {
+    if src == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const written: i32 = snprintf(out as *byte, out_cap, "%s" as *byte, src as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    const len: usize = strlen(out as *byte);
+    if len == 0usize {
+        return 1;
+    }
+    if out[len - 1usize] != 47 as byte {
+        if len + 1usize >= out_cap {
+            return 1;
+        }
+        out[len] = 47 as byte;
+        out[len + 1usize] = 0 as byte;
+    }
+    return 0;
+}
+
+fn checker_package_mode_alias_roots_add(alias: &byte, source_root: &byte) i32 {
+    if alias == null || source_root == null || alias[0] == 0 as byte || source_root[0] == 0 as byte {
+        return 1;
+    }
+    if g_checker_package_mode_alias_root_count >= CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX {
+        return 1;
+    }
+    const idx: i32 = g_checker_package_mode_alias_root_count;
+    const idx_checked: !usize = idx as! usize;
+    const idx_usize: usize = idx_checked catch {
+        return 1;
+    };
+    if idx_usize >= CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX as usize {
+        return 1;
+    }
+    const alias_written: i32 = snprintf(&g_checker_package_mode_alias_names[idx_usize][0], PATH_MAX, "%s" as *byte, alias as *byte);
+    if alias_written <= 0 || alias_written >= PATH_MAX {
+        return 1;
+    }
+    if checker_package_mode_alias_copy_root(source_root, &g_checker_package_mode_alias_roots[idx_usize][0] as &byte, PATH_MAX as usize) != 0 {
+        return 1;
+    }
+    g_checker_package_mode_alias_root_count = g_checker_package_mode_alias_root_count + 1;
+    return 0;
+}
+
+fn checker_package_mode_alias_exists(alias: &byte) i32 {
+    if alias == null || alias[0] == 0 as byte {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < g_checker_package_mode_alias_root_count {
+        const idx_checked: !usize = i as! usize;
+        const idx_usize: usize = idx_checked catch {
+            return 0;
+        };
+        if idx_usize >= CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX as usize {
+            return 0;
+        }
+        if strcmp(&g_checker_package_mode_alias_names[idx_usize][0] as *byte, alias as *byte) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn checker_package_mode_alias_build_module_name(checker: &TypeChecker, alias: &byte, relative_path: &byte) &byte {
+    if checker == null || alias == null || relative_path == null {
+        return null;
+    }
+    const alias_len: usize = strlen(alias as *byte);
+    var last_slash: *byte = strrchr(relative_path as *byte, 47);
+    if last_slash == null {
+        last_slash = strrchr(relative_path as *byte, 92);
+    }
+    if last_slash == null {
+        return checker_arena_strdup(checker.arena, alias);
+    }
+    const dir_len_tmp: !usize = ptr_diff(last_slash, relative_path as *byte) as! usize;
+    const dir_len: usize = dir_len_tmp catch {
+        return null;
+    };
+    if dir_len == 0usize {
+        return checker_arena_strdup(checker.arena, alias);
+    }
+    const total_len: usize = alias_len + 1usize + dir_len;
+    const module_name: &byte = compiler_arena_alloc(checker.arena, total_len + 1usize) as &byte;
+    if module_name == null {
+        return null;
+    }
+    var dst: &byte = module_name;
+    memcpy(dst as *void, alias as *void, alias_len);
+    dst = &dst[alias_len];
+    dst[0] = 46 as byte;
+    dst = &dst[1];
+    var i: usize = 0;
+    while i < dir_len {
+        const ch: byte = (relative_path as *byte + i)[0];
+        if ch == 47 as byte || ch == 92 as byte {
+            dst[0] = 46 as byte;
+        } else {
+            dst[0] = ch;
+        }
+        dst = &dst[1];
+        i = i + 1usize;
+    }
+    dst[0] = 0 as byte;
+    return module_name;
+}
+
+fn checker_package_mode_alias_module_for_file(checker: &TypeChecker, filename: &byte) &byte {
+    if checker == null || filename == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < g_checker_package_mode_alias_root_count {
+        const idx_checked: !usize = i as! usize;
+        const idx_usize: usize = idx_checked catch {
+            return null;
+        };
+        if idx_usize >= CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX as usize {
+            return null;
+        }
+        const root: &byte = &g_checker_package_mode_alias_roots[idx_usize][0] as &byte;
+        const alias: &byte = &g_checker_package_mode_alias_names[idx_usize][0] as &byte;
+        const root_len: usize = strlen(root as *byte);
+        if root_len > 0usize && strncmp(filename as *byte, root as *byte, root_len) == 0 {
+            const relative_path: &byte = (filename as *byte + root_len) as &byte;
+            if relative_path[0] != 0 as byte {
+                return checker_package_mode_alias_build_module_name(checker, alias, relative_path);
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
 fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
     if checker == null || filename == null {
         return null;
+    }
+
+    const package_alias_module: &byte = checker_package_mode_alias_module_for_file(checker, filename);
+    if package_alias_module != null {
+        return package_alias_module;
     }
     
     // 如果文件本身位于 UYA_ROOT，下方的 std/tls/UYA_ROOT 规则应优先于 module_root。
@@ -322,52 +477,6 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
         }
     }
     
-    // 特殊处理：检查是否是内核库文件（lib/kernel/...）
-    // 例如：lib/kernel/errors.uya -> kernel.errors
-    //       lib/kernel/paging.uya -> kernel.paging
-    var lib_kernel: *byte = strstr(filename as *byte, "/lib/kernel/" as *byte);
-    if lib_kernel == null {
-        lib_kernel = strstr(filename as *byte, "lib/kernel/" as *byte);
-    }
-    if lib_kernel != null {
-        var relative_path_k: &byte = lib_kernel as &byte;
-        // 跳过开头的 "/"
-        if relative_path_k[0] == 47 {
-            relative_path_k = &relative_path_k[1];
-        }
-        // 跳过 "lib/"
-        if strncmp(relative_path_k as *byte, "lib/" as *byte, 4) == 0 {
-            relative_path_k = &relative_path_k[4];
-        }
-        // relative_path_k 现在是 "kernel/errors.uya" 等
-        const rel_len_k: usize = strlen(relative_path_k as *byte);
-
-        // 去掉 .uya 后缀
-        var base_len_k: usize = rel_len_k;
-        if rel_len_k > 4 && strcmp((relative_path_k as *byte + (rel_len_k - 4)) as *byte, ".uya" as *byte) == 0 {
-            base_len_k = rel_len_k - 4;
-        }
-
-        if base_len_k > 0 {
-            const module_name_k: &byte = compiler_arena_alloc(checker.arena, base_len_k + 1) as &byte;
-            if module_name_k != null {
-                memcpy(module_name_k as *void, relative_path_k as *void, base_len_k);
-                if base_len_k >= 0 && base_len_k < 1000000 {
-                    module_name_k[base_len_k] = 0;
-                }
-                // 将 '/' 替换为 '.'  （kernel/errors → kernel.errors）
-                var idx_k: usize = 0;
-                while idx_k < base_len_k {
-                    if module_name_k[idx_k] == 47 || module_name_k[idx_k] == 92 {
-                        module_name_k[idx_k] = 46;
-                    }
-                    idx_k = idx_k + 1;
-                }
-                return module_name_k;
-            }
-        }
-    }
-
     // 特殊处理：lib/tls/（TLS 标准库，模块路径包含文件名）
     // 例如：lib/tls/common.uya -> tls.common
     //      lib/tls/base/mpi.uya -> tls.base.mpi
@@ -1090,6 +1199,10 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                         }
                     }
                 }
+            }
+
+            if first_seg_dir_found == 0 && checker_package_mode_alias_exists(first_seg) != 0 {
+                first_seg_dir_found = 1;
             }
             
             // 如果第一个路径段不是目录，报错

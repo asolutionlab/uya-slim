@@ -1,0 +1,1734 @@
+// compiler/pipeline.uya - core compiler pipeline
+
+use arena;
+use ast;
+use lexer;
+use parser;
+use checker;
+use driver;
+use codegen.c99;
+use extern_decls;
+use std_cfg;
+use compiler.options.UyaCoreOptions;
+use compiler.options.UyaCoreResult;
+use compiler.options.uya_core_result_reset;
+use std;
+use libc;
+use libc.fgets;
+use libc.stdlib;
+use libc.unistd;
+
+const PATH_MAX: usize = 4096;
+const FILE_BUFFER_SIZE: i32 = 1024 * 1024;
+const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;
+const MAX_INPUT_FILES: i32 = 128;
+const CORE_MANIFEST_LINE_MAX: i32 = 1024;
+
+const HOST_SIZE_PTR_BYTES: usize = 8usize;
+const HOST_SIZE_LEXER_BYTES: usize = 1052744usize;
+const HOST_SIZE_TYPECHECKER_BYTES: usize = 8388608usize;
+const HOST_SIZE_C99_CODEGENERATOR_BYTES: usize = 2097152usize;
+const HOST_SIZE_CIMPORT_ITEM_BYTES: usize = 48usize;
+
+struct CompileStats {
+    parse_time_ms: i64,
+    merge_time_ms: i64,
+    check_time_ms: i64,
+    opt_time_ms: i64,
+    codegen_time_ms: i64,
+    total_time_ms: i64,
+    file_count: i32,
+    ast_nodes: i32,
+}
+
+struct CImportItem {
+    resolved_path: &byte,
+    relative_path: &byte,
+    cflags_tokens: & & byte,
+    cflags_token_count: i32,
+    filename: &byte,
+    line: i32,
+    column: i32,
+}
+
+struct CImportPlan {
+    items: &CImportItem,
+    item_count: i32,
+    aggregated_ldflags_tokens: & & byte,
+    aggregated_ldflags_token_count: i32,
+}
+
+struct CompileArtifacts {
+    generated_c_path: &byte,
+    c_import_plan: CImportPlan,
+    c_import_sidecar_path: &byte,
+}
+
+var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
+var temp_arena_buffer: [byte: 16 * 1024 * 1024] = [];
+var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
+var resolved_files_global: [&byte: MAX_INPUT_FILES] = [null: MAX_INPUT_FILES];
+var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
+var all_files_global: [&byte: MAX_INPUT_FILES] = [null: MAX_INPUT_FILES];
+var processed_files_global: [&byte: MAX_INPUT_FILES] = [null: MAX_INPUT_FILES];
+
+var g_split_c_dir: [byte: PATH_MAX] = [];
+var g_split_c_dir_active: i32 = 0;
+
+fn main_path_buf_char_at(buf: [byte: PATH_MAX], idx: i32) byte {
+    const slot: i32 = idx;
+    if slot < 0 {
+        return 0 as byte;
+    }
+    if slot >= PATH_MAX {
+        return 0 as byte;
+    }
+    return buf[slot];
+}
+
+fn main_path_buf_set(buf: [byte: PATH_MAX], idx: i32, value: byte) void {
+    const slot: i32 = idx;
+    if slot < 0 {
+        return;
+    }
+    if slot >= PATH_MAX {
+        return;
+    }
+    buf[slot] = value;
+}
+
+const DIRENT_OFF_D_TYPE: usize = 18;
+const DIRENT_OFF_D_NAME: usize = 19;
+
+fn dirent_get_type(entry_ptr: &byte) byte {
+    return entry_ptr[DIRENT_OFF_D_TYPE];
+}
+
+fn dirent_get_name(entry_ptr: &byte) &byte {
+    var p: &byte = entry_ptr;
+    p = p + DIRENT_OFF_D_NAME;
+    return p;
+}
+
+fn dirent_is_regular_file(entry_ptr: &byte) i32 {
+    if dirent_get_type(entry_ptr) == DT_REG as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn dirent_may_be_regular_file(entry_ptr: &byte) i32 {
+    const t: byte = dirent_get_type(entry_ptr);
+    if t == DT_REG as byte || t == DT_UNKNOWN as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn read_file_content(filename: &byte, buffer: &byte, buffer_size: usize) i32 {
+    const file: &FILE = fopen(filename as *byte, "rb" as *byte);
+    if file == null {
+        return -1;
+    }
+    const bytes_read: usize = fread(buffer as *byte, 1, buffer_size - 1, file);
+    const c: i32 = fgetc(file);
+    if bytes_read >= buffer_size - 1 {
+        fclose(file);
+        if c != -1 {
+            return -1;
+        }
+    } else {
+        fclose(file);
+    }
+    buffer[bytes_read] = 0 as byte;
+    return bytes_read as i32;
+}
+
+fn exit_code_from_system_status(wstatus: i32) i32 {
+    if wstatus < 0 {
+        return 1;
+    }
+    const low: i32 = wstatus & 0x7f;
+    const code: i32 = (wstatus >> 8) & 0xff;
+    if low == 0 {
+        return code;
+    }
+    const sig: i32 = low & 0x7f;
+    if sig == 0 {
+        return 1;
+    }
+    return 128 + sig;
+}
+
+fn paths_equal(path1: &byte, path2: &byte) i32 {
+    if path1 == null || path2 == null {
+        return 0;
+    }
+    if strcmp(path1 as *byte, path2 as *byte) == 0 {
+        return 1;
+    }
+    var st1: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+    var st2: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+    if stat(path1 as *byte, &st1) == 0 && stat(path2 as *byte, &st2) == 0 {
+        if st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn dedupe_paths_in_place(paths: &(&byte), count: i32) i32 {
+    if paths == null || count <= 0 {
+        return 0;
+    }
+    var write_idx: i32 = 0;
+    var read_idx: i32 = 0;
+    while read_idx < count {
+        const candidate: &byte = paths[read_idx];
+        var duplicate: i32 = 0;
+        if candidate != null {
+            var seen_idx: i32 = 0;
+            while seen_idx < write_idx {
+                if paths[seen_idx] != null && paths_equal(paths[seen_idx], candidate) != 0 {
+                    duplicate = 1;
+                    break;
+                }
+                seen_idx = seen_idx + 1;
+            }
+        }
+        if duplicate == 0 {
+            paths[write_idx] = candidate;
+            write_idx = write_idx + 1;
+        }
+        read_idx = read_idx + 1;
+    }
+    const unique_count: i32 = write_idx;
+    while write_idx < count {
+        paths[write_idx] = null;
+        write_idx = write_idx + 1;
+    }
+    return unique_count;
+}
+
+fn is_directory(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    var st: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+    if stat(path as *byte, &st) == 0 {
+        if ((st.st_mode as u32) & S_IFMT) == S_IFDIR {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn is_file(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    var st: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+    if stat(path as *byte, &st) == 0 {
+        if ((st.st_mode as u32) & S_IFMT) == S_IFREG {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
+    if argv0 == null || buffer == null || buffer_size == 0 {
+        return -1;
+    }
+    const argv_slash: *byte = strrchr(argv0 as *byte, 47);
+    if argv_slash != null {
+        const dir_len: usize = ptr_diff(argv_slash, argv0);
+        if dir_len + 1 < buffer_size {
+            memcpy(buffer as *void, argv0 as *void, dir_len);
+            buffer[dir_len] = 47 as byte;
+            buffer[dir_len + 1] = 0 as byte;
+            return 0;
+        }
+    }
+    std.cfg(std.host_os == .hos_linux, {
+        var resolved_path: [byte: PATH_MAX] = [];
+        const len: i32 = readlink("/proc/self/exe" as *byte, &resolved_path[0], PATH_MAX - 1);
+        if len != -1 {
+            resolved_path[len as usize] = 0 as byte;
+            const last_slash: *byte = strrchr(&resolved_path[0], 47);
+            if last_slash != null {
+                const dir_len: usize = ptr_diff(last_slash, &resolved_path[0] as *byte);
+                if dir_len + 1 < buffer_size {
+                    memcpy(buffer as *void, &resolved_path[0] as *void, dir_len);
+                    buffer[dir_len] = 47 as byte;
+                    buffer[dir_len + 1] = 0 as byte;
+                    return 0;
+                }
+            }
+        }
+    }, {})
+    if buffer_size > 2 {
+        buffer[0] = 46 as byte;
+        buffer[1] = 47 as byte;
+        buffer[2] = 0 as byte;
+        return 0;
+    }
+    return -1;
+}
+
+fn path_get_parent_dir(src: &byte, dst: &byte, dst_cap: usize) i32 {
+    if src == null || dst == null || dst_cap < 4 {
+        return -1;
+    }
+    var work: [byte: PATH_MAX] = [];
+    const sl: usize = strlen(src as *byte);
+    if sl >= PATH_MAX {
+        return -1;
+    }
+    memcpy(&work[0] as *void, src as *void, sl + 1 as usize);
+    var len: usize = sl;
+    while len > 0 && work[len - 1] == 47 as byte {
+        len = len - 1;
+        work[len] = 0 as byte;
+    }
+    const last: *byte = strrchr(&work[0] as *byte, 47);
+    if last == null {
+        strcpy(dst as *byte, "../" as *byte);
+        return 0;
+    }
+    if last == &work[0] as *byte {
+        dst[0] = 47 as byte;
+        dst[1] = 0 as byte;
+        return 0;
+    }
+    last[0] = 0 as byte;
+    const plen: usize = strlen(&work[0] as *byte);
+    if plen + 2 >= dst_cap {
+        return -1;
+    }
+    memcpy(dst as *void, &work[0] as *void, plen);
+    dst[plen] = 47 as byte;
+    dst[plen + 1] = 0 as byte;
+    return 0;
+}
+
+fn get_uya_root(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
+    if buffer == null || buffer_size == 0 {
+        return -1;
+    }
+    const env_root: *byte = getenv("UYA_ROOT" as *byte);
+    if env_root != null && env_root[0] != 0 {
+        const len: usize = strlen(env_root);
+        if len < buffer_size {
+            strcpy(buffer as *byte, env_root);
+            if len > 0 && buffer[len - 1] != 47 as byte {
+                if len + 1 < buffer_size {
+                    buffer[len] = 47 as byte;
+                    buffer[len + 1] = 0 as byte;
+                }
+            }
+            return 0;
+        }
+    }
+    var comp_dir: [byte: PATH_MAX] = [];
+    if get_compiler_dir(argv0, &comp_dir[0] as &byte, PATH_MAX) != 0 {
+        return -1;
+    }
+    return path_get_parent_dir(&comp_dir[0] as &byte, buffer, buffer_size);
+}
+
+fn detect_main_is_space(ch: byte) i32 {
+    if ch == 32 || ch == 10 || ch == 9 || ch == 13 {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_is_ident_start(ch: byte) i32 {
+    if (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 95 {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_is_ident_continue(ch: byte) i32 {
+    if detect_main_is_ident_start(ch) != 0 || (ch >= 48 && ch <= 57) {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_skip_string(buf: &byte, file_size: usize, pos: &usize, quote: byte) void {
+    pos[0] = pos[0] + 1;
+    while pos[0] < file_size {
+        const ch: byte = buf[pos[0]];
+        if ch == 92 && pos[0] + 1 < file_size {
+            pos[0] = pos[0] + 2;
+            continue;
+        }
+        pos[0] = pos[0] + 1;
+        if ch == quote {
+            return;
+        }
+    }
+}
+
+fn detect_main_skip_ws_and_comments(buf: &byte, file_size: usize, pos: &usize) void {
+    while pos[0] < file_size {
+        const ch: byte = buf[pos[0]];
+        if detect_main_is_space(ch) != 0 {
+            pos[0] = pos[0] + 1;
+            continue;
+        }
+        if ch == 47 && pos[0] + 1 < file_size {
+            const next: byte = buf[pos[0] + 1];
+            if next == 47 {
+                pos[0] = pos[0] + 2;
+                while pos[0] < file_size && buf[pos[0]] != 10 {
+                    pos[0] = pos[0] + 1;
+                }
+                continue;
+            }
+            if next == 42 {
+                pos[0] = pos[0] + 2;
+                while pos[0] + 1 < file_size {
+                    if buf[pos[0]] == 42 && buf[pos[0] + 1] == 47 {
+                        pos[0] = pos[0] + 2;
+                        break;
+                    }
+                    pos[0] = pos[0] + 1;
+                }
+                continue;
+            }
+        }
+        return;
+    }
+}
+
+fn detect_main_token_eq(buf: &byte, start: usize, end: usize, text: &byte) i32 {
+    const len: usize = end - start;
+    if strlen(text as *byte) != len {
+        return 0;
+    }
+    if strncmp(&buf[start], text as *byte, len) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn detect_main_match_ident_after(buf: &byte, file_size: usize, pos: usize, text: &byte, next_pos: &usize) i32 {
+    var cursor: usize = pos;
+    detect_main_skip_ws_and_comments(buf, file_size, &cursor);
+    if cursor >= file_size || detect_main_is_ident_start(buf[cursor]) == 0 {
+        return 0;
+    }
+    const start: usize = cursor;
+    cursor = cursor + 1;
+    while cursor < file_size && detect_main_is_ident_continue(buf[cursor]) != 0 {
+        cursor = cursor + 1;
+    }
+    if detect_main_token_eq(buf, start, cursor, text) == 0 {
+        return 0;
+    }
+    if next_pos != null {
+        next_pos[0] = cursor;
+    }
+    return 1;
+}
+
+fn detect_main_function(filename: &byte) i32 {
+    const file_size: i32 = read_file_content(filename, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+    if file_size < 0 {
+        return 0;
+    }
+    const buf: &byte = &file_buffer[0];
+    const size: usize = file_size as usize;
+    var i: usize = 0;
+    while i < size {
+        detect_main_skip_ws_and_comments(buf, size, &i);
+        if i >= size {
+            break;
+        }
+        const ch: byte = buf[i];
+        if ch == 34 || ch == 39 {
+            detect_main_skip_string(buf, size, &i, ch);
+            continue;
+        }
+        if detect_main_is_ident_start(ch) == 0 {
+            i = i + 1;
+            continue;
+        }
+        const token_start: usize = i;
+        i = i + 1;
+        while i < size && detect_main_is_ident_continue(buf[i]) != 0 {
+            i = i + 1;
+        }
+        if detect_main_token_eq(buf, token_start, i, "export" as &byte) != 0 {
+            var after_export: usize = i;
+            if detect_main_match_ident_after(buf, size, after_export, "extern" as &byte, &after_export) != 0 {
+                if detect_main_match_ident_after(buf, size, after_export, "fn" as &byte, &after_export) != 0 &&
+                    detect_main_match_ident_after(buf, size, after_export, "main" as &byte, null) != 0 {
+                    return 3;
+                }
+            }
+            after_export = i;
+            if detect_main_match_ident_after(buf, size, after_export, "fn" as &byte, &after_export) != 0 &&
+                detect_main_match_ident_after(buf, size, after_export, "main" as &byte, null) != 0 {
+                return 2;
+            }
+            continue;
+        }
+        if detect_main_token_eq(buf, token_start, i, "fn" as &byte) != 0 {
+            if detect_main_match_ident_after(buf, size, i, "main" as &byte, null) != 0 {
+                return 1;
+            }
+            continue;
+        }
+        if detect_main_token_eq(buf, token_start, i, "test" as &byte) != 0 {
+            var after_test: usize = i;
+            detect_main_skip_ws_and_comments(buf, size, &after_test);
+            if after_test < size && buf[after_test] == 34 {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+fn host_append_temp_path_byte(buf: &byte, cap: usize, pos: &usize, value: byte) i32 {
+    if buf == null || pos == null || pos[0] + 1 >= cap {
+        return -1;
+    }
+    buf[pos[0]] = value;
+    pos[0] = pos[0] + 1;
+    return 0;
+}
+
+fn host_append_temp_path_bytes(buf: &byte, cap: usize, pos: &usize, text: &byte) i32 {
+    if text == null {
+        return 0;
+    }
+    var i: usize = 0;
+    while text[i] != 0 as byte {
+        if host_append_temp_path_byte(buf, cap, pos, text[i]) != 0 {
+            return -1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn host_append_temp_path_i32(buf: &byte, cap: usize, pos: &usize, value: i32) i32 {
+    var digits: [byte: 16] = [];
+    var v: i32 = value;
+    if v < 0 {
+        if host_append_temp_path_byte(buf, cap, pos, 45 as byte) != 0 {
+            return -1;
+        }
+        v = 0 - v;
+    }
+    var n: usize = 0;
+    if v == 0 {
+        digits[0] = 48 as byte;
+        n = 1;
+    } else {
+        while v > 0 && n < 16 {
+            digits[n] = (48 + (v % 10)) as byte;
+            v = v / 10;
+            n = n + 1;
+        }
+    }
+    while n > 0 {
+        n = n - 1;
+        if host_append_temp_path_byte(buf, cap, pos, digits[n]) != 0 {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+fn host_fill_temp_path(buf: &byte, cap: usize, prefix: &byte, suffix: &byte, extra_index: i32) i32 {
+    if buf == null || cap < 32usize || prefix == null {
+        return -1;
+    }
+    var suf: &byte = suffix;
+    if suf == null {
+        suf = "" as &byte;
+    }
+    var tmpdir: &byte = getenv("TMPDIR" as *byte);
+    if tmpdir == null || tmpdir[0] == 0 as byte {
+        tmpdir = "/tmp" as &byte;
+    }
+    var pos: usize = 0;
+    if host_append_temp_path_bytes(buf, cap, &pos, tmpdir) != 0 {
+        return -1;
+    }
+    if pos == 0usize {
+        return -1;
+    }
+    if buf[pos - 1] != 47 as byte {
+        if host_append_temp_path_byte(buf, cap, &pos, 47 as byte) != 0 {
+            return -1;
+        }
+    }
+    if host_append_temp_path_bytes(buf, cap, &pos, prefix) != 0 {
+        return -1;
+    }
+    if host_append_temp_path_byte(buf, cap, &pos, 95 as byte) != 0 {
+        return -1;
+    }
+    var pid: i32 = getpid();
+    if pid <= 0 {
+        pid = 1;
+    }
+    if host_append_temp_path_i32(buf, cap, &pos, pid) != 0 {
+        return -1;
+    }
+    if extra_index >= 0 {
+        if host_append_temp_path_byte(buf, cap, &pos, 95 as byte) != 0 ||
+            host_append_temp_path_i32(buf, cap, &pos, extra_index) != 0 {
+            return -1;
+        }
+    }
+    if host_append_temp_path_bytes(buf, cap, &pos, suf) != 0 {
+        return -1;
+    }
+    if pos >= cap {
+        return -1;
+    }
+    buf[pos] = 0 as byte;
+    return 0;
+}
+
+fn host_fill_temp_c_compile_path(buf: &byte, cap: usize) i32 {
+    return host_fill_temp_path(buf, cap, "uya_core_output" as &byte, ".c" as &byte, -1);
+}
+
+fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
+    return host_fill_temp_path(buf, cap, "uya_core_out" as &byte, exe_suffix, -1);
+}
+
+fn is_c_output(output_path: &byte) i32 {
+    if output_path == null {
+        return 0;
+    }
+    const len: usize = strlen(output_path as *byte);
+    if len >= 2usize && output_path[len - 2] == 46 as byte && output_path[len - 1] == 99 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn core_prepare_uya_root(out: &byte, out_cap: usize) i32 {
+    var root_base: [byte: PATH_MAX] = [];
+    const argv0: *byte = get_argv(0);
+    if argv0 == null {
+        return 1;
+    }
+    if get_uya_root(argv0 as &byte, &root_base[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    var base_len: usize = strlen(&root_base[0] as *byte);
+    if base_len > 1usize && base_len < PATH_MAX && root_base[base_len - 1] == 47 as byte {
+        root_base[base_len - 1] = 0 as byte;
+        base_len = base_len - 1;
+    }
+    const last_slash: *byte = strrchr(&root_base[0] as *byte, 47);
+    var already_lib: i32 = 0;
+    if last_slash != null && strcmp(last_slash, "/lib" as *byte) == 0 {
+        already_lib = 1;
+    }
+    if already_lib == 0 && last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
+        const slash_idx: usize = ptr_diff(last_slash, &root_base[0] as *byte);
+        root_base[slash_idx] = 0 as byte;
+    }
+    var written: i32 = 0;
+    if already_lib != 0 {
+        written = snprintf(out as *byte, out_cap, "%s/" as *byte, &root_base[0] as *byte);
+    } else {
+        written = snprintf(out as *byte, out_cap, "%s/lib/" as *byte, &root_base[0] as *byte);
+    }
+    if written <= 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn core_copy_module_root(path: &byte, out: &byte, out_cap: usize) i32 {
+    if path == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const len: usize = strlen(path as *byte);
+    if len + 2usize >= out_cap {
+        return 1;
+    }
+    strcpy(out as *byte, path as *byte);
+    if len > 0usize && out[len - 1] != 47 as byte {
+        out[len] = 47 as byte;
+        out[len + 1] = 0 as byte;
+    }
+    return 0;
+}
+
+fn core_module_root_from_file(path: &byte, out: &byte, out_cap: usize) i32 {
+    if path == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const slash: *byte = strrchr(path as *byte, 47);
+    if slash == null {
+        strcpy(out as *byte, "./" as *byte);
+        return 0;
+    }
+    const len: usize = ptr_diff(slash, path) + 1usize;
+    if len >= out_cap {
+        return 1;
+    }
+    memcpy(out as *void, path as *void, len);
+    out[len] = 0 as byte;
+    return 0;
+}
+
+fn core_ascii_is_space(ch: byte) i32 {
+    if ch == 32 as byte || ch == 9 as byte || ch == 10 as byte || ch == 13 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+fn core_copy_string(out: &byte, out_cap: usize, src: &byte) i32 {
+    if out == null || src == null || out_cap == 0usize {
+        return 1;
+    }
+    const written: i32 = snprintf(out as *byte, out_cap, "%s" as *byte, src as *byte);
+    if written < 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn core_ensure_trailing_slash(path: &byte, cap: usize) i32 {
+    if path == null || cap == 0usize {
+        return 1;
+    }
+    const len: usize = strlen(path as *byte);
+    if len == 0usize {
+        return 1;
+    }
+    if path[len - 1usize] == 47 as byte {
+        return 0;
+    }
+    if len + 1usize >= cap {
+        return 1;
+    }
+    path[len] = 47 as byte;
+    path[len + 1usize] = 0 as byte;
+    return 0;
+}
+
+fn core_join_path(base: &byte, child: &byte, out: &byte, out_cap: usize) i32 {
+    if base == null || child == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    if child[0] == 47 as byte {
+        return core_copy_string(out, out_cap, child);
+    }
+    if child[0] == 46 as byte && child[1] == 0 as byte {
+        return core_copy_string(out, out_cap, base);
+    }
+    if child[0] == 46 as byte && child[1] == 47 as byte && child[2] == 0 as byte {
+        return core_copy_string(out, out_cap, base);
+    }
+    const base_len: usize = strlen(base as *byte);
+    var written: i32 = 0;
+    if base_len > 0usize && base[base_len - 1usize] == 47 as byte {
+        written = snprintf(out as *byte, out_cap, "%s%s" as *byte, base as *byte, child as *byte);
+    } else {
+        written = snprintf(out as *byte, out_cap, "%s/%s" as *byte, base as *byte, child as *byte);
+    }
+    if written < 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn core_strip_inline_comment(line: &byte) void {
+    if line == null {
+        return;
+    }
+    var in_quote: i32 = 0;
+    var i: usize = 0;
+    while line[i] != 0 as byte {
+        if line[i] == 34 as byte {
+            if in_quote == 0 {
+                in_quote = 1;
+            } else {
+                in_quote = 0;
+            }
+        } else if line[i] == 35 as byte && in_quote == 0 {
+            line[i] = 0 as byte;
+            return;
+        }
+        i = i + 1usize;
+    }
+}
+
+fn core_trim_copy(src: &byte, out: &byte, out_cap: usize) i32 {
+    if src == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    const len: usize = strlen(src as *byte);
+    var start: usize = 0;
+    while start < len && core_ascii_is_space(src[start]) != 0 {
+        start = start + 1usize;
+    }
+    var end: usize = len;
+    while end > start && core_ascii_is_space(src[end - 1usize]) != 0 {
+        end = end - 1usize;
+    }
+    const out_len: usize = end - start;
+    if out_len + 1usize > out_cap {
+        return 1;
+    }
+    var i: usize = 0;
+    while i < out_len {
+        out[i] = src[start + i];
+        i = i + 1usize;
+    }
+    out[out_len] = 0 as byte;
+    return 0;
+}
+
+fn core_parse_manifest_string_value(line: &byte, key_out: &byte, key_cap: usize, value_out: &byte, value_cap: usize) i32 {
+    if line == null || key_out == null || value_out == null || key_cap == 0usize || value_cap == 0usize {
+        return 1;
+    }
+    key_out[0] = 0 as byte;
+    value_out[0] = 0 as byte;
+    const eq: *byte = strchr(line as *byte, 61);
+    if eq == null {
+        return 1;
+    }
+    const raw_key_len_tmp: !usize = ptr_diff(eq, line as *byte) as! usize;
+    const raw_key_len: usize = raw_key_len_tmp catch {
+        return 1;
+    };
+    var key_start: usize = 0;
+    while key_start < raw_key_len && core_ascii_is_space(line[key_start]) != 0 {
+        key_start = key_start + 1usize;
+    }
+    var key_end: usize = raw_key_len;
+    while key_end > key_start && core_ascii_is_space(line[key_end - 1usize]) != 0 {
+        key_end = key_end - 1usize;
+    }
+    const key_len: usize = key_end - key_start;
+    if key_len == 0usize || key_len + 1usize > key_cap {
+        return 1;
+    }
+    var i: usize = 0;
+    while i < key_len {
+        key_out[i] = line[key_start + i];
+        i = i + 1usize;
+    }
+    key_out[key_len] = 0 as byte;
+
+    var p: *byte = eq + 1;
+    while p[0] != 0 as byte && core_ascii_is_space(p[0]) != 0 {
+        p = p + 1;
+    }
+    if p[0] != 34 as byte {
+        return 1;
+    }
+    p = p + 1;
+    const end_quote: *byte = strchr(p, 34);
+    if end_quote == null {
+        return 1;
+    }
+    const value_len_tmp: !usize = ptr_diff(end_quote, p) as! usize;
+    const value_len: usize = value_len_tmp catch {
+        return 1;
+    };
+    if value_len + 1usize > value_cap {
+        return 1;
+    }
+    i = 0;
+    while i < value_len {
+        value_out[i] = p[i];
+        i = i + 1usize;
+    }
+    value_out[value_len] = 0 as byte;
+    return 0;
+}
+
+fn core_parse_dependency_path_line(line: &byte, alias_out: &byte, alias_cap: usize, path_out: &byte, path_cap: usize) i32 {
+    if line == null || alias_out == null || path_out == null || alias_cap == 0usize || path_cap == 0usize {
+        return 1;
+    }
+    alias_out[0] = 0 as byte;
+    path_out[0] = 0 as byte;
+    const eq: *byte = strchr(line as *byte, 61);
+    if eq == null {
+        return 1;
+    }
+    const raw_alias_len_tmp: !usize = ptr_diff(eq, line as *byte) as! usize;
+    const raw_alias_len: usize = raw_alias_len_tmp catch {
+        return 1;
+    };
+    var alias_start: usize = 0;
+    while alias_start < raw_alias_len && core_ascii_is_space(line[alias_start]) != 0 {
+        alias_start = alias_start + 1usize;
+    }
+    var alias_end: usize = raw_alias_len;
+    while alias_end > alias_start && core_ascii_is_space(line[alias_end - 1usize]) != 0 {
+        alias_end = alias_end - 1usize;
+    }
+    const alias_len: usize = alias_end - alias_start;
+    if alias_len == 0usize || alias_len + 1usize > alias_cap {
+        return 1;
+    }
+    var i: usize = 0;
+    while i < alias_len {
+        alias_out[i] = line[alias_start + i];
+        i = i + 1usize;
+    }
+    alias_out[alias_len] = 0 as byte;
+
+    const path_key: *byte = strstr(eq + 1, "path" as *byte);
+    if path_key == null {
+        return 1;
+    }
+    const path_eq: *byte = strchr(path_key, 61);
+    if path_eq == null {
+        return 1;
+    }
+    var p: *byte = path_eq + 1;
+    while p[0] != 0 as byte && core_ascii_is_space(p[0]) != 0 {
+        p = p + 1;
+    }
+    if p[0] != 34 as byte {
+        return 1;
+    }
+    p = p + 1;
+    const end_quote: *byte = strchr(p, 34);
+    if end_quote == null {
+        return 1;
+    }
+    const path_len_tmp: !usize = ptr_diff(end_quote, p) as! usize;
+    const path_len: usize = path_len_tmp catch {
+        return 1;
+    };
+    if path_len == 0usize || path_len + 1usize > path_cap {
+        return 1;
+    }
+    i = 0;
+    while i < path_len {
+        path_out[i] = p[i];
+        i = i + 1usize;
+    }
+    path_out[path_len] = 0 as byte;
+    return 0;
+}
+
+fn core_manifest_source_root(manifest_path: &byte, package_root: &byte, source_root_out: &byte, out_cap: usize) i32 {
+    if manifest_path == null || package_root == null || source_root_out == null {
+        return 1;
+    }
+    var source_dir: [byte: PATH_MAX] = [];
+    if core_copy_string(&source_dir[0] as &byte, PATH_MAX, "." as &byte) != 0 {
+        return 1;
+    }
+    const file: &FILE = fopen(manifest_path as *byte, "r" as *byte);
+    if file == null {
+        fprintf(libc.stderr, "错误: 无法打开 manifest: %s\n" as *byte, manifest_path as *byte);
+        return 1;
+    }
+    var section: i32 = 0;
+    var line_buf: [byte: CORE_MANIFEST_LINE_MAX] = [];
+    while fgets(&line_buf[0] as &byte, CORE_MANIFEST_LINE_MAX, file) != null {
+        core_strip_inline_comment(&line_buf[0] as &byte);
+        var trimmed: [byte: CORE_MANIFEST_LINE_MAX] = [];
+        if core_trim_copy(&line_buf[0] as &byte, &trimmed[0] as &byte, CORE_MANIFEST_LINE_MAX as usize) != 0 {
+            fclose(file);
+            return 1;
+        }
+        if trimmed[0] == 0 as byte {
+            continue;
+        }
+        if strcmp(&trimmed[0] as *byte, "[package]" as *byte) == 0 {
+            section = 1;
+            continue;
+        }
+        if trimmed[0] == 91 as byte {
+            section = 0;
+            continue;
+        }
+        if section == 1 {
+            var key_buf: [byte: 64] = [];
+            var value_buf: [byte: PATH_MAX] = [];
+            if core_parse_manifest_string_value(&trimmed[0] as &byte, &key_buf[0] as &byte, 64usize, &value_buf[0] as &byte, PATH_MAX) == 0 {
+                if strcmp(&key_buf[0] as *byte, "source-dir" as *byte) == 0 {
+                    if core_copy_string(&source_dir[0] as &byte, PATH_MAX, &value_buf[0] as &byte) != 0 {
+                        fclose(file);
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    fclose(file);
+    if core_join_path(package_root, &source_dir[0] as &byte, source_root_out, out_cap) != 0 {
+        fprintf(libc.stderr, "错误: source-dir 路径过长: %s\n" as *byte, &source_dir[0] as *byte);
+        return 1;
+    }
+    if core_ensure_trailing_slash(source_root_out, out_cap) != 0 {
+        return 1;
+    }
+    if is_directory(source_root_out) == 0 {
+        fprintf(libc.stderr, "错误: source-dir 不是目录: %s\n" as *byte, source_root_out as *byte);
+        return 1;
+    }
+    return 0;
+}
+
+fn core_register_path_dependency(package_root: &byte, alias: &byte, dep_path: &byte) i32 {
+    if package_root == null || alias == null || dep_path == null {
+        return 1;
+    }
+    var dep_root: [byte: PATH_MAX] = [];
+    if core_join_path(package_root, dep_path, &dep_root[0] as &byte, PATH_MAX) != 0 ||
+        core_ensure_trailing_slash(&dep_root[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: path dependency 路径过长: %s\n" as *byte, dep_path as *byte);
+        return 1;
+    }
+    var dep_manifest: [byte: PATH_MAX] = [];
+    if core_join_path(&dep_root[0] as &byte, "uya.toml" as &byte, &dep_manifest[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    if is_file(&dep_manifest[0] as &byte) == 0 {
+        fprintf(libc.stderr, "错误: path dependency 缺少 uya.toml: %s\n" as *byte, &dep_manifest[0] as *byte);
+        return 1;
+    }
+    var dep_source_root: [byte: PATH_MAX] = [];
+    if core_manifest_source_root(&dep_manifest[0] as &byte, &dep_root[0] as &byte, &dep_source_root[0] as &byte, PATH_MAX) != 0 {
+        return 1;
+    }
+    if package_mode_alias_roots_add(alias, &dep_source_root[0] as &byte) != 0 ||
+        checker_package_mode_alias_roots_add(alias, &dep_source_root[0] as &byte) != 0 {
+        fprintf(libc.stderr, "错误: 无法注册 package alias: %s\n" as *byte, alias as *byte);
+        return 1;
+    }
+    return 0;
+}
+
+fn core_manifest_register_dependencies(manifest_path: &byte, package_root: &byte) i32 {
+    if manifest_path == null || package_root == null {
+        return 1;
+    }
+    const file: &FILE = fopen(manifest_path as *byte, "r" as *byte);
+    if file == null {
+        fprintf(libc.stderr, "错误: 无法打开 manifest: %s\n" as *byte, manifest_path as *byte);
+        return 1;
+    }
+    var section: i32 = 0;
+    var line_buf: [byte: CORE_MANIFEST_LINE_MAX] = [];
+    while fgets(&line_buf[0] as &byte, CORE_MANIFEST_LINE_MAX, file) != null {
+        core_strip_inline_comment(&line_buf[0] as &byte);
+        var trimmed: [byte: CORE_MANIFEST_LINE_MAX] = [];
+        if core_trim_copy(&line_buf[0] as &byte, &trimmed[0] as &byte, CORE_MANIFEST_LINE_MAX as usize) != 0 {
+            fclose(file);
+            return 1;
+        }
+        if trimmed[0] == 0 as byte {
+            continue;
+        }
+        if strcmp(&trimmed[0] as *byte, "[dependencies]" as *byte) == 0 {
+            section = 1;
+            continue;
+        }
+        if trimmed[0] == 91 as byte {
+            section = 0;
+            continue;
+        }
+        if section == 1 {
+            var alias_buf: [byte: PATH_MAX] = [];
+            var path_buf: [byte: PATH_MAX] = [];
+            if core_parse_dependency_path_line(&trimmed[0] as &byte, &alias_buf[0] as &byte, PATH_MAX, &path_buf[0] as &byte, PATH_MAX) != 0 {
+                fclose(file);
+                fprintf(libc.stderr, "错误: core package mode 仅支持 path dependency: %s\n" as *byte, &trimmed[0] as *byte);
+                return 1;
+            }
+            if core_register_path_dependency(package_root, &alias_buf[0] as &byte, &path_buf[0] as &byte) != 0 {
+                fclose(file);
+                return 1;
+            }
+        }
+    }
+    fclose(file);
+    return 0;
+}
+
+fn core_package_manifest_for_input(input: &byte, manifest_override: &byte, package_root_out: &byte, manifest_out: &byte) i32 {
+    if input == null || package_root_out == null || manifest_out == null {
+        return -1;
+    }
+    package_root_out[0] = 0 as byte;
+    manifest_out[0] = 0 as byte;
+    if manifest_override != null && manifest_override[0] != 0 as byte {
+        if is_directory(manifest_override) != 0 {
+            if core_copy_module_root(manifest_override, package_root_out, PATH_MAX) != 0 ||
+                core_join_path(package_root_out, "uya.toml" as &byte, manifest_out, PATH_MAX) != 0 {
+                return -1;
+            }
+        } else {
+            if core_copy_string(manifest_out, PATH_MAX, manifest_override) != 0 ||
+                core_module_root_from_file(manifest_out, package_root_out, PATH_MAX) != 0 {
+                return -1;
+            }
+        }
+        if is_file(manifest_out) == 0 {
+            fprintf(libc.stderr, "错误: manifest 不存在: %s\n" as *byte, manifest_out as *byte);
+            return -1;
+        }
+        return 1;
+    }
+    if is_directory(input) == 0 {
+        return 0;
+    }
+    if core_copy_module_root(input, package_root_out, PATH_MAX) != 0 ||
+        core_join_path(package_root_out, "uya.toml" as &byte, manifest_out, PATH_MAX) != 0 {
+        return -1;
+    }
+    if is_file(manifest_out) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn core_prepare_package_input(
+    input: &byte,
+    manifest_override: &byte,
+    resolved_files: &(&byte),
+    resolved_count: &i32,
+    module_root: &byte
+) i32 {
+    if input == null || resolved_files == null || resolved_count == null || module_root == null {
+        return -1;
+    }
+    var package_root: [byte: PATH_MAX] = [];
+    var manifest_path: [byte: PATH_MAX] = [];
+    const manifest_status: i32 = core_package_manifest_for_input(input, manifest_override, &package_root[0] as &byte, &manifest_path[0] as &byte);
+    if manifest_status <= 0 {
+        return manifest_status;
+    }
+    var source_root: [byte: PATH_MAX] = [];
+    if core_manifest_source_root(&manifest_path[0] as &byte, &package_root[0] as &byte, &source_root[0] as &byte, PATH_MAX) != 0 {
+        return -1;
+    }
+    if core_manifest_register_dependencies(&manifest_path[0] as &byte, &package_root[0] as &byte) != 0 {
+        return -1;
+    }
+    var main_files: [&byte: MAX_INPUT_FILES] = [];
+    var main_count: i32 = 0;
+    if find_main_files_in_dir(&source_root[0] as &byte, &main_files[0], &main_file_paths_global[0], MAX_INPUT_FILES, &main_count) != 0 {
+        fprintf(libc.stderr, "错误: 无法读取 source-dir '%s'\n" as *byte, &source_root[0] as *byte);
+        return -1;
+    }
+    if main_count != 1 {
+        fprintf(libc.stderr, "错误: package source-dir '%s' 中必须恰好有一个包含 main/test 的文件\n" as *byte, &source_root[0] as *byte);
+        return -1;
+    }
+    resolved_files[resolved_count[0]] = main_files[0];
+    resolved_count[0] = resolved_count[0] + 1;
+    if module_root[0] == 0 as byte {
+        if core_copy_string(module_root, PATH_MAX, &source_root[0] as &byte) != 0 {
+            return -1;
+        }
+    }
+    return 1;
+}
+
+fn core_resolve_inputs(options: &UyaCoreOptions, stop_after_checker: i32, resolved_files: &(&byte), resolved_count: &i32, module_root: &byte) i32 {
+    if options == null || resolved_files == null || resolved_count == null {
+        return 1;
+    }
+    resolved_count[0] = 0;
+    module_root[0] = 0 as byte;
+    if options.input.path_count <= 0 || options.input.paths == null {
+        fprintf(libc.stderr, "错误: 未指定输入文件\n" as *byte);
+        return 1;
+    }
+    if options.input.module_root_override != null && options.input.module_root_override[0] != 0 as byte {
+        if core_copy_module_root(options.input.module_root_override, module_root, PATH_MAX) != 0 {
+            fprintf(libc.stderr, "错误: module root 路径过长\n" as *byte);
+            return 1;
+        }
+    }
+    var i: i32 = 0;
+    while i < options.input.path_count {
+        if i >= MAX_INPUT_FILES {
+            fprintf(libc.stderr, "错误: 输入文件数量超过最大限制 (%d)\n" as *byte, MAX_INPUT_FILES);
+            return 1;
+        }
+        const input: &byte = options.input.paths[i];
+        if input == null {
+            fprintf(libc.stderr, "错误: 输入路径为空\n" as *byte);
+            return 1;
+        }
+        if is_directory(input) != 0 {
+            const package_status: i32 = core_prepare_package_input(
+                input,
+                options.input.manifest_path_override,
+                resolved_files,
+                resolved_count,
+                module_root
+            );
+            if package_status < 0 {
+                return 1;
+            }
+            if package_status > 0 {
+                i = i + 1;
+                continue;
+            }
+            var main_files: [&byte: MAX_INPUT_FILES] = [];
+            var main_count: i32 = 0;
+            if find_main_files_in_dir(input, &main_files[0], &main_file_paths_global[0], MAX_INPUT_FILES, &main_count) != 0 {
+                fprintf(libc.stderr, "错误: 无法读取目录 '%s'\n" as *byte, input as *byte);
+                return 1;
+            }
+            if main_count != 1 {
+                fprintf(libc.stderr, "错误: 目录 '%s' 中必须恰好有一个包含 main/test 的文件\n" as *byte, input as *byte);
+                return 1;
+            }
+            resolved_files[resolved_count[0]] = main_files[0];
+            resolved_count[0] = resolved_count[0] + 1;
+            if module_root[0] == 0 as byte {
+                if core_copy_module_root(input, module_root, PATH_MAX) != 0 {
+                    return 1;
+                }
+            }
+        } else if is_file(input) != 0 {
+            const main_kind: i32 = detect_main_function(input);
+            if stop_after_checker == 0 && main_kind == 0 && options.input.path_count == 1 {
+                fprintf(libc.stderr, "错误: 文件 '%s' 不包含 main 函数或 test 语句\n" as *byte, input as *byte);
+                return 1;
+            }
+            resolved_files[resolved_count[0]] = input;
+            resolved_count[0] = resolved_count[0] + 1;
+            if module_root[0] == 0 as byte {
+                if core_module_root_from_file(input, module_root, PATH_MAX) != 0 {
+                    return 1;
+                }
+            }
+        } else {
+            fprintf(libc.stderr, "错误: '%s' 既不是文件也不是目录\n" as *byte, input as *byte);
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn core_add_runtime_entry_if_needed(files: &(&byte), count: &i32, uya_root: &byte, arena: &CompilerArena, stop_after_checker: i32) i32 {
+    if stop_after_checker != 0 || files == null || count == null || uya_root == null || arena == null {
+        return 0;
+    }
+    var has_export_main: i32 = 0;
+    var has_test_stmt: i32 = 0;
+    var has_export_extern_main: i32 = 0;
+    var i: i32 = 0;
+    while i < count[0] {
+        const main_type: i32 = detect_main_function(files[i]);
+        if main_type == 3 {
+            has_export_extern_main = 1;
+        } else if main_type == 2 {
+            has_export_main = 1;
+        } else if main_type == 1 {
+            has_test_stmt = 1;
+        }
+        i = i + 1;
+    }
+    if has_export_extern_main != 0 || (has_export_main == 0 && has_test_stmt == 0) {
+        return 0;
+    }
+    var entry_path: [byte: PATH_MAX] = [];
+    const entry_len: i32 = snprintf(&entry_path[0] as *byte, PATH_MAX, "%sstd/runtime/entry/entry.uya" as *byte, uya_root as *byte);
+    if entry_len <= 0 || entry_len >= PATH_MAX {
+        return 1;
+    }
+    if is_file(&entry_path[0] as &byte) == 0 {
+        return 0;
+    }
+    const entry_copy: &byte = compiler_arena_alloc(arena, entry_len + 1) as &byte;
+    if entry_copy == null {
+        return 1;
+    }
+    strcpy(entry_copy as *byte, &entry_path[0] as *byte);
+    files[count[0]] = entry_copy;
+    count[0] = count[0] + 1;
+    return 0;
+}
+
+fn core_collect_all_dependencies(files: &(&byte), count: &i32, module_root: &byte, uya_root: &byte, arena: &CompilerArena) i32 {
+    var processed_files: [&byte: MAX_INPUT_FILES] = processed_files_global;
+    var processed_count: i32 = 0;
+    var i: i32 = 0;
+    while i < count[0] {
+        const new_count: i32 = collect_module_dependencies(
+            files[i],
+            files,
+            count[0],
+            MAX_INPUT_FILES,
+            &processed_files[0],
+            &processed_count,
+            MAX_INPUT_FILES,
+            module_root,
+            uya_root,
+            arena
+        );
+        if new_count < 0 {
+            fprintf(libc.stderr, "错误: 收集模块依赖失败: %s\n" as *byte, files[i] as *byte);
+            return 1;
+        }
+        count[0] = new_count;
+        i = i + 1;
+    }
+    count[0] = dedupe_paths_in_place(files, count[0]);
+    return 0;
+}
+
+fn seed_function_reachability_from_owned_method(checker: &TypeChecker, method: &ASTNode) void {
+    if checker == null || method == null || method.type != ASTNodeType.AST_FN_DECL || method.fn_decl_body == null {
+        return;
+    }
+    _ = checker_add_function_root_decl(checker, method);
+    const saved_owner: &ASTNode = checker.current_function_decl;
+    checker.current_function_decl = method;
+    checker_walk_reachability_node_uncached(checker, method.fn_decl_body);
+    checker.current_function_decl = saved_owner;
+}
+
+fn seed_function_reachability_roots(checker: &TypeChecker, program: &ASTNode) void {
+    if checker == null || program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return;
+    }
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[i];
+        if decl != null {
+            if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
+                if decl.fn_decl_is_export != 0 || str_equals(decl.fn_decl_name, "main" as *byte) != 0 {
+                    checker_add_function_root_decl(checker, decl);
+                }
+            } else if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_methods != null {
+                var mj: i32 = 0;
+                while mj < decl.struct_decl_method_count {
+                    const method: &ASTNode = decl.struct_decl_methods[mj];
+                    seed_function_reachability_from_owned_method(checker, method);
+                    mj = mj + 1;
+                }
+            } else if decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_methods != null {
+                var uj: i32 = 0;
+                while uj < decl.union_decl_method_count {
+                    const method2: &ASTNode = decl.union_decl_methods[uj];
+                    seed_function_reachability_from_owned_method(checker, method2);
+                    uj = uj + 1;
+                }
+            } else if decl.type == ASTNodeType.AST_METHOD_BLOCK && decl.method_block_methods != null {
+                var mj2: i32 = 0;
+                while mj2 < decl.method_block_method_count {
+                    const method3: &ASTNode = decl.method_block_methods[mj2];
+                    seed_function_reachability_from_owned_method(checker, method3);
+                    mj2 = mj2 + 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+}
+
+fn core_compile_to_c99(options: &UyaCoreOptions, stop_after_checker: i32, result: &UyaCoreResult) i32 {
+    if options == null {
+        return 1;
+    }
+    uya_core_result_reset(result);
+    g_split_c_dir_active = 0;
+    g_split_c_dir[0] = 0 as byte;
+    package_mode_alias_roots_clear();
+    checker_package_mode_alias_roots_clear();
+    if options.output.split_c_dir != null && options.output.split_c_dir[0] != 0 as byte {
+        const sl: usize = strlen(options.output.split_c_dir as *byte);
+        if sl >= PATH_MAX {
+            fprintf(libc.stderr, "错误: split-C 目录过长\n" as *byte);
+            return 1;
+        }
+        strcpy(&g_split_c_dir[0] as *byte, options.output.split_c_dir as *byte);
+        g_split_c_dir_active = 1;
+    }
+
+    var temp_arena: CompilerArena = CompilerArena {
+        buffer: null,
+        size: 0 as usize,
+        offset: 0 as usize,
+        first_chunk: null,
+        current_chunk: null,
+        total_allocated: 0 as usize,
+    };
+    compiler_arena_init(&temp_arena, &temp_arena_buffer[0], 16 * 1024 * 1024);
+
+    var uya_root_buffer: [byte: PATH_MAX] = [];
+    if core_prepare_uya_root(&uya_root_buffer[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: 无法获取 UYA_ROOT 目录\n" as *byte);
+        return 1;
+    }
+
+    var resolved_files: [&byte: MAX_INPUT_FILES] = resolved_files_global;
+    var resolved_count: i32 = 0;
+    var module_root_buffer: [byte: PATH_MAX] = [];
+    if core_resolve_inputs(options, stop_after_checker, &resolved_files[0], &resolved_count, &module_root_buffer[0] as &byte) != 0 {
+        return 1;
+    }
+    if core_add_runtime_entry_if_needed(&resolved_files[0], &resolved_count, &uya_root_buffer[0] as &byte, &temp_arena, stop_after_checker) != 0 {
+        return 1;
+    }
+
+    var all_files: [&byte: MAX_INPUT_FILES] = all_files_global;
+    var all_file_count: i32 = resolved_count;
+    var i: i32 = 0;
+    while i < all_file_count {
+        all_files[i] = resolved_files[i];
+        i = i + 1;
+    }
+    if core_collect_all_dependencies(&all_files[0], &all_file_count, &module_root_buffer[0] as &byte, &uya_root_buffer[0] as &byte, &temp_arena) != 0 {
+        return 1;
+    }
+
+    fprintf(libc.stderr, "=== 开始 core 编译 ===\n" as *byte);
+    fprintf(libc.stderr, "输入文件数量: %d (包含依赖)\n" as *byte, all_file_count);
+    i = 0;
+    while i < all_file_count {
+        fprintf(libc.stderr, "  %d: %s\n" as *byte, i, all_files[i] as *byte);
+        i = i + 1;
+    }
+
+    var actual_output: &byte = options.output.output_path;
+    if actual_output == null || actual_output[0] == 0 as byte {
+        actual_output = options.output.temp_c_path;
+    }
+    if stop_after_checker == 0 && (actual_output == null || actual_output[0] == 0 as byte) {
+        fprintf(libc.stderr, "错误: 未指定 C99 输出路径\n" as *byte);
+        return 1;
+    }
+
+    var stats: CompileStats = CompileStats { parse_time_ms: 0, merge_time_ms: 0, check_time_ms: 0, opt_time_ms: 0, codegen_time_ms: 0, total_time_ms: 0, file_count: all_file_count, ast_nodes: 0 };
+    const start_time: i64 = clock();
+    var parse_end_time: i64 = 0;
+    var merge_end_time: i64 = 0;
+    var check_end_time: i64 = 0;
+    var codegen_end_time: i64 = 0;
+
+    var arena: CompilerArena = CompilerArena { buffer: null, size: 0 as usize, offset: 0 as usize, first_chunk: null, current_chunk: null, total_allocated: 0 as usize };
+    compiler_arena_init(&arena, &arena_buffer[0], ARENA_BUFFER_SIZE as usize);
+    var programs: [&ASTNode: MAX_INPUT_FILES] = [];
+
+    i = 0;
+    while i < all_file_count {
+        const input_path: &byte = all_files[i];
+        const file_size: i32 = read_file_content(input_path, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+        if file_size < 0 {
+            fprintf(libc.stderr, "错误: 无法读取文件 '%s'\n" as *byte, input_path as *byte);
+            return 1;
+        }
+        const lexer_obj: &Lexer = compiler_arena_alloc(&arena, HOST_SIZE_LEXER_BYTES) as &Lexer;
+        if lexer_obj == null {
+            fprintf(libc.stderr, "错误: Lexer 分配失败\n" as *byte);
+            return 1;
+        }
+        if lexer_init(lexer_obj, &file_buffer[0], file_size as usize, input_path, &arena) != 0 {
+            fprintf(libc.stderr, "错误: Lexer 初始化失败: %s\n" as *byte, input_path as *byte);
+            return 1;
+        }
+        var parser_obj: Parser = Parser {
+            lexer: null,
+            current_token: null,
+            arena: null,
+            context: ParserContext.PARSER_CONTEXT_NORMAL,
+            pending_greater_token: null,
+            saw_use_std: 0,
+            has_error: 0,
+        };
+        if parser_init(&parser_obj, lexer_obj, &arena) != 0 {
+            fprintf(libc.stderr, "错误: Parser 初始化失败: %s\n" as *byte, input_path as *byte);
+            return 1;
+        }
+        const ast: &ASTNode = parser_parse(&parser_obj);
+        if ast == null || ast.type != ASTNodeType.AST_PROGRAM || lexer_obj.has_error != 0 || parser_obj.has_error != 0 {
+            fprintf(libc.stderr, "错误: 语法分析失败: %s\n" as *byte, input_path as *byte);
+            return 1;
+        }
+        programs[i] = ast;
+        i = i + 1;
+    }
+    parse_end_time = clock();
+
+    var merged_ast: &ASTNode = ast_merge_programs(programs, all_file_count, &arena);
+    if merged_ast == null {
+        fprintf(libc.stderr, "错误: AST 合并失败\n" as *byte);
+        return 1;
+    }
+    merged_ast = ast_flatten_nested_program_decls(merged_ast, &arena);
+    if merged_ast == null {
+        fprintf(libc.stderr, "错误: AST 展平失败\n" as *byte);
+        return 1;
+    }
+    merge_end_time = clock();
+
+    const checker_obj: &TypeChecker = compiler_arena_alloc(&arena, HOST_SIZE_TYPECHECKER_BYTES) as &TypeChecker;
+    if checker_obj == null {
+        fprintf(libc.stderr, "错误: TypeChecker 分配失败\n" as *byte);
+        return 1;
+    }
+    memset(checker_obj as *byte, 0, HOST_SIZE_TYPECHECKER_BYTES);
+    if checker_init(checker_obj, &arena, all_files[0]) != 0 {
+        fprintf(libc.stderr, "错误: TypeChecker 初始化失败\n" as *byte);
+        return 1;
+    }
+    checker_obj.uya_root_dir = &uya_root_buffer[0] as &byte;
+    checker_obj.module_root_dir = &module_root_buffer[0] as &byte;
+    checker_obj.enable_safety_proof = options.compile.enable_safety_proof;
+    checker_obj.container_mode = 0;
+    if checker_check(checker_obj, merged_ast) != 0 || checker_get_error_count(checker_obj) > 0 {
+        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(checker_obj));
+        const err_msg: &byte = get_last_checker_error();
+        if err_msg != null {
+            fprintf(libc.stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
+        }
+        return 1;
+    }
+    check_end_time = clock();
+    if checker_obj.program_node != null && checker_obj.program_node.type == ASTNodeType.AST_PROGRAM {
+        merged_ast = checker_obj.program_node;
+    }
+    if stop_after_checker != 0 {
+        fprintf(libc.stderr, "\n检查完成：checker 通过（未执行代码生成）\n" as *byte);
+        return 0;
+    }
+
+    var artifacts: CompileArtifacts = CompileArtifacts {
+        generated_c_path: actual_output,
+        c_import_plan: CImportPlan {
+            items: null,
+            item_count: 0,
+            aggregated_ldflags_tokens: null,
+            aggregated_ldflags_token_count: 0,
+        },
+        c_import_sidecar_path: null,
+    };
+    if collect_c_import_plan(&arena, merged_ast, &artifacts.c_import_plan) != 0 {
+        return 1;
+    }
+    checker_reset_reachability_visit_cache(checker_obj);
+    seed_function_reachability_roots(checker_obj, merged_ast);
+    checker_compute_function_reachability(checker_obj);
+
+    var opt_end_time: i64 = 0;
+    var opt_config: OptimizationConfig = create_optimization_config(options.compile.opt_level);
+    opt_config.verbose = 0;
+    if options.compile.opt_level > 0 {
+        const optimized_ast: &ASTNode = optimize_program(checker_obj, merged_ast, opt_config);
+        if optimized_ast != null {
+            merged_ast = optimized_ast;
+        }
+    }
+    opt_end_time = clock();
+
+    var out_file: *void = null;
+    if g_split_c_dir_active == 0 {
+        out_file = fopen(actual_output as *byte, "w" as *byte);
+        if out_file == null {
+            fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, actual_output as *byte);
+            return 1;
+        }
+    }
+    const c99_codegen: &C99CodeGenerator = compiler_arena_alloc(&arena, HOST_SIZE_C99_CODEGENERATOR_BYTES) as &C99CodeGenerator;
+    if c99_codegen == null {
+        fprintf(libc.stderr, "错误: C99CodeGenerator 分配失败\n" as *byte);
+        if out_file != null {
+            fclose(out_file);
+        }
+        return 1;
+    }
+    memset(c99_codegen as *byte, 0, HOST_SIZE_C99_CODEGENERATOR_BYTES);
+    var split_arg: &byte = null;
+    if g_split_c_dir_active != 0 {
+        split_arg = &g_split_c_dir[0] as &byte;
+    }
+    if c99_codegen_new(c99_codegen, &arena, out_file as &void, all_files[0], options.output.emit_line_directives, options.compile.is_nostdlib, options.compile.stack_size_kb, split_arg, g_split_c_dir_active, options.compile.async_frame_heap_fallback) != 0 {
+        fprintf(libc.stderr, "错误: C99CodeGenerator 初始化失败\n" as *byte);
+        if out_file != null {
+            fclose(out_file);
+        }
+        return 1;
+    }
+    c99_codegen_set_mono_instances(c99_codegen, checker_obj);
+    c99_codegen_set_reachable_functions(c99_codegen, checker_obj);
+    c99_codegen_set_c_import_plan(c99_codegen, &artifacts.c_import_plan);
+    c99_codegen.container_mode = 0;
+    c99_codegen.microapp_softvm_mode = 0;
+    if c99_codegen_generate(c99_codegen, merged_ast, actual_output) != 0 {
+        fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
+        c99_codegen_free(c99_codegen);
+        if out_file != null {
+            fclose(out_file);
+        }
+        return 1;
+    }
+    c99_codegen_free(c99_codegen);
+    if out_file != null {
+        fclose(out_file);
+    }
+    if is_c_output(actual_output) != 0 {
+        if write_c_import_sidecar(&arena, actual_output, &artifacts.c_import_plan, &artifacts.c_import_sidecar_path) != 0 {
+            fprintf(libc.stderr, "错误: @c_import sidecar 生成失败\n" as *byte);
+            return 1;
+        }
+    }
+    codegen_end_time = clock();
+    stats.parse_time_ms = (parse_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
+    stats.merge_time_ms = (merge_end_time - parse_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.check_time_ms = (check_end_time - merge_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.opt_time_ms = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.codegen_time_ms = (codegen_end_time - opt_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.total_time_ms = (codegen_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
+    fprintf(libc.stderr, "\n代码生成完成: %s\n" as *byte, actual_output as *byte);
+    if result != null {
+        result.generated_c_path = actual_output;
+    }
+    return 0;
+}
+
+/// Runs core lexer/parser/checker without generating C.
+///
+/// Parameters: `options` contains input and compile switches; `result` is reset and then filled with any outputs.
+/// Returns: `0` on success, non-zero on diagnostics or invalid options.
+export fn uya_core_check(options: &UyaCoreOptions, result: &UyaCoreResult) i32 {
+    return core_compile_to_c99(options, 1, result);
+}
+
+/// Generates C99 output for core compilation.
+///
+/// Parameters: `options` contains input, output and compile switches; `result` receives the generated C path.
+/// Returns: `0` on success, non-zero on diagnostics or invalid options.
+export fn uya_core_build_c99(options: &UyaCoreOptions, result: &UyaCoreResult) i32 {
+    return core_compile_to_c99(options, 0, result);
+}
+
+fn core_run_command(exe_path: &byte, options: &UyaCoreOptions, is_test: i32) i32 {
+    if exe_path == null {
+        return 1;
+    }
+    var cmd: [byte: 4096] = [];
+    var cmd_len: i32 = 0;
+    if is_test != 0 {
+        var stack_kb: i32 = options.compile.stack_size_kb;
+        if stack_kb <= 0 {
+            stack_kb = 65536;
+        }
+        cmd_len = snprintf(&cmd[0] as *byte, 4096,
+            "/bin/sh -c 'ulimit -s %d 2>/dev/null || true; exec \"$1\"' sh \"%s\"" as *byte,
+            stack_kb,
+            exe_path as *byte);
+    } else {
+        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\"" as *byte, exe_path as *byte);
+        var i: i32 = 0;
+        while cmd_len > 0 && cmd_len < 4096 && options.run.args != null && i < options.run.arg_count {
+            const arg: &byte = options.run.args[i];
+            if arg != null {
+                const appended: i32 = snprintf((&cmd[0] as *byte) + cmd_len, 4096 - cmd_len, " \"%s\"" as *byte, arg as *byte);
+                if appended <= 0 || cmd_len + appended >= 4096 {
+                    fprintf(libc.stderr, "错误: 运行时参数过长\n" as *byte);
+                    return 1;
+                }
+                cmd_len = cmd_len + appended;
+            }
+            i = i + 1;
+        }
+    }
+    if cmd_len <= 0 || cmd_len >= 4096 {
+        fprintf(libc.stderr, "错误: 无法构造运行命令\n" as *byte);
+        return 1;
+    }
+    const status: i32 = system(&cmd[0] as *byte);
+    return exit_code_from_system_status(status);
+}
+
+fn core_compile_link_run(options: &UyaCoreOptions, result: &UyaCoreResult, is_test: i32) i32 {
+    if options == null {
+        return 1;
+    }
+    var temp_c_path: [byte: PATH_MAX] = [];
+    if host_fill_temp_c_compile_path(&temp_c_path[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: 无法生成临时 C 输出路径\n" as *byte);
+        return 1;
+    }
+    var run_options: UyaCoreOptions = options[0];
+    run_options.output.output_path = &temp_c_path[0] as &byte;
+    run_options.output.temp_c_path = &temp_c_path[0] as &byte;
+    run_options.output.split_c_dir = null;
+    if core_compile_to_c99(&run_options, 0, result) != 0 {
+        return 1;
+    }
+    if target_matches_host_platform() == 0 {
+        fprintf(libc.stderr, "错误: run/test 仅支持宿主平台目标\n" as *byte);
+        return 1;
+    }
+    var exe_path: [byte: PATH_MAX] = [];
+    if host_fill_temp_run_exe_path(&exe_path[0] as &byte, PATH_MAX, get_target_exe_suffix()) != 0 {
+        fprintf(libc.stderr, "错误: 无法生成临时可执行路径\n" as *byte);
+        return 1;
+    }
+    var empty_plan: CImportPlan = CImportPlan {
+        items: null,
+        item_count: 0,
+        aggregated_ldflags_tokens: null,
+        aggregated_ldflags_token_count: 0,
+    };
+    if link_with_toolchain(&temp_c_path[0] as &byte, &exe_path[0] as &byte, options.compile.is_nostdlib, &empty_plan) != 0 {
+        return 1;
+    }
+    if result != null {
+        result.linked_executable_path = &exe_path[0] as &byte;
+    }
+    const child_exit: i32 = core_run_command(&exe_path[0] as &byte, options, is_test);
+    if result != null {
+        result.run_exit_code = child_exit;
+    }
+    if is_test != 0 {
+        var passed: i32 = 0;
+        var failed: i32 = 1;
+        if child_exit == 0 {
+            passed = 1;
+            failed = 0;
+        }
+        fprintf(libc.stderr, "================================\n" as *byte);
+        fprintf(libc.stderr, "总计: 1 个测试\n" as *byte);
+        fprintf(libc.stderr, "通过: %d\n" as *byte, passed);
+        fprintf(libc.stderr, "失败: %d\n" as *byte, failed);
+        fprintf(libc.stderr, "================================\n" as *byte);
+    }
+    return child_exit;
+}
+
+/// Builds and runs a core Uya program through the C99 backend.
+///
+/// Parameters: `options` contains input, compile switches and runtime arguments; `result` receives generated paths and exit code.
+/// Returns: child process exit code on successful compilation/linking, otherwise non-zero.
+export fn uya_core_run(options: &UyaCoreOptions, result: &UyaCoreResult) i32 {
+    return core_compile_link_run(options, result, 0);
+}
+
+/// Builds and runs a language-level Uya test through the C99 backend.
+///
+/// Parameters: `options` contains input and compile switches; `result` receives generated paths and exit code.
+/// Returns: child process exit code on successful compilation/linking, otherwise non-zero.
+export fn uya_core_test(options: &UyaCoreOptions, result: &UyaCoreResult) i32 {
+    return core_compile_link_run(options, result, 1);
+}

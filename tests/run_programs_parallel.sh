@@ -449,9 +449,6 @@ run_compiled_test_args() {
     local -a compiler_args=()
 
     local -a extra_args=()
-    if [[ "$base_name" =~ ^error_microapp_mode_ ]]; then
-        extra_args=(--app microapp)
-    fi
 
     mkdir -p "$compiler_work_dir"
 
@@ -727,9 +724,6 @@ SERIAL_TESTS=(
     test_http1_async_client
     test_http_server
     test_raw_tls
-    # kernel.sim 端到端测试会生成/链接很大的宿主程序；
-    # 在整套 28 线程并行下偶发链接抖动，串行执行可稳定语义且不影响覆盖面。
-    test_kernel_sim
     # 这两个用例当前在大并行矩阵下偶发误判失败，但单独运行稳定通过；
     # 先串行化，避免并行环境噪声影响回归结果。
     test_union_variant_generic_method
@@ -750,9 +744,19 @@ LOOPBACK_SKIP_TESTS=(
     test_std_dns_async_transport
     test_std_dns_async_query_aggregate
     test_https_loopback
+    test_https_websocket_loopback
     test_epoll_server
     test_http_server
     test_http1_async_client
+    test_http_uyagin
+    test_http_uyagin_websocket
+    test_http_websocket_async
+    test_http_websocket_backpressure
+    test_http_websocket_handshake
+    test_http_websocket_heartbeat
+    test_http_websocket_json
+    test_http_websocket_reconnect
+    test_async_runtime_shared_dns
     test_https_local
 )
 
@@ -857,7 +861,6 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
         test_epoll_server
         test_error_id_builtin
         test_error_name_builtin
-        test_kernel_sim
         test_nonlinear_bounds
         test_std_syscall
         test_std_syscall_new

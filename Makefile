@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c from-c-native uya uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable examples-check microapp-check microapp-hosted-smoke microapp-aarch64-runtime-check microapp-macos-runtime-check microapp-compat-check microapp-recovery-check outlibc c e clean check check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-bootstrap release-flow release-build release-dirty release-preflight release-clean install help cmds cmd-upm uya-upm-stage2 upm-check fmt check-fmt
+.PHONY: all from-c from-c-native uya uya-core uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable examples-check outlibc c e clean check check-core check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-bootstrap release-flow release-build release-dirty release-preflight release-clean install install-core help cmds cmd-upm uya-upm-stage2 upm-check fmt check-fmt
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -282,6 +282,79 @@ uya:
 	@echo ""
 	@echo "提示: 运行 'make b' 验证自举，通过后会自动备份"
 
+# 构建 core 编译器入口（不替代现有 bin/uya）
+uya-core:
+	@echo "=========================================="
+	@echo "构建 core 编译器 (uya-core)"
+	@echo "=========================================="
+	@bash -c 'set -e; \
+		if [ ! -x bin/uya ]; then \
+			echo "bin/uya 不存在，先从 seed 构建基础编译器..."; \
+			if [ "$(HOST_OS)" = "macos" ]; then \
+				$(MAKE) from-c-native; \
+			else \
+				$(MAKE) from-c; \
+			fi; \
+		fi'
+	@mkdir -p bin
+	@echo "使用 bin/uya 编译 src/cli/main_core.uya ..."
+	@HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" \
+		TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" \
+		TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" \
+		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" \
+		CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
+		./bin/uya build src/cli/main_core.uya --project-root src/ --c99 --no-split-c -o bin/uya-core.c
+	@echo "编译 bin/uya-core.c ..."
+	@CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
+		bash -c 'set -e; $$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS bin/uya-core.c -o bin/uya-core -lm $$LDFLAGS'
+	@echo ""
+	@echo "✓ core 编译器构建完成: bin/uya-core"
+
+check-core: uya-core
+	@echo "=========================================="
+	@echo "运行 core 编译器门禁..."
+	@echo "=========================================="
+	@./bin/uya-core --version
+	@echo ""
+	@echo "验证 core check 正向用例..."
+	@./bin/uya-core check tests/check_cli_no_main.uya
+	@echo ""
+	@echo "验证 core check 错误诊断..."
+	@bash -c 'set -e; \
+		if ./bin/uya-core check tests/error_check_missing_brace.uya > /tmp/uya_check_core_error.out 2>&1; then \
+			echo "错误: 缺失右括号用例应失败但通过了"; \
+			cat /tmp/uya_check_core_error.out; \
+			exit 1; \
+		fi; \
+		if ! grep -q "tests/error_check_missing_brace.uya:3:1" /tmp/uya_check_core_error.out; then \
+			echo "错误: 缺失右括号诊断缺少预期位置"; \
+			cat /tmp/uya_check_core_error.out; \
+			exit 1; \
+		fi'
+	@echo ""
+	@echo "验证 core 多文件 / cross-deps..."
+	@./bin/uya-core check tests/cross_deps/test_structs_main.uya tests/cross_deps/test_structs_a.uya tests/cross_deps/test_structs_b.uya
+	@echo ""
+	@echo "验证 core package mode..."
+	@./bin/uya-core check tests/fixtures/upm/path_dep/app
+	@echo ""
+	@echo "验证 core @c_import..."
+	@./bin/uya-core build tests/test_c_import_file.uya -o /tmp/uya_check_core_c_import.c --c99
+	@CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
+		bash -c 'set -e; $$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -x c /tmp/uya_check_core_c_import.c tests/fixtures/c_import/add_impl.c -o /tmp/uya_check_core_c_import_bin -lm $$LDFLAGS'
+	@/tmp/uya_check_core_c_import_bin
+	@echo ""
+	@echo "验证 core split-C..."
+	@rm -rf /tmp/uya_check_core_split /tmp/uya_check_core_split_bin /tmp/uya_check_core_split_main.c
+	@mkdir -p /tmp/uya_check_core_split
+	@./bin/uya-core build tests/arithmetic.uya --c99 --split-c-dir /tmp/uya_check_core_split -o /tmp/uya_check_core_split_main.c
+	@test -s /tmp/uya_check_core_split/Makefile
+	@test -s /tmp/uya_check_core_split/uya_part1.c
+	@$(MAKE) -C /tmp/uya_check_core_split UYA_OUT=/tmp/uya_check_core_split_bin CC="$(CC_DRIVER) $(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS) -I." LDFLAGS="$(LDFLAGS)"
+	@/tmp/uya_check_core_split_bin
+	@echo ""
+	@echo "✓ core 编译器门禁通过"
+
 # 构建自举编译器（hosted 版本）
 uya-hosted:
 	@echo "=========================================="
@@ -468,14 +541,6 @@ check-fmt:
 	@echo ""
 	@echo "✓ uya fmt 检查通过"
 
-microapp-check:
-	@echo "=========================================="
-	@echo "运行 microapp 验证套件"
-	@echo "=========================================="
-	@./tests/verify_microapp_suite.sh
-	@echo ""
-	@echo "✓ microapp 验证套件通过"
-
 examples-check:
 	@echo "=========================================="
 	@echo "运行 examples 验证套件"
@@ -483,46 +548,6 @@ examples-check:
 	@./tests/verify_examples_suite.sh
 	@echo ""
 	@echo "✓ examples 验证套件通过"
-
-microapp-hosted-smoke:
-	@echo "=========================================="
-	@echo "运行 microapp hosted smoke 套件"
-	@echo "=========================================="
-	@./tests/verify_microapp_hosted_smoke.sh
-	@echo ""
-	@echo "✓ microapp hosted smoke 套件通过"
-
-microapp-aarch64-runtime-check:
-	@echo "=========================================="
-	@echo "运行 microapp aarch64 hosted runtime 回归"
-	@echo "=========================================="
-	@./tests/verify_microapp_aarch64_hosted_runtime.sh
-	@echo ""
-	@echo "✓ microapp aarch64 hosted runtime 回归通过"
-
-microapp-macos-runtime-check:
-	@echo "=========================================="
-	@echo "运行 microapp macOS arm64 hosted runtime 回归"
-	@echo "=========================================="
-	@./tests/verify_microapp_macos_arm64_hosted_runtime.sh
-	@echo ""
-	@echo "✓ microapp macOS arm64 hosted runtime 回归通过"
-
-microapp-compat-check:
-	@echo "=========================================="
-	@echo "运行 microapp .uapp 兼容回归"
-	@echo "=========================================="
-	@./tests/verify_microapp_uapp_compat.sh
-	@echo ""
-	@echo "✓ microapp .uapp 兼容回归通过"
-
-microapp-recovery-check:
-	@echo "=========================================="
-	@echo "运行 microapp crash/recovery/update 回归"
-	@echo "=========================================="
-	@./tests/verify_microapp_recovery_update.sh
-	@echo ""
-	@echo "✓ microapp crash/recovery/update 回归通过"
 # 跨平台入口：Linux 走已验证的 nostdlib 测试，其它平台走 hosted 测试
 tests-portable:
 ifeq ($(HOST_OS),linux)
@@ -767,20 +792,6 @@ check: uya
 		echo "✗ exec vm 专项回归验证失败"; \
 		exit 1; \
 	fi; \
-		echo ""; \
-		echo "验证 microapp 聚合套件..."; \
-		if $(MAKE) microapp-check > /tmp/verify_out.txt 2>&1; then \
-			grep -E "✓|==>|ok$$|通过" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-			VERIFY_EXIT=0; \
-		else \
-			cat /tmp/verify_out.txt; \
-			VERIFY_EXIT=1; \
-		fi; \
-		if [ $$VERIFY_EXIT -ne 0 ]; then \
-			echo "✗ microapp 聚合套件验证失败"; \
-			exit 1; \
-		fi; \
-		echo ""; \
 		echo "验证 SIMD @vector.select C 按需生成..."; \
 		if ./tests/verify_simd_select_c_emit.sh > /tmp/verify_out.txt 2>&1; then \
 			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
@@ -962,15 +973,6 @@ check-hosted: b-hosted
 		echo "✗ split-C stale lock 自动回收验证失败"; \
 		exit 1; \
 	fi
-	@echo ""
-	@echo "验证 microapp 聚合套件..."
-	@$(MAKE) microapp-check; \
-	VERIFY_EXIT=$$?; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ microapp 聚合套件验证失败"; \
-		exit 1; \
-	fi
-	@echo ""
 	@echo "验证 SIMD @vector.select C 按需生成..."
 	@./tests/verify_simd_select_c_emit.sh; \
 	VERIFY_EXIT=$$?; \
@@ -1284,6 +1286,37 @@ install:
 	\) -delete
 	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/ + $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
 
+install-core: uya-core
+	@echo "安装 uya-core -> $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core"
+	@install -d "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)"
+	@install -m 755 bin/uya-core "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core"
+	@echo "安装标准库 -> $(INSTALL_DEST_ROOT)$(LIBDIR)/"
+	@install -d "$(INSTALL_DEST_ROOT)$(LIBDIR)"
+	@for entry in lib/*; do \
+		if [ ! -e "$$entry" ]; then continue; fi; \
+		base=$$(basename "$$entry"); \
+		if [ "$$base" = "build" ]; then continue; fi; \
+		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
+	done
+	@echo "安装文档 -> $(INSTALL_DEST_ROOT)$(DOCDIR)/"
+	@install -d "$(INSTALL_DEST_ROOT)$(DOCDIR)"
+	@for f in uya_ai_prompt.md uya.md grammar_formal.md builtin_functions.md union_memory_layout.md; do \
+		if [ ! -f "docs/$$f" ]; then echo "错误: 缺少 docs/$$f"; exit 1; fi; \
+		install -m 644 "docs/$$f" "$(INSTALL_DEST_ROOT)$(DOCDIR)/$$f"; \
+	done
+	@echo "安装测试树 -> $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@if [ ! -d tests ]; then echo "错误: tests 目录不存在"; exit 1; fi
+	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
+	@install -d "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
+	@cp -a tests/. "$(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)/programs/build" \
+		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/build" \
+		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/.uyacache"
+	@find "$(INSTALL_DEST_ROOT)$(TESTSDIR)" -type f \( \
+		-name '*.o' -o -name '*.obj' -o -name '*.a' -o -name '*.so' -o -name '*.dylib' -o -name '*.exe' -o -name '*.out' \
+	\) -delete
+	@echo "✓ core 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/ + $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+
 # 从备份恢复 bin/uya.c
 restore:
 	@echo "从备份恢复 bin/uya.c ..."
@@ -1324,8 +1357,10 @@ help:
 	@echo "可用目标:"
 	@echo "  make from-c        - 从 bin/uya.c 构建（零依赖）"
 	@echo "  make from-c-native - 从本机 seed 构建；macOS 优先使用 backup/uya-hosted-macos-<arch>.c，其次是 backup/uya-hosted-macos.c"
-	@echo "  make uya           - 构建自举编译器（默认 --nostdlib，静态链接）"
-	@echo "  make uya-hosted    - 构建自举编译器（hosted 主线）"
+	@echo "  make uya           - 构建 full 兼容入口 bin/uya（默认 --nostdlib，含 release/UPM/exec 等能力）"
+	@echo "  make uya-core      - 构建精简 core 入口 bin/uya-core（check/build/run/test；不替代 make uya）"
+	@echo "  make check-core    - core 门禁：构建并验证 uya-core、package、@c_import 与 split-C"
+	@echo "  make uya-hosted    - 构建 full hosted 入口 bin/uya（hosted 主线）"
 	@echo "  make uya-portable  - 跨平台入口：Linux 用 uya，其它平台用 uya-hosted"
 	@echo "  make uya-std       - 构建自举编译器（标准库链接，用于调试）"
 	@echo "  make uya-safety    - 构建自举编译器（启用内存安全检查）"
@@ -1342,15 +1377,9 @@ help:
 	@echo "  make tests-emcc    - 运行独立 emcc/unknown target smoke（需本机安装 emcc 与 node）"
 	@echo "  make cmds          - 构建外置子命令（当前包含 cmd/upm）"
 	@echo "  make upm-check     - 运行 UPM/包管理专项回归套件"
-	@echo "  make examples-check - 运行 examples 可执行/服务/package/microapp 验证套件"
-	@echo "  make microapp-check - 运行当前 microapp 聚合回归套件"
-	@echo "  make microapp-hosted-smoke - 运行 hosted 平台可用的 microapp smoke 套件"
-	@echo "  make microapp-aarch64-runtime-check - 运行 arm64-host-gated 的 aarch64 microapp runtime 回归"
-	@echo "  make microapp-macos-runtime-check - 运行 macOS arm64-host-gated 的 microapp runtime 回归"
-	@echo "  make microapp-compat-check - 运行 .uapp v1/v2 兼容回归"
-	@echo "  make microapp-recovery-check - 运行 crash/recovery/update 回归"
+	@echo "  make examples-check - 运行 examples 可执行/服务/package 验证套件"
 	@echo "  make outlibc       - 输出标准库为 C 代码（使用自举编译器）"
-	@echo "  make check         - 验证（自举 + 测试），不备份"
+	@echo "  make check         - full 门禁：完整仓库验证（自举 + 主测试 + 专项 smoke），不备份"
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c、backup/uya.c 与 host/arch 专用备份"
@@ -1360,21 +1389,24 @@ help:
 	@echo "  make backup-all-seed - 全量单文件种子：Linux/host nostdlib + hosted + 可选的 macOS hosted seeds（可加 UYA_BACKUP_MACOS_AUX=0 提速）"
 	@echo "  make back-all-seed - backup-all-seed 的别名"
 	@echo "  make backup-all    - backup + backup-all-seed（提交前完整备份；本地提速可加 UYA_BACKUP_MACOS_AUX=0）"
-	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-all-seed 后 -O3 -DNDEBUG 重链 + strip"
+	@echo "  make release       - full 一键最终验证：要求工作树干净，再 clean+自举验证+backup-all-seed 后 -O3 -DNDEBUG 重链 + strip"
 	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
 	@echo "  make release-clean - 用 Git HEAD 干净快照执行 make release，贴近 CI（忽略未提交修改）"
 	@echo "  make install       - 安装 uya、lib/、前缀/docs/、前缀/tests/；BINDIR/LIBDIR/DOCDIR/TESTSDIR/DESTDIR"
+	@echo "  make install-core  - 仅安装 uya-core、lib/、前缀/docs/、前缀/tests/；不构建或安装 bin/cmd/*"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
 	@echo "  make help          - 显示此帮助信息"
 	@echo ""
 	@echo "示例:"
 	@echo "  make from-c-native                    # macOS 本机 seed 冷启动"
+	@echo "  make uya-core && make check-core      # 精简 core 编译器构建与门禁"
 	@echo "  make uya-hosted && make b-hosted      # hosted 自举验证"
 	@echo "  make tests-hosted                     # hosted 主测试集"
 	@echo "  make tests e                         # 运行所有测试，最小输出"
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
 	@echo '  make install PREFIX=$$HOME/.local   # ~/.local/bin/uya + ~/.local/lib/{std,libc,...}'
+	@echo '  make install-core PREFIX=$$HOME/.local # ~/.local/bin/uya-core + ~/.local/lib/{std,libc,...}'
 	@echo "  make install BINDIR=out              # out/bin/uya + out/lib/（BINDIR 作前缀，同 PREFIX 布局）"
 	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/"
 	@echo "  make install LIBDIR=/other/lib       # 显式标准库目录（通常需配合 export UYA_ROOT）"

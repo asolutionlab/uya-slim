@@ -1,0 +1,155 @@
+// compiler/options.uya - core compiler options
+
+/// Core compiler command selected by a CLI or embedding caller.
+///
+/// Parameters: none.
+/// Returns: enum value used by `src/compiler/pipeline.uya`.
+export enum UyaCoreCommand {
+    UYA_CORE_COMMAND_CHECK,
+    UYA_CORE_COMMAND_BUILD,
+    UYA_CORE_COMMAND_RUN,
+    UYA_CORE_COMMAND_TEST
+}
+
+/// Input paths and optional package/module overrides for core compilation.
+///
+/// Parameters: none.
+/// Returns: struct passed by pointer to core pipeline functions.
+export struct UyaCoreInputOptions {
+    paths: &(&byte),
+    path_count: i32,
+    module_root_override: &byte,
+    manifest_path_override: &byte
+}
+
+/// Output and C emission options for core compilation.
+///
+/// Parameters: none.
+/// Returns: struct passed by pointer to core pipeline functions.
+export struct UyaCoreOutputOptions {
+    output_path: &byte,
+    temp_c_path: &byte,
+    split_c_dir: &byte,
+    emit_line_directives: i32
+}
+
+/// Core compiler switches that affect checker and C99 code generation.
+///
+/// Parameters: none.
+/// Returns: struct passed by pointer to core pipeline functions.
+export struct UyaCoreCompileOptions {
+    enable_safety_proof: i32,
+    opt_level: i32,
+    is_nostdlib: i32,
+    stack_size_kb: i32,
+    async_frame_heap_fallback: i32
+}
+
+/// Runtime arguments used by `uya_core_run`.
+///
+/// Parameters: none.
+/// Returns: struct passed by pointer to core pipeline functions.
+export struct UyaCoreRunOptions {
+    args: &(&byte),
+    arg_count: i32
+}
+
+/// Full option bundle consumed by the core compiler pipeline.
+///
+/// Parameters: none.
+/// Returns: struct passed by pointer to core pipeline functions.
+export struct UyaCoreOptions {
+    command: UyaCoreCommand,
+    input: UyaCoreInputOptions,
+    output: UyaCoreOutputOptions,
+    compile: UyaCoreCompileOptions,
+    run: UyaCoreRunOptions
+}
+
+/// Result values produced by core compiler pipeline functions.
+///
+/// Parameters: none.
+/// Returns: struct filled by core pipeline functions.
+export struct UyaCoreResult {
+    generated_c_path: &byte,
+    linked_executable_path: &byte,
+    run_exit_code: i32
+}
+
+/// Creates default input options for core compilation.
+///
+/// Parameters: none.
+/// Returns: zero-initialized input options with no paths or overrides.
+export fn uya_core_input_options_default() UyaCoreInputOptions {
+    return UyaCoreInputOptions {
+        paths: null,
+        path_count: 0,
+        module_root_override: null,
+        manifest_path_override: null
+    };
+}
+
+/// Creates default output options for core compilation.
+///
+/// Parameters: none.
+/// Returns: output options with no explicit output and line directives disabled.
+export fn uya_core_output_options_default() UyaCoreOutputOptions {
+    return UyaCoreOutputOptions {
+        output_path: null,
+        temp_c_path: null,
+        split_c_dir: null,
+        emit_line_directives: 0
+    };
+}
+
+/// Creates default checker and C99 code generation switches.
+///
+/// Parameters: none.
+/// Returns: compile options matching the current full compiler defaults.
+export fn uya_core_compile_options_default() UyaCoreCompileOptions {
+    return UyaCoreCompileOptions {
+        enable_safety_proof: 1,
+        opt_level: 1,
+        is_nostdlib: 0,
+        stack_size_kb: 0,
+        async_frame_heap_fallback: 0
+    };
+}
+
+/// Creates default runtime argument options for core run mode.
+///
+/// Parameters: none.
+/// Returns: run options with no runtime arguments.
+export fn uya_core_run_options_default() UyaCoreRunOptions {
+    return UyaCoreRunOptions {
+        args: null,
+        arg_count: 0
+    };
+}
+
+/// Creates a default core compiler option bundle.
+///
+/// Parameters: none.
+/// Returns: build-mode options with current full compiler defaults.
+export fn uya_core_options_default() UyaCoreOptions {
+    return UyaCoreOptions {
+        command: UyaCoreCommand.UYA_CORE_COMMAND_BUILD,
+        input: uya_core_input_options_default(),
+        output: uya_core_output_options_default(),
+        compile: uya_core_compile_options_default(),
+        run: uya_core_run_options_default()
+    };
+}
+
+/// Clears result values before a pipeline operation writes fresh outputs.
+///
+/// Parameters: `result` is the result object to reset; null is ignored.
+/// Returns: nothing.
+export fn uya_core_result_reset(result: &UyaCoreResult) void {
+    if result == null {
+        return;
+    }
+    result.generated_c_path = null;
+    result.linked_executable_path = null;
+    result.run_exit_code = 0;
+}

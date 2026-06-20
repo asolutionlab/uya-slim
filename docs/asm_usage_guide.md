@@ -507,7 +507,7 @@ var ptr: &byte = &buffer[0];
 
 ### 9.5 LTO / `--gc-sections` 下符号被优化掉
 
-在开启 **`-flto -Wl,--gc-sections -ffunction-sections -fdata-sections`** 的编译链路（如 microapp 默认优化）中，如果 `@asm` 通过**硬编码字符串**引用内部 `static` 函数或全局变量，链接器可能因无法识别汇编字符串中的依赖而将其丢弃，导致 `undefined reference`。
+在开启 **`-flto -Wl,--gc-sections -ffunction-sections -fdata-sections`** 的编译链路中，如果 `@asm` 通过**硬编码字符串**引用内部 `static` 函数或全局变量，链接器可能因无法识别汇编字符串中的依赖而将其丢弃，导致 `undefined reference`。
 
 ```uya
 // ⚠️ 危险：LTO 下 helper 可能被 --gc-sections 回收

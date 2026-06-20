@@ -724,7 +724,7 @@ fn enqueue(queue: &LockFreeQueue, node: &Node) void {
 
 ## 8. LTO / GC-sections 陷阱
 
-当项目开启 **`-flto -Wl,--gc-sections -ffunction-sections -fdata-sections`**（如 microapp 默认优化链路）时，需特别注意 `@asm` 中通过**硬编码字符串**引用的符号。
+当项目开启 **`-flto -Wl,--gc-sections -ffunction-sections -fdata-sections`** 等 aggressive 链接优化时，需特别注意 `@asm` 中通过**硬编码字符串**引用的符号。
 
 ### 问题描述
 
@@ -745,7 +745,7 @@ undefined reference to `some_global'
 } clobbers = ["rax", "rdi", "rsi", ... , "memory"];
 ```
 
-在 LTO + `--gc-sections` 下，这些内部辅助符号会被回收，导致 microapp 链接失败。
+在 LTO + `--gc-sections` 下，这些内部辅助符号会被回收，导致链接失败。
 
 ### 解决方案
 
@@ -763,7 +763,7 @@ __attribute__((used)) static int global_state = 0;
 
 1. **优先通过输入/输出约束传递符号地址**：如果编译器支持，把函数指针或变量地址作为 `@asm` 的显式输入，而不是在汇编字符串里写死符号名。这样编译器会在输入约束中建立真实的数据依赖。
 2. **若必须硬编码符号名**：确保对应的后端会为这些符号生成 `__attribute__((used))` 或等价的保留指令。
-3. **microapp 开发者无需额外操作**：当前 Uya C99 后端已自动处理，但如果你在宿主 C 代码中手写 `__asm__` 并混合 `--gc-sections`，需自行留意此问题。
+3. **Uya 用户通常无需额外操作**：当前 Uya C99 后端已自动处理，但如果你在宿主 C 代码中手写 `__asm__` 并混合 `--gc-sections`，需自行留意此问题。
 
 ---
 

@@ -371,7 +371,7 @@ fn test_table_driven() !void {
 
 ```bash
 # 编译 Uya 测试文件（兼容 bridge.c）
-bin/uya-c --c99 tests/programs/test_xxx.uya -o /tmp/test_xxx.c
+./bin/uya build tests/programs/test_xxx.uya --c99 -o /tmp/test_xxx.c
 
 # 编译 C 代码
 gcc -std=c99 -no-pie /tmp/test_xxx.c tests/bridge_minimal.c -o /tmp/test_xxx -lm
@@ -414,7 +414,7 @@ echo $?
 
 ```bash
 # 编译测试文件（兼容 bridge.c）
-bin/uya-c --c99 test.uya -o test.c
+./bin/uya build test.uya --c99 -o test.c
 gcc -std=c99 -no-pie test.c tests/bridge_minimal.c -o test -lm
 ```
 
@@ -475,7 +475,7 @@ fn test_boundary() !void {
 ```uya
 // tests/programs/test_example.uya
 // 描述：示例测试文件
-// 编译：bin/uya-c --c99 test_example.uya -o test_example.c
+// 编译：./bin/uya build test_example.uya --c99 -o test_example.c
 
 use libc.malloc;
 use libc.free;

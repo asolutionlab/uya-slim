@@ -425,7 +425,7 @@ main() {
     # 检查编译器
     if [ ! -f "$PROJECT_ROOT/bin/uya" ]; then
         echo -e "${RED}错误: 未找到编译器 $PROJECT_ROOT/bin/uya${NC}"
-        echo -e "${YELLOW}请先编译编译器: cd compiler-c && make build${NC}"
+        echo -e "${YELLOW}请先编译编译器: make from-c 或 make uya-hosted${NC}"
         exit 1
     fi
     

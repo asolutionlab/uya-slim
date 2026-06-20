@@ -1,5 +1,7 @@
 # extern 变量/常量编译器实现计划
 
+> 历史路径说明：本文档中出现的 `compiler-c/`、`compiler-mini/`、`bin/uya-c`、`make tests-c` 等旧路径仅用于版本记录，不代表当前开发入口；当前入口以 `Makefile`、`docs/DEVELOPMENT.md` 和 `AGENTS.md` 为准。
+
 ## 概述
 
 在 C 编译器（`compiler-c/`）和自举编译器（`src/`）中同时实现 `extern` 变量/常量支持。

@@ -5763,10 +5763,6 @@ export fn exec_lower_module(arena: &CompilerArena, checker: &TypeChecker, progra
         exec_backend_set_error(program, "exec: lowering 输入无效" as *byte, 0);
         return null;
     }
-    if g_app_mode_microapp != 0 {
-        exec_lower_set_unsupported_reason(program, "exec: 当前不支持 microapp exec backend" as *byte, ExecUnsupportedReason.EXEC_UNSUPPORTED_MICROAPP);
-        return null;
-    }
     if program.type == ASTNodeType.AST_PROGRAM {
         var decl_idx: i32 = 0;
         while decl_idx < program.program_decl_count {

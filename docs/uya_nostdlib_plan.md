@@ -1,5 +1,7 @@
 # uya-nostdlib 构建计划
 
+> 历史路径说明：本文档中出现的 `compiler-c/`、`compiler-mini/`、`bin/uya-c`、`make tests-c` 等旧路径仅用于版本记录，不代表当前开发入口；当前入口以 `Makefile`、`docs/DEVELOPMENT.md` 和 `AGENTS.md` 为准。
+
 ## 目标
 
 构建一个不依赖系统 libc 的自托管 Uya 编译器，所有 C 标准库函数由 Uya 自身实现。

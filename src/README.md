@@ -13,7 +13,6 @@
 - `extern_decls.uya` - 外部符号声明
 - `fmt.uya` - 格式化与文本输出辅助
 - `lexer.uya` - 词法分析器
-- `microapp/` - microapp 镜像打包、检查与目标平台处理
 - `std_cfg.uya` - 平台 / 构建配置
 - `str_utils.uya` - 字符串工具
 - `parser/` - 语法分析阶段
@@ -81,7 +80,6 @@ cd src
 main.uya
   ├─> arena.uya / ast.uya / fmt.uya / lexer.uya / std_cfg.uya / str_utils.uya
   ├─> driver/*
-  ├─> microapp/*
   ├─> parser/*
   ├─> checker/*
   ├─> lower/*
