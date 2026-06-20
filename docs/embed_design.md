@@ -237,7 +237,7 @@ embed_dir_entry_count: i32,          // 条目数量
 
 - 参数规则是固定的，不需要通用调用语义
 - 后续需要携带“已解析路径/文件大小/文件字节”
-- `fmt`、checker、codegen 可以更直接处理
+- checker、codegen 可以更直接处理
 
 ### 4.3 Parser
 
@@ -260,24 +260,9 @@ embed_dir_entry_count: i32,          // 条目数量
 - AST 更干净
 - 后续无需在 `AST_EMBED` / `AST_EMBED_DIR` 上再挂一个通用 operand
 
-### 4.4 Formatter
+### 4.4 Formatter（已移除）
 
-文件：
-
-- `src/fmt.uya`
-
-改动：
-
-- `format_expr` / `format_expr_prec` 增加 `AST_EMBED`
-- `format_expr` / `format_expr_prec` 增加 `AST_EMBED_DIR`
-- 固定输出成：
-
-```uya
-@embed("...")
-@embed_dir("...")
-```
-
-这样 `uya fmt` 能稳定往返，不会把新语法打散。
+formatter 功能已移除，因此该语法不再设置 `uya fmt` 往返门禁。
 
 ### 4.5 Checker
 
@@ -610,7 +595,7 @@ const struct uya_slice_EmbedDirEntry g_assets = {
 
 推荐顺序：
 
-1. `lexer + ast + parser + fmt`
+1. `lexer + ast + parser`
 2. `checker` 路径解析与文件读取
 3. 注册内建结构体 `EmbedDirEntry`
 4. `codegen` 二进制常量池与目录表池

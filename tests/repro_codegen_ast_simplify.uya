@@ -1,9 +1,64 @@
 use std.runtime.entry;
-use std.fmt.ast.FmtFile;
-use std.fmt.ast.Expr;
-use std.fmt.ast.ExprKind;
-use std.fmt.ast.Stmt;
-use std.fmt.ast.StmtKind;
+
+enum ExprKind {
+    EXPR_IDENT,
+    EXPR_UNARY,
+    EXPR_BINARY,
+    EXPR_CALL
+}
+
+enum StmtKind {
+    STMT_RETURN
+}
+
+struct ExprUnary {
+    value: &Expr
+}
+
+struct ExprBinary {
+    left: &Expr,
+    right: &Expr
+}
+
+struct ExprCall {
+    callee: &Expr,
+    args: &Expr,
+    arg_count: usize
+}
+
+struct Expr {
+    kind: ExprKind,
+    unary: ExprUnary,
+    binary: ExprBinary,
+    call: ExprCall
+}
+
+struct ReturnStmt {
+    value: &Expr
+}
+
+struct Stmt {
+    kind: StmtKind,
+    return_stmt: ReturnStmt
+}
+
+struct BlockStmt {
+    stmts: &Stmt,
+    stmt_count: usize
+}
+
+struct FnDecl {
+    body: BlockStmt
+}
+
+struct Decl {
+    fn_decl: FnDecl
+}
+
+struct FmtFile {
+    decls: &Decl,
+    decl_count: usize
+}
 
 fn simplify_expr_ast(expr: &Expr) &Expr {
     if expr.kind == ExprKind.EXPR_UNARY {

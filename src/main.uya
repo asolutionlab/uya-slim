@@ -26,7 +26,6 @@ use cmd.upm.upm_lib.upm_build_plan_cleanup;
 use cmd.upm.upm_lib.upm_build_plan_init;
 use cmd.upm.upm_lib.upm_prepare_build_plan;
 use cmd.upm.upm_lib.upm_prepare_package_graph_plan;
-use fmt;
 
 // ===== 计时函数 =====
 // 暂时禁用精确计时，使用简单计数器
@@ -94,8 +93,7 @@ enum CommandType {
     COMMAND_RUN,     // uya run - 编译并运行
     COMMAND_TEST,    // uya test - 编译测试并运行
     COMMAND_VERSION, // uya --version - 显示版本信息
-    COMMAND_OUTLIBC,  // uya --outlibc - 生成独立 libc
-    COMMAND_FMT       // uya fmt - 格式化代码
+    COMMAND_OUTLIBC  // uya --outlibc - 生成独立 libc
 }
 
 // 文件读取缓冲区大小（与 Lexer 一致）
@@ -921,7 +919,6 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s check <文件> [选项]              仅做词法/语法/类型检查，不执行代码生成\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行（子进程栈：--stack-size 或默认 65536 KB）\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s fmt <文件> [选项]                格式化 Uya 源文件\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s upm <子命令> [参数]              Uya 包管理工作流\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n示例:\n" as *byte);
@@ -929,7 +926,6 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s check lib/foo.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run main.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s fmt src/main.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s upm init --src-layout demo_pkg\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n选项:\n" as *byte);
@@ -1550,8 +1546,8 @@ fn parse_args(
             command[0] = CommandType.COMMAND_VERSION;
             start_idx = 2;
         } else if strcmp(first_arg, "fmt" as *byte) == 0 {
-            command[0] = CommandType.COMMAND_FMT;
-            start_idx = 2;
+            fprintf(libc.stderr, "错误: fmt 格式化功能已删除\n" as *byte);
+            return -1;
         }
         // 如果不是子命令，保持默认 COMMAND_BUILD，start_idx = 1
     }
@@ -2724,12 +2720,6 @@ export fn main() i32 {
         }
         const result: i32 = generate_libc(outlibc_path as &byte);
         return result;
-    }
-
-    // fmt 命令：格式化代码文件
-    if command == CommandType.COMMAND_FMT {
-        const fmt_result: i32 = fmt_main();
-        return fmt_result;
     }
 
     // build 命令：如果没有指定 -o，使用默认输出 a.out

@@ -1,6 +1,33 @@
 use std.runtime.entry;
-use std.fmt.ast.Expr;
-use std.fmt.ast.ExprKind;
+
+enum ExprKind {
+    EXPR_IDENT,
+    EXPR_UNARY,
+    EXPR_BINARY,
+    EXPR_CALL
+}
+
+struct ExprUnary {
+    value: &Expr
+}
+
+struct ExprBinary {
+    left: &Expr,
+    right: &Expr
+}
+
+struct ExprCall {
+    callee: &Expr,
+    args: &Expr,
+    arg_count: usize
+}
+
+struct Expr {
+    kind: ExprKind,
+    unary: ExprUnary,
+    binary: ExprBinary,
+    call: ExprCall
+}
 
 fn walk(expr: &Expr) &Expr {
     if expr.kind == ExprKind.EXPR_CALL {

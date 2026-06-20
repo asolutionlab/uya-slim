@@ -31,12 +31,9 @@
 - [x] 将参数收紧为“恰好一个字符串字面量”
 - [x] 为参数个数错误、缺右括号、非字符串参数提供清晰错误信息
 
-### 1.4 Formatter
+### 1.4 Formatter（已废弃）
 
-- [x] 在 [src/fmt.uya](../src/fmt.uya) 增加 `AST_EMBED` 的格式化输出
-- [x] 在 [src/fmt.uya](../src/fmt.uya) 增加 `AST_EMBED_DIR` 的格式化输出
-- [x] 确保 `uya fmt` 对 `@embed("...")` 往返稳定
-- [x] 确保 `uya fmt` 对 `@embed_dir("...")` 往返稳定
+- [x] formatter 功能已移除，`@embed` / `@embed_dir` 不再要求 `uya fmt` round-trip 验证
 
 ---
 

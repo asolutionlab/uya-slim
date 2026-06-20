@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c from-c-native uya uya-core uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable examples-check outlibc c e clean check check-core check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-bootstrap release-flow release-build release-dirty release-preflight release-clean install install-core help cmds cmd-upm uya-upm-stage2 upm-check fmt check-fmt
+.PHONY: all from-c from-c-native uya uya-core uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable examples-check outlibc c e clean check check-core check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-bootstrap release-flow release-build release-dirty release-preflight release-clean install install-core help cmds cmd-upm uya-upm-stage2 upm-check
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -516,30 +516,6 @@ tests-emcc:
 	@./tests/verify_emcc_unknown_runtime.sh
 	@echo ""
 	@echo "✓ emcc smoke 通过"
-
-fmt:
-	@echo "=========================================="
-	@echo "运行 uya fmt（当前最小集成）"
-	@echo "=========================================="
-	@bash ./tests/verify_fmt_cli.sh
-	@echo ""
-	@echo "✓ uya fmt CLI 验证通过"
-
-check-fmt:
-	@echo "=========================================="
-	@echo "检查 uya fmt 状态（仓库检查）"
-	@echo "=========================================="
-	@mkdir -p ./tests/build/fmt_cli ./bin
-	@./bin/uya --c99 ./tools/fmt.uya -o ./tests/build/fmt_cli/uyafmt.c >/tmp/check_fmt_build.out 2>/tmp/check_fmt_build.err
-	@cc -O0 -g ./tests/build/fmt_cli/uyafmt.c -o ./bin/uyafmt
-	@OUT="$$(./bin/uyafmt -l ./src ./lib ./tests ./tools 2>/dev/null || true)"; \
-	if [ -n "$$OUT" ]; then \
-		echo "以下文件未格式化:"; \
-		printf '%s\n' "$$OUT"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "✓ uya fmt 检查通过"
 
 examples-check:
 	@echo "=========================================="

@@ -167,7 +167,7 @@
 
 ### 测试结果
 
-✅ **`make check` 已通过**（v0.10.0；2026-06-04；含 microapp / `@embed` / `@c_import` / exec vm / fmt / if expression 等回归）：
+✅ **`make check` 已通过**（v0.10.0；2026-06-04；含 microapp / `@embed` / `@c_import` / exec vm / if expression 等回归；当时包含的 fmt 回归已随 formatter 删除移除）：
 - ✅ 9 个 @asm 正向测试
 - ✅ 17 个 @asm 反向测试
 - ✅ 编译期优化测试

@@ -330,7 +330,7 @@ fn increment(counter: *Counter) void {
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：在 **v0.9.9** 的 WebSocket / HTTP/2 / exec VM 稳定性基础上，当前 **v0.10.0** 完成 `fmt` CLI/API 收口，新增 if expression 的解析、检查与 C99 codegen 路径，并继续修复 C99 后端在 monomorphized method、typed route、async frame descriptor、split-C 构建与私有符号命名上的回归。
+- **最新特性**：在 **v0.9.9** 的 WebSocket / HTTP/2 / exec VM 稳定性基础上，当前 **v0.10.0** 新增 if expression 的解析、检查与 C99 codegen 路径，并继续修复 C99 后端在 monomorphized method、typed route、async frame descriptor、split-C 构建与私有符号命名上的回归。
 
 ## 文档
 

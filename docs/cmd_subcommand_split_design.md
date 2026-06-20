@@ -2,9 +2,9 @@
 
 **状态**: design draft, implementation pending
 **更新日期**: 2026-05-03
-**范围**: `src/main.uya` 物理拆分，`build`/`check`/`run`/`test`/`fmt`/`upm` 真实独立
+**范围**: `src/main.uya` 物理拆分，`build`/`check`/`run`/`test`/`upm` 真实独立
 
-> **当前问题**: 当前仓库中 `src/main.uya` 仍约 8400 行，`parse_args()` 和 `main()` 仍直接处理 `build`/`check`/`run`/`test`/`fmt` 等业务参数；`src/cmd/` 入口、`make cmds`、`dispatch_external_cmd` 和 `bin/cmd/*` 尚未落地。本设计目标是先把业务逻辑物理拆出 `src/main.uya`，再引入真实独立子命令，而不是增加一层回调 `src/main.uya` 的代理壳。
+> **当前问题**: 当前仓库中 `src/main.uya` 仍约 8400 行，`parse_args()` 和 `main()` 仍直接处理 `build`/`check`/`run`/`test` 等业务参数；`src/cmd/` 入口、`make cmds`、`dispatch_external_cmd` 和 `bin/cmd/*` 尚未落地。本设计目标是先把业务逻辑物理拆出 `src/main.uya`，再引入真实独立子命令，而不是增加一层回调 `src/main.uya` 的代理壳。
 
 ---
 
@@ -14,7 +14,7 @@
 
 - 编译器核心（参数解析、依赖收集、AST 合并、C99/LLVM 生成、工具链链接）
 - Microapp 全链路（ELF64/Mach-O 解析、重定位、构建、打包/检查/验证 image）
-- 命令分发和命令业务（`build`/`check`/`run`/`test`/`fmt` 的参数解析与执行）
+- 命令分发和命令业务（`build`/`check`/`run`/`test` 的参数解析与执行）
 - 辅助命令（`pack-image`/`inspect-image`/`verify-image`/`--outlibc`）
 - 隐式编译入口（`uya file.uya -o out`，自举兼容）
 
@@ -32,8 +32,8 @@
 当前尚未完成的基础设施：
 
 - `src/main.uya` 尚未实现 `dispatch_external_cmd`，公开子命令还没有通过 `execve` 转发到 `bin/cmd/xxx`。
-- `Makefile` 尚未提供 `cmds`/`cmd-build`/`cmd-run`/`cmd-test`/`cmd-fmt`/`cmd-upm` 目标。
-- `src/cmd/build`/`check`/`run`/`test`/`fmt`/`upm` 入口源码尚未创建。
+- `Makefile` 尚未提供 `cmds`/`cmd-build`/`cmd-run`/`cmd-test`/`cmd-upm` 目标。
+- `src/cmd/build`/`check`/`run`/`test`/`upm` 入口源码尚未创建。
 - `tests/test_cmd_dispatch.sh` 尚未落地。
 
 这导致 `src/main.uya` 的源码行数、编译产物体积和职责边界都没有实质改善。
@@ -56,7 +56,6 @@
 - `src/cmd/build/main.uya` 是真实的编译器入口，不是 `execve` wrapper。
 - `src/cmd/check/main.uya` 是真实的前端检查入口，停在 checker。
 - `src/cmd/run/main.uya` / `test/main.uya` 调用 compiler driver，并由 driver 完成编译、链接、执行和退出码映射。
-- `src/cmd/fmt/main.uya` 直接调用 `src/fmt.uya` 中的 `uyafmt_main()`，不绕回 `bin/uya`。
 - `bin/cmd/xxx` 的体积和职责与 `bin/uya` 解耦；`bin/uya` 最终可缩小为纯调度器。
 
 ### 2.3 自举安全
@@ -74,13 +73,11 @@ src/
   main.uya                  # launcher/dispatcher + 隐式入口 thin wrapper (~1500 行)
   compiler_driver.uya       # parse_args, compile_files, 链接, C import 处理 (~2600 行)
   microapp.uya              # ELF/Mach-O, pack/inspect/verify (~3250 行)
-  fmt.uya                   # 格式化（已有独立入口 uyafmt_main）
   cmd/
     build/main.uya          # 真实编译器入口：use compiler_driver; compiler_driver_main(COMMAND_BUILD, ...)
     check/main.uya          # 前端检查入口：use compiler_driver; compiler_driver_main(COMMAND_CHECK, ...)
     run/main.uya            # 真实运行入口：use compiler_driver; compiler_driver_main(COMMAND_RUN, ...)
     test/main.uya           # 真实测试入口：use compiler_driver; compiler_driver_main(COMMAND_TEST, ...)
-    fmt/main.uya            # 真实格式化入口：use fmt; uyafmt_main()
     upm/main.uya            # 包管理骨架
 
 bin/
@@ -90,14 +87,13 @@ bin/
     check                   # 前端检查器
     run                     # 编译+运行前端
     test                    # 编译+测试前端
-    fmt                     # 格式化前端
     upm                     # 包管理前端
 ```
 
 ### 3.1 `src/main.uya` 职责（目标态）
 
 1. `argc < 2`：打印主帮助。
-2. `argv[1]` 是 `build/check/run/test/fmt/upm`：调用 `dispatch_external_cmd(...)`，不解析业务选项。
+2. `argv[1]` 是 `build/check/run/test/upm`：调用 `dispatch_external_cmd(...)`，不解析业务选项。
 3. `argv[1]` 是 `--version`/`-v`：直接处理。
 4. `argv[1]` 是 `pack-image`/`inspect-image`/`verify-image`：可继续由 `src/main.uya` 直接处理（因为 microapp 逻辑仍通过 `use microapp` 可用），或后续再外置。
 5. **过渡期保留**：隐式编译入口 `uya <file.uya> ...` 调用 `compiler_driver` 模块中的函数，用于自举和 `src/compile.sh` 兼容。
@@ -140,7 +136,6 @@ use checker;
 use codegen.c99;
 use std;
 use libc;
-use fmt;
 ```
 
 ### 3.3 `src/microapp.uya` 职责
@@ -259,11 +254,10 @@ bin/cmd/build build main.uya -o app   # 兼容但不推荐
 2. 新建 `src/cmd/check/main.uya`：调用 `compiler_driver_main(COMMAND_CHECK, 1)`，由 driver 完成 lexer / parser / checker 流程并返回退出码。
 3. 新建 `src/cmd/run/main.uya`：调用 `compiler_driver_main(COMMAND_RUN, 1)`，由 driver 完成编译、链接和执行。
 4. 新建 `src/cmd/test/main.uya`：调用 `compiler_driver_main(COMMAND_TEST, 1)`，由 driver 完成测试执行和摘要输出。
-5. 新建 `src/cmd/fmt/main.uya`：直接调用 `uyafmt_main()`，不绕回 `bin/uya`。
-6. 新建 `src/cmd/upm/main.uya`：提供最小 `--help`/`--version` 骨架。
-7. Makefile 中新增 `cmds` 和 `bin/cmd/%` 规则，过渡期用 `bin/uya` 隐式入口构建。
-8. `src/main.uya` 新增 `dispatch_external_cmd`，公开子命令转发到 `bin/cmd/xxx`。
-9. 运行 `make cmds`、`./tests/test_cmd_dispatch.sh`、`make check` 验证。
+5. 新建 `src/cmd/upm/main.uya`：提供最小 `--help`/`--version` 骨架。
+6. Makefile 中新增 `cmds` 和 `bin/cmd/%` 规则，过渡期用 `bin/uya` 隐式入口构建。
+7. `src/main.uya` 新增 `dispatch_external_cmd`，公开子命令转发到 `bin/cmd/xxx`。
+8. 运行 `make cmds`、`./tests/test_cmd_dispatch.sh`、`make check` 验证。
 
 **预期效果**：`bin/cmd/build` 成为真实编译器；`src/main.uya` 仍为 ~2500 行（含隐式入口）。
 
@@ -287,10 +281,10 @@ bin/cmd/build build main.uya -o app   # 兼容但不推荐
 过渡期规则：
 
 ```make
-UYA_CMD_NAMES := build run test fmt upm
+UYA_CMD_NAMES := build run test upm
 UYA_CMD_BINS := $(patsubst %,bin/cmd/%,$(UYA_CMD_NAMES))
 
-.PHONY: cmds cmd-build cmd-run cmd-test cmd-fmt cmd-upm
+.PHONY: cmds cmd-build cmd-run cmd-test cmd-upm
 cmds: $(UYA_CMD_BINS)
 
 UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/uya
@@ -356,7 +350,6 @@ make cmds
 ./tests/test_cmd_dispatch.sh
 bin/cmd/build tests/test_errno.uya -o /tmp/uya_cmd_build --no-split-c
 bin/cmd/test tests/test_errno.uya
-bin/cmd/fmt tests/test_errno.uya
 ```
 
 至少验证：
@@ -364,7 +357,6 @@ bin/cmd/fmt tests/test_errno.uya
 - `bin/uya build ...` 与 `bin/cmd/build ...` 语义和退出码一致。
 - `bin/uya run ... -- ...` 的运行时参数通过 argv 原样保留。
 - `bin/uya test ...` 与 `bin/cmd/test ...` 测试摘要和退出码一致。
-- `bin/uya fmt ...` 与 `bin/cmd/fmt ...` 输出一致。
 - 临时隐藏 `bin/cmd/build` 时，`bin/uya build ...` 返回非 0，并提示 `cmd/build` 与 `make cmds`。
 
 ### 8.3 Phase D 自举测试
@@ -382,7 +374,7 @@ make backup-all
 
 - `make clean && make from-c` 后能得到可运行的 `bin/uya` 和 `bin/cmd/build`。
 - `bin/uya tests/test_errno.uya -o /tmp/implicit` 在 Phase D 后应失败并提示使用 `uya build`，避免隐式入口残留。
-- `make install` 安装 `bin/uya` 与 `bin/cmd/*`，安装后的 `uya build/check/run/test/fmt/upm` 可用。
+- `make install` 安装 `bin/uya` 与 `bin/cmd/*`，安装后的 `uya build/check/run/test/upm` 可用。
 
 ---
 
@@ -390,7 +382,7 @@ make backup-all
 
 - [ ] Phase A 完成：`src/compiler_driver.uya` 已创建，`parse_args`/`compile_files`/链接/C import 已移入，`src/main.uya` 调用其导出函数，回归测试通过。
 - [ ] Phase B 完成：`src/microapp.uya` 已创建，全部 microapp 函数已移入，`src/main.uya` 调用其导出函数，`make microapp-check` 通过。
-- [ ] Phase C 完成：`src/cmd/build/check/run/test/fmt/upm/main.uya` 为真实独立入口，`make cmds` 生成真实二进制，`dispatch_external_cmd` 测试通过。
+- [ ] Phase C 完成：`src/cmd/build/check/run/test/upm/main.uya` 为真实独立入口，`make cmds` 生成真实二进制，`dispatch_external_cmd` 测试通过。
 - [ ] Phase D 准备完成：`cmd/build` seed 已纳入 `make from-c` / `make from-c-native` / `make backup-all`，清理后冷启动可生成 `bin/cmd/build`。
 - [ ] Phase D 完成：`src/main.uya` 隐式编译入口已移除，变为纯调度器，自举种子已更新，`make backup-all` 通过。
 

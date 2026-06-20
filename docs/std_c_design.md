@@ -36,8 +36,6 @@ lib/
 │   │   └── string_buf.uya        # struct StringBuf
 │   ├── syscall/                  # 系统调用封装
 │   │   └── linux.uya             # Linux syscall 封装
-│   ├── fmt/                      # 格式化
-│   │   └── fmt.uya               # format<T: Display>
 │   └── runtime/                  # 运行时支持
 │       └── runtime.uya           # 程序入口、panic 处理
 │

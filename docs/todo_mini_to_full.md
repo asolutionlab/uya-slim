@@ -1288,8 +1288,6 @@ lib/
 │   │   └── map.uya               # struct HashMap<K: Hash, V> { ... }
 │   ├── syscall/                  # 系统调用封装
 │   │   └── linux.uya             # Linux syscall 封装
-│   ├── fmt/                      # 格式化（纯 Uya）
-│   │   └── fmt.uya               # fn format<T: Display>(v: T) !String
 │   └── runtime/                  # 运行时支持
 │       └── runtime.uya           # 程序入口、panic 处理
 │
@@ -1955,7 +1953,6 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 
 **长期计划**：
 
-- [ ] `std.fmt` - 格式化库（纯 Uya，使用 Display 接口）
 - [ ] `std.collections.map` - HashMap<K, V> 泛型容器
 - [ ] `std.bare_metal` - 裸机平台支持
 - [ ] `std.builtin` - 编译器内置运行时
@@ -2608,7 +2605,7 @@ interface IReadWriter {
    - 纯 Uya 实现的 C 标准库（零外部依赖）
    - `@syscall` 内置函数
    - std.c.{string, stdio, stdlib, syscall}
-   - std.io / std.fmt 抽象层
+   - std.io 抽象层
    - `--outlibc` 生成单文件 libc
 
 2. **@print/@println 内置函数**
@@ -2643,7 +2640,6 @@ interface IReadWriter {
 - **阶段 2**：`std.c.string` 模块（memcpy/memset/strlen/strcmp）
 - **阶段 3**：`std.c.stdio` 模块（putchar/puts，基于 syscall）
 - **阶段 4**：`std.io` 抽象层（Writer/Reader 接口）
-- **阶段 5**：`std.fmt` 格式化库（纯 Uya 实现）
 
 **验证标准**：
 - 编译器使用 `-nostdlib` 构建成功

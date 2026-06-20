@@ -44,11 +44,9 @@
 - [ ] 验证首参数既可写单文件 `.c`，也可写目录路径
 - [ ] 验证 `std.cfg(...)` 顶层分支里可正常返回 `@c_import`
 
-### 1.4 Formatter
+### 1.4 Formatter（已废弃）
 
-- [ ] 在 [src/fmt.uya](../src/fmt.uya) 增加 `AST_C_IMPORT_DECL` 的格式化输出
-- [ ] 保证 `uya fmt` 对 `@c_import("a.c");` 的 round-trip 稳定
-- [ ] 保证 1 参数 / 2 参数 / 3 参数三种形态都稳定
+- [x] formatter 功能已移除，`@c_import` 不再要求 `uya fmt` round-trip 验证
 
 ---
 

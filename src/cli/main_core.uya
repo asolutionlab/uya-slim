@@ -87,8 +87,7 @@ fn core_is_non_core_command(arg: &byte) i32 {
     if arg == null {
         return 0;
     }
-    if strcmp(arg as *byte, "fmt" as *byte) == 0 ||
-        strcmp(arg as *byte, "upm" as *byte) == 0 ||
+    if strcmp(arg as *byte, "upm" as *byte) == 0 ||
         strcmp(arg as *byte, "pack-image" as *byte) == 0 ||
         strcmp(arg as *byte, "inspect-image" as *byte) == 0 ||
         strcmp(arg as *byte, "verify-image" as *byte) == 0 {
@@ -119,6 +118,10 @@ fn core_parse_args(options: &UyaCoreOptions, input_paths: &(&byte), run_args: &(
     if strcmp(first_arg as *byte, "-v" as *byte) == 0 || strcmp(first_arg as *byte, "--version" as *byte) == 0 {
         fprintf(libc.stdout, "uya-core v0.10.0\n" as *byte);
         return 2;
+    }
+    if strcmp(first_arg as *byte, "fmt" as *byte) == 0 {
+        fprintf(libc.stderr, "错误: fmt 格式化功能已删除\n" as *byte);
+        return 1;
     }
     if core_is_non_core_command(first_arg) != 0 {
         fprintf(libc.stderr, "错误: uya-core 不包含非 core 子命令 '%s'\n" as *byte, first_arg as *byte);

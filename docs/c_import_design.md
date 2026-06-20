@@ -404,20 +404,9 @@ c_import_expanded_count: i32,
 - 在 block / fn / method block 中不提供此语法入口
 - `std.cfg(...)` 分支里如果返回的是顶层声明，允许其中出现 `@c_import`
 
-### 6.4 Formatter
+### 6.4 Formatter（已移除）
 
-文件：
-
-- `src/fmt.uya`
-
-格式化输出固定为：
-
-```uya
-@c_import("path");
-@c_import("path", "-Ifoo", "-lbar");
-```
-
-不做跨行花活，优先保证 round-trip 稳定。
+formatter 功能已删除，`@c_import` 不再设置 formatter round-trip 门禁。
 
 ### 6.5 Checker
 

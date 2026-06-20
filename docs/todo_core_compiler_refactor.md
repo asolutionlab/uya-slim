@@ -35,8 +35,8 @@
   - 验证：`make help`
   - 结果：当前 Makefile 已有 `from-c`、`uya`、`uya-hosted`、`b`、`tests`、`tests-uya`、`cmds`、`upm-check`、`microapp-check`、`check`、`check-hosted`、`backup-all`、`release`、`install` 等目标；尚无 `uya-core` / `check-core`。
 - [x] 盘点 `src/main.uya` 当前导入的非 core 模块。
-  - 重点：`cmd.upm.upm_lib`、`exec`、`microapp`、`kernel.image`、`kernel.payload`、`fmt`
-  - 结果：`src/main.uya` 顶层直接导入 `microapp`、`exec`、`kernel.image`、`kernel.payload`、`cmd.upm.upm_lib` 及多个 UPM 类型/函数、`fmt`；同时 `CommandType` 包含 image、outlibc、fmt 等非 core 命令。
+  - 重点：`cmd.upm.upm_lib`、`exec`、`microapp`、`kernel.image`、`kernel.payload`
+  - 结果：`src/main.uya` 顶层直接导入 `microapp`、`exec`、`kernel.image`、`kernel.payload`、`cmd.upm.upm_lib` 及多个 UPM 类型/函数；同时 `CommandType` 包含 image、outlibc 等非 core 命令。
 
 ---
 
@@ -54,11 +54,11 @@
   - 结果：保留边界与 `docs/core_compiler_refactor_plan.md` 一致；当前 `src/main.uya` 已有 `build` / `check` / `run` / `test` 命令路径，可作为 core 入口拆分的行为基线。
 - [x] 明确 `uya-core` 不包含的能力。
   - UPM fetch / publish / add / remove / lockfile 更新
-  - formatter CLI
+  - 已删除的历史 formatter CLI
   - exec VM / bytecode 后端
   - microapp / image / payload 命令
   - benchmark / release 历史工具
-  - 结果：非 core 能力对应当前 `src/main.uya` 中的 `fmt`、`pack-image`、`inspect-image`、`verify-image`、`--app microapp`、`--exec` / `--vm`、`--outlibc` 及 UPM CLI 能力；后续应留在 full 入口或独立命令。
+  - 结果：非 core 能力对应当前 `src/main.uya` 中的 `pack-image`、`inspect-image`、`verify-image`、`--app microapp`、`--exec` / `--vm`、`--outlibc` 及 UPM CLI 能力；后续应留在 full 入口或独立命令。
 - [x] 从 UPM 中划出 package resolution 只读子集。
   - 保留：`uya.toml` discovery、source root、module root、alias root、lockfile 只读输入。
   - 移出：fetch、registry、git/path materialize、publish、add/remove、lockfile 写入。
@@ -73,7 +73,7 @@
   - 初始 API：`check`、`build_c99`、`run`、`test`
   - 设计结果：对外 API 建议为 `uya_core_check(options, result)`、`uya_core_build_c99(options, result)`、`uya_core_run(options, result)`、`uya_core_test(options, result)`，其中 `result` 返回 generated C 路径、linked executable 路径和运行退出码等最小结果。
   - 设计结果：内部共享 `uya_core_compile_to_c99(options, stop_after_checker, result)`，负责输入解析、依赖收集、lexer/parser、AST merge、checker、安全证明、优化和 C99 codegen；`run` / `test` 只在此基础上增加宿主链接和执行。
-  - 设计结果：`pipeline.uya` 允许依赖 `main`、`parser`、`checker`、`driver`、`codegen.c99`、`std`、`libc` 和后续拆出的 package read-only 模块；禁止依赖 `exec`、`microapp`、`kernel.image`、`kernel.payload`、`fmt` 和 UPM CLI/fetch/publish 模块。
+  - 设计结果：`pipeline.uya` 允许依赖 `main`、`parser`、`checker`、`driver`、`codegen.c99`、`std`、`libc` 和后续拆出的 package read-only 模块；禁止依赖 `exec`、`microapp`、`kernel.image`、`kernel.payload` 和 UPM CLI/fetch/publish 模块。
   - 设计结果：full 入口的 `CommandType` / `BackendType` 不进入 core API；core 默认 C99 后端，`check` 用 `stop_after_checker` 表达，不再通过 “LLVM 默认后端但输出 .c 时切 C99” 的历史行为转义。
 
 ---
@@ -87,10 +87,10 @@
 - [x] 新建 `src/compiler/pipeline.uya`。
   - 要求：复用现有 lexer / parser / checker / C99 codegen，不复制大段主入口逻辑。
   - 验证：`./bin/uya check src/compiler/pipeline.uya --project-root src/`
-  - 结果：通过；`pipeline.uya` 直接导入 `arena`、`ast`、`lexer`、`parser`、`checker`、`driver`、`codegen.c99` 和 `compiler.options`，未导入 `src/main.uya`、`exec`、`microapp`、`kernel.image`、`kernel.payload`、`fmt` 或 UPM CLI。当前实现已接入 check/build C99/run/test 的核心路径；package mode 的 UPM 只读解析仍按 Phase 1 结果待拆分。
+  - 结果：通过；`pipeline.uya` 直接导入 `arena`、`ast`、`lexer`、`parser`、`checker`、`driver`、`codegen.c99` 和 `compiler.options`，未导入 `src/main.uya`、`exec`、`microapp`、`kernel.image`、`kernel.payload` 或 UPM CLI。当前实现已接入 check/build C99/run/test 的核心路径；package mode 的 UPM 只读解析仍按 Phase 1 结果待拆分。
 - [x] 新建 `src/cli/main_core.uya`。
   - 支持：`check`、`build`、`run`、`test`
-  - 不支持：`fmt`、`upm`、image/microapp、exec VM 专项命令。
+  - 不支持：`upm`、image/microapp、exec VM 专项命令；历史 `fmt` 命令已删除。
   - 验证：`./bin/uya check src/cli/main_core.uya --project-root src/`
   - 结果：通过；入口只解析 core 子命令和 core 编译选项，非 core 子命令会显式报错，不导入 full 入口或非 core 模块。
 - [x] 保留现有 `src/main.uya` 作为 full 入口。
@@ -99,8 +99,8 @@
   - 验证：`./bin/uya --version`
   - 结果：`src/main.uya` 无差异，现有 full 入口返回 `v0.10.0`。
 - [x] 避免 core 入口导入非 core 模块。
-  - 检查：`rg -n "use (exec|microapp|kernel\\.image|kernel\\.payload|fmt|cmd\\.upm)" src/cli src/compiler`
-  - 结果：无匹配；`src/cli` 与 `src/compiler` 当前没有直接导入 `exec`、`microapp`、`kernel.image`、`kernel.payload`、`fmt` 或 `cmd.upm`。
+  - 检查：`rg -n "use (exec|microapp|kernel\\.image|kernel\\.payload|cmd\\.upm)" src/cli src/compiler`
+  - 结果：无匹配；`src/cli` 与 `src/compiler` 当前没有直接导入 `exec`、`microapp`、`kernel.image`、`kernel.payload` 或 `cmd.upm`。
 - [x] Makefile 新增 `make uya-core`。
   - 输出：`bin/uya-core`
   - 不替代现有 `make uya`。
@@ -163,10 +163,9 @@
   - 验证：`rg -n "^use .*cmd\\.upm|^use .*upm|^use .*fetch|^use .*registry|^use .*publish" src/cli/main_core.uya src/compiler`
   - 验证：`rg -n "cmd\\.upm|UPM|upm_|fetch|registry|publish|lockfile|materialize" src/cli/main_core.uya src/compiler`
   - 结果：通过；两条检查均无匹配，core 入口只保留本地只读 manifest/path dependency 解析，不导入 UPM CLI、fetch、registry、publish 或 lockfile/materialize 路径。
-- [x] formatter 保持独立工具入口。
-  - 验证：`tools/fmt.uya` 或现有 `uyafmt` 构建路径仍可用。
-  - 验证：`make fmt`
-  - 结果：通过；`tests/verify_fmt_cli.sh` 使用 `tools/fmt.uya` 构建 `bin/uyafmt` 并输出 `verify_fmt_cli: ok`。C 编译阶段出现既有 builtin 声明 warning，但命令退出 0。
+- [x] formatter 不进入 core 默认入口。
+  - 当前状态：formatter 功能已移除，不再保留源码入口、独立命令或 Makefile 路径。
+  - 结果：core/full 拆分不再需要验证 formatter 独立构建。
 - [x] exec VM 标记为实验能力，不进入 core 默认入口。
   - 验证：core import 检查无 `use exec`。
   - 验证：`rg -n "^use exec|\\bexec\\b|--exec|--vm" src/cli/main_core.uya src/compiler`
@@ -304,8 +303,7 @@
   - 证据：`./bin/uya --version` 输出 `v0.10.0`，迁移期 full 兼容入口仍可启动。
   - 证据：`make cmds` 通过，先重建 full `bin/uya`，再构建 `src/cmd/upm/main.uya` 并生成 `bin/cmd/upm`。
   - 证据：`test -x bin/cmd/upm` 通过，独立 UPM 命令产物存在。
-  - 证据：`make fmt` 通过并输出 `verify_fmt_cli: ok`，formatter 独立路径仍可构建和验证；该命令保留既有 builtin 声明 warning，但退出码为 0。
-  - 证据：`test -x bin/uyafmt` 通过，formatter 独立命令产物存在。
+  - 说明：formatter 功能已移除，不再提供构建目标或独立命令兼容入口。
   - 关联验证：Phase 5 的 `make check` 已覆盖 full 自举、UPM、exec VM、microapp、SIMD、C99 回归和 benchmark C99 smoke。
 - [x] `make check-core` 稳定通过。
   - 证据：完成条件阶段重新运行 `make check-core` 通过。

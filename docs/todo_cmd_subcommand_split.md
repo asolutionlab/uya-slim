@@ -10,7 +10,7 @@
 
 当前仓库仍处于设计待实现状态：
 
-- `src/main.uya` 仍约 8400 行，`parse_args()` 与 `main()` 仍直接处理 `build`/`check`/`run`/`test`/`fmt` 等业务。
+- `src/main.uya` 仍约 8400 行，`parse_args()` 与 `main()` 仍直接处理 `build`/`check`/`run`/`test` 等业务。
 - `src/cmd/*/main.uya` 尚未创建。
 - `Makefile` 尚未提供 `make cmds` 与 `cmd-*` 目标。
 - `src/main.uya` 尚未实现 `dispatch_external_cmd`。
@@ -25,7 +25,7 @@
 - 按 TDD 推进：先加相关测试，再做最小实现。
 - 保留 `uya <file.uya> ...` 隐式编译入口，直到 `cmd/build` seed 或等价 bootstrap 编译器来源稳定。
 - 最终目标是 `src/main.uya` 只负责命令分发；编译器业务归属 `cmd/build` 和共享 compiler driver。
-- 公开 `uya build/check/run/test/fmt/upm` 完成外置化后必须走 `cmd/xxx`，不要静默回退内部实现。
+- 公开 `uya build/check/run/test/upm` 完成外置化后必须走 `cmd/xxx`，不要静默回退内部实现。
 - `cmd/run` 与 `cmd/test` 由 compiler driver 完成编译、链接、执行和退出码映射，不在 wrapper 里另写一套执行逻辑。
 
 ---
@@ -34,7 +34,6 @@
 
 - [ ] 查看工作树，确认没有未预期改动：`git status --short`。
 - [ ] 阅读当前入口：`src/main.uya` 的 `CommandType`、`print_usage()`、`parse_args()`、`export fn main()`。
-- [ ] 阅读 fmt 独立入口：`src/fmt.uya` 的 `fmt_main()` 与 `uyafmt_main()`。
 - [ ] 阅读构建脚本：`Makefile` 的 `uya`、`from-c`、`from-c-native`、`install`、`clean` 目标，以及 `src/compile.sh` 的主文件选择逻辑。
 - [ ] 跑最小基线，记录当前行为：
 
@@ -43,7 +42,6 @@
 ./bin/uya check tests/check_cli_no_main.uya
 ./bin/uya build tests/test_errno.uya -o /tmp/uya_baseline_errno --no-split-c
 ./bin/uya test tests/test_errno.uya
-./bin/uya fmt tests/test_errno.uya >/tmp/uya_baseline_fmt.out
 ./bin/uya tests/test_errno.uya -o /tmp/uya_baseline_implicit --no-split-c
 ```
 
@@ -121,7 +119,6 @@ make check-hosted
 
 - [ ] 覆盖 `uya run ... -- ...` 的运行时参数 argv 原样保留。
 - [ ] 覆盖 `uya test` 与直调 `cmd/test` 摘要和退出码一致。
-- [ ] 覆盖 `uya fmt` 与直调 `cmd/fmt` 输出一致。
 - [ ] 覆盖 `uya upm --help` 与直调 `cmd/upm --help` 均退出 0。
 - [ ] 覆盖缺失命令的错误路径：临时重命名 `bin/cmd/build`，确认 `./bin/uya build ...` 返回非 0，错误信息包含 `cmd/build` 和 `make cmds`。
 
@@ -131,9 +128,6 @@ make check-hosted
 - [ ] 创建 `src/cmd/run/main.uya`，入口调用 `compiler_driver_main(COMMAND_RUN, 1)`，由 driver 完成编译、链接和执行。
 - [ ] 创建 `src/cmd/test/main.uya`，入口调用 `compiler_driver_main(COMMAND_TEST, 1)`，由 driver 完成测试执行和摘要输出。
 - [ ] 三个命令入口都支持可选重复子命令名，例如 `cmd/build build file.uya`。
-- [ ] 创建 `src/cmd/fmt/main.uya`：
-  - [ ] 默认调用 `uyafmt_main()`。
-  - [ ] 若 `argv[1] == "fmt"`，跳过该参数或调用兼容入口。
 - [ ] 创建 `src/cmd/upm/main.uya`：
   - [ ] `--help` / `-h` 打印用法并退出 0。
   - [ ] `--version` / `-v` 打印版本并退出 0。
@@ -142,8 +136,8 @@ make check-hosted
 
 ### C3：改造 Makefile 生成 `bin/cmd/*`
 
-- [ ] 在 `Makefile` 增加 `UYA_CMD_NAMES := build run test fmt upm`。
-- [ ] 增加 `cmds`、`cmd-build`、`cmd-run`、`cmd-test`、`cmd-fmt`、`cmd-upm` 目标。
+- [ ] 在 `Makefile` 增加 `UYA_CMD_NAMES := build run test upm`。
+- [ ] 增加 `cmds`、`cmd-build`、`cmd-run`、`cmd-test`、`cmd-upm` 目标。
 - [ ] 过渡期用 `UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/uya` 构建命令程序。
 - [ ] `bin/cmd/%` 规则包含 `--project-root src/`：
 
@@ -159,7 +153,6 @@ bin/cmd/%: src/cmd/%/main.uya $(UYA_CMD_BOOTSTRAP_COMPILER)
 bin/cmd/build
 bin/cmd/run
 bin/cmd/test
-bin/cmd/fmt
 bin/cmd/upm
 ```
 
@@ -169,7 +162,7 @@ bin/cmd/upm
 
 ### C4：实现主程序调度器
 
-- [ ] 在 `src/main.uya` 新增 `is_external_cmd(name)`，识别 `build/check/run/test/fmt/upm`。
+- [ ] 在 `src/main.uya` 新增 `is_external_cmd(name)`，识别 `build/check/run/test/upm`。
 - [ ] 新增 `build_external_cmd_path(cmd_name, out, out_cap)`，基于 `get_compiler_dir(get_argv(0), ...)` 生成 `cmd/<name>` 路径，Windows 目标补 `.exe`。
 - [ ] 新增 `dispatch_external_cmd(cmd_name, strip_subcommand)`：
   - [ ] 构造新的 argv 数组，`argv[0]` 为 `cmd_path`。
@@ -250,6 +243,6 @@ make backup-all
 
 - [ ] 如果 driver 提取失败，回退到 `src/main.uya` 内部路径，但保留已新增测试。
 - [ ] 如果 `cmd/xxx` 构建失败，先保持 `src/main.uya` 的隐式编译入口可用，不要破坏 `make uya`。
-- [ ] 如果公开调度失败，可临时只让 `fmt/upm` 外置，`build/run/test` 保持内部，但测试中标记未完成项。
+- [ ] 如果公开调度失败，可临时只让 `upm` 外置，`build/run/test` 保持内部，但测试中标记未完成项。
 - [ ] 不要复制旧逻辑；先抽成共享 driver，再由主程序和命令入口共用。
 - [ ] 不要提交 `bin/cmd/*` 生成物，除非仓库策略后来明确要求跟踪这些产物。

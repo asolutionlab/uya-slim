@@ -359,9 +359,6 @@ lib/
     │   ├── driver.uya          # Driver / Conn / Stmt / Rows / Tx
     │   └── db.uya              # DB / Row 包装
     │
-    ├── fmt/                     # 格式化
-    │   └── fmt.uya             # format<T: Display>
-    │
     └── runtime/                 # 运行时
         └── runtime.uya          # panic, entry
 ```

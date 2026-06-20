@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- 暂无
+- 移除 `fmt` 格式化工具链：删除 `uya fmt` / `uyafmt` 入口、`std.fmt` 库、fmt 专属测试与 Makefile 目标。
 
 ## v0.10.0 - fmt CLI 收口、if expression 与 C99 主线稳定性
 
