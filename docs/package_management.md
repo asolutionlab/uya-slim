@@ -251,6 +251,7 @@ example_dir = "examples"
 - package 名和 dependency alias 都使用 ASCII 小写字母、数字、`-`、`_`
 - import alias 额外要求能稳定映射为模块首段，推荐只使用小写字母、数字、`_`
 - v1 大小写敏感，但规范推荐清一色小写，避免跨平台路径歧义
+- `upm init <dir>` 默认用项目文件夹 basename 生成 `package.name`，会拒绝空名称、含空格/大写/其它特殊字符的名称，以及以 `-` 开头的名称
 
 ### 5.4 依赖表
 
@@ -482,6 +483,7 @@ v1 采用隐藏目录：
 - `~/.uya/pkg/vcs/`：跨项目复用的 Git 下载缓存
 - `~/.uya/pkg/mod/`：模块内容层缓存目录；当前已可写入并复用
 - 原生 `uya build/check/run/test` package mode 当前使用 graph-only resolve 与 dependency alias -> source root 映射，不再依赖临时 staging root 进行模块查找
+- 常规依赖安装与 `upm build` 物化运行时源码时，会排除 source root 下的顶层开发目录 `tests/`、`benchmarks/`、`examples/`
 - `upm build` / `upm vendor` 的过渡物化层仍可使用 `TMPDIR` 或 `/tmp` 下的临时 build root，例如 `/tmp/uya-upm-build-<pid>/root/`
 
 ### 8.2 path 依赖安全规则
@@ -545,8 +547,8 @@ v1 的 canonical public UX 是：
 
 ### 9.3 语义
 
-- `upm init`：生成最小 `uya.toml`；默认生成 flat layout，可选生成 `src/` layout
-- `upm install`：解析 manifest / lockfile，安装依赖并写回 lockfile
+- `upm init`：生成最小 `uya.toml`；默认生成 flat layout，可选生成 `src/` layout；创建前会校验项目文件夹参数、推导出的项目名，并拒绝覆盖已有 `uya.toml` 或入口源码文件
+- `upm install`：解析 manifest / lockfile，安装依赖并写回 lockfile；依赖物化时不复制顶层 `tests/`、`benchmarks/`、`examples/`
 - `upm update`：刷新可变 ref（如 branch/tag）并重写 lockfile
 - `upm build`：wrapper，按 package mode 准备依赖后调用现有构建流程；原生 `uya build/check/run/test` 已可直接使用 graph-only package plan
 - `upm add`：直接改写 `uya.toml` 后自动执行一次 `install`，并同步刷新 `uya.lock`

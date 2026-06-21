@@ -60,6 +60,13 @@ EOF_DEP_LIB
 grep -q '\[dependencies\]' "$APP_DIR/uya.toml"
 grep -q 'layout_dep = { path = "' "$APP_DIR/uya.toml"
 test -f "$APP_DIR/uya.lock"
+if [ -d "$APP_DIR/.uya/deps/layout_dep/tests" ] ||
+   [ -d "$APP_DIR/.uya/deps/layout_dep/benchmarks" ] ||
+   [ -d "$APP_DIR/.uya/deps/layout_dep/examples" ]; then
+    echo "✗ 普通 install 不应物化 dependency 的开发目录"
+    find "$APP_DIR/.uya/deps/layout_dep" -maxdepth 2 -type d | sort
+    exit 1
+fi
 
 cat > "$CONFLICT_DIR/uya.toml" <<'EOF_CONFLICT_MANIFEST'
 [package]

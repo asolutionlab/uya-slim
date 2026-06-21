@@ -140,6 +140,33 @@ export fn upm_shell_copy_tree(src_dir: &byte, dst_dir: &byte) i32 {
     return upm_shell_run(&cmd[0] as &byte, "复制目录树" as &byte);
 }
 
+/// Copies package runtime source files while excluding development-only directories.
+/// Parameters: `src_dir` is the package source root, and `dst_dir` receives copied files.
+/// Returns: `0` on success, non-zero when shell quoting or copying fails.
+export fn upm_shell_copy_runtime_tree(src_dir: &byte, dst_dir: &byte) i32 {
+    var src_q: [byte: UPM_PATH_MAX * 2] = [];
+    var dst_q: [byte: UPM_PATH_MAX * 2] = [];
+    if upm_shell_quote(src_dir, &src_q[0] as &byte, UPM_PATH_MAX * 2usize) != 0 {
+        return 1;
+    }
+    if upm_shell_quote(dst_dir, &dst_q[0] as &byte, UPM_PATH_MAX * 2usize) != 0 {
+        return 1;
+    }
+    var cmd: [byte: UPM_CMD_MAX] = [];
+    const written: i32 = snprintf(
+        &cmd[0] as *byte,
+        UPM_CMD_MAX as usize,
+        "mkdir -p %s && find %s -mindepth 1 -maxdepth 1 ! -name tests ! -name benchmarks ! -name examples -exec cp -R {} %s/ \\;" as *byte,
+        &dst_q[0] as *byte,
+        &src_q[0] as *byte,
+        &dst_q[0] as *byte
+    );
+    if written <= 0 || written >= UPM_CMD_MAX {
+        return 1;
+    }
+    return upm_shell_run(&cmd[0] as &byte, "复制运行时源码目录树" as &byte);
+}
+
 /// Checks whether a materialized root already contains a dependency alias.
 ///
 /// Parameters:
@@ -265,7 +292,7 @@ export fn upm_prepare_build_plan_ex(input_path: &byte, manifest_override: &byte,
     if upm_shell_remove_tree(&plan_out.build_root[0] as &byte) != 0 {
         return 1;
     }
-    if upm_shell_copy_tree(&root_manifest.source_root[0] as &byte, &plan_out.build_root[0] as &byte) != 0 {
+    if upm_shell_copy_runtime_tree(&root_manifest.source_root[0] as &byte, &plan_out.build_root[0] as &byte) != 0 {
         return 1;
     }
     if upm_ensure_trailing_slash(&plan_out.build_root[0] as &byte, UPM_PATH_MAX) != 0 {
