@@ -6926,6 +6926,8 @@ mc hash_string(s) expr {
 - **canonical public UX**：`uya upm <subcommand>`
 - **仓库内真实入口**：`cmd/upm` / `bin/cmd/upm`
 - **repo-local 验证入口**：`bin/uya-upm-stage2`（在主编译器入口完全并入前，用于验证 `build` / `upm` 工作流）
+- **`uya.toml` 角色**：package mode 下的项目配置文件；`build/check/run/test/install/update/publish` 先用它确定 package identity、source root、module root、依赖图和发布 metadata
+- **当前边界**：输出路径、优化级别、运行参数等一次性执行选项仍由 CLI 控制；`[build]` / `[run]` / `[publish]` 配置表尚未定义为可执行语义
 - **v1 目标**：
   - `uya.toml`
   - `uya.lock`

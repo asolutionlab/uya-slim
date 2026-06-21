@@ -1,7 +1,7 @@
 # Uya Package Management v1 Draft
 
 **状态**: design draft, MVP/M4 implemented + Phase 5 local backend prototype in current branch
-**更新日期**: 2026-06-18
+**更新日期**: 2026-06-21
 **适用范围**: `uya.toml`、`uya.lock`、`uya upm`、带依赖的 `uya build/check/run/test`
 **相关文档**:
 
@@ -28,7 +28,7 @@
 - 旧设计/待办文本曾把 `--project-root` 当作现成能力引用，但当前源码主线在包管理 MVP 落地前仍主要依赖自动推导的 module root。
 - 旧草案默认 `uya.toml + src/ + deps/`，但没有先定义 package root 与 source root 的关系。
 
-本草案的目标不是推翻现有模块系统，而是在它之上补一层与现状兼容的包管理模型。
+本草案的目标不是推翻现有模块系统，而是在它之上补一层与现状兼容的包管理模型。进入 package mode 后，`uya.toml` 是项目配置文件：编译、检查、运行、测试、依赖同步与本地发布原型都先从它确定包身份、源码根和依赖图。
 
 ---
 
@@ -77,6 +77,23 @@
 
 `uya.lock`。用于记录一次依赖解析后得到的精确结果，保证后续 `install/build` 的可重现性。
 
+### 2.8 project manifest / project config
+
+`uya.toml` 是 package mode 下的项目配置入口。当前实现已经读取并影响执行的配置包括：
+
+- 包身份：`package.name`、`package.module`、`package.version`、`package.uya_min_version`
+- 源码布局：`package.source-dir`，以及兼容段 `layout.source_dir`
+- 依赖图：`[dependencies]`、`[dev-dependencies]`
+- 开发目录校验：`layout.test_dir`、`layout.bench_dir`、`layout.example_dir`
+
+这些信息分别驱动：
+
+- `build/check/run/test`：确定 package root、source root、module root、依赖 alias 到依赖 source root 的映射，以及最低 Uya 版本检查。
+- `install/update/vendor`：解析依赖来源，写回 `.uya/deps/`、全局 cache 和 `uya.lock`。
+- `publish`：使用 `package.name`、`package.module`、`package.version` 和 `source-dir` 计算本地发布 metadata 与源码内容 hash。
+
+当前 MVP 仍由 CLI 参数控制输出路径、优化级别、运行参数等一次性执行选项；这些选项尚未定义为 `uya.toml` 中的 `[build]`、`[run]` 或 `[publish]` 配置表。
+
 ---
 
 ## 3. 目标与非目标
@@ -85,6 +102,7 @@
 
 - 定义 `uya.toml`
 - 定义 `uya.lock`
+- 明确 `uya.toml` 是 package mode 下编译、运行、依赖同步和本地发布原型的项目配置入口
 - 支持 `path` 依赖
 - 支持 `git` 依赖
 - 定义带依赖时的模块查找与冲突规则
@@ -95,7 +113,7 @@
 v1 不承诺以下能力：
 
 - 中央 registry
-- publish
+- 远程 publish 服务与上传协议
 - semver range / SAT solver / 版本回溯
 - workspaces / monorepo 统一锁定
 - 同一 import alias 的多版本并存
@@ -308,7 +326,24 @@ foo = { path = "../foo", module = "uya.local/foo", version = "1.2.3" }
 - path/git 依赖仍按显式来源解析，不受上述 backend 优先级影响。
 - 当前 workspace 原型不做统一 lockfile、跨包批量 test、版本范围求解或多版本并存；这些能力仍属于后续设计。
 
-### 5.8 Publish 最小协议（Phase 5 原型）
+### 5.8 配置生效范围
+
+`uya.toml` 中当前会影响编译、运行和发布的字段如下：
+
+| 配置位置 | 当前作用 |
+| --- | --- |
+| `[package].name` | 包名；依赖解析、lockfile、diagnostics 和 publish 校验使用 |
+| `[package].module` | 稳定模块身份；workspace/proxy/registry/cache 命中与 publish 校验使用 |
+| `[package].version` | 包版本；依赖 exact version 校验、lockfile 和 publish 校验使用 |
+| `[package].source-dir` | 源码根；决定 package mode 的 module root，也是 publish 计算内容 hash 的根 |
+| `[package].uya_min_version` | 最低 Uya 版本要求；不满足时阻止 install/update/build 和 package mode 构建 |
+| `[dependencies]` | 普通构建依赖；参与 build/check/run/test/install/update/vendor 的依赖图 |
+| `[dev-dependencies]` | 开发依赖；当前 `upm add/remove` 可维护，普通 build 不自动拉入 |
+| `[layout]` | 兼容旧布局字段；`source_dir` 等价于 `source-dir`，其它目录当前只校验路径 |
+
+尚未实现的配置表不要写入 manifest 作为真实语义依赖。例如 `[build]` 的默认输出路径、`[run]` 的默认参数、`[publish]` 的远程 registry 配置都还没有被当前工具链读取。
+
+### 5.9 Publish 最小协议（Phase 5 原型）
 
 当前 publish 原型只定义本地可验证的发布元数据，不上传源码，也不定义远程认证、签名或 registry 服务协议。
 
@@ -551,7 +586,7 @@ v1 的 canonical public UX 是：
 - `upm init`：生成最小 `uya.toml`；默认生成 flat layout，可选生成 `src/` layout；创建前会校验项目文件夹参数、推导出的项目名，并拒绝覆盖已有 `uya.toml` 或入口源码文件
 - `upm install`：解析 manifest / lockfile，安装依赖并写回 lockfile；依赖物化时不复制顶层 `tests/`、`benchmarks/`、`examples/`
 - `upm update`：刷新可变 ref（如 branch/tag）并重写 lockfile
-- `upm build`：wrapper，按 package mode 准备依赖后调用现有构建流程；原生 `uya build/check/run/test` 已可直接使用 graph-only package plan
+- `upm build`：wrapper，按 `uya.toml` 的 package mode 配置准备依赖后调用现有构建流程；原生 `uya build/check/run/test` 已可直接使用 graph-only package plan
 - `upm add`：直接改写 `uya.toml` 后自动执行一次 `install`，并同步刷新 `uya.lock`
 - `upm add --dev`：把依赖写入 `[dev-dependencies]`
 - `upm remove`：从 manifest 删除指定 alias 后自动执行一次 `install`
@@ -562,7 +597,7 @@ v1 的 canonical public UX 是：
 - `upm doctor`：执行 manifest parse 与 graph resolve 诊断
 - `upm cache dir`：打印 `pkg` / `vcs` / `mod` cache 目录
 - `upm vendor`：只物化依赖到 `.uya/deps/` 并写回 lockfile，不调用编译器
-- `upm publish`：生成本地 `.uya/publish.receipt`，包含 module、version 和 content_hash
+- `upm publish`：读取 `uya.toml` 中的 package identity 与 source root，生成本地 `.uya/publish.receipt`，包含 module、version 和 content_hash
 
 ### 9.4 示例
 
