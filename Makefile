@@ -39,29 +39,24 @@ UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/uya
 # 用法: make install
 #       make install PREFIX=$$HOME/.local
 #       make install BINDIR=/opt/bin
-#       make install BINDIR=out            # 前缀布局：out/bin/uya + out/lib/（与 PREFIX 一致）
+#       make install BINDIR=out            # 前缀布局：out/bin/uya + out/lib/uya/（与 PREFIX 一致）
 #       make install DESTDIR=/tmp/stage PREFIX=/usr   # 打包：安装到 /tmp/stage/usr/bin/uya
-#       make install TESTSDIR=/path/tests             # 显式测试树目录（默认 前缀/tests）
 # BINDIR 语义：
-#   - 路径最后一段为 bin：视为「可执行目录」，如 /custom/bin → /custom/bin/uya、/custom/lib/
-#   - 否则视为「安装前缀」，如 out、/opt/uya → 前缀/bin/uya、前缀/lib/（与 ~/.local 布局一致）
-#       可显式覆盖 LIBDIR、DOCDIR；若与上述布局不一致，请设置环境变量 UYA_ROOT
+#   - 路径最后一段为 bin：视为「可执行目录」，如 /custom/bin → /custom/bin/uya、/custom/lib/uya/
+#   - 否则视为「安装前缀」，如 out、/opt/uya → 前缀/bin/uya、前缀/lib/uya/（与 ~/.local 布局一致）
+#       可显式覆盖 LIBDIR；若与上述布局不一致，请设置环境变量 UYA_ROOT
 PREFIX ?= out
 BINDIR ?= $(PREFIX)/bin
 _BINDIR_NORM := $(patsubst %/,%,$(BINDIR))
 ifeq ($(notdir $(_BINDIR_NORM)),bin)
 INSTALL_BINDIR := $(_BINDIR_NORM)
-LIBDIR ?= $(patsubst %/,%,$(dir $(_BINDIR_NORM)))/lib
+LIBDIR ?= $(patsubst %/,%,$(dir $(_BINDIR_NORM)))/lib/uya
 INSTALL_PREFIX := $(patsubst %/,%,$(dir $(_BINDIR_NORM)))
 else
 INSTALL_BINDIR := $(_BINDIR_NORM)/bin
-LIBDIR ?= $(_BINDIR_NORM)/lib
+LIBDIR ?= $(_BINDIR_NORM)/lib/uya
 INSTALL_PREFIX := $(_BINDIR_NORM)
 endif
-# 文档：与仓库根目录一致为 前缀/docs/*.md（uya_ai_prompt.md 及文中显式引用的规范文档）
-DOCDIR ?= $(INSTALL_PREFIX)/docs
-# 测试套件源码树：与仓库 tests/ 一致，安装到 前缀/tests/
-TESTSDIR ?= $(INSTALL_PREFIX)/tests
 # 打包时 DESTDIR 与相对 BINDIR（如 out）拼接须带 '/'，否则 /tmp/st + out → /tmp/stout
 ifneq ($(strip $(DESTDIR)),)
 INSTALL_DEST_ROOT := $(patsubst %/,%,$(DESTDIR))/
@@ -1220,8 +1215,7 @@ release-clean:
 	echo "✓ 干净快照 release 成功"; \
 	echo "已复制到: $$ARTIFACT_PATH"
 
-# 安装编译器、标准库源码树与 tests/（需系统 install(1)；标准库排除 lib/build）
-# tests 安装会排除常见中间目录与二进制产物（避免将本地测试构建垃圾安装到目标目录）
+# 安装编译器和标准库源码树（需系统 install(1)；标准库排除 lib/build）
 install:
 	@if [ ! -f bin/uya ]; then \
 		echo "bin/uya 不存在，先执行 from-c ..."; \
@@ -1243,24 +1237,7 @@ install:
 		if [ "$$base" = "build" ]; then continue; fi; \
 		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
 	done
-	@echo "安装文档 -> $(INSTALL_DEST_ROOT)$(DOCDIR)/"
-	@install -d "$(INSTALL_DEST_ROOT)$(DOCDIR)"
-	@for f in uya_ai_prompt.md uya.md grammar_formal.md builtin_functions.md union_memory_layout.md; do \
-		if [ ! -f "docs/$$f" ]; then echo "错误: 缺少 docs/$$f"; exit 1; fi; \
-		install -m 644 "docs/$$f" "$(INSTALL_DEST_ROOT)$(DOCDIR)/$$f"; \
-	done
-	@echo "安装测试树 -> $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
-	@if [ ! -d tests ]; then echo "错误: tests 目录不存在"; exit 1; fi
-	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
-	@install -d "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
-	@cp -a tests/. "$(INSTALL_DEST_ROOT)$(TESTSDIR)/"
-	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)/programs/build" \
-		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/build" \
-		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/.uyacache"
-	@find "$(INSTALL_DEST_ROOT)$(TESTSDIR)" -type f \( \
-		-name '*.o' -o -name '*.obj' -o -name '*.a' -o -name '*.so' -o -name '*.dylib' -o -name '*.exe' -o -name '*.out' \
-	\) -delete
-	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/ + $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/"
 
 install-core: uya-core
 	@echo "安装 uya-core -> $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core"
@@ -1274,24 +1251,7 @@ install-core: uya-core
 		if [ "$$base" = "build" ]; then continue; fi; \
 		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
 	done
-	@echo "安装文档 -> $(INSTALL_DEST_ROOT)$(DOCDIR)/"
-	@install -d "$(INSTALL_DEST_ROOT)$(DOCDIR)"
-	@for f in uya_ai_prompt.md uya.md grammar_formal.md builtin_functions.md union_memory_layout.md; do \
-		if [ ! -f "docs/$$f" ]; then echo "错误: 缺少 docs/$$f"; exit 1; fi; \
-		install -m 644 "docs/$$f" "$(INSTALL_DEST_ROOT)$(DOCDIR)/$$f"; \
-	done
-	@echo "安装测试树 -> $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
-	@if [ ! -d tests ]; then echo "错误: tests 目录不存在"; exit 1; fi
-	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
-	@install -d "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
-	@cp -a tests/. "$(INSTALL_DEST_ROOT)$(TESTSDIR)/"
-	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)/programs/build" \
-		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/build" \
-		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/.uyacache"
-	@find "$(INSTALL_DEST_ROOT)$(TESTSDIR)" -type f \( \
-		-name '*.o' -o -name '*.obj' -o -name '*.a' -o -name '*.so' -o -name '*.dylib' -o -name '*.exe' -o -name '*.out' \
-	\) -delete
-	@echo "✓ core 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/ + $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@echo "✓ core 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core + $(INSTALL_DEST_ROOT)$(LIBDIR)/"
 
 # 从备份恢复 bin/uya.c
 restore:
@@ -1368,8 +1328,8 @@ help:
 	@echo "  make release       - full 一键最终验证：要求工作树干净，再 clean+自举验证+backup-all-seed 后 -O3 -DNDEBUG 重链 + strip"
 	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
 	@echo "  make release-clean - 用 Git HEAD 干净快照执行 make release，贴近 CI（忽略未提交修改）"
-	@echo "  make install       - 安装 uya、lib/、前缀/docs/、前缀/tests/；BINDIR/LIBDIR/DOCDIR/TESTSDIR/DESTDIR"
-	@echo "  make install-core  - 仅安装 uya-core、lib/、前缀/docs/、前缀/tests/；不构建或安装 bin/cmd/*"
+	@echo "  make install       - 安装 uya、bin/cmd/* 和 lib/；BINDIR/LIBDIR/DESTDIR"
+	@echo "  make install-core  - 仅安装 uya-core 和 lib/；不构建或安装 bin/cmd/*"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
 	@echo "  make help          - 显示此帮助信息"
@@ -1381,12 +1341,10 @@ help:
 	@echo "  make tests-hosted                     # hosted 主测试集"
 	@echo "  make tests e                         # 运行所有测试，最小输出"
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
-	@echo '  make install PREFIX=$$HOME/.local   # ~/.local/bin/uya + ~/.local/lib/{std,libc,...}'
-	@echo '  make install-core PREFIX=$$HOME/.local # ~/.local/bin/uya-core + ~/.local/lib/{std,libc,...}'
-	@echo "  make install BINDIR=out              # out/bin/uya + out/lib/（BINDIR 作前缀，同 PREFIX 布局）"
-	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/"
-	@echo "  make install LIBDIR=/other/lib       # 显式标准库目录（通常需配合 export UYA_ROOT）"
-	@echo "  make install DOCDIR=/path/docs       # 显式文档目录（默认 前缀/docs）"
-	@echo "  make install TESTSDIR=/path/tests    # 显式测试目录（默认 前缀/tests）"
+	@echo '  make install PREFIX=$$HOME/.local   # ~/.local/bin/uya + ~/.local/lib/uya/{std,libc,...}'
+	@echo '  make install-core PREFIX=$$HOME/.local # ~/.local/bin/uya-core + ~/.local/lib/uya/{std,libc,...}'
+	@echo "  make install BINDIR=out              # out/bin/uya + out/lib/uya/（BINDIR 作前缀，同 PREFIX 布局）"
+	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/uya/"
+	@echo "  make install LIBDIR=/other/lib/uya   # 显式标准库目录（通常需配合 export UYA_ROOT）"
 	@echo ""
 	@echo "macOS: from-c-native 优先使用 backup/uya-hosted-macos-<arch>.c；backup/uya-hosted-macos.c 仅作统一回退入口。"

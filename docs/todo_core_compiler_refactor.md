@@ -226,7 +226,7 @@
   - 文档同步：`docs/core_compiler_refactor_plan.md` 的目标形态已说明 `uya-core`、`uya` 和 `uya-core-stage2` 的角色。
 - [x] 更新安装布局。
   - 目标：安装 core 入口时不强制安装非 core 命令。
-  - 实现：新增 `make install-core`，安装 `uya-core`、`lib/`、核心文档和 `tests/`，不运行 `make cmds`，不安装 `bin/cmd/*`；现有 `make install` 保留 full 兼容安装语义。
+  - 实现：新增 `make install-core`，安装 `uya-core` 和 `lib/`，不运行 `make cmds`，不安装 `bin/cmd/*`；现有 `make install` 保留 full 兼容安装语义。
   - 文档同步：`docs/core_compiler_refactor_plan.md` 已说明 `make install-core` 与 `make install` 的迁移期职责。
   - 验证：`make install-core PREFIX=/tmp/uya-install-core-check`
   - 验证：`test -x /tmp/uya-install-core-check/bin/uya-core`
@@ -314,7 +314,7 @@
   - 覆盖：full 自举、主测试集、证明优化、默认顶层函数发射、UPM、exec VM、microapp、SIMD select C、切片形参 C99、结构体数组字段复制、typed route 泛型、macOS hosted 单文件 seed extern、`@syscall` AArch64/ARM32 交叉、SIMD NEON/AArch64/ARM32 和 `benchmarks/http_bench.uya` C99 smoke。
   - 结果：最终汇总显示 `总计: 1 个测试`、`通过: 1`、`失败: 0`，并输出 `验证通过`。
 - [x] release seed 与安装布局已同步。
-  - 证据：`make install-core PREFIX=/tmp/uya-install-core-final` 通过，重新构建 `bin/uya-core` 后安装 `uya-core`、`lib/`、核心文档和 `tests/`。
+  - 证据：`make install-core PREFIX=/tmp/uya-install-core-final` 通过，重新构建 `bin/uya-core` 后安装 `uya-core` 和 `lib/`。
   - 证据：`test -x /tmp/uya-install-core-final/bin/uya-core` 与 `test ! -e /tmp/uya-install-core-final/bin/cmd` 均通过，core-only 安装前缀未包含非 core 命令目录。
   - 证据：`/tmp/uya-install-core-final/bin/uya-core --version` 输出 `uya-core v0.10.0`。
   - 证据：Makefile 的 `backup`、`backup-seed`、`backup-hosted-seed`、`backup-all-seed`、`backup-all` 和 `release-flow` 区段继续围绕 full `uya` / `backup/uya.c` / `backup/uya-hosted*.c` / `backup/uyacache/`，未新增 core seed 复制或 `backup/uya-core.c` 规则。

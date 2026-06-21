@@ -619,6 +619,86 @@ fn is_c_output(output_path: &byte) i32 {
     return 0;
 }
 
+fn core_path_has_std_dir(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    var std_path: [byte: PATH_MAX] = [];
+    const written: i32 = snprintf(&std_path[0] as *byte, PATH_MAX, "%s/std" as *byte, path as *byte);
+    if written <= 0 || written >= PATH_MAX {
+        return 0;
+    }
+    return is_directory(&std_path[0] as &byte);
+}
+
+fn core_write_uya_root(out: &byte, out_cap: usize, path: &byte) i32 {
+    const written: i32 = snprintf(out as *byte, out_cap, "%s/" as *byte, path as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
+fn core_resolve_uya_library_root(root_base: &byte, out: &byte, out_cap: usize) i32 {
+    if root_base == null || out == null || out_cap == 0usize {
+        return 1;
+    }
+    var base: [byte: PATH_MAX] = [];
+    const input_len: usize = strlen(root_base as *byte);
+    if input_len >= PATH_MAX {
+        return 1;
+    }
+    memcpy(&base[0] as *void, root_base as *void, input_len + 1usize);
+
+    var base_len: usize = strlen(&base[0] as *byte);
+    while base_len > 1usize {
+        const last_idx: usize = base_len - 1usize;
+        if last_idx >= PATH_MAX {
+            return 1;
+        }
+        if base[last_idx] != 47 as byte {
+            break;
+        }
+        base[last_idx] = 0 as byte;
+        base_len = last_idx;
+    }
+
+    var last_slash: *byte = strrchr(&base[0] as *byte, 47);
+    if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
+        const slash_idx: usize = ptr_diff(last_slash, &base[0] as *byte);
+        base[slash_idx] = 0 as byte;
+    }
+
+    if core_path_has_std_dir(&base[0] as &byte) != 0 {
+        return core_write_uya_root(out, out_cap, &base[0] as &byte);
+    }
+
+    var candidate: [byte: PATH_MAX] = [];
+    var written: i32 = snprintf(&candidate[0] as *byte, PATH_MAX, "%s/lib/uya" as *byte, &base[0] as *byte);
+    if written > 0 && written < PATH_MAX && core_path_has_std_dir(&candidate[0] as &byte) != 0 {
+        return core_write_uya_root(out, out_cap, &candidate[0] as &byte);
+    }
+
+    last_slash = strrchr(&base[0] as *byte, 47);
+    if last_slash != null && strcmp(last_slash, "/lib" as *byte) == 0 {
+        written = snprintf(&candidate[0] as *byte, PATH_MAX, "%s/uya" as *byte, &base[0] as *byte);
+        if written > 0 && written < PATH_MAX && core_path_has_std_dir(&candidate[0] as &byte) != 0 {
+            return core_write_uya_root(out, out_cap, &candidate[0] as &byte);
+        }
+    }
+
+    written = snprintf(&candidate[0] as *byte, PATH_MAX, "%s/lib" as *byte, &base[0] as *byte);
+    if written > 0 && written < PATH_MAX && core_path_has_std_dir(&candidate[0] as &byte) != 0 {
+        return core_write_uya_root(out, out_cap, &candidate[0] as &byte);
+    }
+
+    written = snprintf(out as *byte, out_cap, "%s/lib/uya/" as *byte, &base[0] as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return 1;
+    }
+    return 0;
+}
+
 fn core_prepare_uya_root(out: &byte, out_cap: usize) i32 {
     var root_base: [byte: PATH_MAX] = [];
     const argv0: *byte = get_argv(0);
@@ -628,27 +708,7 @@ fn core_prepare_uya_root(out: &byte, out_cap: usize) i32 {
     if get_uya_root(argv0 as &byte, &root_base[0] as &byte, PATH_MAX) != 0 {
         return 1;
     }
-    var base_len: usize = strlen(&root_base[0] as *byte);
-    if base_len > 1usize && base_len < PATH_MAX && root_base[base_len - 1] == 47 as byte {
-        root_base[base_len - 1] = 0 as byte;
-        base_len = base_len - 1;
-    }
-    const last_slash: *byte = strrchr(&root_base[0] as *byte, 47);
-    var already_lib: i32 = 0;
-    if last_slash != null && strcmp(last_slash, "/lib" as *byte) == 0 {
-        already_lib = 1;
-    }
-    if already_lib == 0 && last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        const slash_idx: usize = ptr_diff(last_slash, &root_base[0] as *byte);
-        root_base[slash_idx] = 0 as byte;
-    }
-    var written: i32 = 0;
-    if already_lib != 0 {
-        written = snprintf(out as *byte, out_cap, "%s/" as *byte, &root_base[0] as *byte);
-    } else {
-        written = snprintf(out as *byte, out_cap, "%s/lib/" as *byte, &root_base[0] as *byte);
-    }
-    if written <= 0 || written >= out_cap as i32 {
+    if core_resolve_uya_library_root(&root_base[0] as &byte, out, out_cap) != 0 {
         return 1;
     }
     return 0;

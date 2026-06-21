@@ -12,7 +12,7 @@
 
 - `make uya-core` 构建 `bin/uya-core`，覆盖普通语言用户需要的 `check`、`build`、`run`、`test` 路径。
 - `make check-core` 是 core 门禁，覆盖 core 构建、错误诊断、多文件、package mode、`@c_import` 和 split-C smoke。
-- `make install-core` 只安装 `uya-core`、`lib/`、核心文档和 `tests/`，不构建或安装 `bin/cmd/*`。
+- `make install-core` 只安装 `uya-core` 和 `lib/`，不构建或安装 `bin/cmd/*`。
 
 迁移期继续保留 full 入口：
 

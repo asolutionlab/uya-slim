@@ -245,8 +245,8 @@ git diff --check
 
 安装布局在迁移期区分两个目标：
 
-- `make install-core`：安装 `uya-core`、`lib/`、核心规范文档和 `tests/`，不构建或安装 `bin/cmd/*`。
-- `make install`：保留既有 full 安装语义，安装 `uya` 并继续安装外置命令目录，供 UPM 等兼容入口使用。
+- `make install-core`：安装 `uya-core` 和 `lib/`，不构建或安装 `bin/cmd/*`。
+- `make install`：保留 full 兼容安装语义，安装 `uya`、`bin/cmd/*` 和 `lib/`，供 UPM 等兼容入口使用。
 
 seed / backup 策略在迁移期不拆分两套可信根：
 

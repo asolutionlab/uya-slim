@@ -900,12 +900,92 @@ fn get_uya_root(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
         }
     }
 
-    // 未设置 UYA_ROOT：默认可执行文件所在目录的上一级（如 …/bin/uya → …/…/lib/）
+    // 未设置 UYA_ROOT：先返回可执行文件所在目录的上一级；后续解析为 lib/uya 或兼容 lib。
     var comp_dir: [byte: PATH_MAX] = [];
     if get_compiler_dir(argv0, &comp_dir[0] as &byte, PATH_MAX) != 0 {
         return -1;
     }
     return path_get_parent_dir(&comp_dir[0] as &byte, buffer, buffer_size);
+}
+
+fn main_path_has_std_dir(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    var std_path: [byte: PATH_MAX] = [];
+    const written: i32 = snprintf(&std_path[0] as &byte, PATH_MAX, "%s/std" as *byte, path as *byte);
+    if written <= 0 || written >= PATH_MAX {
+        return 0;
+    }
+    return is_directory(&std_path[0] as &byte);
+}
+
+fn main_write_uya_root(out: &byte, out_cap: usize, path: &byte) i32 {
+    const written: i32 = snprintf(out as *byte, out_cap, "%s/" as *byte, path as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return -1;
+    }
+    return 0;
+}
+
+fn resolve_uya_library_root(root_base: &byte, out: &byte, out_cap: usize) i32 {
+    if root_base == null || out == null || out_cap == 0 {
+        return -1;
+    }
+    var base: [byte: PATH_MAX] = [];
+    const input_len: usize = strlen(root_base as *byte);
+    if input_len >= PATH_MAX {
+        return -1;
+    }
+    memcpy(&base[0] as *void, root_base as *void, input_len + 1 as usize);
+
+    var base_len: usize = strlen(&base[0] as *byte);
+    while base_len > 1 {
+        const last_idx: usize = base_len - 1;
+        if last_idx >= PATH_MAX {
+            return -1;
+        }
+        if base[last_idx] != 47 as byte {
+            break;
+        }
+        base[last_idx] = 0 as byte;
+        base_len = last_idx;
+    }
+
+    var last_slash: *byte = strrchr(&base[0] as *byte, 47);
+    if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
+        const slash_idx: usize = ptr_diff(last_slash, &base[0] as *byte);
+        base[slash_idx] = 0 as byte;
+    }
+
+    if main_path_has_std_dir(&base[0] as &byte) != 0 {
+        return main_write_uya_root(out, out_cap, &base[0] as &byte);
+    }
+
+    var candidate: [byte: PATH_MAX] = [];
+    var written: i32 = snprintf(&candidate[0] as &byte, PATH_MAX, "%s/lib/uya" as *byte, &base[0] as *byte);
+    if written > 0 && written < PATH_MAX && main_path_has_std_dir(&candidate[0] as &byte) != 0 {
+        return main_write_uya_root(out, out_cap, &candidate[0] as &byte);
+    }
+
+    last_slash = strrchr(&base[0] as *byte, 47);
+    if last_slash != null && strcmp(last_slash, "/lib" as *byte) == 0 {
+        written = snprintf(&candidate[0] as &byte, PATH_MAX, "%s/uya" as *byte, &base[0] as *byte);
+        if written > 0 && written < PATH_MAX && main_path_has_std_dir(&candidate[0] as &byte) != 0 {
+            return main_write_uya_root(out, out_cap, &candidate[0] as &byte);
+        }
+    }
+
+    written = snprintf(&candidate[0] as &byte, PATH_MAX, "%s/lib" as *byte, &base[0] as *byte);
+    if written > 0 && written < PATH_MAX && main_path_has_std_dir(&candidate[0] as &byte) != 0 {
+        return main_write_uya_root(out, out_cap, &candidate[0] as &byte);
+    }
+
+    written = snprintf(out as *byte, out_cap, "%s/lib/uya/" as *byte, &base[0] as *byte);
+    if written <= 0 || written >= out_cap as i32 {
+        return -1;
+    }
+    return 0;
 }
 
 // 打印使用说明（program_name 用 &byte，传给 fprintf 时转为 *byte；若为 null 则用默认名避免 %s 段错误）
@@ -952,7 +1032,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
     fprintf(libc.stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
-    fprintf(libc.stderr, "  - 使用 UYA_ROOT 环境变量指定标准库位置（未设置时默认为编译器所在目录的上一级，即 …/bin → …/lib）\n" as *byte);
+    fprintf(libc.stderr, "  - 使用 UYA_ROOT 环境变量指定标准库位置（未设置时优先 …/bin → …/lib/uya，兼容 …/lib）\n" as *byte);
     fprintf(libc.stderr, "\n语言特性:\n" as *byte);
     fprintf(libc.stderr, "  - 零 GC，手动内存管理\n" as *byte);
     fprintf(libc.stderr, "  - 编译期内存安全证明\n" as *byte);
@@ -1948,31 +2028,8 @@ fn compile_files(
         return 1;
     }
 
-    // 标准库在编译器所在目录的上一级目录的 lib/ 下
-    // 例如：编译器在 /path/bin/uya，标准库在 /path/lib/
-    // 与 C 编译器一致：若 UYA_ROOT 已指向 lib 目录则直接使用，否则追加 /lib/
-    var base_len: usize = strlen(&uya_root_base[0]);
-    if base_len > 1 && base_len < PATH_MAX && uya_root_base[base_len - 1] == 47 {  // '/'
-        uya_root_base[base_len - 1] = 0;
-        base_len = base_len - 1;
-    }
-    const last_slash: *byte = strrchr(&uya_root_base[0], 47);
-    var already_lib: i32 = 0;
-    if last_slash != null && strcmp(last_slash, "/lib" as *byte) == 0 {
-        already_lib = 1;
-    }
-    if already_lib == 0 && last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        const slash_idx: usize = ((last_slash as i64 - &uya_root_base[0] as i64) as! usize) catch { 0usize; };
-        uya_root_base[slash_idx] = 0;
-    }
     var uya_root_buffer: [byte: PATH_MAX] = [];
-    var lib_len: i32 = 0;
-    if already_lib != 0 {
-        lib_len = snprintf(&uya_root_buffer[0] as &byte, PATH_MAX, "%s/" as *byte, &uya_root_base[0] as &byte);
-    } else {
-        lib_len = snprintf(&uya_root_buffer[0] as &byte, PATH_MAX, "%s/lib/" as *byte, &uya_root_base[0] as &byte);
-    }
-    if lib_len <= 0 || lib_len >= PATH_MAX {
+    if resolve_uya_library_root(&uya_root_base[0] as &byte, &uya_root_buffer[0] as &byte, PATH_MAX) != 0 {
         fprintf(libc.stderr, "错误: UYA_ROOT 路径过长\n" as *byte);
         return 1;
     }
@@ -3070,24 +3127,11 @@ fn generate_libc(output_dir: &byte) i32 {
         return 1;
     }
 
-    // 标准库在编译器所在目录的上一级目录的 lib/ 下
-    var base_len: usize = strlen(&uya_root_buffer[0]);
-    if base_len > 1 {
-        const trailing_idx: i32 = (base_len - 1) as i32;
-        if trailing_idx >= 0 && trailing_idx < PATH_MAX {
-            if main_path_buf_char_at(uya_root_buffer, trailing_idx) == 47 {
-                main_path_buf_set(uya_root_buffer, trailing_idx, 0);
-                base_len = base_len - 1;
-            }
-        }
-    }
-    const last_slash: *byte = strrchr(&uya_root_buffer[0], 47);
-    if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        const slash_idx: usize = ((last_slash as i64 - &uya_root_buffer[0] as i64) as! usize) catch { 0usize; };
-        uya_root_buffer[slash_idx] = 0;
-    }
     var lib_dir: [byte: PATH_MAX] = [];
-    snprintf(&lib_dir[0], PATH_MAX, "%s/lib/" as *byte, &uya_root_buffer[0] as *byte);
+    if resolve_uya_library_root(&uya_root_buffer[0] as &byte, &lib_dir[0] as &byte, PATH_MAX) != 0 {
+        fprintf(libc.stderr, "错误: UYA_ROOT 路径过长\n" as *byte);
+        return 1;
+    }
 
     // 创建输出目录（如果不存在）
     mkdir(output_dir as *byte, 493);  // 0755 = 493
