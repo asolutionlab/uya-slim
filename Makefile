@@ -1233,11 +1233,19 @@ release-clean:
 
 # 安装编译器和标准库源码树（需系统 install(1)；标准库排除 lib/build）
 install:
-	@if [ ! -f bin/uya ]; then \
-		echo "bin/uya 不存在，先执行 from-c ..."; \
-		$(MAKE) from-c; \
+	@set -e; LOG=$$(mktemp /tmp/uya-install-build.XXXXXX); \
+	trap 'rm -f "$$LOG"' EXIT INT TERM; \
+	if [ ! -f bin/uya ]; then \
+		echo "bin/uya 不存在，先构建基础编译器..."; \
+		if ! $(MAKE) --no-print-directory from-c > "$$LOG" 2>&1; then \
+			cat "$$LOG"; \
+			exit 1; \
+		fi; \
+	fi; \
+	if ! $(MAKE) --no-print-directory cmds > "$$LOG" 2>&1; then \
+		cat "$$LOG"; \
+		exit 1; \
 	fi
-	@$(MAKE) cmds
 	@echo "安装 uya -> $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya"
 	@install -d "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)"
 	@install -m 755 bin/uya "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya"
