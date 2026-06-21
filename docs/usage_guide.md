@@ -34,6 +34,27 @@ make check
 ./bin/uya --version
 ```
 
+### 安装到全局命令路径
+
+```bash
+make install PREFIX=$HOME/.local
+uya --version
+```
+
+`make install` 和 `make install-core` 会在本机安装时检查安装目录是否已经持久化到 shell 的 `PATH` 配置中；若缺失，会自动写入 `~/.bashrc`、`~/.zshrc` 或 `~/.profile`。使用 `DESTDIR` 的打包安装不会修改用户配置。
+
+如需只复制文件而不改 shell 配置：
+
+```bash
+make install PREFIX=$HOME/.local INSTALL_CONFIGURE_ENV=0
+```
+
+如需指定写入的配置文件：
+
+```bash
+make install PREFIX=$HOME/.local INSTALL_PROFILE=$HOME/.bashrc
+```
+
 ---
 
 ## 编译 Uya 程序

@@ -2001,6 +2001,7 @@ fn compile_files(
     split_c_dir: &byte,
     async_frame_heap_fallback: i32,
     stop_after_checker: i32,
+    emit_compile_logs: i32,
     out_artifacts: &CompileArtifacts
 ) i32 {
     compile_artifacts_reset(out_artifacts);
@@ -2276,12 +2277,14 @@ fn compile_files(
 
     all_file_count = dedupe_paths_in_place(&all_files[0], all_file_count);
 
-    fprintf(libc.stderr, "=== 开始编译 ===\n" as *byte);
-    fprintf(libc.stderr, "输入文件数量: %d (包含依赖)\n" as *byte, all_file_count);
-    i = 0;
-    while i < all_file_count {
-        fprintf(libc.stderr, "  %d: %s\n" as *byte, i, all_files[i] as *byte);
-        i = i + 1;
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "=== 开始编译 ===\n" as *byte);
+        fprintf(libc.stderr, "输入文件数量: %d (包含依赖)\n" as *byte, all_file_count);
+        i = 0;
+        while i < all_file_count {
+            fprintf(libc.stderr, "  %d: %s\n" as *byte, i, all_files[i] as *byte);
+            i = i + 1;
+        }
     }
     const output_file: *byte = get_argv(output_file_index);
     // 如果有覆盖路径，使用覆盖路径
@@ -2292,15 +2295,17 @@ fn compile_files(
     if out_artifacts != null {
         out_artifacts.generated_c_path = actual_output as &byte;
     }
-    if stop_after_checker != 0 {
-        fprintf(libc.stderr, "输出模式: checker-only\n" as *byte);
-    } else {
-        fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
+    if emit_compile_logs != 0 {
+        if stop_after_checker != 0 {
+            fprintf(libc.stderr, "输出模式: checker-only\n" as *byte);
+        } else {
+            fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
+        }
+        if module_root != null {
+            fprintf(libc.stderr, "模块根目录: %s\n" as *byte, module_root as *byte);
+        }
+        fprintf(libc.stderr, "UYA_ROOT: %s\n" as *byte, &uya_root_buffer[0]);
     }
-    if module_root != null {
-        fprintf(libc.stderr, "模块根目录: %s\n" as *byte, module_root as *byte);
-    }
-    fprintf(libc.stderr, "UYA_ROOT: %s\n" as *byte, &uya_root_buffer[0]);
     var module_name: *byte = "(unknown)" as *byte;
     if all_file_count > 0 {
         module_name = all_files[0] as *byte;
@@ -2314,14 +2319,18 @@ fn compile_files(
         }
         i = i + 1;
     }
-    fprintf(libc.stderr, "=== 词法/语法分析 ===\n" as *byte);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "=== 词法/语法分析 ===\n" as *byte);
+    }
     var backend_str: *byte = "LLVM" as *byte;
     if backend == BackendType.BACKEND_C99 {
         backend_str = "C99" as *byte;
     } else if backend == BackendType.BACKEND_EXEC {
         backend_str = "EXEC" as *byte;
     }
-    fprintf(libc.stderr, "后端类型: %s\n" as *byte, backend_str);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "后端类型: %s\n" as *byte, backend_str);
+    }
 
     // 初始化编译统计
     var stats: CompileStats = CompileStats { parse_time_ms: 0, merge_time_ms: 0, check_time_ms: 0, opt_time_ms: 0, codegen_time_ms: 0, total_time_ms: 0, file_count: 0, ast_nodes: 0 };
@@ -2389,13 +2398,19 @@ fn compile_files(
             return 1;
         }
         programs[i] = ast;
-        fprintf(libc.stderr, "  解析完成: %s\n" as *byte, input_path);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "  解析完成: %s\n" as *byte, input_path);
+        }
         i = i + 1;
     }
     parse_end_time = clock();
-    fprintf(libc.stderr, "=== 词法/语法分析完成，共 %d 个文件 ===\n" as *byte, all_file_count);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "=== 词法/语法分析完成，共 %d 个文件 ===\n" as *byte, all_file_count);
+    }
 
-    fprintf(libc.stderr, "=== AST 合并阶段 ===\n" as *byte);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "=== AST 合并阶段 ===\n" as *byte);
+    }
     var merged_ast: &ASTNode = ast_merge_programs(programs, all_file_count, &arena);
     if merged_ast == null {
         fprintf(libc.stderr, "错误: AST 合并失败\n" as *byte);
@@ -2407,9 +2422,13 @@ fn compile_files(
         return 1;
     }
     merge_end_time = clock();
-    fprintf(libc.stderr, "AST 合并完成，共 %d 个声明\n" as *byte, merged_ast.program_decl_count);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "AST 合并完成，共 %d 个声明\n" as *byte, merged_ast.program_decl_count);
+    }
 
-    fprintf(libc.stderr, "=== 类型检查阶段 ===\n" as *byte);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "=== 类型检查阶段 ===\n" as *byte);
+    }
     const void_type: Type = Type {
         kind: TypeKind.TYPE_VOID,
         data: TypeData.named(null as &byte),
@@ -2497,12 +2516,16 @@ fn compile_files(
         return 1;
     }
     check_end_time = clock();
-    fprintf(libc.stderr, "类型检查通过\n" as *byte);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "类型检查通过\n" as *byte);
+    }
     if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM {
         merged_ast = checker.program_node;
     }
     if stop_after_checker != 0 {
-        fprintf(libc.stderr, "\n检查完成：checker 通过（未执行代码生成）\n" as *byte);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "\n检查完成：checker 通过（未执行代码生成）\n" as *byte);
+        }
         return 0;
     }
     if out_artifacts != null {
@@ -2552,7 +2575,9 @@ fn compile_files(
     }
 
     if opt_level > 0 {
-        fprintf(libc.stderr, "\n=== 优化阶段 (级别: %d) ===\n" as *byte, opt_level);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "\n=== 优化阶段 (级别: %d) ===\n" as *byte, opt_level);
+        }
 
         // 执行优化
         const optimized_ast: &ASTNode = optimize_program(checker, merged_ast, opt_config);
@@ -2560,17 +2585,21 @@ fn compile_files(
 
         // 打印优化统计
         const opt_stats: OptimizationStats = get_optimization_stats();
-        fprintf(libc.stderr, "常量折叠: %d\n" as *byte, opt_stats.constant_folded);
-        fprintf(libc.stderr, "死代码消除: %d\n" as *byte, opt_stats.dead_code_eliminated);
-        fprintf(libc.stderr, "证明优化: %d\n" as *byte, opt_stats.proof_optimized);
-        fprintf(libc.stderr, "函数内联: %d\n" as *byte, opt_stats.inlined_functions);
-        fprintf(libc.stderr, "循环展开: %d\n" as *byte, opt_stats.loops_unrolled);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "常量折叠: %d\n" as *byte, opt_stats.constant_folded);
+            fprintf(libc.stderr, "死代码消除: %d\n" as *byte, opt_stats.dead_code_eliminated);
+            fprintf(libc.stderr, "证明优化: %d\n" as *byte, opt_stats.proof_optimized);
+            fprintf(libc.stderr, "函数内联: %d\n" as *byte, opt_stats.inlined_functions);
+            fprintf(libc.stderr, "循环展开: %d\n" as *byte, opt_stats.loops_unrolled);
+        }
     } else {
         opt_end_time = clock();
     }
 
-    fprintf(libc.stderr, "\n=== 代码生成阶段 ===\n" as *byte);
-    fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "\n=== 代码生成阶段 ===\n" as *byte);
+        fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
+    }
 
     if backend == BackendType.BACKEND_EXEC {
         exec_backend_set_options(g_exec_dump_hir_enabled, g_exec_dump_bytecode_enabled, g_exec_trace_vm_enabled);
@@ -2583,19 +2612,21 @@ fn compile_files(
         stats.codegen_time_ms = (codegen_end_time - opt_end_time) * 1000 / CLOCKS_PER_SEC;
         stats.total_time_ms = (codegen_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
 
-        fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
-        fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
-        fprintf(libc.stderr, "解析耗时: %ld ms\n" as *byte, stats.parse_time_ms);
-        fprintf(libc.stderr, "合并耗时: %ld ms\n" as *byte, stats.merge_time_ms);
-        fprintf(libc.stderr, "检查耗时: %ld ms\n" as *byte, stats.check_time_ms);
-        if opt_level > 0 {
-            const opt_time_ms_exec: i64 = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
-            fprintf(libc.stderr, "优化耗时: %ld ms\n" as *byte, opt_time_ms_exec);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
+            fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
+            fprintf(libc.stderr, "解析耗时: %ld ms\n" as *byte, stats.parse_time_ms);
+            fprintf(libc.stderr, "合并耗时: %ld ms\n" as *byte, stats.merge_time_ms);
+            fprintf(libc.stderr, "检查耗时: %ld ms\n" as *byte, stats.check_time_ms);
+            if opt_level > 0 {
+                const opt_time_ms_exec: i64 = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
+                fprintf(libc.stderr, "优化耗时: %ld ms\n" as *byte, opt_time_ms_exec);
+            }
+            fprintf(libc.stderr, "exec lowering 耗时: %ld ms\n" as *byte, exec_backend_get_last_lower_time_ms());
+            fprintf(libc.stderr, "exec bytecode 构建耗时: %ld ms\n" as *byte, exec_backend_get_last_bytecode_build_time_ms());
+            fprintf(libc.stderr, "exec build 耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
+            fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
         }
-        fprintf(libc.stderr, "exec lowering 耗时: %ld ms\n" as *byte, exec_backend_get_last_lower_time_ms());
-        fprintf(libc.stderr, "exec bytecode 构建耗时: %ld ms\n" as *byte, exec_backend_get_last_bytecode_build_time_ms());
-        fprintf(libc.stderr, "exec build 耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
-        fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
 
         if exec_result != 0 {
             if exec_backend_error_is_unsupported() != 0 {
@@ -2608,7 +2639,9 @@ fn compile_files(
             return exec_result;
         }
 
-        fprintf(libc.stderr, "\nexec backend 构建完成\n" as *byte);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "\nexec backend 构建完成\n" as *byte);
+        }
         return 0;
     }
 
@@ -2692,19 +2725,21 @@ fn compile_files(
     stats.total_time_ms = (codegen_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
 
     // 输出编译统计
-    fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
-    fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
-    fprintf(libc.stderr, "解析耗时: %ld ms\n" as *byte, stats.parse_time_ms);
-    fprintf(libc.stderr, "合并耗时: %ld ms\n" as *byte, stats.merge_time_ms);
-    fprintf(libc.stderr, "检查耗时: %ld ms\n" as *byte, stats.check_time_ms);
-    if opt_level > 0 {
-        const opt_time_ms: i64 = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
-        fprintf(libc.stderr, "优化耗时: %ld ms\n" as *byte, opt_time_ms);
-    }
-    fprintf(libc.stderr, "生成耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
-    fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
+    if emit_compile_logs != 0 {
+        fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
+        fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
+        fprintf(libc.stderr, "解析耗时: %ld ms\n" as *byte, stats.parse_time_ms);
+        fprintf(libc.stderr, "合并耗时: %ld ms\n" as *byte, stats.merge_time_ms);
+        fprintf(libc.stderr, "检查耗时: %ld ms\n" as *byte, stats.check_time_ms);
+        if opt_level > 0 {
+            const opt_time_ms: i64 = (opt_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
+            fprintf(libc.stderr, "优化耗时: %ld ms\n" as *byte, opt_time_ms);
+        }
+        fprintf(libc.stderr, "生成耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
+        fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
 
-    fprintf(libc.stderr, "\n代码生成完成: %s\n" as *byte, actual_output);
+        fprintf(libc.stderr, "\n代码生成完成: %s\n" as *byte, actual_output);
+    }
 
     return 0;
 }
@@ -2918,23 +2953,29 @@ export fn main() i32 {
     if input_paths_override_count > 0 {
         input_paths_override_ptr = &input_paths_override[0] as &(&byte);
     }
-    var result: i32 = compile_files(&input_file_indices[0], input_file_count, input_paths_override_ptr, input_paths_override_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
+    var emit_compile_logs: i32 = 1;
+    if command == CommandType.COMMAND_RUN && exec_requested == 0 {
+        emit_compile_logs = 0;
+    }
+    var result: i32 = compile_files(&input_file_indices[0], input_file_count, input_paths_override_ptr, input_paths_override_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, emit_compile_logs, &artifacts);
     if result == 2 && selected_backend == BackendType.BACKEND_EXEC && exec_only == 0 {
         if exec_backend_should_fallback() == 0 {
             fprintf(libc.stderr, "错误: exec backend 命中未登记的 fallback 原因码: %s\n" as *byte, exec_backend_get_last_unsupported_reason_name() as *byte);
             return 1;
         }
         const exec_err: &byte = exec_backend_get_last_error();
-        if exec_err != null {
-            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99 (原因码: %s): %s\n" as *byte,
-                exec_backend_get_last_unsupported_reason_name() as *byte,
-                exec_err as *byte);
-        } else {
-            fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99 (原因码: %s)\n" as *byte,
-                exec_backend_get_last_unsupported_reason_name() as *byte);
+        if emit_compile_logs != 0 {
+            if exec_err != null {
+                fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99 (原因码: %s): %s\n" as *byte,
+                    exec_backend_get_last_unsupported_reason_name() as *byte,
+                    exec_err as *byte);
+            } else {
+                fprintf(libc.stderr, "信息: exec backend 不支持，回退 C99 (原因码: %s)\n" as *byte,
+                    exec_backend_get_last_unsupported_reason_name() as *byte);
+            }
         }
         selected_backend = BackendType.BACKEND_C99;
-        result = compile_files(&input_file_indices[0], input_file_count, input_paths_override_ptr, input_paths_override_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, &artifacts);
+        result = compile_files(&input_file_indices[0], input_file_count, input_paths_override_ptr, input_paths_override_count, output_file_index, selected_backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg, async_frame_heap_fallback, stop_after_checker, emit_compile_logs, &artifacts);
     }
     if result != 0 {
         return 1;
@@ -2981,7 +3022,9 @@ export fn main() i32 {
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         if backend == BackendType.BACKEND_EXEC {
             const child_exit_exec: i32 = exec_run_program();
-            fprintf(libc.stderr, "exec vm 运行耗时: %ld ms\n" as *byte, exec_backend_get_last_vm_run_time_ms());
+            if emit_compile_logs != 0 {
+                fprintf(libc.stderr, "exec vm 运行耗时: %ld ms\n" as *byte, exec_backend_get_last_vm_run_time_ms());
+            }
             if command == CommandType.COMMAND_TEST {
                 var passed_exec: i32 = 0;
                 var failed_exec: i32 = 1;
@@ -3024,9 +3067,17 @@ export fn main() i32 {
         }
 
         // 调用宿主工具链链接生成可执行文件
-        fprintf(libc.stderr, "\n编译完成：%s\n" as *byte, actual_output as *byte);
+        if emit_compile_logs != 0 {
+            fprintf(libc.stderr, "\n编译完成：%s\n" as *byte, actual_output as *byte);
+        }
 
+        if emit_compile_logs == 0 {
+            toolchain_set_quiet_logs(1);
+        }
         const link_result: i32 = link_with_toolchain(actual_output, &run_output[0] as &byte, is_nostdlib, &artifacts.c_import_plan);
+        if emit_compile_logs == 0 {
+            toolchain_set_quiet_logs(0);
+        }
         if link_result != 0 {
             fprintf(libc.stderr, "错误：宿主工具链链接失败\n" as *byte);
             return 1;

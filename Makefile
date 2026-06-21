@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c from-c-native uya uya-core uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable examples-check outlibc c e clean check check-core check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-bootstrap release-flow release-build release-dirty release-preflight release-clean install install-core help cmds cmd-upm uya-upm-stage2 upm-check
+.PHONY: all from-c from-c-native uya uya-core uya-hosted uya-std uya-nostdlib uya-portable b b-hosted b-portable bench-compile-stats tests tests-hosted tests-uya tests-emcc tests-portable examples-check outlibc c e clean check check-core check-hosted backup backup-seed backup-hosted-seed backup-all-seed back-all-seed backup-hosted-seed-native backup-all restore release release-bootstrap release-flow release-build release-dirty release-preflight release-clean install install-core install-configure-env help cmds cmd-upm uya-upm-stage2 upm-check
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -45,8 +45,11 @@ UYA_CMD_BOOTSTRAP_COMPILER ?= ./bin/uya
 #   - 路径最后一段为 bin：视为「可执行目录」，如 /custom/bin → /custom/bin/uya、/custom/lib/uya/
 #   - 否则视为「安装前缀」，如 out、/opt/uya → 前缀/bin/uya、前缀/lib/uya/（与 ~/.local 布局一致）
 #       可显式覆盖 LIBDIR；若与上述布局不一致，请设置环境变量 UYA_ROOT
+# 安装后默认自动检查并持久化 PATH；打包安装 DESTDIR 会跳过。可用 INSTALL_CONFIGURE_ENV=0 关闭。
 PREFIX ?= out
 BINDIR ?= $(PREFIX)/bin
+INSTALL_CONFIGURE_ENV ?= 1
+INSTALL_PROFILE ?=
 _BINDIR_NORM := $(patsubst %/,%,$(BINDIR))
 ifeq ($(notdir $(_BINDIR_NORM)),bin)
 INSTALL_BINDIR := $(_BINDIR_NORM)
@@ -728,6 +731,19 @@ check: uya
 			exit 1; \
 		fi; \
 		echo ""; \
+		echo "验证 install PATH 自动配置..."; \
+		if bash ./tests/verify_install_env_path.sh > /tmp/verify_out.txt 2>&1; then \
+			grep -E "ok$$|✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=0; \
+		else \
+			cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=1; \
+		fi; \
+		if [ $$VERIFY_EXIT -ne 0 ]; then \
+			echo "✗ install PATH 自动配置验证失败"; \
+			exit 1; \
+		fi; \
+		echo ""; \
 		echo "验证 UPM 套件..."; \
 		if $(MAKE) upm-check > /tmp/verify_out.txt 2>&1; then \
 			grep -E "verify_upm_.*: ok$$|test_cmd_dispatch: ok$$|verify_upm_suite: ok$$|✓" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
@@ -890,7 +906,7 @@ check: uya
 	fi; \
 	rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
 	echo ""; \
-		echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON + http_bench C99）"
+		echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + install PATH + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON + http_bench C99）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted
@@ -1237,6 +1253,7 @@ install:
 		if [ "$$base" = "build" ]; then continue; fi; \
 		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
 	done
+	@$(MAKE) --no-print-directory install-configure-env
 	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/"
 
 install-core: uya-core
@@ -1251,7 +1268,11 @@ install-core: uya-core
 		if [ "$$base" = "build" ]; then continue; fi; \
 		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
 	done
+	@$(MAKE) --no-print-directory install-configure-env
 	@echo "✓ core 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya-core + $(INSTALL_DEST_ROOT)$(LIBDIR)/"
+
+install-configure-env:
+	@INSTALL_CONFIGURE_ENV="$(INSTALL_CONFIGURE_ENV)" INSTALL_PROFILE="$(INSTALL_PROFILE)" bash scripts/configure_install_env.sh --bindir "$(INSTALL_BINDIR)" --destdir "$(DESTDIR)"
 
 # 从备份恢复 bin/uya.c
 restore:
@@ -1328,8 +1349,8 @@ help:
 	@echo "  make release       - full 一键最终验证：要求工作树干净，再 clean+自举验证+backup-all-seed 后 -O3 -DNDEBUG 重链 + strip"
 	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
 	@echo "  make release-clean - 用 Git HEAD 干净快照执行 make release，贴近 CI（忽略未提交修改）"
-	@echo "  make install       - 安装 uya、bin/cmd/* 和 lib/；BINDIR/LIBDIR/DESTDIR"
-	@echo "  make install-core  - 仅安装 uya-core 和 lib/；不构建或安装 bin/cmd/*"
+	@echo "  make install       - 安装 uya、bin/cmd/* 和 lib/；自动检查并持久化 PATH（DESTDIR 跳过）"
+	@echo "  make install-core  - 仅安装 uya-core 和 lib/；同样自动检查 PATH"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
 	@echo "  make help          - 显示此帮助信息"
@@ -1343,6 +1364,8 @@ help:
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
 	@echo '  make install PREFIX=$$HOME/.local   # ~/.local/bin/uya + ~/.local/lib/uya/{std,libc,...}'
 	@echo '  make install-core PREFIX=$$HOME/.local # ~/.local/bin/uya-core + ~/.local/lib/uya/{std,libc,...}'
+	@echo '  make install PREFIX=$$HOME/.local INSTALL_CONFIGURE_ENV=0 # 只安装，不改 shell 配置'
+	@echo '  make install PREFIX=$$HOME/.local INSTALL_PROFILE=$$HOME/.bashrc # 指定写入的配置文件'
 	@echo "  make install BINDIR=out              # out/bin/uya + out/lib/uya/（BINDIR 作前缀，同 PREFIX 布局）"
 	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/uya/"
 	@echo "  make install LIBDIR=/other/lib/uya   # 显式标准库目录（通常需配合 export UYA_ROOT）"
