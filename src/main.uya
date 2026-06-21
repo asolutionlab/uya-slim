@@ -1909,6 +1909,7 @@ fn upm_package_context_init() UPMPackageContext {
 
 fn prepare_package_alias_roots_from_plan(package_build_plan: &UPMPackageBuildPlan) i32 {
     package_mode_alias_roots_clear();
+    checker_package_mode_alias_roots_clear();
     if package_build_plan == null {
         return 0;
     }
@@ -1916,7 +1917,8 @@ fn prepare_package_alias_roots_from_plan(package_build_plan: &UPMPackageBuildPla
     while i < package_build_plan.resolved_graph.dep_count {
         if package_build_plan.resolved_graph.deps[i].alias[0] != 0 as byte &&
             package_build_plan.resolved_graph.deps[i].source_root[0] != 0 as byte {
-            if package_mode_alias_roots_add(&package_build_plan.resolved_graph.deps[i].alias[0] as &byte, &package_build_plan.resolved_graph.deps[i].source_root[0] as &byte) != 0 {
+            if package_mode_alias_roots_add(&package_build_plan.resolved_graph.deps[i].alias[0] as &byte, &package_build_plan.resolved_graph.deps[i].source_root[0] as &byte) != 0 ||
+                checker_package_mode_alias_roots_add(&package_build_plan.resolved_graph.deps[i].alias[0] as &byte, &package_build_plan.resolved_graph.deps[i].source_root[0] as &byte) != 0 {
                 fprintf(libc.stderr, "错误: package dependency alias 映射过多或路径过长（alias=%s）\n" as *byte, &package_build_plan.resolved_graph.deps[i].alias[0] as *byte);
                 return 1;
             }
@@ -1943,6 +1945,7 @@ fn prepare_package_context_for_command(
     package_context.active = 0;
     input_paths_override_count[0] = 0;
     package_mode_alias_roots_clear();
+    checker_package_mode_alias_roots_clear();
     if !((command == CommandType.COMMAND_BUILD || command == CommandType.COMMAND_CHECK ||
         command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) &&
         input_file_count == 1) {
@@ -2953,6 +2956,12 @@ export fn main() i32 {
     if input_paths_override_count > 0 {
         input_paths_override_ptr = &input_paths_override[0] as &(&byte);
     }
+    var allow_dev_module_dirs: i32 = 0;
+    if command == CommandType.COMMAND_TEST {
+        allow_dev_module_dirs = 1;
+    }
+    package_mode_set_dev_module_dirs_enabled(allow_dev_module_dirs);
+    checker_package_mode_set_dev_module_dirs_enabled(allow_dev_module_dirs);
     var emit_compile_logs: i32 = 1;
     if command == CommandType.COMMAND_RUN && exec_requested == 0 {
         emit_compile_logs = 0;

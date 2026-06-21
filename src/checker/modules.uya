@@ -13,9 +13,82 @@ const CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX: i32 = 128;
 var g_checker_package_mode_alias_root_count: i32 = 0;
 var g_checker_package_mode_alias_names: [[byte: PATH_MAX]: CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX] = [];
 var g_checker_package_mode_alias_roots: [[byte: PATH_MAX]: CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX] = [];
+var g_checker_package_mode_dev_module_dirs_enabled: i32 = 0;
 
 fn checker_package_mode_alias_roots_clear() void {
     g_checker_package_mode_alias_root_count = 0;
+}
+
+fn checker_package_mode_set_dev_module_dirs_enabled(enabled: i32) void {
+    if enabled != 0 {
+        g_checker_package_mode_dev_module_dirs_enabled = 1;
+    } else {
+        g_checker_package_mode_dev_module_dirs_enabled = 0;
+    }
+}
+
+fn checker_package_mode_module_segment_is_dev_dir(module_path: &byte, start: usize, end: usize) i32 {
+    if module_path == null || end <= start {
+        return 0;
+    }
+    const seg_len: usize = end - start;
+    if seg_len == 5usize && strncmp(&module_path[start], "tests" as *byte, seg_len) == 0 {
+        return 1;
+    }
+    if seg_len == 10usize && strncmp(&module_path[start], "benchmarks" as *byte, seg_len) == 0 {
+        return 1;
+    }
+    if seg_len == 8usize && strncmp(&module_path[start], "examples" as *byte, seg_len) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn checker_package_mode_first_segment_matches_alias(module_path: &byte, end: usize) i32 {
+    if module_path == null || end == 0usize {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < g_checker_package_mode_alias_root_count {
+        const idx_checked: !usize = i as! usize;
+        const idx_usize: usize = idx_checked catch {
+            return 0;
+        };
+        if idx_usize >= CHECKER_PACKAGE_MODE_ALIAS_ROOT_MAX as usize {
+            return 0;
+        }
+        const alias: &byte = &g_checker_package_mode_alias_names[idx_usize][0] as &byte;
+        if strlen(alias as *byte) == end && strncmp(module_path as *byte, alias as *byte, end) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn checker_package_mode_module_path_is_dev_only(module_path: &byte) i32 {
+    if g_checker_package_mode_dev_module_dirs_enabled != 0 || module_path == null {
+        return 0;
+    }
+    var start: usize = 0usize;
+    var i: usize = 0usize;
+    while module_path[i] != 0 as byte {
+        if module_path[i] == 46 as byte {
+            if checker_package_mode_module_segment_is_dev_dir(module_path, start, i) != 0 {
+                if !(start == 0usize && checker_package_mode_first_segment_matches_alias(module_path, i) != 0) {
+                    return 1;
+                }
+            }
+            start = i + 1usize;
+        }
+        i = i + 1usize;
+    }
+    if checker_package_mode_module_segment_is_dev_dir(module_path, start, i) != 0 {
+        if !(start == 0usize && checker_package_mode_first_segment_matches_alias(module_path, i) != 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 fn checker_package_mode_alias_copy_root(src: &byte, out: &byte, out_cap: usize) i32 {
@@ -1136,6 +1209,10 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             var first_seg_dir_found: i32 = 0;
             var first_seg_dir_path: [byte: PATH_MAX] = [];
             const first_seg_len: usize = strlen(first_seg as *byte);
+            const first_seg_is_dev_only: i32 = checker_package_mode_module_path_is_dev_only(first_seg);
+            if first_seg_is_dev_only != 0 {
+                return 1;
+            }
             
             // 从 node.filename 提取模块根目录
             var module_root_for_check: &byte = null;
@@ -1157,7 +1234,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             }
             
             // 尝试在模块根目录中查找
-            if module_root_for_check != null {
+            if first_seg_is_dev_only == 0 && module_root_for_check != null {
                 const root_len_check: usize = strlen(module_root_for_check as *byte);
                 if root_len_check + first_seg_len < PATH_MAX {
                     strcpy(&first_seg_dir_path[0], module_root_for_check as *byte);
@@ -1172,7 +1249,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             }
             
             // 尝试在 checker.module_root_dir 中查找
-            if first_seg_dir_found == 0 && checker.module_root_dir != null {
+            if first_seg_dir_found == 0 && first_seg_is_dev_only == 0 && checker.module_root_dir != null {
                 const root_len_check2: usize = strlen(checker.module_root_dir as *byte);
                 if root_len_check2 + first_seg_len < PATH_MAX {
                     strcpy(&first_seg_dir_path[0], checker.module_root_dir as *byte);
@@ -1187,7 +1264,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             }
             
             // 尝试在 UYA_ROOT 中查找（标准库）
-            if first_seg_dir_found == 0 && checker.uya_root_dir != null {
+            if first_seg_dir_found == 0 && first_seg_is_dev_only == 0 && checker.uya_root_dir != null {
                 const root_len_check3: usize = strlen(checker.uya_root_dir as *byte);
                 if root_len_check3 + first_seg_len < PATH_MAX {
                     strcpy(&first_seg_dir_path[0], checker.uya_root_dir as *byte);
@@ -1310,8 +1387,13 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                 }
                 
+                const full_path_is_dev_only: i32 = checker_package_mode_module_path_is_dev_only(full_path);
+                if full_path_is_dev_only != 0 {
+                    return 1;
+                }
+
                 // 尝试在模块根目录中查找
-                if module_root_from_file != null {
+                if full_path_is_dev_only == 0 && module_root_from_file != null {
                     var dir_path: [byte: PATH_MAX] = [];
                     const root_len: usize = strlen(module_root_from_file as *byte);
                     const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
@@ -1328,7 +1410,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                 }
                 // 如果模块根目录未设置或未找到，尝试 checker.module_root_dir
-                if found_dir == 0 && checker.module_root_dir != null {
+                if found_dir == 0 && full_path_is_dev_only == 0 && checker.module_root_dir != null {
                     var dir_path: [byte: PATH_MAX] = [];
                     const root_len: usize = strlen(checker.module_root_dir as *byte);
                     const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
@@ -1345,7 +1427,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                 }
                 // 最后尝试 UYA_ROOT
-                if found_dir == 0 && checker.uya_root_dir != null {
+                if found_dir == 0 && full_path_is_dev_only == 0 && checker.uya_root_dir != null {
                     var dir_path: [byte: PATH_MAX] = [];
                     const root_len: usize = strlen(checker.uya_root_dir as *byte);
                     const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
@@ -1436,6 +1518,10 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
     if module_name == null {
         checker_report_error(checker, node, "use 语句的模块名无效" as *byte);
         return 0;
+    }
+
+    if checker_package_mode_module_path_is_dev_only(module_name) != 0 {
+        return 1;
     }
 
     // `use libc.foo;` 是合法的扁平 libc 导入。若前面的模块探测把它整体识别成模块路径，

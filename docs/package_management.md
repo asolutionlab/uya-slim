@@ -244,6 +244,7 @@ example_dir = "examples"
 - `layout.source_dir` 作为 `package.source-dir` 的兼容别名解析
 - 若同时声明 `package.source-dir` 与 `layout.source_dir`，且值不同，则直接报错
 - `test_dir` / `bench_dir` / `example_dir` 当前仅做解析与路径校验，不参与 `upm build/test` 语义
+- `source-dir = "."` 时，顶层 `tests` / `benchmarks` / `examples` 仍视为开发目录；普通 `build` / `run` / `check` 不把它们作为运行时模块依赖展开，直接输入文件和 `test` 命令仍属于开发工作流
 - 未知表（例如 `[tool.make]`）不会再被误当成上一段继续解析
 
 ### 5.3 名称规则

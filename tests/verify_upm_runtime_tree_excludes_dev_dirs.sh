@@ -34,6 +34,7 @@ EOF_APP_MANIFEST
 
 cat > "$APP_DIR/src/main.uya" <<'EOF_APP_MAIN'
 use runtime_dep.message_text;
+use runtime_dep.tests;
 
 export fn main() i32 {
     @println("${message_text()}");

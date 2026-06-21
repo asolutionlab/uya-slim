@@ -1414,6 +1414,8 @@ fn core_compile_to_c99(options: &UyaCoreOptions, stop_after_checker: i32, result
     g_split_c_dir[0] = 0 as byte;
     package_mode_alias_roots_clear();
     checker_package_mode_alias_roots_clear();
+    package_mode_set_dev_module_dirs_enabled(0);
+    checker_package_mode_set_dev_module_dirs_enabled(0);
     if options.output.split_c_dir != null && options.output.split_c_dir[0] != 0 as byte {
         const sl: usize = strlen(options.output.split_c_dir as *byte);
         if sl >= PATH_MAX {
