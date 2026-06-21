@@ -14,6 +14,7 @@ SCRIPTS=(
     "$ROOT_DIR/tests/verify_package_mode_legacy_fallback.sh"
     "$ROOT_DIR/tests/verify_upm_manifest_flat.sh"
     "$ROOT_DIR/tests/verify_upm_manifest_src.sh"
+    "$ROOT_DIR/tests/verify_package_mode_run_default_entry.sh"
     "$ROOT_DIR/tests/verify_upm_init_validation.sh"
     "$ROOT_DIR/tests/verify_upm_manifest_discovery_file.sh"
     "$ROOT_DIR/tests/verify_package_mode_build_success.sh"

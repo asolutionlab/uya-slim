@@ -124,6 +124,44 @@ var g_module_root_override: [byte: PATH_MAX] = [];
 var g_module_root_override_active: i32 = 0;
 var g_manifest_path_override: [byte: PATH_MAX] = [];
 var g_manifest_path_override_active: i32 = 0;
+var g_default_input_path: [byte: PATH_MAX] = [];
+var g_default_input_path_active: i32 = 0;
+
+fn main_clear_default_input_path() void {
+    g_default_input_path_active = 0;
+    g_default_input_path[0] = 0 as byte;
+}
+
+fn main_set_default_input_path(path: &byte) i32 {
+    if path == null {
+        return 1;
+    }
+    const path_len: usize = strlen(path as *byte);
+    if path_len == 0usize || path_len >= PATH_MAX {
+        return 1;
+    }
+    strcpy(&g_default_input_path[0] as *byte, path as *byte);
+    g_default_input_path_active = 1;
+    return 0;
+}
+
+fn main_get_input_path(input_file_indices: &i32, slot: i32) &byte {
+    if input_file_indices == null || slot < 0 {
+        return null;
+    }
+    const arg_index: i32 = input_file_indices[slot];
+    if arg_index < 0 {
+        if g_default_input_path_active != 0 {
+            return &g_default_input_path[0] as &byte;
+        }
+        return null;
+    }
+    const arg_value: *byte = get_argv(arg_index);
+    if arg_value == null {
+        return null;
+    }
+    return arg_value as &byte;
+}
 
 fn split_c_set_default_dir() void {
     const def: &byte = ".uyacache" as &byte;
@@ -997,7 +1035,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件或中间产物\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s check <文件> [选项]              仅做词法/语法/类型检查，不执行代码生成\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s run [文件] [选项] [-- <参数>...]  编译并运行；包项目中省略文件时默认当前目录\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行（子进程栈：--stack-size 或默认 65536 KB）\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s upm <子命令> [参数]              Uya 包管理工作流\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
@@ -1005,6 +1043,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s check lib/foo.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run main.uya\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s run                         # 在包项目根目录自动运行入口文件\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s upm init --src-layout demo_pkg\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
@@ -1589,6 +1628,7 @@ fn parse_args(
     g_module_root_override[0] = 0 as byte;
     g_manifest_path_override_active = 0;
     g_manifest_path_override[0] = 0 as byte;
+    main_clear_default_input_path();
     async_frame_heap_fallback[0] = 0;
     exec_requested[0] = 0;
     exec_only[0] = 0;
@@ -1857,6 +1897,15 @@ fn parse_args(
         return 0;
     }
 
+    if input_file_count[0] == 0 && command[0] == CommandType.COMMAND_RUN {
+        if main_set_default_input_path("." as &byte) != 0 {
+            fprintf(libc.stderr, "错误: 无法设置默认输入目录\n" as *byte);
+            return -1;
+        }
+        input_file_indices[0] = -1;
+        input_file_count[0] = 1;
+    }
+
     if input_file_count[0] == 0 {
         fprintf(libc.stderr, "错误: 未指定输入文件\n" as *byte);
         const program_name: *byte = get_argv(0);
@@ -1951,7 +2000,7 @@ fn prepare_package_context_for_command(
         input_file_count == 1) {
         return 0;
     }
-    const input0: *byte = get_argv(input_file_indices[0]);
+    const input0: &byte = main_get_input_path(input_file_indices, 0);
     if input0 == null {
         return 0;
     }
@@ -2072,7 +2121,10 @@ fn compile_files(
                 input_path = input_paths_override[i] as *byte;
             }
         } else {
-            input_path = get_argv(idx_i);
+            const arg_input_path: &byte = main_get_input_path(input_file_indices, i);
+            if arg_input_path != null {
+                input_path = arg_input_path as *byte;
+            }
         }
         if input_path == null {
             fprintf(libc.stderr, "错误: 无法获取输入文件路径（索引 %d）\n" as *byte, idx_i);
@@ -2830,7 +2882,7 @@ export fn main() i32 {
     // run 和 test 命令：自动生成输出路径
     if (command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) && output_file_index < 0 {
         // 从输入文件名生成输出路径
-        const input_path: *byte = get_argv(input_file_indices[0]);
+        const input_path: &byte = main_get_input_path(&input_file_indices[0], 0);
         if input_path == null {
             fprintf(libc.stderr, "错误: 无法获取输入文件路径\n" as *byte);
             return 1;
