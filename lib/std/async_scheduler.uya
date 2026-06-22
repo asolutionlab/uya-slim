@@ -157,7 +157,7 @@ fn scheduler_runtime_default_frame_buffer_bytes() usize {
     if env != null && env[0] != 0 as byte {
         const parsed: i32 = atoi(env as &const byte);
         if parsed > 0 {
-            buffer_size = parsed as usize;
+            buffer_size = (parsed as! usize).value;
         }
     }
     return buffer_size;

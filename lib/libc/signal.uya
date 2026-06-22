@@ -314,7 +314,7 @@ export extern "libc" fn sigfillset(set: &sigset_t) i32 {
     if set == null {
         return -1;
     }
-    set.val = 0xFFFFFFFFFFFFFFFF as u64;
+    set.val = (0xFFFFFFFFFFFFFFFF as! u64).value;
     return 0;
 }
 
@@ -406,7 +406,7 @@ var _atexit_count: usize = 0;
 // 内部函数：调用所有注册的退出处理函数
 fn _call_atexit_handlers() void {
     const atexit_cap: i32 = @len(_atexit_handlers) as i32;
-    var remaining: i32 = _atexit_count as i32;
+    var remaining: i32 = (_atexit_count as! i32).value;
     if remaining > atexit_cap {
         remaining = atexit_cap;
     }

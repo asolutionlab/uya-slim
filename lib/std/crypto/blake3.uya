@@ -172,8 +172,8 @@ fn blake3_compress(input_cv: &[u32],
         state[i + 8usize] = BLAKE3_IV[i];
         i = i + 1;
     }
-    state[12] = counter as u32;
-    state[13] = (counter >> 32) as u32;
+    state[12] = (counter as! u32).value;
+    state[13] = ((counter >> 32) as! u32).value;
     state[14] = block_len;
     state[15] = flags;
     blake3_copy_words(block[0: BLAKE3_BLOCK_WORDS], block_words, BLAKE3_BLOCK_WORDS);
@@ -295,7 +295,7 @@ fn blake3_chunk_state_output(state: &Blake3ChunkState) Blake3Output {
                       BLAKE3_CV_WORDS);
     blake3_words_from_bytes(state.block[0: BLAKE3_BLOCK_BYTES], output.block_words[0: BLAKE3_BLOCK_WORDS]);
     output.counter = state.chunk_counter;
-    output.block_len = state.block_len as u32;
+    output.block_len = (state.block_len as! u32).value;
     output.flags = state.flags | blake3_chunk_state_start_flag(state) | BLAKE3_CHUNK_END;
     return output;
 }

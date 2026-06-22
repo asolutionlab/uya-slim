@@ -63,7 +63,7 @@ export fn pb_validate_field_number(field: u32) !void {
 }
 
 export fn pb_zigzag_encode_i32(n: i32) u32 {
-    const u: u32 = n as u32;
+    const u: u32 = (n as! u32).value;
     return (u << 1) ^ (u >> 31);
 }
 
@@ -72,7 +72,7 @@ export fn pb_zigzag_decode_i32(z: u32) i32 {
 }
 
 export fn pb_zigzag_encode_i64(n: i64) u64 {
-    const u: u64 = n as u64;
+    const u: u64 = (n as! u64).value;
     return (u << 1) ^ (u >> 63);
 }
 
@@ -137,10 +137,10 @@ export fn pb_read_fixed32_u32(c: &PbCursor) !u32 {
 
 // 小端 u32 存取（用于 Arena 上 i32/DemoInner 条带）
 export fn pb_buf_store_u32_le_at(data: &byte, byte_off: usize, v: u32) void {
-    data[byte_off + 0] = (v as byte);
-    data[byte_off + 1] = ((v >> 8) as byte);
-    data[byte_off + 2] = ((v >> 16) as byte);
-    data[byte_off + 3] = ((v >> 24) as byte);
+    data[byte_off + 0] = ((v as! byte).value);
+    data[byte_off + 1] = (((v >> 8) as! byte).value);
+    data[byte_off + 2] = (((v >> 16) as! byte).value);
+    data[byte_off + 3] = (((v >> 24) as! byte).value);
 }
 
 export fn pb_buf_load_u32_le_as_i32(data: &byte, byte_off: usize) i32 {

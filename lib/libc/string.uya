@@ -200,7 +200,7 @@ export extern "libc" fn strncat(dest: *byte, src: *const byte, n: usize) *byte {
 // strchr - 在字符串中查找字符
 export extern "libc" fn strchr(s: *const byte, c: i32) *byte {
     if s == null { return null; }
-    const val: byte = c as byte;
+    const val: byte = (c as! byte).value;
     var i: usize = 0;
     while s[i] != 0 {
         if s[i] == val {
@@ -215,7 +215,7 @@ export extern "libc" fn strchr(s: *const byte, c: i32) *byte {
 // strrchr - 在字符串中从后往前查找字符
 export extern "libc" fn strrchr(s: *const byte, c: i32) *byte {
     if s == null { return null; }
-    const val: byte = c as byte;
+    const val: byte = (c as! byte).value;
     var last: *byte = null;
     var i: usize = 0;
     while s[i] != 0 {

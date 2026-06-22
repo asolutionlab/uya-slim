@@ -39,7 +39,7 @@ export fn fputc(c: i32, handle: &void) i32 {
         return 0 - 1;
     }
     var buf: [byte: 1] = [];
-    buf[0] = c as byte;
+    buf[0] = (c as! byte).value;
     const write_count: usize = fwrite(&buf[0], 1, 1, handle);
     if write_count == 0 {
         return 0 - 1;
@@ -116,7 +116,7 @@ export fn fprintf(handle: &void, format: &const byte, arg: i32) i32 {
         var digit_idx: usize = 0;
         while temp > 0 {
             const digit: i32 = temp % 10;
-            digits[digit_idx] = (48 + digit) as byte;  // '0' + digit
+            digits[digit_idx] = ((48 + digit) as! byte).value;  // '0' + digit
             digit_idx = digit_idx + 1;
             temp = temp / 10;
         }

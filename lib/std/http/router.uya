@@ -95,7 +95,7 @@ fn segment_span_pat_known_entry(e: &RouteEntry, pat_len: usize, which: usize) Se
 
 fn segment_count_req_path(req: &Request) usize {
     const path_cap: usize = @len(req.path);
-    const s_len: usize = req.path_len as usize;
+    const s_len: usize = (req.path_len as! usize).value;
     var c: usize = 0;
     var i: usize = 0;
     while i < s_len && i < path_cap {
@@ -113,7 +113,7 @@ fn segment_count_req_path(req: &Request) usize {
 
 fn segment_span_req_path(req: &Request, which: usize) SegSpan {
     const path_cap: usize = @len(req.path);
-    const s_len: usize = req.path_len as usize;
+    const s_len: usize = (req.path_len as! usize).value;
     var c: usize = 0;
     var i: usize = 0;
     while i < s_len && i < path_cap {
@@ -167,7 +167,7 @@ fn route_entry_pattern_char_at(e: &RouteEntry, idx: usize) byte {
 }
 
 fn path_matches_pattern_request_entry(req: &Request, e: &RouteEntry) bool {
-    const pl: usize = e.pattern_len as usize;
+    const pl: usize = (e.pattern_len as! usize).value;
     if segment_count_req_path(req) != segment_count_pat_entry(e, pl) {
         return false;
     }
@@ -253,7 +253,7 @@ export fn path_matches_pattern(path: &[byte], pattern: &[byte]) bool {
 }
 
 fn path_matches_pattern_entry(path: &[byte], e: &RouteEntry) bool {
-    const pl: usize = e.pattern_len as usize;
+    const pl: usize = (e.pattern_len as! usize).value;
     if segment_count(path) != segment_count_pat_entry(e, pl) {
         return false;
     }
@@ -320,7 +320,7 @@ export fn router_apply_path_params_request(req: &Request, pattern: &[byte]) !voi
     if req.path_len < 0 || req.path_len > path_cap {
         return error.InvalidRequest;
     }
-    const plen: usize = req.path_len as usize;
+    const plen: usize = (req.path_len as! usize).value;
     const path_base: &byte = &req.path[0] as &byte;
     const path_sl: &[byte] = path_base[0: plen];
     try router_apply_path_params(req, path_sl, pattern);

@@ -203,7 +203,7 @@ fn uyagin_route_meta_append_param(meta: &UyaginRouteMeta, seg_index: i32, seg: &
         return error.InvalidRequest;
     }
     const name_len: usize = seg.end - seg.start - 1;
-    const dst_off: usize = meta.param_name_bytes_len as usize;
+    const dst_off: usize = (meta.param_name_bytes_len as! usize).value;
     if dst_off + name_len > MAX_URI_LENGTH as usize {
         return error.URITooLong;
     }
@@ -499,7 +499,7 @@ fn uyagin_collect_request_segments(req: &Request, out: &UyaginRequestSegment, ca
     }
     var cursor: usize = 0;
     var count: i32 = 0;
-    const path_len: usize = req.path_len as usize;
+    const path_len: usize = (req.path_len as! usize).value;
     var seg: UyaginRequestSegment = UyaginRequestSegment{ start: 0usize, end: 0usize, hash: 0u32 };
     while uyagin_router_next_request_segment(req, path_len, &cursor, &seg) {
         if count < 0 || count >= cap {
@@ -680,7 +680,7 @@ export fn uyagin_route_meta_bind_params_request(meta: &UyaginRouteMeta, req: &Re
     if req.path_len < 0 || req.path_len > MAX_URI_LENGTH {
         return error.InvalidRequest;
     }
-    const path_len: usize = req.path_len as usize;
+    const path_len: usize = (req.path_len as! usize).value;
     const path_base: &byte = &req.path[0] as &byte;
 
     var i: i32 = 0;

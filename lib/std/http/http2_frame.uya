@@ -39,21 +39,21 @@ fn http2_frame_type_from_u8(v: byte) !Http2FrameType {
 }
 
 fn http2_store_be24(out: &byte, v: usize) void {
-    out[0] = ((v >> 16) & 0xffusize) as byte;
-    out[1] = ((v >> 8) & 0xffusize) as byte;
-    out[2] = (v & 0xffusize) as byte;
+    out[0] = (((v >> 16) & 0xffusize) as! byte).value;
+    out[1] = (((v >> 8) & 0xffusize) as! byte).value;
+    out[2] = ((v & 0xffusize) as! byte).value;
 }
 
 fn http2_store_be16(out: &byte, v: u16) void {
-    out[0] = ((v >> 8) & 0xffu16) as byte;
-    out[1] = (v & 0xffu16) as byte;
+    out[0] = (((v >> 8) & 0xffu16) as! byte).value;
+    out[1] = ((v & 0xffu16) as! byte).value;
 }
 
 fn http2_store_be32(out: &byte, v: u32) void {
-    out[0] = ((v >> 24) & 0xffu32) as byte;
-    out[1] = ((v >> 16) & 0xffu32) as byte;
-    out[2] = ((v >> 8) & 0xffu32) as byte;
-    out[3] = (v & 0xffu32) as byte;
+    out[0] = (((v >> 24) & 0xffu32) as! byte).value;
+    out[1] = (((v >> 16) & 0xffu32) as! byte).value;
+    out[2] = (((v >> 8) & 0xffu32) as! byte).value;
+    out[3] = ((v & 0xffu32) as! byte).value;
 }
 
 fn http2_read_be16(raw: &const byte) u16 {
@@ -93,7 +93,7 @@ export fn http2_encode_frame_header(payload_len: usize, frame_type: Http2FrameTy
         return error.Http2InvalidStreamId;
     }
     http2_store_be24(out, payload_len);
-    out[3] = frame_type as byte;
+    out[3] = (frame_type as! byte).value;
     out[4] = flags;
     http2_store_be32(&out[5], stream_id);
     return HTTP2_FRAME_HEADER_LEN;
@@ -200,7 +200,7 @@ export fn http2_parse_settings_frame(view: &Http2FrameView, out: &Http2Setting, 
     if (view.payload_len % 6usize) != 0usize {
         return error.Http2InvalidFrameSize;
     }
-    const count: i32 = (view.payload_len / 6usize) as i32;
+    const count: i32 = ((view.payload_len / 6usize) as! i32).value;
     if count > out_cap {
         return error.Http2FrameTooLarge;
     }

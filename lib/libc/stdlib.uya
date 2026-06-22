@@ -423,9 +423,9 @@ export extern "libc" fn lltoa(value: i64, buf: &byte, radix: i32) &byte {
         while num > 0 {
             var digit: i64 = num % radix as i64;
             if digit < 10 {
-                digits[i] = (48 + digit) as byte;
+                digits[i] = ((48 + digit) as! byte).value;
             } else {
-                digits[i] = (87 + digit) as byte;
+                digits[i] = ((87 + digit) as! byte).value;
             }
             i = i + 1;
             num = num / radix as i64;
@@ -1127,7 +1127,7 @@ export extern "libc" fn readdir(dirp: &DIR) &Dirent {
                 }
                 state.buf_pos = 0;
             }
-            const bl: usize = state.buf_len as usize;
+            const bl: usize = (state.buf_len as! usize).value;
             const buf_pos: usize = state.buf_pos;
             if buf_pos >= bl {
                 state.buf_len = 0 as isize;

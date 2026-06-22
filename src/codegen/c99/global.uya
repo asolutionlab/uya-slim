@@ -705,13 +705,10 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             }
             if pdecl != null && pdecl.type == ASTNodeType.AST_EXTERN_VAR_DECL && pdecl.extern_var_decl_name != null &&
                 strcmp(pdecl.extern_var_decl_name as *byte, name as *byte) == 0 {
-                // 与 gen_extern_var_decl 保持一致：仅 lib/libc 与 lib/syscall 的导出变量使用模块前缀名。
+                // 与 gen_extern_var_decl 保持一致：仅 libc 与 syscall 层的导出变量使用模块前缀名。
                 var use_prefixed_name: i32 = 0;
                 if pdecl.extern_var_decl_is_export != 0 && pdecl.filename != null {
-                    if strstr(pdecl.filename as *byte, "/lib/libc/" as *byte) != null ||
-                        strstr(pdecl.filename as *byte, "\\lib\\libc\\" as *byte) != null ||
-                        strstr(pdecl.filename as *byte, "/lib/syscall/" as *byte) != null ||
-                        strstr(pdecl.filename as *byte, "\\lib\\syscall\\" as *byte) != null {
+                    if c99_filename_is_libc_or_syscall_path(pdecl.filename) != 0 {
                         use_prefixed_name = 1;
                     }
                 }
@@ -762,10 +759,7 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
     const extern_lib_name: &byte = node.extern_var_decl_extern_lib_name;
     var use_prefixed_name: i32 = 0;
     if is_export != 0 && node.filename != null {
-        if strstr(node.filename as *byte, "/lib/libc/" as *byte) != null ||
-            strstr(node.filename as *byte, "\\lib\\libc\\" as *byte) != null ||
-            strstr(node.filename as *byte, "/lib/syscall/" as *byte) != null ||
-            strstr(node.filename as *byte, "\\lib\\syscall\\" as *byte) != null {
+        if c99_filename_is_libc_or_syscall_path(node.filename) != 0 {
             use_prefixed_name = 1;
         }
     }
@@ -941,10 +935,7 @@ export fn c99_mirror_emit_extern_const_fwd(codegen: &C99CodeGenerator, program: 
             }
             var cname: &byte = get_safe_c_identifier(codegen, decl.extern_var_decl_name);
             if decl.extern_var_decl_is_export != 0 && decl.filename != null {
-                if strstr(decl.filename as *byte, "/lib/libc/" as *byte) != null ||
-                    strstr(decl.filename as *byte, "\\lib\\libc\\" as *byte) != null ||
-                    strstr(decl.filename as *byte, "/lib/syscall/" as *byte) != null ||
-                    strstr(decl.filename as *byte, "\\lib\\syscall\\" as *byte) != null {
+                if c99_filename_is_libc_or_syscall_path(decl.filename) != 0 {
                     cname = get_c_name_for_global_constant(codegen, decl.extern_var_decl_name, decl.filename, decl.extern_var_decl_is_export);
                 }
             }

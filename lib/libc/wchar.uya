@@ -137,7 +137,7 @@ export extern "libc" fn wctomb(s: &byte, wc: wchar_t) i32 {
     
     // ASCII 范围
     if wc < 128 {
-        s[0] = wc as byte;
+        s[0] = (wc as! byte).value;
         return 1;
     }
     

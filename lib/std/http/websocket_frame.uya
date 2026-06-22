@@ -36,15 +36,15 @@ fn websocket_opcode_from_u8(v: byte) !WebSocketOpcode {
 }
 
 fn websocket_store_be16(out: &byte, v: usize) void {
-    out[0] = ((v >> 8) & 0xffusize) as byte;
-    out[1] = (v & 0xffusize) as byte;
+    out[0] = (((v >> 8) & 0xffusize) as! byte).value;
+    out[1] = ((v & 0xffusize) as! byte).value;
 }
 
 fn websocket_store_be64(out: &byte, v: usize) void {
     var i: i32 = 0;
     while i < 8 {
         const sh: i32 = (7 - i) * 8;
-        out[i as usize] = ((v >> sh) & 0xffusize) as byte;
+        out[i as usize] = (((v >> sh) & 0xffusize) as! byte).value;
         i = i + 1;
     }
 }
@@ -167,7 +167,7 @@ export fn websocket_encode_frame_header(role: WebSocketRole, fin: bool, opcode: 
 
     var pos: usize = 1;
     if payload_len < 126 {
-        out[pos] = payload_len as byte;
+        out[pos] = (payload_len as! byte).value;
         pos = pos + 1;
     } else if payload_len <= 65535 {
         out[pos] = 126 as byte;

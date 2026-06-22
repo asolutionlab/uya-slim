@@ -107,7 +107,7 @@ fn waker_eventfd_notify(fd: i32) void {
     var one: u64 = 1 as u64;
     const write_result: !isize = sys_write(fd, (&one) as *const byte, @size_of(one));
     _ = write_result catch |err| {
-        const err_id: i32 = @error_id(err) as i32;
+        const err_id: i32 = (@error_id(err) as! i32).value;
         if err_id == EAGAIN || err_id == EWOULDBLOCK {
             return;
         }
@@ -123,7 +123,7 @@ fn waker_eventfd_drain(fd: i32) void {
         var value: u64 = 0 as u64;
         const read_result: !isize = sys_read(fd, (&value) as *byte, @size_of(value));
         const n: isize = read_result catch |err| {
-            const err_id: i32 = @error_id(err) as i32;
+            const err_id: i32 = (@error_id(err) as! i32).value;
             if err_id == EAGAIN || err_id == EWOULDBLOCK {
                 return;
             }

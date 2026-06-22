@@ -584,12 +584,12 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
                     result_bits = value_u64 as usize;
                 } else {
                     const value_i32: i32 = thread_call_i32(fn_ptr, shared_state.slots[slot_idx as usize].arg_bits as i32);
-                    result_bits = value_i32 as usize;
+                    result_bits = (value_i32 as! usize).value;
                 }
                 shared_state.slots[slot_idx as usize].result_bits = result_bits;
                 shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_DONE;
 
-                var completed_slot_bits: usize = slot_idx as usize;
+                var completed_slot_bits: usize = (slot_idx as! usize).value;
                 const write_result: !isize = sys_write(result_write_fd, (&completed_slot_bits) as *const byte, @size_of(usize));
                 const written: isize = write_result catch {
                     (0 - 1) as isize;

@@ -25,7 +25,7 @@ export extern "libc" fn memset(s: *byte, c: i32, n: usize) *byte {
         return s;
     }
     var i: usize = 0;
-    const val: byte = c as byte;
+    const val: byte = (c as! byte).value;
     while i < n {
         s[i] = val;
         i = i + 1;
@@ -78,7 +78,7 @@ export extern "libc" fn memchr(s: *const byte, c: i32, n: usize) *byte {
     if s == null || n == 0 {
         return null;
     }
-    const val: byte = c as byte;
+    const val: byte = (c as! byte).value;
     var i: usize = 0;
     while i < n {
         if s[i] == val {

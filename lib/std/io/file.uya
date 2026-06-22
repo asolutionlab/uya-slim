@@ -280,7 +280,7 @@ export fn fputc(c: i32, stream: &FILE) i32 {
         return 0 - 1;
     }
 
-    var ch: byte = c as byte;
+    var ch: byte = (c as! byte).value;
     const result: isize = std_io_write_to_buffer(stream, &ch, 1);
     if result != 1 {
         return 0 - 1;

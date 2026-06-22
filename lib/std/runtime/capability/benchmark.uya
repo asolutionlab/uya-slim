@@ -148,7 +148,7 @@ fn capability_benchmark_session_ptr(manager: &CapabilityManager, index: i32) &Ca
     if manager == null || index < 0 {
         return null;
     }
-    const session_idx: usize = index as usize;
+    const session_idx: usize = (index as! usize).value;
     if session_idx >= 16 {
         return null;
     }
@@ -193,7 +193,7 @@ export fn capability_benchmark_run_manager_case(
     if index < 0 || index >= session_cap {
         return error.CapabilityManagerInvalidState;
     }
-    const session_idx: usize = index as usize;
+    const session_idx: usize = (index as! usize).value;
     const session: &CapabilityBackendSession = capability_benchmark_session_ptr(&manager, index);
     if session == null {
         return error.CapabilityManagerInvalidState;

@@ -129,7 +129,7 @@ export fn md5_digest(data: &[byte], digest: &[byte]) !void {
     var ei: i32 = 0;
     while ei < 8 {
         const sh: i32 = ei * 8;
-        tail[k0 + ei as usize] = ((bitlen >> sh) & 255u64) as byte;
+        tail[k0 + ei as usize] = (((bitlen >> sh) & 255u64) as! byte).value;
         ei = ei + 1;
     }
     const total: usize = rem1 + pad + 8usize;

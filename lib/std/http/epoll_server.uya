@@ -194,7 +194,7 @@ export fn epoll_server_accept_register(srv: &EpollServer) !usize {
     if s < 0 {
         return error.EpollSlotsFull;
     }
-    const slot: usize = s as usize;
+    const slot: usize = (s as! usize).value;
     var alen: u32 = 16;
     var peer: [byte: 16] = [];
     const cfd: i32 = try sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
@@ -213,13 +213,13 @@ export fn epoll_server_try_accept_register_nb(srv: &EpollServer) !usize {
     if s < 0 {
         return error.EpollSlotsFull;
     }
-    const slot: usize = s as usize;
+    const slot: usize = (s as! usize).value;
     var alen: u32 = 16;
     var peer: [byte: 16] = [];
     while true {
         const acc: !i32 = sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
         const cfd: i32 = acc catch |err| {
-            const eid: i32 = @error_id(err) as i32;
+            const eid: i32 = (@error_id(err) as! i32).value;
             if eid == EAGAIN {
                 return error.ReadWouldBlock;
             }

@@ -1779,7 +1779,7 @@ fn _pthread_key_value_ptr(key_seq: i32) &&void {
         }
     }
     const key_idx_i64: i64 = key_seq as i64 % PTHREAD_KEYS_MAX as i64;
-    const key_idx: usize = key_idx_i64 as usize;
+    const key_idx: usize = (key_idx_i64 as! usize).value;
     return (desc.tsd_values as usize + key_idx * @size_of(&void)) as &&void;
 }
 

@@ -160,7 +160,7 @@ fn _print_i32_decimal(value: i32) void {
     }
 
     while temp > 0 {
-        digits[len] = (48 + (temp % 10)) as byte;
+        digits[len] = ((48 + (temp % 10)) as! byte).value;
         len = len + 1;
         temp = temp / 10;
     }

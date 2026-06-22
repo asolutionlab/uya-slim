@@ -45,7 +45,7 @@ fn pb_w_byte(w: &PbWriter, b: byte) !void {
 export fn pb_w_varint_u64(w: &PbWriter, v: u64) !void {
     var x: u64 = v;
     while true {
-        const low: byte = ((x & (127 as u64)) as byte);
+        const low: byte = (((x & (127 as u64)) as! byte).value);
         x = x >> 7;
         if x == 0 as u64 {
             try pb_w_byte(w, low);
@@ -64,10 +64,10 @@ export fn pb_w_fixed32_u32(w: &PbWriter, v: u32) !void {
         return error.BufferTooSmall;
     }
     const p: usize = w.used;
-    w.buf[p] = (v as byte);
-    w.buf[p + 1] = ((v >> 8) as byte);
-    w.buf[p + 2] = ((v >> 16) as byte);
-    w.buf[p + 3] = ((v >> 24) as byte);
+    w.buf[p] = ((v as! byte).value);
+    w.buf[p + 1] = (((v >> 8) as! byte).value);
+    w.buf[p + 2] = (((v >> 16) as! byte).value);
+    w.buf[p + 3] = (((v >> 24) as! byte).value);
     w.used = w.used + 4;
 }
 
@@ -79,7 +79,7 @@ export fn pb_w_fixed64_u64(w: &PbWriter, v: u64) !void {
     var i: usize = 0;
     var x: u64 = v;
     while i < 8 {
-        w.buf[p + i] = ((x & (255 as u64)) as byte);
+        w.buf[p + i] = (((x & (255 as u64)) as! byte).value);
         x = x >> 8;
         i = i + 1;
     }
@@ -182,7 +182,7 @@ export fn encode_demo_int_list_packed_to(list: &DemoIntList, buf: &byte, cap: us
     var pay: usize = 0;
     var j: usize = 0;
     while j < list.nums.count {
-        const vv: u64 = pb_buf_load_u32_le_as_i32(list.nums.data, j * 4) as u64;
+        const vv: u64 = (pb_buf_load_u32_le_as_i32(list.nums.data, j * 4) as! u64).value;
         pay = pay + pb_varint_u64_size(vv);
         j = j + 1;
     }
@@ -191,7 +191,7 @@ export fn encode_demo_int_list_packed_to(list: &DemoIntList, buf: &byte, cap: us
     try pb_w_varint_u64(&w, pay as u64);
     j = 0;
     while j < list.nums.count {
-        const vv2: u64 = pb_buf_load_u32_le_as_i32(list.nums.data, j * 4) as u64;
+        const vv2: u64 = (pb_buf_load_u32_le_as_i32(list.nums.data, j * 4) as! u64).value;
         try pb_w_varint_u64(&w, vv2);
         j = j + 1;
     }
@@ -203,7 +203,7 @@ export fn encode_demo_int_list_unpacked_to(list: &DemoIntList, buf: &byte, cap: 
     var j: usize = 0;
     while j < list.nums.count {
         try pb_w_tag(&w, 1, PB_WIRE_VARINT);
-        const vv: u64 = pb_buf_load_u32_le_as_i32(list.nums.data, j * 4) as u64;
+        const vv: u64 = (pb_buf_load_u32_le_as_i32(list.nums.data, j * 4) as! u64).value;
         try pb_w_varint_u64(&w, vv);
         j = j + 1;
     }

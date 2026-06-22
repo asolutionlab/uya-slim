@@ -1046,9 +1046,9 @@ export fn uyagin_collect_metrics(engine: &Engine, scheduler: &Scheduler, request
     engine.metrics.arena_reset_count += 1u64;
     const pool: &AsyncFramePool = scheduler_frame_pool(scheduler);
     if pool != null {
-        const total_alloc: u64 = pool.total_alloc_count as u64;
-        const total_free: u64 = pool.total_free_count as u64;
-        const total_fallback: u64 = pool.debug_heap_fallback_count as u64;
+        const total_alloc: u64 = (pool.total_alloc_count as! u64).value;
+        const total_free: u64 = (pool.total_free_count as! u64).value;
+        const total_fallback: u64 = (pool.debug_heap_fallback_count as! u64).value;
         if total_alloc >= scheduler._metrics_frame_alloc_seen {
             engine.metrics.frame_alloc_count += total_alloc - scheduler._metrics_frame_alloc_seen;
         }
@@ -2792,7 +2792,7 @@ fn uyagin_append_usize_dec_fast(out: &byte, cap: usize, pos: usize, n: usize) us
     var t: usize = 0;
     var x: usize = n;
     while x > 0 && t < 24 {
-        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        tmp[t] = (((x % 10) as u32 + 48) as! byte).value;
         x = x / 10;
         t = t + 1;
     }
@@ -2930,9 +2930,9 @@ fn uyagin_append_hex_usize_fast(out: &byte, cap: usize, pos: usize, n: usize) us
     while x > 0 && t < 24 {
         const d: usize = x & 15usize;
         if d < 10usize {
-            tmp[t] = ((d as u32) + ('0' as u32)) as byte;
+            tmp[t] = (((d as u32) + ('0' as u32)) as! byte).value;
         } else {
-            tmp[t] = (((d as u32) - 10u32) + ('a' as u32)) as byte;
+            tmp[t] = ((((d as u32) - 10u32) + ('a' as u32)) as! byte).value;
         }
         x = x >> 4;
         t = t + 1;

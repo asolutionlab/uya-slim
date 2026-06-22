@@ -435,7 +435,7 @@ fn http1_connect_for_host_future(host: &[byte], port: u16, deadline_ms: u64) Fut
     if deadline_ms != 0 {
         const remaining: i32 = http_deadline_remaining_or_neg1(deadline_ms);
         if remaining > 0 && (remaining as u32) < dns_timeout {
-            dns_timeout = remaining as u32;
+            dns_timeout = (remaining as! u32).value;
         }
     }
     dns_client_set_timeout_ms(&dns_ctx, dns_timeout);
@@ -478,7 +478,7 @@ fn append_u16_dec_buf(out: &byte, start: usize, n: u16) usize {
     var t: usize = 0;
     var x: u16 = n;
     while x > 0 && t < 6 {
-        tmp[t] = (((x % 10) as u32 + 48) as byte);
+        tmp[t] = ((((x % 10) as u32 + 48) as! byte).value);
         x = x / 10;
         t = t + 1;
     }
@@ -502,7 +502,7 @@ fn append_usize_dec_buf(out: &byte, start: usize, n: usize) usize {
     var t: usize = 0;
     var x: usize = n;
     while x > 0 && t < 24 {
-        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        tmp[t] = (((x % 10) as u32 + 48) as! byte).value;
         t = t + 1;
         x = x / 10;
     }
@@ -1229,9 +1229,9 @@ fn parse_chunk_size_value(line: &[byte]) !usize {
         if c >= '0' as byte && c <= '9' as byte {
             digit = (c - '0' as byte) as usize;
         } else if c >= 'a' as byte && c <= 'f' as byte {
-            digit = (10 + c - 'a' as byte) as usize;
+            digit = ((10 + c - 'a' as byte) as! usize).value;
         } else if c >= 'A' as byte && c <= 'F' as byte {
-            digit = (10 + c - 'A' as byte) as usize;
+            digit = ((10 + c - 'A' as byte) as! usize).value;
         } else {
             // 遇到非十六进制字符，可能是 chunk-ext 的开始
             break;
@@ -1416,8 +1416,8 @@ export fn http1_request_streaming(
     addr[0] = 2;  // AF_INET
     addr[1] = 0;
     const pnet: u16 = http1_htons_host_to_be(req.port);
-    addr[2] = (pnet & (255 as u16)) as byte;
-    addr[3] = ((pnet >> 8) & (255 as u16)) as byte;
+    addr[2] = ((pnet & (255 as u16)) as! byte).value;
+    addr[3] = (((pnet >> 8) & (255 as u16)) as! byte).value;
     
     // 解析 host（简化：只支持 127.0.0.1 和 localhost）
     // 检查是否是 127.0.0.1 或 localhost

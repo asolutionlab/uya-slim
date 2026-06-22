@@ -193,10 +193,10 @@ fn dns_parse_ipv4(host: &[byte], out: &byte) bool {
         return false;
     }
     oct[3] = cur;
-    out[0] = oct[0] as u8;
-    out[1] = oct[1] as u8;
-    out[2] = oct[2] as u8;
-    out[3] = oct[3] as u8;
+    out[0] = (oct[0] as! u8).value;
+    out[1] = (oct[1] as! u8).value;
+    out[2] = (oct[2] as! u8).value;
+    out[3] = (oct[3] as! u8).value;
     return true;
 }
 
@@ -367,17 +367,17 @@ fn dns_socket_set_recv_timeout(fd: i32, timeout_ms: u32) !void {
     // 写入 tv_sec (小端序，8 字节)
     var i: usize = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as i32;
+        const shift: i32 = ((i * 8) as! i32).value;
         const mask: i64 = 0xFF;
-        tv[i] = ((sec >> shift) & mask) as byte;
+        tv[i] = (((sec >> shift) & mask) as! byte).value;
         i = i + 1;
     }
     // 写入 tv_usec (小端序，8 字节)
     i = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as i32;
+        const shift: i32 = ((i * 8) as! i32).value;
         const mask: i64 = 0xFF;
-        tv[8 + i] = ((usec >> shift) & mask) as byte;
+        tv[8 + i] = (((usec >> shift) & mask) as! byte).value;
         i = i + 1;
     }
     _ = sys_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv[0] as &void, 16) catch {
@@ -392,16 +392,16 @@ fn dns_socket_set_send_timeout(fd: i32, timeout_ms: u32) !void {
     const usec: i64 = ((timeout_ms as i64) % 1000 as i64) * 1000 as i64;
     var i: usize = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as i32;
+        const shift: i32 = ((i * 8) as! i32).value;
         const mask: i64 = 0xFF;
-        tv[i] = ((sec >> shift) & mask) as byte;
+        tv[i] = (((sec >> shift) & mask) as! byte).value;
         i = i + 1;
     }
     i = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as i32;
+        const shift: i32 = ((i * 8) as! i32).value;
         const mask: i64 = 0xFF;
-        tv[8 + i] = ((usec >> shift) & mask) as byte;
+        tv[8 + i] = (((usec >> shift) & mask) as! byte).value;
         i = i + 1;
     }
     _ = sys_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv[0] as &void, 16) catch {
@@ -486,7 +486,7 @@ fn dns_encode_name(out: &byte, pos: usize, host: &[byte]) !usize {
             if p + 1 + label_len >= DNS_MAX_PACKET {
                 return error.DnsInvalidPacket;
             }
-            out[p] = label_len as u8;
+            out[p] = (label_len as! u8).value;
             p = p + 1;
             var j: usize = 0;
             while j < label_len {
@@ -770,7 +770,7 @@ export fn dns_client_init(ctx: &DnsClient, resolver: &[byte]) void {
                         port_end = port_end - 1;
                     }
                     if port_end > j + 1 && dns_parse_u16_dec(resolver[j + 1: port_end - (j + 1)], &port_val) {
-                        ctx.nameserver_port = port_val as u16;
+                        ctx.nameserver_port = (port_val as! u16).value;
                     }
                 }
                 break;
@@ -1116,7 +1116,7 @@ fn dns_udp_future_poll(self: &DnsUdpFuture, waker: &Waker) Poll<!usize> {
             dns_future_close_fd(&self.fd);
             return dns_poll_ready_error(@error_id(error.DnsNoSuchName));
         }
-        self.response_len = n as usize;
+        self.response_len = (n as! usize).value;
         self.stage = 4;
     }
     if self.stage == 4 {
@@ -1227,7 +1227,7 @@ fn dns_query_udp_raw_with_timeout(ctx: &DnsClient, host: &[byte], qtype: u16, re
     if n <= 0 {
         return error.DnsNoSuchName;
     }
-    response_len[0] = n as usize;
+    response_len[0] = (n as! usize).value;
     return n as usize;
 }
 
@@ -1317,8 +1317,8 @@ fn dns_query_tcp_raw_with_timeout(ctx: &DnsClient, host: &[byte], qtype: u16, re
     var packet: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
     const qlen: usize = try dns_client_build_query(ctx, host, qtype, &packet[0], DNS_MAX_PACKET);
     var framed: [byte: DNS_MAX_PACKET + 2] = [0:DNS_MAX_PACKET + 2];
-    framed[0] = (((qlen >> 8) & (255 as usize)) as byte);
-    framed[1] = ((qlen & (255 as usize)) as byte);
+    framed[0] = ((((qlen >> 8) & (255 as usize)) as! byte).value);
+    framed[1] = (((qlen & (255 as usize)) as! byte).value);
     var i: usize = 0;
     while i < qlen && i < @len(packet) && 2 + i < @len(framed) {
         framed[2 + i] = packet[i];
@@ -1393,7 +1393,7 @@ fn dns_query_tcp_raw_with_timeout(ctx: &DnsClient, host: &[byte], qtype: u16, re
     if n <= 0 {
         return error.DnsNoSuchName;
     }
-    response_len[0] = n as usize;
+    response_len[0] = (n as! usize).value;
     return n as usize;
 }
 
@@ -2096,8 +2096,8 @@ fn dns_tcp_future_poll(self: &DnsTcpFuture, waker: &Waker) Poll<!usize> {
         };
 
         // 构建带长度前缀的 TCP 帧
-        self.query_packet[0] = (((raw_qlen >> 8) & (255 as usize)) as byte);
-        self.query_packet[1] = ((raw_qlen & (255 as usize)) as byte);
+        self.query_packet[0] = ((((raw_qlen >> 8) & (255 as usize)) as! byte).value);
+        self.query_packet[1] = (((raw_qlen & (255 as usize)) as! byte).value);
         var i: usize = 0;
         while i < raw_qlen && i < @len(raw_query) && 2 + i < @len(self.query_packet) {
             self.query_packet[2 + i] = raw_query[i];

@@ -21,22 +21,110 @@ extern fn checker_find_async_frame_meta_by_key_text(checker: &TypeChecker, key_t
 // 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
 // 否则可达性分析与代码生成会锚到无体的声明，导致实现既不生成原型也不生成定义（如 libc time 的 _strftime_write）。
 // 策略：缓存命中时 O(1)，未命中或冲突时回退线性查找。
+fn c99_find_libc_path(filename: &byte) &byte {
+    if filename == null {
+        return null;
+    }
+    var path: *byte = strstr(filename as *byte, "/lib/libc/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/libc/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\libc\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib\\libc\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "/lib/uya/libc/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/uya/libc/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\uya\\libc\\" as *byte);
+    if path != null { return path as &byte; }
+    return strstr(filename as *byte, "lib\\uya\\libc\\" as *byte) as &byte;
+}
+
+fn c99_find_std_path(filename: &byte) &byte {
+    if filename == null {
+        return null;
+    }
+    var path: *byte = strstr(filename as *byte, "/lib/std/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/std/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\std\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib\\std\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "/lib/uya/std/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/uya/std/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\uya\\std\\" as *byte);
+    if path != null { return path as &byte; }
+    return strstr(filename as *byte, "lib\\uya\\std\\" as *byte) as &byte;
+}
+
+fn c99_find_syscall_path(filename: &byte) &byte {
+    if filename == null {
+        return null;
+    }
+    var path: *byte = strstr(filename as *byte, "/lib/syscall/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/syscall/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\syscall\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib\\syscall\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "/lib/uya/syscall/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/uya/syscall/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\uya\\syscall\\" as *byte);
+    if path != null { return path as &byte; }
+    return strstr(filename as *byte, "lib\\uya\\syscall\\" as *byte) as &byte;
+}
+
+fn c99_find_tls_path(filename: &byte) &byte {
+    if filename == null {
+        return null;
+    }
+    var path: *byte = strstr(filename as *byte, "/lib/tls/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/tls/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\tls\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib\\tls\\" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "/lib/uya/tls/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "lib/uya/tls/" as *byte);
+    if path != null { return path as &byte; }
+    path = strstr(filename as *byte, "\\lib\\uya\\tls\\" as *byte);
+    if path != null { return path as &byte; }
+    return strstr(filename as *byte, "lib\\uya\\tls\\" as *byte) as &byte;
+}
+
+fn c99_filename_is_libc_or_syscall_path(filename: &byte) i32 {
+    if c99_find_libc_path(filename) != null { return 1; }
+    if c99_find_syscall_path(filename) != null { return 1; }
+    return 0;
+}
+
 fn c99_filename_is_in_lib_family(filename: &byte, family: &byte) i32 {
     if filename == null || family == null {
         return 0;
     }
     if strcmp(family as *byte, "libc" as *byte) == 0 {
-        if strstr(filename as *byte, "/lib/libc/" as *byte) != null ||
-            strstr(filename as *byte, "lib/libc/" as *byte) != null {
-            return 1;
-        }
+        if c99_find_libc_path(filename) != null { return 1; }
         return 0;
     }
     if strcmp(family as *byte, "std" as *byte) == 0 {
-        if strstr(filename as *byte, "/lib/std/" as *byte) != null ||
-            strstr(filename as *byte, "lib/std/" as *byte) != null {
-            return 1;
-        }
+        if c99_find_std_path(filename) != null { return 1; }
+        return 0;
+    }
+    if strcmp(family as *byte, "syscall" as *byte) == 0 {
+        if c99_find_syscall_path(filename) != null { return 1; }
         return 0;
     }
     return 0;
@@ -249,25 +337,65 @@ fn should_use_raw_libc_symbol_name(codegen: &C99CodeGenerator, fn_decl: &ASTNode
     // 否则会抢占 macOS/libSystem 等宿主 libc 内部使用的 pthread_once/pthread_mutex_*。
     if fn_decl.filename != null {
         if strstr(fn_decl.filename as *byte, "/lib/libc/pthread.uya" as *byte) != null ||
-            strstr(fn_decl.filename as *byte, "lib/libc/pthread.uya" as *byte) != null {
+            strstr(fn_decl.filename as *byte, "lib/libc/pthread.uya" as *byte) != null ||
+            strstr(fn_decl.filename as *byte, "/lib/uya/libc/pthread.uya" as *byte) != null ||
+            strstr(fn_decl.filename as *byte, "lib/uya/libc/pthread.uya" as *byte) != null {
             return 0;
         }
     }
 
-    // hosted 模式：仅对与系统 stdlib 原型冲突的符号改为模块前缀名。
+    // hosted 模式：与系统 string/stdlib 原型或 GCC builtin 冲突的 Uya libc 实现使用模块前缀名。
+    // malloc/free/realloc/calloc 保持原始名：后端运行时也直接生成这些调用，必须与 Uya 堆实现保持一致。
     if name != null {
-        if strcmp(name as *byte, "atol" as *byte) == 0 ||
+        if strcmp(name as *byte, "memcpy" as *byte) == 0 ||
+            strcmp(name as *byte, "memset" as *byte) == 0 ||
+            strcmp(name as *byte, "memmove" as *byte) == 0 ||
+            strcmp(name as *byte, "memcmp" as *byte) == 0 ||
+            strcmp(name as *byte, "memchr" as *byte) == 0 ||
+            strcmp(name as *byte, "strlen" as *byte) == 0 ||
+            strcmp(name as *byte, "strcmp" as *byte) == 0 ||
+            strcmp(name as *byte, "strncmp" as *byte) == 0 ||
+            strcmp(name as *byte, "strcasecmp" as *byte) == 0 ||
+            strcmp(name as *byte, "strncasecmp" as *byte) == 0 ||
+            strcmp(name as *byte, "strdup" as *byte) == 0 ||
+            strcmp(name as *byte, "strndup" as *byte) == 0 ||
+            strcmp(name as *byte, "strcpy" as *byte) == 0 ||
+            strcmp(name as *byte, "strncpy" as *byte) == 0 ||
+            strcmp(name as *byte, "strcat" as *byte) == 0 ||
+            strcmp(name as *byte, "strncat" as *byte) == 0 ||
+            strcmp(name as *byte, "strchr" as *byte) == 0 ||
+            strcmp(name as *byte, "strrchr" as *byte) == 0 ||
+            strcmp(name as *byte, "strstr" as *byte) == 0 ||
+            strcmp(name as *byte, "strcspn" as *byte) == 0 ||
+            strcmp(name as *byte, "strspn" as *byte) == 0 ||
+            strcmp(name as *byte, "strpbrk" as *byte) == 0 ||
+            strcmp(name as *byte, "strtok" as *byte) == 0 ||
+            strcmp(name as *byte, "exit" as *byte) == 0 ||
+            strcmp(name as *byte, "abort" as *byte) == 0 ||
+            strcmp(name as *byte, "abs" as *byte) == 0 ||
+            strcmp(name as *byte, "atoi" as *byte) == 0 ||
+            strcmp(name as *byte, "atof" as *byte) == 0 ||
+            strcmp(name as *byte, "atol" as *byte) == 0 ||
+            strcmp(name as *byte, "atoll" as *byte) == 0 ||
             strcmp(name as *byte, "strtod" as *byte) == 0 ||
             strcmp(name as *byte, "strtol" as *byte) == 0 ||
             strcmp(name as *byte, "labs" as *byte) == 0 ||
+            strcmp(name as *byte, "llabs" as *byte) == 0 ||
             strcmp(name as *byte, "div" as *byte) == 0 ||
             strcmp(name as *byte, "ldiv" as *byte) == 0 ||
             strcmp(name as *byte, "lldiv" as *byte) == 0 ||
             strcmp(name as *byte, "strtoll" as *byte) == 0 ||
             strcmp(name as *byte, "strtoull" as *byte) == 0 ||
             strcmp(name as *byte, "strtoul" as *byte) == 0 ||
+            strcmp(name as *byte, "srand" as *byte) == 0 ||
+            strcmp(name as *byte, "rand" as *byte) == 0 ||
             strcmp(name as *byte, "qsort" as *byte) == 0 ||
-            strcmp(name as *byte, "bsearch" as *byte) == 0 {
+            strcmp(name as *byte, "bsearch" as *byte) == 0 ||
+            strcmp(name as *byte, "getenv" as *byte) == 0 ||
+            strcmp(name as *byte, "putenv" as *byte) == 0 ||
+            strcmp(name as *byte, "setenv" as *byte) == 0 ||
+            strcmp(name as *byte, "unsetenv" as *byte) == 0 ||
+            strcmp(name as *byte, "clearenv" as *byte) == 0 {
             return 0;
         }
     }
@@ -375,17 +503,21 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
     if codegen == null || filename == null || codegen.arena == null {
         return ("" as *byte) as &byte;
     }
-    if strstr(filename as *byte, "/lib/libc/" as *byte) != null || strstr(filename as *byte, "lib/libc/" as *byte) != null {
+    if c99_find_libc_path(filename) != null {
         return ("libc_" as *byte) as &byte;
     }
-    var lib_std: *byte = strstr(filename as *byte, "/lib/std/" as *byte);
-    if lib_std == null {
-        lib_std = strstr(filename as *byte, "lib/std/" as *byte);
+    if c99_find_syscall_path(filename) != null {
+        return ("syscall_" as *byte) as &byte;
     }
+    var lib_std: &byte = c99_find_std_path(filename);
     if lib_std != null {
         var rel: &byte = lib_std as &byte;
-        if rel[0] == 47 { rel = &rel[1]; }
-        if strncmp(rel as *byte, "lib/std/" as *byte, 8) == 0 {
+        if rel[0] == 47 || rel[0] == 92 { rel = &rel[1]; }
+        if strncmp(rel as *byte, "lib/uya/std/" as *byte, 12) == 0 ||
+            strncmp(rel as *byte, "lib\\uya\\std\\" as *byte, 12) == 0 {
+            rel = &rel[12];
+        } else if strncmp(rel as *byte, "lib/std/" as *byte, 8) == 0 ||
+            strncmp(rel as *byte, "lib\\std\\" as *byte, 8) == 0 {
             rel = &rel[8];
         }
         const rel_len: usize = strlen(rel as *byte);
@@ -424,14 +556,15 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
         }
         return ("std_" as *byte) as &byte;
     }
-    var lib_tls: *byte = strstr(filename as *byte, "/lib/tls/" as *byte);
-    if lib_tls == null {
-        lib_tls = strstr(filename as *byte, "lib/tls/" as *byte);
-    }
+    var lib_tls: &byte = c99_find_tls_path(filename);
     if lib_tls != null {
         var rel_tls: &byte = lib_tls as &byte;
-        if rel_tls[0] == 47 { rel_tls = &rel_tls[1]; }
-        if strncmp(rel_tls as *byte, "lib/tls/" as *byte, 8) == 0 {
+        if rel_tls[0] == 47 || rel_tls[0] == 92 { rel_tls = &rel_tls[1]; }
+        if strncmp(rel_tls as *byte, "lib/uya/tls/" as *byte, 12) == 0 ||
+            strncmp(rel_tls as *byte, "lib\\uya\\tls\\" as *byte, 12) == 0 {
+            rel_tls = &rel_tls[12];
+        } else if strncmp(rel_tls as *byte, "lib/tls/" as *byte, 8) == 0 ||
+            strncmp(rel_tls as *byte, "lib\\tls\\" as *byte, 8) == 0 {
             rel_tls = &rel_tls[8];
         }
         const rel_tls_len: usize = strlen(rel_tls as *byte);

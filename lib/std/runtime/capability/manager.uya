@@ -49,7 +49,7 @@ fn capability_manager_session_ptr(manager: &CapabilityManager, index: i32) &Capa
     if manager == null || index < 0 {
         return null;
     }
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx >= CAPABILITY_MAX_REGISTRY_ENTRIES as usize {
         return null;
     }
@@ -62,7 +62,7 @@ fn capability_manager_session_loaded_ptr(manager: &CapabilityManager, index: i32
     if manager == null || index < 0 {
         return null;
     }
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx >= CAPABILITY_MAX_REGISTRY_ENTRIES as usize {
         return null;
     }
@@ -90,7 +90,7 @@ export fn capability_manager_install(manager: &CapabilityManager, manifest: Capa
 
 export fn capability_manager_load(manager: &CapabilityManager, index: i32, payload: &const byte, payload_len: usize) !void {
     try capability_manager_require_entry(manager, index);
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx < @len(manager.registry.entries) &&
        entry_idx < @len(manager.sessions) &&
        entry_idx < @len(manager.session_loaded) {
@@ -115,7 +115,7 @@ export fn capability_manager_load(manager: &CapabilityManager, index: i32, paylo
 
 export fn capability_manager_activate(manager: &CapabilityManager, index: i32) !void {
     try capability_manager_require_entry(manager, index);
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx < @len(manager.session_loaded) {
         const loaded_ptr: &bool = capability_manager_session_loaded_ptr(manager, index);
         if loaded_ptr == null {
@@ -133,7 +133,7 @@ export fn capability_manager_activate(manager: &CapabilityManager, index: i32) !
 
 export fn capability_manager_invoke(manager: &CapabilityManager, index: i32, trigger_id: i32) !CapabilityStatusCode {
     try capability_manager_require_entry(manager, index);
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx < @len(manager.registry.entries) &&
        entry_idx < @len(manager.sessions) &&
        entry_idx < @len(manager.session_loaded) {
@@ -170,7 +170,7 @@ export fn capability_manager_rollback(manager: &CapabilityManager, index: i32) !
 
 export fn capability_manager_unload(manager: &CapabilityManager, index: i32) !void {
     try capability_manager_require_entry(manager, index);
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx < @len(manager.sessions) && entry_idx < @len(manager.session_loaded) {
         const session_ptr: &CapabilityBackendSession = capability_manager_session_ptr(manager, index);
         const loaded_ptr: &bool = capability_manager_session_loaded_ptr(manager, index);

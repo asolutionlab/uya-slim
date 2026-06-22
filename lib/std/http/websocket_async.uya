@@ -109,10 +109,10 @@ fn websocket_fill_mask_key(out: &byte) void {
     const fd_res: !i32 = sys_open(&path[0], O_RDONLY as i32, 0);
     const fd: i32 = fd_res catch {
         const seed: u64 = websocket_now_ms_or_zero();
-        out[0] = (seed & 0xffu64) as byte;
-        out[1] = ((seed >> 8) & 0xffu64) as byte;
-        out[2] = ((seed >> 16) & 0xffu64) as byte;
-        out[3] = ((seed >> 24) & 0xffu64) as byte;
+        out[0] = ((seed & 0xffu64) as! byte).value;
+        out[1] = (((seed >> 8) & 0xffu64) as! byte).value;
+        out[2] = (((seed >> 16) & 0xffu64) as! byte).value;
+        out[3] = (((seed >> 24) & 0xffu64) as! byte).value;
         return;
     };
     var total: usize = 0;
@@ -132,10 +132,10 @@ fn websocket_fill_mask_key(out: &byte) void {
         return;
     }
     const seed2: u64 = websocket_now_ms_or_zero();
-    out[0] = (seed2 & 0xffu64) as byte;
-    out[1] = ((seed2 >> 8) & 0xffu64) as byte;
-    out[2] = ((seed2 >> 16) & 0xffu64) as byte;
-    out[3] = ((seed2 >> 24) & 0xffu64) as byte;
+    out[0] = ((seed2 & 0xffu64) as! byte).value;
+    out[1] = (((seed2 >> 8) & 0xffu64) as! byte).value;
+    out[2] = (((seed2 >> 16) & 0xffu64) as! byte).value;
+    out[3] = (((seed2 >> 24) & 0xffu64) as! byte).value;
 }
 
 fn websocket_alloc_bytes(allocator: IAllocator, size: usize) !&byte {
@@ -374,7 +374,7 @@ fn websocket_conn_queue_clear(self: &WebSocketConn) void {
         return;
     }
     while self.queue_len > 0 {
-        const idx: usize = self.queue_head as usize;
+        const idx: usize = (self.queue_head as! usize).value;
         if idx >= WS_QUEUE_MAX_SLOTS as usize {
             self.queue_head = 0;
             self.queue_len = 0;
@@ -396,7 +396,7 @@ fn websocket_conn_queue_push(self: &WebSocketConn, opcode: WebSocketOpcode, payl
         return error.WebSocketQueueFull;
     }
     const tail: i32 = (self.queue_head + self.queue_len) % WS_QUEUE_MAX_SLOTS;
-    const idx: usize = tail as usize;
+    const idx: usize = (tail as! usize).value;
     if idx >= WS_QUEUE_MAX_SLOTS as usize {
         return error.WebSocketQueueFull;
     }
@@ -413,7 +413,7 @@ fn websocket_conn_queue_take_offset(self: &WebSocketConn, offset: i32) !WebSocke
     if offset < 0 || offset >= self.queue_len {
         return error.WebSocketQueueFull;
     }
-    const idx: usize = ((self.queue_head + offset) % WS_QUEUE_MAX_SLOTS) as usize;
+    const idx: usize = (((self.queue_head + offset) % WS_QUEUE_MAX_SLOTS) as! usize).value;
     if idx >= WS_QUEUE_MAX_SLOTS as usize {
         return error.WebSocketQueueFull;
     }
@@ -424,8 +424,8 @@ fn websocket_conn_queue_take_offset(self: &WebSocketConn, offset: i32) !WebSocke
     };
     var pos: i32 = offset;
     while pos < self.queue_len - 1 {
-        const from_idx: usize = ((self.queue_head + pos + 1) % WS_QUEUE_MAX_SLOTS) as usize;
-        const to_idx: usize = ((self.queue_head + pos) % WS_QUEUE_MAX_SLOTS) as usize;
+        const from_idx: usize = (((self.queue_head + pos + 1) % WS_QUEUE_MAX_SLOTS) as! usize).value;
+        const to_idx: usize = (((self.queue_head + pos) % WS_QUEUE_MAX_SLOTS) as! usize).value;
         if from_idx >= WS_QUEUE_MAX_SLOTS as usize || to_idx >= WS_QUEUE_MAX_SLOTS as usize {
             return error.WebSocketQueueFull;
         }
@@ -434,7 +434,7 @@ fn websocket_conn_queue_take_offset(self: &WebSocketConn, offset: i32) !WebSocke
         self.queue_lens[to_idx] = self.queue_lens[from_idx];
         pos = pos + 1;
     }
-    const tail_idx: usize = ((self.queue_head + self.queue_len - 1) % WS_QUEUE_MAX_SLOTS) as usize;
+    const tail_idx: usize = (((self.queue_head + self.queue_len - 1) % WS_QUEUE_MAX_SLOTS) as! usize).value;
     if tail_idx >= WS_QUEUE_MAX_SLOTS as usize {
         return error.WebSocketQueueFull;
     }
@@ -455,7 +455,7 @@ fn websocket_conn_queue_pop(self: &WebSocketConn) !WebSocketQueueItem {
     var control_offset: i32 = -1;
     var i: i32 = 0;
     while i < self.queue_len {
-        const idx: usize = ((self.queue_head + i) % WS_QUEUE_MAX_SLOTS) as usize;
+        const idx: usize = (((self.queue_head + i) % WS_QUEUE_MAX_SLOTS) as! usize).value;
         if idx >= WS_QUEUE_MAX_SLOTS as usize {
             return error.WebSocketQueueFull;
         }
@@ -1057,8 +1057,8 @@ export @async_fn fn websocket_conn_close_with_code(self: &WebSocketConn, code: u
         return error.WebSocketControlFrameTooLarge;
     }
     var payload: [byte: 125] = [0: 125];
-    payload[0] = ((code >> 8) & (0xff as u16)) as byte;
-    payload[1] = (code & (0xff as u16)) as byte;
+    payload[0] = (((code >> 8) & (0xff as u16)) as! byte).value;
+    payload[1] = ((code & (0xff as u16)) as! byte).value;
     if reason_len > 0 {
         websocket_copy_bytes(&payload[2], reason, reason_len);
     }

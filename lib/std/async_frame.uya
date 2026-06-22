@@ -193,7 +193,7 @@ export fn async_frame_runtime_default_stack_limit() usize {
     if stack_env != null && stack_env[0] != 0 as byte {
         const limit_i32: i32 = atoi(stack_env as &const byte);
         if limit_i32 > 0 {
-            stack_limit = limit_i32 as usize;
+            stack_limit = (limit_i32 as! usize).value;
         }
     }
     return stack_limit;
@@ -231,7 +231,7 @@ fn async_frame_pool_bucket_ptr(pool: &AsyncFramePool, idx: i32) &AsyncFramePoolB
     if pool.buckets == null {
         return null;
     }
-    const bucket_idx: usize = idx as usize;
+    const bucket_idx: usize = (idx as! usize).value;
     if pool.max_buckets <= 0 {
         return null;
     }
@@ -250,7 +250,7 @@ fn async_frame_bucket_slot_ptr(bucket: &AsyncFramePoolBucket, idx: i32) &&byte {
     if bucket.slots == null {
         return null;
     }
-    const slot_idx: usize = idx as usize;
+    const slot_idx: usize = (idx as! usize).value;
     if slot_idx >= bucket.capacity as usize {
         return null;
     }
@@ -335,7 +335,7 @@ fn async_frame_bucket_grow_slots(bucket: &AsyncFramePoolBucket) bool {
 
 // 获取某个 frame_id 对应的 descriptor
 fn async_frame_pool_descriptor(frame_id: u32) &AsyncFrameDescriptor {
-    const desc_cap: u32 = _uya_async_frame_descriptors.count as u32;
+    const desc_cap: u32 = (_uya_async_frame_descriptors.count as! u32).value;
     if frame_id < desc_cap {
         const frame_idx: usize = frame_id as usize;
         if frame_idx >= 0 && frame_idx < _uya_async_frame_descriptors.count as usize {

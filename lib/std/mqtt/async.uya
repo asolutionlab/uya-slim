@@ -80,7 +80,7 @@ fn mqtt_encode_remaining_len(v0: usize, out: &byte, out_cap: usize) !usize {
         if i >= out_cap {
             return error.MqttBuildOverflow;
         }
-        var d: byte = (v % (128 as usize)) as byte;
+        var d: byte = ((v % (128 as usize)) as! byte).value;
         v = v / (128 as usize);
         if v > 0 {
             d = d | (0x80 as byte);

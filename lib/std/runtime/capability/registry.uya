@@ -24,7 +24,7 @@ export fn capability_registry_entry_ptr(registry: &CapabilityRegistry, index: i3
     if registry == null || index < 0 {
         return null;
     }
-    const entry_idx: usize = index as usize;
+    const entry_idx: usize = (index as! usize).value;
     if entry_idx >= CAPABILITY_MAX_REGISTRY_ENTRIES as usize {
         return null;
     }

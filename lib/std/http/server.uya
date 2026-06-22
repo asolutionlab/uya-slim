@@ -55,7 +55,7 @@ fn sys_writev_all_conn(fd: i32, head: &byte, head_len: usize, body: &byte, body_
         if wr <= 0 {
             return error.ConnectionClosed;
         }
-        var advanced: usize = wr as usize;
+        var advanced: usize = (wr as! usize).value;
         if head_sent < head_len {
             const head_rem: usize = head_len - head_sent;
             if advanced >= head_rem {
@@ -80,7 +80,7 @@ export fn http_write_all_nonblocking(conn_fd: i32, base: &byte, total: usize, wr
         while true {
             const wr: !isize = sys_write(conn_fd, p, rem);
             const n: isize = wr catch |err| {
-                const eid: i32 = @error_id(err) as i32;
+                const eid: i32 = (@error_id(err) as! i32).value;
                 if eid == EAGAIN {
                     return error.ReadWouldBlock;
                 }
@@ -106,7 +106,7 @@ export fn http_discard_socket_recv_nb(conn_fd: i32) void {
     while true {
         const rr: !isize = sys_read(conn_fd, &junk[0] as *byte, chunk);
         const n: isize = rr catch |err| {
-            const eid: i32 = @error_id(err) as i32;
+            const eid: i32 = (@error_id(err) as! i32).value;
             if eid == EAGAIN {
                 return;
             }
@@ -134,8 +134,8 @@ export fn fill_sockaddr_loopback_16(port_host: u16, out: &byte) void {
     out[0] = 2;
     out[1] = 0;
     const pnet: u16 = htons_host_to_be(port_host);
-    out[2] = (pnet & (0xFF as u16)) as byte;
-    out[3] = ((pnet >> 8) & (0xFF as u16)) as byte;
+    out[2] = ((pnet & (0xFF as u16)) as! byte).value;
+    out[3] = (((pnet >> 8) & (0xFF as u16)) as! byte).value;
     out[4] = 127;
     out[5] = 0;
     out[6] = 0;
@@ -283,7 +283,7 @@ export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize
                 while true {
                     const rr: !isize = sys_read(conn_fd, dst, chunk);
                     const n: isize = rr catch |err| {
-                        const eid: i32 = @error_id(err) as i32;
+                        const eid: i32 = (@error_id(err) as! i32).value;
                         if eid == EAGAIN {
                             return error.ReadWouldBlock;
                         }
@@ -335,7 +335,7 @@ export fn http_conn_read_parse_nonblocking_into(conn_fd: i32, base: &byte, cap: 
                 while true {
                     const rr: !isize = sys_read(conn_fd, dst, chunk);
                     const n: isize = rr catch |err| {
-                        const eid: i32 = @error_id(err) as i32;
+                        const eid: i32 = (@error_id(err) as! i32).value;
                         if eid == EAGAIN {
                             return error.ReadWouldBlock;
                         }
@@ -390,7 +390,7 @@ fn append_usize_dec_hdr(hdr: &byte, start: usize, n: usize) usize {
     var t: usize = 0;
     var x: usize = n;
     while x > 0 && t < 24 {
-        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        tmp[t] = (((x % 10) as u32 + 48) as! byte).value;
         t = t + 1;
         x = x / 10;
     }

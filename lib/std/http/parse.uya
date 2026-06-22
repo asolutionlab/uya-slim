@@ -244,7 +244,7 @@ fn parse_usize_decimal(s: &[byte]) !usize {
         if c < 48 as byte || c > 57 as byte {
             return error.InvalidRequest;
         }
-        const d: usize = (c as i32 - 48) as usize;
+        const d: usize = ((c as i32 - 48) as! usize).value;
         n = n * 10 + d;
         j = j + 1;
     }
@@ -313,7 +313,7 @@ fn set_path_and_query(buf: &[byte], uri_start: usize, uri_len: usize, req: &Requ
     if path_len > path_cap {
         return error.URITooLong;
     }
-    req.path_len = path_len as i32;
+    req.path_len = (path_len as! i32).value;
     var k: usize = 0;
     while k < path_len {
         req.path[k] = buf.ptr[uri_start + k];
@@ -541,7 +541,7 @@ export fn http_parse_request_into(buf: &[byte], out: &ParseResult) !void {
             break;
         }
         const line_len: usize = le - pos;
-        const max_line: usize = (MAX_HEADER_SIZE + MAX_HEADER_VALUE_SIZE + 2) as usize;
+        const max_line: usize = ((MAX_HEADER_SIZE + MAX_HEADER_VALUE_SIZE + 2) as! usize).value;
         if line_len > max_line {
             return error.HeaderTooLarge;
         }

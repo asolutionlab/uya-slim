@@ -230,7 +230,7 @@ export fn hpack_encode_integer(prefix_bits: i32, first_byte_base: byte, value: u
     if pos >= out_cap {
         return error.HpackIntegerTooLarge;
     }
-    out[pos] = remaining as byte;
+    out[pos] = (remaining as! byte).value;
     return pos + 1usize;
 }
 
